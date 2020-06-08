@@ -1,22 +1,23 @@
-import { Authentication } from './authentication/authentication';
-import { AuthenticationImpl } from './authentication/authentication-impl';
-import { AuthenticationNoOp } from './authentication/authentication-noop';
-import { AuthenticationOffline } from './authentication/authentication-offline';
-import { Feed } from './feed/feed';
-import { FeedImpl } from './feed/feed-impl';
-import { PersistentFork } from './fork/persistent-fork';
-import { TransientFork } from './fork/transient-fork';
-import { SyncStatus, SyncStatusNotifier, WebClient } from './http/web-client';
-import { XhrConnection } from './http/xhr';
-import { IndexedDBLoginStore } from './indexeddb/indexeddb-login-store';
-import { IndexedDBQueue } from './indexeddb/indexeddb-queue';
-import { IndexedDBStore } from './indexeddb/indexeddb-store';
-import { ensure, FactDescription, Jinaga, Preposition, Trace, Tracer } from './jinaga';
-import { MemoryStore } from './memory/memory-store';
-import { Storage } from './storage';
+import { Authentication } from "./authentication/authentication";
+import { AuthenticationImpl } from "./authentication/authentication-impl";
+import { AuthenticationNoOp } from "./authentication/authentication-noop";
+import { AuthenticationOffline } from "./authentication/authentication-offline";
+import { Feed } from "./feed/feed";
+import { FeedImpl } from "./feed/feed-impl";
+import { PersistentFork } from "./fork/persistent-fork";
+import { TransientFork } from "./fork/transient-fork";
+import { SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
+import { XhrConnection } from "./http/xhr";
+import { IndexedDBLoginStore } from "./indexeddb/indexeddb-login-store";
+import { IndexedDBQueue } from "./indexeddb/indexeddb-queue";
+import { IndexedDBStore } from "./indexeddb/indexeddb-store";
+import { ensure, FactDescription, Jinaga, Preposition, Trace, Tracer } from "./jinaga";
+import { MemoryStore } from "./memory/memory-store";
+import { User, UserName } from "./model/user";
+import { Storage } from "./storage";
 import { Watch } from "./watch/watch";
 
-export { Jinaga, Watch, SyncStatus, Preposition, Trace, Tracer, ensure, FactDescription };
+export { Jinaga, Watch, SyncStatus, Preposition, Trace, Tracer, ensure, FactDescription, User, UserName };
 
 export type JinagaBrowserConfig = {
     httpEndpoint?: string,
