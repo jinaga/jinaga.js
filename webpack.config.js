@@ -3,7 +3,7 @@ const path = require('path');
 module.exports = {
     // Inputs
     entry: {
-        index: "./src/jinaga-browser.ts"
+        index: "./src/index.ts"
     },
     resolve: {
         extensions: [".js", ".ts"],
@@ -27,9 +27,9 @@ module.exports = {
     // Outputs
     output: {
         library: 'jinaga',
-        libraryTarget: 'amd',
+        libraryTarget: 'commonjs',
         path: path.resolve(__dirname, './dist'),
-        filename: 'jinaga-client.js',
+        filename: 'index.js',
     },
     devtool: "source-map",
 };
