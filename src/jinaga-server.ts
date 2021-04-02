@@ -8,6 +8,8 @@ import { AuthorizationRules } from './authorization/authorizationRules';
 import { Cache } from './cache';
 import { Feed } from './feed/feed';
 import { FeedImpl } from './feed/feed-impl';
+import { Fork } from "./fork/fork";
+import { PassThroughFork } from "./fork/pass-through-fork";
 import { TransientFork } from './fork/transient-fork';
 import { NodeHttpConnection } from './http/node-http';
 import { HttpRouter, RequestUser } from './http/router';
@@ -72,7 +74,7 @@ function createStore(config: JinagaServerConfig): Storage {
     }
 }
 
-function createFork(config: JinagaServerConfig, feed: Feed, syncStatusNotifier: SyncStatusNotifier): Feed {
+function createFork(config: JinagaServerConfig, feed: Feed, syncStatusNotifier: SyncStatusNotifier): Fork {
     if (config.httpEndpoint) {
         const httpConnection = new NodeHttpConnection(config.httpEndpoint);
         const httpTimeoutSeconds = config.httpTimeoutSeconds || 5;
@@ -83,7 +85,7 @@ function createFork(config: JinagaServerConfig, feed: Feed, syncStatusNotifier: 
         return fork;
     }
     else {
-        return feed;
+        return new PassThroughFork(feed);
     }
 }
 

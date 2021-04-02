@@ -1,4 +1,6 @@
 import { Feed, Observable } from '../feed/feed';
+import { Channel } from "../fork/channel";
+import { Fork } from "../fork/fork";
 import { LoginResponse } from '../http/messages';
 import { WebClient } from '../http/web-client';
 import { IndexedDBLoginStore } from '../indexeddb/indexeddb-login-store';
@@ -7,7 +9,7 @@ import { FactEnvelope, FactRecord, FactReference } from '../storage';
 import { Authentication } from './authentication';
 
 export class AuthenticationOffline implements Authentication {
-  constructor(private inner: Feed, private store: IndexedDBLoginStore, private client: WebClient) {
+  constructor(private inner: Fork, private store: IndexedDBLoginStore, private client: WebClient) {
   }
 
   async login() {    
@@ -51,6 +53,14 @@ export class AuthenticationOffline implements Authentication {
 
   from(fact: FactReference, query: Query): Observable {
     return this.inner.from(fact, query);
+  }
+
+  addChannel(fact: FactReference, query: Query): Channel {
+    return this.inner.addChannel(fact, query);
+  }
+
+  removeChannel(channel: Channel): void {
+    return this.inner.removeChannel(channel);
   }
 
   private async loginRemote() {

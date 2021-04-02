@@ -6,6 +6,9 @@ import { MemoryStore } from './memory/memory-store';
 import { Query } from './query/query';
 import { Condition, ensure, FactDescription, Preposition, Specification } from './query/query-parser';
 import { FactEnvelope, FactPath, uniqueFactReferences } from './storage';
+import { Subscription } from "./subscription/subscription";
+import { SubscriptionImpl } from "./subscription/subscription-impl";
+import { SubscriptionNoOp } from "./subscription/subscription-no-op";
 import { toJSON } from './util/obj';
 import { ServiceRunner } from './util/serviceRunner';
 import { Trace, Tracer } from './util/trace';
@@ -197,6 +200,31 @@ export class Jinaga {
         const watch = new WatchImpl<U, V>(reference, query, onResultAdded, resultRemoved, this.authentication);
         watch.begin();
         return watch;
+    }
+
+    /**
+     * Request server-sent events when a fact affects query results.
+     * While the subscription is active, the server will push matching facts
+     * to the client. Call Subscription.stop() to stop receiving events.
+     * 
+     * @param start A fact from which to begin the subscription
+     * @param preposition A template function passed into j.for
+     * @returns A subscription, which remains running until you call stop
+     */
+    subscribe<T, U>(
+        start: T,
+        preposition: Preposition<T, U>
+    ): Subscription {
+        if (!start) {
+            return new SubscriptionNoOp();
+        }
+        const fact = JSON.parse(JSON.stringify(start));
+        this.validateFact(fact);
+        const reference = dehydrateReference(fact);
+        const query = new Query(preposition.steps);
+        const channel = this.authentication.addChannel(reference, query);
+        const subscription = new SubscriptionImpl(channel, this.authentication);
+        return subscription;
     }
 
     service<T, U>(

@@ -2,7 +2,7 @@ import { Inverse, invertQuery } from '../query/inverter';
 import { Query } from '../query/query';
 import { FactEnvelope, FactPath, FactRecord, FactReference, Storage } from '../storage';
 import { mapAsync } from '../util/fn';
-import { Feed, Handler, Observable, Subscription } from './feed';
+import { Feed, Handler, Observable, ObservableSubscription } from './feed';
 
 type Listener = {
     inverse: Inverse,
@@ -11,7 +11,7 @@ type Listener = {
     removed: Handler
 };
 
-class SubscriptionImpl implements Subscription {
+class SubscriptionImpl implements ObservableSubscription {
     private listeners: Listener[];
     private loading: Promise<void>;
 
@@ -66,7 +66,7 @@ class ObservableImpl implements Observable {
         public addListener: (subscription: Listener) => void,
         public removeListener: (subscription: Listener) => void) {}
 
-    subscribe(added: Handler, removed: Handler): Subscription {
+    subscribe(added: Handler, removed: Handler): ObservableSubscription {
         const subscription = new SubscriptionImpl(this, added, removed, this.results);
         subscription.add();
         return subscription;

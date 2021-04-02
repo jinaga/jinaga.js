@@ -1,4 +1,5 @@
 import { Feed } from "../feed/feed";
+import { Channel } from "../fork/channel";
 import { LoginResponse } from "../http/messages";
 import { Query } from "../query/query";
 import { FactEnvelope, FactRecord, FactReference } from "../storage";
@@ -30,5 +31,10 @@ export class AuthenticationNoOp implements Authentication {
     }
     load(references: FactReference[]) {
         return this.inner.load(references);
+    }
+    addChannel(fact: FactReference, query: Query): Channel {
+        return null;
+    }
+    removeChannel(channel: Channel): void {
     }
 }

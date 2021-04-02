@@ -1,15 +1,18 @@
 import { TopologicalSorter } from '../fact/sorter';
-import { Feed, Handler, Observable, Subscription } from '../feed/feed';
+import { Feed, Handler, Observable, ObservableSubscription } from '../feed/feed';
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
 import { FactEnvelope, FactRecord, FactReference, factReferenceEquals, Queue } from '../storage';
 import { flatten } from '../util/fn';
 import { Trace } from '../util/trace';
+import { Channel } from "./channel";
+import { ChannelProcessor } from "./channel-processor";
+import { Fork } from "./fork";
 import { serializeLoad, serializeQuery, serializeSave } from './serialize';
 
-class PersistentForkSubscription implements Subscription {
+class PersistentForkSubscription implements ObservableSubscription {
     constructor(
-        private inner: Subscription,
+        private inner: ObservableSubscription,
         private loadedLocal: Promise<void>,
         private loadedRemote: Promise<void>
     ) {}
@@ -31,12 +34,15 @@ class PersistentForkObservable implements Observable {
         private loadedRemote: Promise<void>
     ) {}
 
-    subscribe(added: Handler, removed: Handler): Subscription {
+    subscribe(added: Handler, removed: Handler): ObservableSubscription {
         return new PersistentForkSubscription(this.inner.subscribe(added, removed), this.loadedLocal, this.loadedRemote);
     }
 }
 
-export class PersistentFork implements Feed {
+export class PersistentFork implements Fork {
+    private channels: Channel[] = [];
+    private channelProcessor: ChannelProcessor;
+
     constructor(
         private feed: Feed,
         private queue: Queue,
@@ -102,6 +108,29 @@ export class PersistentFork implements Feed {
         const loadedLocal = this.initiateQueryLocal(fact, query);
         const loadedRemote = this.initiateQueryRemote(fact, query);
         return new PersistentForkObservable(observable, loadedLocal, loadedRemote);
+    }
+
+    addChannel(fact: FactReference, query: Query): Channel {
+        const channel = new Channel(fact, query, this.initiateQueryRemote);
+        this.channels = [...this.channels, channel];
+        if (this.channelProcessor) {
+            this.channelProcessor.stop();
+        }
+        this.channelProcessor = new ChannelProcessor(this.channels);
+        this.channelProcessor.start();
+        return channel;
+    }
+
+    removeChannel(channel: Channel) {
+        this.channels = this.channels.filter(c => c !== channel);
+        if (this.channelProcessor) {
+            this.channelProcessor.stop();
+            this.channelProcessor = null;
+        }
+        if (this.channels.length > 0) {
+            this.channelProcessor = new ChannelProcessor(this.channels);
+            this.channelProcessor.start();
+        }
     }
 
     private async initiateQueryLocal(start: FactReference, query: Query) {
