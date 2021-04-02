@@ -5,6 +5,7 @@ import { LoginResponse } from '../../src/http/messages';
 import { Query } from '../../src/query/query';
 import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
 import { AuthorizationRules } from '../authorization/authorizationRules';
+import { Channel } from "../fork/channel";
 
 export class AuthenticationTest implements Authentication {
   private authorizationEngine: AuthorizationEngine | null;
@@ -59,6 +60,13 @@ export class AuthenticationTest implements Authentication {
 
   load(references: FactReference[]) {
     return this.inner.load(references);
+  }
+
+  addChannel(fact: FactReference, query: Query): Channel {
+    return null;
+  }
+
+  removeChannel(channel: Channel): void {
   }
   
   private async authorize(envelopes: FactEnvelope[]) {

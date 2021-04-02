@@ -1,4 +1,5 @@
 import { Feed, Observable } from '../feed/feed';
+import { Channel } from "../fork/channel";
 import { LoginResponse } from '../http/messages';
 import { Keystore, UserIdentity } from '../keystore';
 import { Query } from '../query/query';
@@ -46,5 +47,12 @@ export class AuthenticationSession implements Authentication {
 
     load(references: FactReference[]): Promise<FactRecord[]> {
         return this.inner.load(references);
+    }
+
+    addChannel(fact: FactReference, query: Query): Channel {
+        return null;
+    }
+
+    removeChannel(channel: Channel): void {
     }
 }

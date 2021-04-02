@@ -1,5 +1,5 @@
 import { Hydration } from '../fact/hydrate';
-import { Feed, Subscription } from '../feed/feed';
+import { Feed, ObservableSubscription } from '../feed/feed';
 import { Query } from '../query/query';
 import { Preposition } from '../query/query-parser';
 import { FactPath, FactReference, uniqueFactReferences } from '../storage';
@@ -14,7 +14,7 @@ interface WatchChild {
 }
 
 export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
-    private subscription: Subscription;
+    private subscription: ObservableSubscription;
     private modelMap = new ModelMap<Model>();
     private children: WatchChild[] = [];
 

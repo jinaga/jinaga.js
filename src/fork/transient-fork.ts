@@ -1,14 +1,17 @@
 import { TopologicalSorter } from '../fact/sorter';
-import { Feed, Handler, Observable, Subscription } from '../feed/feed';
+import { Feed, Handler, Observable, ObservableSubscription } from '../feed/feed';
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
 import { FactEnvelope, FactRecord, FactReference, factReferenceEquals } from '../storage';
 import { flatten } from '../util/fn';
+import { Channel } from "./channel";
+import { ChannelProcessor } from "./channel-processor";
+import { Fork } from "./fork";
 import { serializeLoad, serializeQuery, serializeSave } from './serialize';
 
-class TransientForkSubscription implements Subscription {
+class TransientForkSubscription implements ObservableSubscription {
     constructor(
-        private inner: Subscription,
+        private inner: ObservableSubscription,
         private loaded: Promise<void>
     ) {}
 
@@ -28,12 +31,15 @@ class TransientForkObservable implements Observable {
         private loaded: Promise<void>
     ) {}
 
-    subscribe(added: Handler, removed: Handler): Subscription {
+    subscribe(added: Handler, removed: Handler): ObservableSubscription {
         return new TransientForkSubscription(this.inner.subscribe(added, removed), this.loaded);
     }
 }
 
-export class TransientFork implements Feed {
+export class TransientFork implements Fork {
+    private channels: Channel[] = [];
+    private channelProcessor: ChannelProcessor;
+
     constructor(
         private feed: Feed,
         private client: WebClient
@@ -78,6 +84,29 @@ export class TransientFork implements Feed {
         const observable = this.feed.from(fact, query);
         const loaded = this.initiateQuery(fact, query);
         return new TransientForkObservable(observable, loaded);
+    }
+
+    addChannel(fact: FactReference, query: Query): Channel {
+        const channel = new Channel(fact, query, this.initiateQuery);
+        this.channels = [...this.channels, channel];
+        if (this.channelProcessor) {
+            this.channelProcessor.stop();
+        }
+        this.channelProcessor = new ChannelProcessor(this.channels);
+        this.channelProcessor.start();
+        return channel;
+    }
+
+    removeChannel(channel: Channel) {
+        this.channels = this.channels.filter(c => c !== channel);
+        if (this.channelProcessor) {
+            this.channelProcessor.stop();
+            this.channelProcessor = null;
+        }
+        if (this.channels.length > 0) {
+            this.channelProcessor = new ChannelProcessor(this.channels);
+            this.channelProcessor.start();
+        }
     }
 
     private async initiateQuery(start: FactReference, query: Query) {

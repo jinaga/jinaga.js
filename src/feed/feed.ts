@@ -1,7 +1,7 @@
 import { Query } from '../query/query';
 import { FactPath, FactReference, Storage } from '../storage';
 
-export interface Subscription {
+export interface ObservableSubscription {
     load(): Promise<void>;
     dispose(): void;
 }
@@ -9,7 +9,7 @@ export interface Subscription {
 export type Handler = (paths: FactPath[]) => Promise<void>;
 
 export interface Observable {
-    subscribe(added: Handler, removed: Handler): Subscription;
+    subscribe(added: Handler, removed: Handler): ObservableSubscription;
 }
 
 export interface Feed extends Storage {
