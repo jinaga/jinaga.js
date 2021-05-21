@@ -87,7 +87,7 @@ export class TransientFork implements Fork {
     }
 
     addChannel(fact: FactReference, query: Query): Channel {
-        const channel = new Channel(fact, query, this.initiateQuery);
+        const channel = new Channel(() => this.initiateQuery(fact, query));
         this.channels = [...this.channels, channel];
         if (this.channelProcessor) {
             this.channelProcessor.stop();
