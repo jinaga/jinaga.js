@@ -111,7 +111,7 @@ export class PersistentFork implements Fork {
     }
 
     addChannel(fact: FactReference, query: Query): Channel {
-        const channel = new Channel(fact, query, this.initiateQueryRemote);
+        const channel = new Channel(() => this.initiateQueryRemote(fact, query));
         this.channels = [...this.channels, channel];
         if (this.channelProcessor) {
             this.channelProcessor.stop();
