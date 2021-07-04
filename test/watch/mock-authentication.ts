@@ -1,6 +1,7 @@
 import { Authentication } from "../../src/authentication/authentication";
 import { Feed, Observable } from "../../src/feed/feed";
 import { FeedImpl } from "../../src/feed/feed-impl";
+import { Channel } from "../../src/fork/channel";
 import { LoginResponse } from "../../src/http/messages";
 import { Query } from "../../src/query/query";
 import { FactEnvelope, FactRecord, FactReference, Storage } from "../../src/storage";
@@ -34,5 +35,11 @@ export class MockAuthentication implements Authentication {
   }
   load(references: FactReference[]): Promise<FactRecord[]> {
       return this.inner.load(references);
+  }
+  addChannel(fact: FactReference, query: Query): Channel {
+    throw new Error("AddChannel method not implemented on MockAuthentication.");
+  }
+  removeChannel(channel: Channel): void {
+    throw new Error("RemoveChannel method not implemented on MockAuthentication.");
   }
 }
