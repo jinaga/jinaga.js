@@ -86,9 +86,10 @@ export class FeedImpl implements Feed {
 
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const saved = await this.inner.save(envelopes);
-        await mapAsync(saved, async envelope => {
+        for (let index = 0; index < saved.length; index++) {
+            const envelope = saved[index];
             await this.notifyFactSaved(envelope.fact);
-        });
+        }
         return saved;
     }
     
