@@ -1,21 +1,10 @@
 # Jinaga
 
+Resilient, reliable, and connected web applications.
 
+Make a change in the browser and it is automatically sent to the server, saved to the database, and shared with other users. Jinaga is journaled isolated nodes approaching global agreement.
 
-JavaScript data synchronization, front-end and back-end, persistent and real-time.
-
-Make a change in the browser and it is automatically sent to the server, saved to the database, and shared with other users. Jinaga is journaled isolated nodes approaching global agreement. 
-
-See an example application: [ImprovingU](https://jinagademo.azurewebsites.net) - Course idea voting site.
-
-Get a quick [video introduction](https://vimeo.com/channels/jinaga) to Jinaga.
-
-- [Mutablity](mutability.md)
-- [Security](security.md)
-- [Synchronization](synchronization.md)
-- [Comparison with alternatives](alternatives.md)
-- [Protocol](protocol.md)
-- [Roadmap](roadmap.md)
+Documentation at [Jinaga.com](https://jinaga.com).
 
 [Contributing](contributing.md)
 
