@@ -146,7 +146,14 @@ export function hydrate<T>(record: FactRecord) {
 
 export function hydrateFromTree<T>(references: FactReference[], records: FactRecord[]) {
     const hydration = new Hydration(records);
-    return references.map(r => <T>hydration.hydrate(r));
+    return references.map(r => {
+        try {
+            return <T>hydration.hydrate(r);
+        }
+        catch (e) {
+            return null;
+        }
+    }).filter(f => f);
 }
 
 export function dehydrateFact(fact: HashMap): FactRecord[] {
