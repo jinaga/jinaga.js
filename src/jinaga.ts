@@ -274,7 +274,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A specification that can be used by query or watch
      */
-    static match<T>(template: T): Specification<T> {
+    static match<T>(template: Partial<T>): Specification<T> {
         return new Specification<T>(template,[]);
     }
 
@@ -284,7 +284,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A specification that can be used by query or watch
      */
-    match<T>(template: T): Specification<T> {
+    match<T>(template: Partial<T>): Specification<T> {
         return Jinaga.match(template);
     }
 
@@ -294,7 +294,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    static exists<T>(template: T): Condition<T> {
+    static exists<T>(template: Partial<T>): Condition<T> {
         return new Condition<T>(template, [], false);
     }
 
@@ -304,7 +304,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    exists<T>(template: T): Condition<T> {
+    exists<T>(template: Partial<T>): Condition<T> {
         return Jinaga.exists(template);
     }
 
@@ -314,7 +314,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    static notExists<T>(template: T): Condition<T> {
+    static notExists<T>(template: Partial<T>): Condition<T> {
         return new Condition<T>(template, [], true);
     }
 
@@ -324,7 +324,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    notExists<T>(template: T): Condition<T> {
+    notExists<T>(template: Partial<T>): Condition<T> {
         return Jinaga.notExists(template);
     }
 
