@@ -9,7 +9,7 @@ export class Specification<T> {
     public specification = true;
 
     constructor (
-        public template: T,
+        public template: Partial<T>,
         public conditions: Step[]
     ) {}
 
@@ -22,7 +22,7 @@ export class Condition<T> {
     public existential = true;
 
     constructor (
-        public template: T,
+        public template: Partial<T>,
         public conditions: Step[],
         public negative: boolean
     ) {}
