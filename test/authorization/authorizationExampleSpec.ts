@@ -67,7 +67,7 @@ describe("Feedback authorization", () => {
 const j = Jinaga;
 
 class User {
-  static Type = "Jinaga.User";
+  static Type = "Jinaga.User" as const;
   type = User.Type;
 
   constructor (
@@ -76,7 +76,7 @@ class User {
 }
 
 class Site {
-  static Type = "Feedback.Site";
+  static Type = "Feedback.Site" as const;
   type = Site.Type;
 
   constructor (
@@ -91,7 +91,7 @@ class Site {
 }
 
 class Content {
-  static Type = "Feedback.Content";
+  static Type = "Feedback.Content" as const;
   type = Content.Type;
 
   constructor (
@@ -106,7 +106,7 @@ class Content {
 }
 
 class Comment {
-  static Type = "Feedback.Comment";
+  static Type = "Feedback.Comment" as const;
   type = Comment.Type;
 
   constructor (

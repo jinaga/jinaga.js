@@ -100,13 +100,13 @@ class User {
 }
 
 class Group {
-    static Type = 'Group';
+    static Type = "Group" as const;
 
     type = Group.Type;
     identity: string;
 
     static members(g: Group) {
-        return j.match(<Member>{
+        return j.match<Member>({
             type: Member.Type,
             group: g
         });
@@ -114,7 +114,7 @@ class Group {
 }
 
 class Member {
-    static Type = 'Member';
+    static Type = "Member" as const;
 
     type = Member.Type;
     group: Group;
@@ -128,7 +128,7 @@ class Member {
 }
 
 class Message {
-    static Type = 'Message';
+    static Type = "Message" as const;
 
     type = Message.Type;
     author: User;
@@ -148,14 +148,14 @@ class Message {
 }
 
 class Approval {
-    static Type = 'Approval';
+    static Type = "Approval" as const;
 
     type = Approval.Type;
     message: Message;
     approver: User;
 
     static of(m: Message) {
-        return j.match(<Approval>{
+        return j.match<Approval>({
             type: Approval.Type,
             message: m
         });

@@ -1,3 +1,4 @@
+import { Template } from '../template';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from './steps';
 
 interface Proxy {
@@ -9,7 +10,7 @@ export class Specification<T> {
     public specification = true;
 
     constructor (
-        public template: Partial<T>,
+        public template: Template<T>,
         public conditions: Step[]
     ) {}
 
@@ -22,7 +23,7 @@ export class Condition<T> {
     public existential = true;
 
     constructor (
-        public template: Partial<T>,
+        public template: Template<T>,
         public conditions: Step[],
         public negative: boolean
     ) {}

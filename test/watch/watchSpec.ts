@@ -6,7 +6,7 @@ import { factReferenceEquals } from "../../src/storage";
 import { dehydrateFact } from "../../src/fact/hydrate";
 
 class TaskList {
-  static Type = 'TaskList';
+  static Type = "TaskList" as const;
   type = TaskList.Type;
 
   constructor(
@@ -15,7 +15,7 @@ class TaskList {
 }
 
 class Task {
-  static Type = 'Task';
+  static Type = "Task" as const;
   type = Task.Type;
 
   constructor(
@@ -25,11 +25,12 @@ class Task {
 }
 
 class Completed {
-  static Type = 'Completed';
+  static Type = "Completed" as const;
   type = Completed.Type;
 
   constructor(
-    public task: Task
+    public task: Task,
+    public completedAt: Date | string
   ) { }
 }
 
@@ -37,6 +38,16 @@ function _isEqual(a: {}, b: {}): boolean {
   const aRef = dehydrateFact(a);
   const bRef = dehydrateFact(b);
   return aRef.every(aRec => bRef.some(factReferenceEquals(aRec)));
+}
+
+function completionsInList(list: TaskList) {
+  return Jinaga.match<Completed>({
+    type: Completed.Type,
+    task: {
+      type: Task.Type,
+      list
+    }
+  })
 }
 
 describe("Watch", function () {
@@ -52,21 +63,21 @@ describe("Watch", function () {
   const trash = new Task(chores, "Take out the trash");
 
   function tasksInList(l: TaskList) {
-    return j.match(<Task>{
+    return j.match<Task>({
       type: Task.Type,
       list: l
     }).suchThat(j.not(isCompleted));
   }
 
   function taskCompletions(task: Task) {
-    return j.match(<Completed> {
+    return j.match<Completed>( {
       type: Completed.Type,
       task
     });
   }
 
   function isCompleted(t: Task) {
-    return j.exists(<Completed>{
+    return j.exists<Completed>({
       type: Completed.Type,
       task: t
     });
@@ -126,7 +137,7 @@ describe("Watch", function () {
 
   it("should match a predecessor", async function () {
     await j.watch(chores, j.for(tasksInList), taskAdded).load();
-    await j.fact(new Completed(trash));
+    await j.fact(new Completed(trash, new Date()));
 
     tasks.length.should.equal(1);
     expect(_isEqual(tasks[0], trash)).to.be.true;
@@ -152,7 +163,7 @@ describe("Watch", function () {
     var watch = j.watch(chores, j.for(tasksInList), taskAdded, taskRemoved);
     await watch.load();
     await j.fact(trash);
-    await j.fact(new Completed(trash));
+    await j.fact(new Completed(trash, new Date()));
     expect(tasks.length).to.equal(0);
     watch.stop();
   });
@@ -161,7 +172,7 @@ describe("Watch", function () {
     await j.fact(trash);
     var watch = j.watch(chores, j.for(tasksInList), taskAdded, taskRemoved);
     await watch.load();
-    await j.fact(new Completed(trash));
+    await j.fact(new Completed(trash, new Date()));
     expect(tasks.length).to.equal(0);
     watch.stop();
   });
