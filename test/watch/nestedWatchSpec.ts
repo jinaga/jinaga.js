@@ -55,21 +55,21 @@ describe("Nested watch", function () {
     });
 
     function messageRemoved(m: Message) {
-        return j.exists(<Removed>{
+        return j.exists<Removed>({
             type: 'Removed',
             message: m
         });
     }
 
     function messagesInRoom(r: Room) {
-        return j.match(<Message>{
+        return j.match<Message>({
             type: 'Message',
             room: r
         }).suchThat(j.not(messageRemoved));
     }
 
     function nameIsCurrent(n: Name) {
-        return j.notExists(<Name>{
+        return j.notExists<Name>({
             type: 'Name',
             prior: [n]
         });
@@ -78,7 +78,7 @@ describe("Nested watch", function () {
     function namesOfSender(m: Message) {
         ensure(m).has("sender");
         m.sender.type = 'Person';
-        return j.match(<Name>{
+        return j.match<Name>({
             type: 'Name',
             person: m.sender
         }).suchThat(nameIsCurrent);
@@ -159,7 +159,7 @@ describe("Nested watch", function () {
     });
 
     it("should stop child", async function () {
-        const messages = j.watch(room, j.for(messagesInRoom), makeMessageViewModel);
+        const messages = j.watch(room, j.for(messagesInRoom), makeMessageViewModel, vm => {});
         await messages.load();
         const names = messages.watch(j.for(namesOfSender), setMessageFrom, removeMessageFrom);
         await names.load();

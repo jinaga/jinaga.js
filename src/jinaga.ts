@@ -9,6 +9,7 @@ import { FactEnvelope, FactPath, uniqueFactReferences } from './storage';
 import { Subscription } from "./subscription/subscription";
 import { SubscriptionImpl } from "./subscription/subscription-impl";
 import { SubscriptionNoOp } from "./subscription/subscription-no-op";
+import { Template } from './template';
 import { toJSON } from './util/obj';
 import { ServiceRunner } from './util/serviceRunner';
 import { Trace, Tracer } from './util/trace';
@@ -20,7 +21,7 @@ export interface Profile {
     displayName: string;
 }
 
-export { Trace, Tracer, Preposition, FactDescription, ensure };
+export { Trace, Tracer, Preposition, FactDescription, ensure, Template };
 
 export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
@@ -274,7 +275,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A specification that can be used by query or watch
      */
-    static match<T>(template: Partial<T>): Specification<T> {
+    static match<T>(template: Template<T>): Specification<T> {
         return new Specification<T>(template,[]);
     }
 
@@ -284,7 +285,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A specification that can be used by query or watch
      */
-    match<T>(template: Partial<T>): Specification<T> {
+    match<T>(template: Template<T>): Specification<T> {
         return Jinaga.match(template);
     }
 
@@ -294,7 +295,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    static exists<T>(template: Partial<T>): Condition<T> {
+    static exists<T>(template: Template<T>): Condition<T> {
         return new Condition<T>(template, [], false);
     }
 
@@ -304,7 +305,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    exists<T>(template: Partial<T>): Condition<T> {
+    exists<T>(template: Template<T>): Condition<T> {
         return Jinaga.exists(template);
     }
 
@@ -314,7 +315,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    static notExists<T>(template: Partial<T>): Condition<T> {
+    static notExists<T>(template: Template<T>): Condition<T> {
         return new Condition<T>(template, [], true);
     }
 
@@ -324,7 +325,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    notExists<T>(template: Partial<T>): Condition<T> {
+    notExists<T>(template: Template<T>): Condition<T> {
         return Jinaga.notExists(template);
     }
 
