@@ -32,7 +32,7 @@
     "@types/mocha": "^7.0.2",
     "@types/node-forge": "^0.9.5",
     "@types/passport": "^1.0.4",
-    "@types/pg": "^7.14.4",
+    "@types/pg": "^8.6.1",
     "acorn": "^7.4.0",
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
@@ -51,7 +51,7 @@
     "express": "^4.17.1",
     "node-forge": "^0.10.0",
     "passport": "^0.5.0",
-    "pg": "^7.18.2",
+    "pg": "^8.7.1",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"
   }
