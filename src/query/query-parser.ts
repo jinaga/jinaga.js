@@ -128,7 +128,13 @@ function findTarget(spec:any): Array<Step> {
 function parseTemplate(template: (target: any) => any): Step[] {
     const target = new ParserProxy(null, null);
     const spec = template(target);
+    if (!spec) {
+        throw new Error(`It looks like you didn't return j.match frmo the template function ${template.name}.`);
+    }
     const targetJoins = findTarget(spec.template);
+    if (!targetJoins) {
+        throw new Error(`I can't find where you used the parameter in template function ${template.name}.`);
+    }
     const steps = targetJoins.concat(spec.conditions);
 
     if (spec.existential) {
