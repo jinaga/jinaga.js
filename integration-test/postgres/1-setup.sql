@@ -26,27 +26,46 @@ $do$
 BEGIN
 
 --
--- Edge
+-- Fact Type
 --
 
-IF (SELECT to_regclass('public.edge') IS NULL) THEN
+IF (SELECT to_regclass('public.fact_type')) IS NULL THEN
 
-    CREATE TABLE public.edge (
-        successor_type character varying(50),
-        successor_hash character varying(100),
-        predecessor_type character varying(50),
-        predecessor_hash character varying(100),
-        role character varying(20)
+    CREATE TABLE fact_type (
+        fact_type_id serial PRIMARY KEY,
+        name character varying(50) NOT NULL
     );
 
-    ALTER TABLE public.edge OWNER TO postgres;
 
-    -- Most unique first, for fastest uniqueness check on insert.
-    CREATE UNIQUE INDEX ux_edge ON public.edge USING btree (successor_hash, predecessor_hash, role, successor_type, predecessor_type);
-    -- Covering index based on successor, favoring most likely members of WHERE clause.
-    CREATE INDEX ix_successor ON public.edge USING btree (successor_hash, role, successor_type, predecessor_hash, predecessor_type);
-    -- Covering index based on predecessor, favoring most likely members of WHERE clause.
-    CREATE INDEX ix_predecessor ON public.edge USING btree (predecessor_hash, role, predecessor_type, successor_hash, successor_type);
+    ALTER TABLE public.fact_type OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_fact_type ON fact_type (name);
+
+END IF;
+
+--
+-- Role
+--
+
+IF (SELECT to_regclass('public.role')) IS NULL THEN
+
+    CREATE TABLE role (
+        role_id serial PRIMARY KEY,
+        defining_fact_type_id integer NOT NULL,
+        CONSTRAINT fk_defining_fact_type_id
+            FOREIGN KEY (defining_fact_type_id)
+            REFERENCES fact_type (fact_type_id),
+        name character varying(20) NOT NULL,
+        predecessor_fact_type_id integer NOT NULL,
+        CONSTRAINT fk_predecessor_fact_type_id
+            FOREIGN KEY (predecessor_fact_type_id)
+            REFERENCES fact_type (fact_type_id)
+    );
+
+
+    ALTER TABLE public.role OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_role ON public.role USING btree (defining_fact_type_id, name);
 
 END IF;
 
@@ -57,10 +76,13 @@ END IF;
 IF (SELECT to_regclass('public.fact') IS NULL) THEN
 
     CREATE TABLE public.fact (
-        type character varying(50),
+        fact_id SERIAL PRIMARY KEY,
+        fact_type_id integer NOT NULL,
+        CONSTRAINT fk_fact_type_id
+            FOREIGN KEY (fact_type_id)
+            REFERENCES fact_type (fact_type_id),
         hash character varying(100),
-        fields jsonb,
-        predecessors jsonb,
+        data jsonb,
         date_learned timestamp NOT NULL
             DEFAULT (now() at time zone 'utc')
     );
@@ -68,18 +90,97 @@ IF (SELECT to_regclass('public.fact') IS NULL) THEN
 
     ALTER TABLE public.fact OWNER TO postgres;
 
-    CREATE UNIQUE INDEX ux_fact ON public.fact USING btree (hash, type);
+    CREATE UNIQUE INDEX ux_fact ON public.fact USING btree (hash, fact_type_id);
 
-ELSE
+END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='fact' AND column_name='date_learned') THEN
+--
+-- Edge
+--
 
-        ALTER TABLE public.fact
-            ADD date_learned timestamp NOT NULL
-            DEFAULT (now() at time zone 'utc');
-            
-    END IF;
+IF (SELECT to_regclass('public.edge') IS NULL) THEN
+
+    CREATE TABLE public.edge (
+        role_id integer NOT NULL,
+        successor_fact_id integer NOT NULL,
+        predecessor_fact_id integer NOT NULL
+    );
+
+
+    ALTER TABLE public.edge OWNER TO postgres;
+
+    -- Most unique first, for fastest uniqueness check on insert.
+    CREATE UNIQUE INDEX ux_edge ON public.edge USING btree (successor_fact_id, predecessor_fact_id, role_id);
+    -- Covering index based on successor, favoring most likely members of WHERE clause.
+    CREATE INDEX ix_successor ON public.edge USING btree (successor_fact_id, role_id, predecessor_fact_id);
+    -- Covering index based on predecessor, favoring most likely members of WHERE clause.
+    CREATE INDEX ix_predecessor ON public.edge USING btree (predecessor_fact_id, role_id, successor_fact_id);
+
+END IF;
+
+--
+-- Ancestor
+--
+
+IF (SELECT to_regclass('public.ancestor') IS NULL) THEN
+
+    CREATE TABLE public.ancestor (
+        fact_id integer NOT NULL,
+        CONSTRAINT fk_fact_id
+            FOREIGN KEY (fact_id)
+            REFERENCES fact (fact_id),
+        ancestor_fact_id integer NOT NULL,
+        CONSTRAINT fk_ancestor_fact_id
+            FOREIGN KEY (ancestor_fact_id)
+            REFERENCES fact (fact_id)
+    );
+
+
+    ALTER TABLE public.ancestor OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_ancestor ON public.ancestor USING btree (fact_id, ancestor_fact_id);
+
+END IF;
+
+--
+-- Public Key
+--
+
+IF (SELECT to_regclass('public.public_key') IS NULL) THEN
+
+    CREATE TABLE public.public_key (
+        public_key_id serial PRIMARY KEY,
+        public_key character varying(500) NOT NULL
+    );
+
+
+    ALTER TABLE public.public_key OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_public_key ON public.public_key (public_key);
+
+END IF;
+
+--
+-- Signature
+--
+
+IF (SELECT to_regclass('public.signature') IS NULL) THEN
+
+    CREATE TABLE public."signature" (
+        fact_id integer NOT NULL,
+        CONSTRAINT fk_fact_id
+            FOREIGN KEY (fact_id)
+            REFERENCES fact (fact_id),
+        public_key_id integer NOT NULL,
+        signature character varying(400),
+        date_learned timestamp NOT NULL
+            DEFAULT (now() at time zone 'utc')
+    );
+
+
+    ALTER TABLE public."signature" OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_signature ON public."signature" USING btree (fact_id, public_key_id);
 
 END IF;
 
@@ -91,7 +192,7 @@ IF (SELECT to_regclass('public.user') IS NULL) THEN
 
     CREATE TABLE public."user" (
         provider character varying(100),
-        user_id character varying(50),
+        user_identifier character varying(50),
         private_key character varying(1800),
         public_key character varying(500)
     );
@@ -99,87 +200,8 @@ IF (SELECT to_regclass('public.user') IS NULL) THEN
 
     ALTER TABLE public."user" OWNER TO postgres;
 
-    CREATE UNIQUE INDEX ux_user ON public."user" USING btree (user_id, provider);
-
+    CREATE UNIQUE INDEX ux_user ON public."user" USING btree (user_identifier, provider);
     CREATE UNIQUE INDEX ux_user_public_key ON public."user" (public_key);
-
-ELSE
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='user' AND column_name='public_key'
-            AND character_maximum_length >= 500) THEN
-        
-        ALTER TABLE public.user
-            ALTER COLUMN public_key TYPE character varying(500);
-        
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='user' AND column_name='private_key'
-            AND character_maximum_length >= 1800) THEN
-        
-        ALTER TABLE public.user
-            ALTER COLUMN private_key TYPE character varying(1800);
-        
-    END IF;
-
-    IF (SELECT to_regclass('public.duplicate_users') IS NULL) THEN
-
-        CREATE TABLE public.duplicate_users AS
-            SELECT u.provider, u.user_id, u.public_key, u.private_key
-            FROM public."user" AS u
-            JOIN (SELECT public_key FROM public."user" GROUP BY public_key HAVING count(*) > 1) AS dup
-                ON dup.public_key = u.public_key;
-                
-        DELETE FROM public."user" AS u
-            WHERE EXISTS (SELECT 1 FROM public.duplicate_users AS d
-                WHERE d.provider = u.provider AND d.user_id = u.user_id);
-
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_user_public_key ON public."user" (public_key);
-
-    END IF;
-
-END IF;
-
---
--- Signature
---
-
-IF (SELECT to_regclass('public.signature') IS NULL) THEN
-
-    CREATE TABLE public."signature" (
-        type character varying(50),
-        hash character varying(100),
-        public_key character varying(500),
-        signature character varying(400),
-        date_learned timestamp NOT NULL
-            DEFAULT (now() at time zone 'utc')
-    );
-
-
-    ALTER TABLE public."signature" OWNER TO postgres;
-
-    CREATE UNIQUE INDEX ux_signature ON public."signature" USING btree (hash, public_key, type);
-
-ELSE
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='signature' AND column_name='public_key'
-            AND character_maximum_length >= 500) THEN
-        
-        ALTER TABLE public.signature
-            ALTER COLUMN public_key TYPE character varying(500);
-        
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='signature' AND column_name='signature'
-            AND character_maximum_length >= 400) THEN
-        
-        ALTER TABLE public.signature
-            ALTER COLUMN signature TYPE character varying(400);
-        
-    END IF;
 
 END IF;
 
