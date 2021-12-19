@@ -1,10 +1,58 @@
 import { PoolClient } from 'pg';
+import { canonicalizeFact } from "../fact/hash";
 import { Query } from '../query/query';
 import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
 import { makeEdgeRecords } from './edge-record';
 import { sqlFromSteps } from './sql';
+
+interface FactTypeResult {
+    rows: {
+        fact_type_id: number;
+        name: string;
+    }[];
+}
+
+interface FactResult {
+    rows: {
+        fact_id: number;
+        fact_type_id: number;
+        hash: string;
+    }[];
+}
+
+type FactTypeMap = Map<string, number>;
+
+function emptyFactTypeMap() {
+    return new Map<string, number>();
+}
+
+function addFactType(map: FactTypeMap, name: string, fact_type_id: number) {
+    return map.set(name, fact_type_id);
+}
+
+type FactMap = Map<string, Map<number, number>>;
+
+function emptyFactMap() {
+    return new Map<string, Map<number, number>>();
+}
+
+function addFact(map: FactMap, hash: string, fact_type_id: number, fact_id: number) {
+    const typeMap = map.get(hash) || new Map<number, number>();
+    const modifiedTypeMap = typeMap.set(fact_type_id, fact_id);
+    return map.set(hash, modifiedTypeMap);
+}
+
+function hasFact(map: FactMap, hash: string, fact_type_id: number) {
+    const typeMap = map.get(hash);
+    return typeMap && typeMap.has(fact_type_id);
+}
+
+function getFactId(map: FactMap, hash: string, fact_type_id: number) {
+    const typeMap = map.get(hash) || new Map<number, number>();
+    return typeMap.get(fact_type_id);
+}
 
 function loadFactRecord(r: Row): FactRecord {
     return {
@@ -52,10 +100,11 @@ export class PostgresStore implements Storage {
             }
             return await this.connectionFactory.withTransaction(async (connection) => {
                 const factTypes = await storeFactTypes(facts, connection);
-                const newFacts = await filterNewFacts(facts, factTypes, connection);
-                await insertEdges(newFacts, connection);
-                await insertFacts(newFacts, connection);
-                await insertSignatures(envelopes, connection);
+                const existingFacts = await findExistingFacts(facts, factTypes, connection);
+                const newFacts = facts.filter(f => !hasFact(existingFacts, f.hash, factTypes.get(f.type)));
+                await insertFacts(newFacts, factTypes, connection);
+                // await insertEdges(newFacts, connection);
+                // await insertSignatures(envelopes, connection);
                 return envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
             });
@@ -114,21 +163,14 @@ export class PostgresStore implements Storage {
     }
 }
 
-interface FactTypeResult {
-    rows: {
-        fact_type_id: number;
-        name: string;
-    }[];
-}
-
 async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
     // Look up existing fact types
     const types = facts.map(fact => fact.type);
     const lookUpSql = 'SELECT name, fact_type_id FROM public.fact_type WHERE name=ANY($1);';
     const { rows: existingRows }: FactTypeResult = await connection.query(lookUpSql, [types]);
     const factTypeIds = existingRows.reduce(
-        (map, row) => map.set(row.name, row.fact_type_id),
-        new Map<string, number>()
+        (map, row) => addFactType(map, row.name, row.fact_type_id),
+        emptyFactTypeMap()
     );
     const remainingNames = types.filter(type => !factTypeIds.has(type));
     if (remainingNames.length === 0) {
@@ -144,29 +186,55 @@ async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
         throw new Error('Failed to insert all new fact types.');
     }
     const allFactTypeIds = newRows.reduce(
-        (map, row) => map.set(row.name, row.fact_type_id),
+        (map, row) => addFactType(map, row.name, row.fact_type_id),
         factTypeIds
     );
     return allFactTypeIds;
 }
 
-async function filterNewFacts(facts: FactRecord[], factTypes: Map<string, number>, connection: PoolClient) {
+async function findExistingFacts(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
     if (facts.length > 0) {
         const factValues = facts.map((f, i) =>
-            '($' + (i * 2 + 1) + ', $' + (i * 2 + 2) + '::integer)');
+            `(\$${i * 2 + 1}, \$${i * 2 + 2}::integer)`);
         const factParameters = flatten(facts, (f) =>
             [f.hash, factTypes.get(f.type)]);
 
-        const { rows } = await connection.query('SELECT hash, fact_type_id' +
-            '  FROM (VALUES ' + factValues.join(', ') + ') AS v(hash, fact_type_id)' +
-            '  WHERE NOT EXISTS (SELECT 1 FROM public.fact' +
-            '   WHERE fact.hash = v.hash AND fact.fact_type_id = v.fact_type_id);', factParameters);
-            
-        const newFactReferences = rows.map(loadFactReference);
-        return facts.filter(f => newFactReferences.some(factReferenceEquals(f)));
+        const sql = 'SELECT fact_id, fact.fact_type_id, fact.hash' +
+            ' FROM public.fact' +
+            ' JOIN (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id)' +
+            ' ON v.fact_type_id = fact.fact_type_id AND v.hash = fact.hash;';
+        const { rows }: FactResult = await connection.query(sql, factParameters);
+        const existingFacts = rows.reduce(
+            (map, row) => addFact(map, row.hash, row.fact_type_id, row.fact_id),
+            emptyFactMap()
+        );
+        return existingFacts;
     }
     else {
-        return [];
+        return emptyFactMap();
+    }
+}
+
+async function insertFacts(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
+    if (facts.length > 0) {
+        const factValues = facts.map((f, i) =>
+            `(\$${i * 3 + 1}, \$${i * 3 + 2}::integer, \$${i * 3 + 3})`);
+        const factParameters = flatten(facts, (f) =>
+            [f.hash, factTypes.get(f.type), canonicalizeFact(f.fields, f.predecessors)]);
+
+        const sql = 'INSERT INTO public.fact (hash, fact_type_id, data)' +
+            ' (SELECT hash, fact_type_id, to_jsonb(data)' +
+            '  FROM (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id, data))' +
+            ' RETURNING fact_id, fact_type_id, hash;';
+        const { rows }: FactResult = await connection.query(sql, factParameters);
+        const newFacts = rows.reduce(
+            (map, row) => addFact(map, row.hash, row.fact_type_id, row.fact_id),
+            emptyFactMap()
+        );
+        return newFacts;
+    }
+    else {
+        return emptyFactMap();
     }
 }
 
@@ -182,21 +250,6 @@ async function insertEdges(facts: FactRecord[], connection: PoolClient) {
             ' (predecessor_hash, predecessor_type, successor_hash, successor_type, role)' +
             ' (VALUES ' + edgeValues.join(', ') + ')' +
             ' ON CONFLICT DO NOTHING', edgeParameters);
-    }
-}
-
-async function insertFacts(facts: FactRecord[], connection: PoolClient) {
-    if (facts.length > 0) {
-        const factValues = facts.map((f, i) =>
-            '($' + (i * 4 + 1) + ', $' + (i * 4 + 2) + ', $' + (i * 4 + 3) + ', $' + (i * 4 + 4) + ')');
-        const factParameters = flatten(facts, (f) =>
-            [f.hash, f.type, JSON.stringify(f.fields), JSON.stringify(f.predecessors)]);
-
-        await connection.query('INSERT INTO public.fact' +
-            ' (hash, type, fields, predecessors)' +
-            ' (SELECT hash, type, to_jsonb(fields), to_jsonb(predecessors)' +
-            '  FROM (VALUES ' + factValues.join(', ') + ') AS v(hash, type, fields, predecessors))' +
-            ' ON CONFLICT DO NOTHING', factParameters);
     }
 }
 
