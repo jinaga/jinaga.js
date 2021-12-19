@@ -1,5 +1,5 @@
 import { HttpConnection, HttpResponse } from "./web-client";
-import { delay } from '../util/primise';
+import { delay } from '../util/promise';
 
 export class FetchConnection implements HttpConnection {
   constructor(

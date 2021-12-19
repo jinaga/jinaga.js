@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg';
+import { delay } from "../util/promise";
 
 export type Row = { [key: string]: any };
 
@@ -27,12 +28,27 @@ export class ConnectionFactory {
     }
 
     async with<T>(callback: (connection: PoolClient) => Promise<T>) {
-        const client = await this.createClient();
-        try {
-            return await callback(client);
-        }
-        finally {
-            client.release();
+        let attempt = 0;
+        const pause = [0, 0, 1000, 5000, 15000, 30000];
+        while (attempt < pause.length) {
+            try {
+                const client = await this.createClient();
+                try {
+                    return await callback(client);
+                }
+                finally {
+                    client.release();
+                }
+            }
+            catch (e) {
+                attempt++;
+                if (attempt === pause.length) {
+                    throw e;
+                }
+            }
+            if (pause[attempt] > 0) {
+                await delay(pause[attempt]);
+            }
         }
     }
 
