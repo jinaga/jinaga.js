@@ -19,6 +19,10 @@ export class AuthenticationTest implements Authentication {
     this.authorizationEngine = authorizationRules &&
       new AuthorizationEngine(authorizationRules, inner);
   }
+
+  async close() {
+    await this.inner.close();
+  }
   
   async login() {
     if (!this.userFact) {

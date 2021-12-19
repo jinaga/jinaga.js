@@ -3,7 +3,7 @@ const { JinagaServer } = require("./jinaga");
 
 describe("Jinaga", () => {
     it("should save a fact", async () => {
-        const { j } = JinagaServer.create({
+        const { j, close } = JinagaServer.create({
             pgKeystore: "postgresql://dev:devpw@db:5432/integrationtest",
             pgStore:    "postgresql://dev:devpw@db:5432/integrationtest"
         });
@@ -14,5 +14,7 @@ describe("Jinaga", () => {
         });
 
         expect(root.identifier).to.equal("test-root");
+
+        await close();
     })
 })

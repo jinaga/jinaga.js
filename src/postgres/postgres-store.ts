@@ -39,6 +39,10 @@ export class PostgresStore implements Storage {
     constructor (postgresUri: string) {
         this.connectionFactory = new ConnectionFactory(postgresUri);
     }
+
+    async close() {
+        await this.connectionFactory.close();
+    }
     
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         if (envelopes.length > 0) {

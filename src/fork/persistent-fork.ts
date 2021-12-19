@@ -58,6 +58,10 @@ export class PersistentFork implements Fork {
         })().catch(err => Trace.error(err));
     }
 
+    async close(): Promise<void> {
+        await this.feed.close();
+    }
+
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         await this.queue.enqueue(envelopes);
         this.sendAndDequeue(envelopes);

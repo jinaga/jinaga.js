@@ -33,7 +33,8 @@ export type JinagaServerConfig = {
 export type JinagaServerInstance = {
     handler: Handler,
     j: Jinaga,
-    withSession: (req: Request, callback: ((j: Jinaga) => Promise<void>)) => Promise<void>
+    withSession: (req: Request, callback: ((j: Jinaga) => Promise<void>)) => Promise<void>,
+    close: () => Promise<void>
 };
 
 const localDeviceIdentity = {
@@ -47,18 +48,24 @@ export class JinagaServer {
         const store = createStore(config);
         const feed = new FeedImpl(store);
         const fork = createFork(config, feed, syncStatusNotifier);
-        const authorization = createAuthorization(config, fork);
-        const router = new HttpRouter(authorization);
         const keystore = new PostgresKeystore(config.pgKeystore);
+        const authorization = createAuthorization(config, fork, keystore);
+        const router = new HttpRouter(authorization);
         const authentication = new AuthenticationDevice(fork, keystore, localDeviceIdentity);
         const memory = new MemoryStore();
         const j: Jinaga = new Jinaga(authentication, memory, syncStatusNotifier);
+
+        async function close() {
+            await keystore.close();
+            await store.close();
+        }
         return {
             handler: router.handler,
             j,
             withSession: (req, callback) => {
                 return withSession(feed, keystore, req, callback);
-            }
+            },
+            close
         }
     }
 }
@@ -89,9 +96,8 @@ function createFork(config: JinagaServerConfig, feed: Feed, syncStatusNotifier: 
     }
 }
 
-function createAuthorization(config: JinagaServerConfig, feed: Feed): Authorization {
-    if (config.pgKeystore) {
-        const keystore = new PostgresKeystore(config.pgKeystore);
+function createAuthorization(config: JinagaServerConfig, feed: Feed, keystore: Keystore | null): Authorization {
+    if (keystore) {
         const authorizationRules = config.authorization ? config.authorization(new AuthorizationRules()) : null;
         const authorization = new AuthorizationKeystore(feed, keystore, authorizationRules);
         return authorization;

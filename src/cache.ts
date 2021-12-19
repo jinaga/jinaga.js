@@ -21,4 +21,8 @@ export class Cache implements Storage {
     load(references: FactReference[]) {
         return this.inner.load(references);
     }
+
+    close() {
+        return this.inner.close();
+    }
 }

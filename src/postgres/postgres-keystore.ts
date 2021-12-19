@@ -13,6 +13,10 @@ export class PostgresKeystore implements Keystore {
         this.connectionFactory = new ConnectionFactory(postgresUri);
     }
 
+    async close() {
+        await this.connectionFactory.close();
+    }
+
     getUserFact(userIdentity: UserIdentity): Promise<FactRecord> {
         return this.getIdentityFact('Jinaga.User', userIdentity);
     }

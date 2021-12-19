@@ -6,6 +6,10 @@ import { FactRecord, FactSignature, PredecessorCollection } from "../storage";
 export class MemoryKeystore implements Keystore {
     private keyPairs: { [key: string]: { publicKey: string, privateKey: string }} = {};
 
+    close(): Promise<void> {
+        return Promise.resolve();
+    }
+
     getUserFact(userIdentity: UserIdentity): Promise<FactRecord> {
         return Promise.resolve(this.getIdentityFact('Jinaga.User', userIdentity));
     }

@@ -12,6 +12,10 @@ export class ConnectionFactory {
         });
     }
 
+    async close() {
+        await this.postgresPool.end();
+    }
+
     withTransaction<T>(callback: (connection: PoolClient) => Promise<T>) {
         return this.with(async connection => {
             try {

@@ -15,6 +15,11 @@ export class AuthenticationSession implements Authentication {
         private localDeviceIdentity: UserIdentity
     ) {}
 
+    async close(): Promise<void> {
+        await this.inner.close();
+        await this.keystore.close();
+    }
+    
     async login(): Promise<LoginResponse> {
         const userFact = await this.keystore.getUserFact(this.userIdentity);
         return {
