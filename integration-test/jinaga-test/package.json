@@ -1,0 +1,20 @@
+{
+  "name": "jinaga-test",
+  "version": "1.0.0",
+  "description": "Integration tests for Jinaga.JS",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "author": "Michael L Perry",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.17.2",
+    "jest": "^27.4.5",
+    "node-forge": "^0.10.0",
+    "passport": "^0.5.2",
+    "pg": "^8.7.1",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  }
+}

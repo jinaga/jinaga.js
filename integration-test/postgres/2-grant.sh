@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$APP_DATABASE" <<-EOSQL
+    GRANT SELECT,INSERT ON TABLE public.edge TO $APP_USERNAME;
+    GRANT SELECT,INSERT ON TABLE public.fact TO $APP_USERNAME;
+    GRANT SELECT,INSERT ON TABLE public.user TO $APP_USERNAME;
+    GRANT SELECT,INSERT ON TABLE public.signature TO $APP_USERNAME;
+EOSQL
