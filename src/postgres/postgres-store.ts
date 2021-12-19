@@ -114,35 +114,40 @@ export class PostgresStore implements Storage {
     }
 }
 
+interface FactTypeResult {
+    rows: {
+        fact_type_id: number;
+        name: string;
+    }[];
+}
+
 async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
     // Look up existing fact types
     const types = facts.map(fact => fact.type);
-    const factTypeIds = await loadFactTypeIds(connection, types);
-    const remainingNames = types.filter(type => !factTypeIds.has(type));
-
-    // Insert new fact types
-    if (remainingNames.length > 0) {
-        const sql = 'INSERT INTO public.fact_type (name) VALUES ' +
-            remainingNames.map((name, index) => `($${index+1})`).join(', ') +
-            ' ON CONFLICT DO NOTHING;';
-        await connection.query(sql, remainingNames);
-        return await loadFactTypeIds(connection, types);
-    }
-    else {
-        return factTypeIds;
-    }
-}
-
-async function loadFactTypeIds(connection: PoolClient, types: string[]) {
-    const sql = 'SELECT name, fact_type_id FROM public.fact_type WHERE name=ANY($1);';
-    const { rows }: {
-        rows: { name: string; fact_type_id: number; }[];
-    } = await connection.query(sql, [types]);
-    const factTypeIds = rows.reduce(
+    const lookUpSql = 'SELECT name, fact_type_id FROM public.fact_type WHERE name=ANY($1);';
+    const { rows: existingRows }: FactTypeResult = await connection.query(lookUpSql, [types]);
+    const factTypeIds = existingRows.reduce(
         (map, row) => map.set(row.name, row.fact_type_id),
         new Map<string, number>()
     );
-    return factTypeIds;
+    const remainingNames = types.filter(type => !factTypeIds.has(type));
+    if (remainingNames.length === 0) {
+        return factTypeIds;
+    }
+
+    // Insert new fact types
+    const insertSql = 'INSERT INTO public.fact_type (name) VALUES ' +
+        remainingNames.map((name, index) => `($${index+1})`).join(', ') +
+        ' RETURNING fact_type_id, name;';
+    const { rows: newRows }: FactTypeResult = await connection.query(insertSql, remainingNames);
+    if (newRows.length !== remainingNames.length) {
+        throw new Error('Failed to insert all new fact types.');
+    }
+    const allFactTypeIds = newRows.reduce(
+        (map, row) => map.set(row.name, row.fact_type_id),
+        factTypeIds
+    );
+    return allFactTypeIds;
 }
 
 async function filterNewFacts(facts: FactRecord[], factTypes: Map<string, number>, connection: PoolClient) {
