@@ -47,7 +47,8 @@ export class PostgresStore implements Storage {
                 throw new Error('Attempted to save a fact with no hash or type.');
             }
             return await this.connectionFactory.withTransaction(async (connection) => {
-                const newFacts = await filterNewFacts(facts, connection);
+                const factTypes = await storeFactTypes(facts, connection);
+                const newFacts = await filterNewFacts(facts, factTypes, connection);
                 await insertEdges(newFacts, connection);
                 await insertFacts(newFacts, connection);
                 await insertSignatures(envelopes, connection);
@@ -109,17 +110,48 @@ export class PostgresStore implements Storage {
     }
 }
 
-async function filterNewFacts(facts: FactRecord[], connection: PoolClient) {
+async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
+    // Look up existing fact types
+    const types = facts.map(fact => fact.type);
+    const factTypeIds = await loadFactTypeIds(connection, types);
+    const remainingNames = types.filter(type => !factTypeIds.has(type));
+
+    // Insert new fact types
+    if (remainingNames.length > 0) {
+        const sql = 'INSERT INTO public.fact_type (name) VALUES ' +
+            remainingNames.map((name, index) => `($${index+1})`).join(', ') +
+            ' ON CONFLICT DO NOTHING;';
+        await connection.query(sql, remainingNames);
+        return await loadFactTypeIds(connection, types);
+    }
+    else {
+        return factTypeIds;
+    }
+}
+
+async function loadFactTypeIds(connection: PoolClient, types: string[]) {
+    const sql = 'SELECT name, fact_type_id FROM public.fact_type WHERE name=ANY($1);';
+    const { rows }: {
+        rows: { name: string; fact_type_id: number; }[];
+    } = await connection.query(sql, [types]);
+    const factTypeIds = rows.reduce(
+        (map, row) => map.set(row.name, row.fact_type_id),
+        new Map<string, number>()
+    );
+    return factTypeIds;
+}
+
+async function filterNewFacts(facts: FactRecord[], factTypes: Map<string, number>, connection: PoolClient) {
     if (facts.length > 0) {
         const factValues = facts.map((f, i) =>
-            '($' + (i * 2 + 1) + ', $' + (i * 2 + 2) + ')');
+            '($' + (i * 2 + 1) + ', $' + (i * 2 + 2) + '::integer)');
         const factParameters = flatten(facts, (f) =>
-            [f.hash, f.type]);
+            [f.hash, factTypes.get(f.type)]);
 
-        const { rows } = await connection.query('SELECT hash, type' +
-            '  FROM (VALUES ' + factValues.join(', ') + ') AS v(hash, type)' +
+        const { rows } = await connection.query('SELECT hash, fact_type_id' +
+            '  FROM (VALUES ' + factValues.join(', ') + ') AS v(hash, fact_type_id)' +
             '  WHERE NOT EXISTS (SELECT 1 FROM public.fact' +
-            '   WHERE fact.hash = v.hash AND fact.type = v.type)', factParameters);
+            '   WHERE fact.hash = v.hash AND fact.fact_type_id = v.fact_type_id);', factParameters);
             
         const newFactReferences = rows.map(loadFactReference);
         return facts.filter(f => newFactReferences.some(factReferenceEquals(f)));
