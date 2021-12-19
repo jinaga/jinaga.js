@@ -5,7 +5,7 @@ COPY package-lock.json .
 RUN npm install
 
 COPY jinaga.js .
-COPY jinaga.js.map .
+COPY index.js.map .
 COPY jinaga.test.js .
 
 ENTRYPOINT [ "npm", "test" ]
