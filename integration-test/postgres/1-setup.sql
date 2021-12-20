@@ -55,11 +55,7 @@ IF (SELECT to_regclass('public.role')) IS NULL THEN
         CONSTRAINT fk_defining_fact_type_id
             FOREIGN KEY (defining_fact_type_id)
             REFERENCES fact_type (fact_type_id),
-        name character varying(20) NOT NULL,
-        predecessor_fact_type_id integer NOT NULL,
-        CONSTRAINT fk_predecessor_fact_type_id
-            FOREIGN KEY (predecessor_fact_type_id)
-            REFERENCES fact_type (fact_type_id)
+        name character varying(20) NOT NULL
     );
 
 
