@@ -2,7 +2,7 @@ import { PoolClient } from 'pg';
 import { canonicalizeFact } from "../fact/hash";
 import { Query } from '../query/query';
 import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
-import { flatten } from '../util/fn';
+import { distinct, flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
 import { makeEdgeRecords } from './edge-record';
 import { sqlFromSteps } from './sql';
@@ -11,6 +11,14 @@ interface FactTypeResult {
     rows: {
         fact_type_id: number;
         name: string;
+    }[];
+}
+
+interface RoleResult {
+    rows: {
+        role_id: number;
+        name: string;
+        defining_fact_type_id: number;
     }[];
 }
 
@@ -30,6 +38,23 @@ function emptyFactTypeMap() {
 
 function addFactType(map: FactTypeMap, name: string, fact_type_id: number) {
     return map.set(name, fact_type_id);
+}
+
+type RoleMap = Map<number, Map<string, number>>;
+
+function emptyRoleMap() {
+    return new Map<number, Map<string, number>>();
+}
+
+function addRole(map: RoleMap, defining_fact_type_id: number, name: string, role_id: number) {
+    const factTypeRoles = map.get(defining_fact_type_id) || new Map<string, number>();
+    const modifiedFactTypeRoles = factTypeRoles.set(name, role_id);
+    return map.set(defining_fact_type_id, modifiedFactTypeRoles);
+}
+
+function hasRole(map: RoleMap, defining_fact_type_id: number, name: string) {
+    const roleMap = map.get(defining_fact_type_id);
+    return roleMap && roleMap.has(name);
 }
 
 type FactMap = Map<string, Map<number, number>>;
@@ -102,8 +127,9 @@ export class PostgresStore implements Storage {
                 const factTypes = await storeFactTypes(facts, connection);
                 const existingFacts = await findExistingFacts(facts, factTypes, connection);
                 const newFacts = facts.filter(f => !hasFact(existingFacts, f.hash, factTypes.get(f.type)));
-                await insertFacts(newFacts, factTypes, connection);
-                // await insertEdges(newFacts, connection);
+                const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
+                const roles = await storeRoles(newFacts, factTypes, connection);
+                // await insertEdges(newFacts, allFacts, factTypes, connection);
                 // await insertSignatures(envelopes, connection);
                 return envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
@@ -165,7 +191,7 @@ export class PostgresStore implements Storage {
 
 async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
     // Look up existing fact types
-    const types = facts.map(fact => fact.type);
+    const types = facts.map(fact => fact.type).filter(distinct);
     const lookUpSql = 'SELECT name, fact_type_id FROM public.fact_type WHERE name=ANY($1);';
     const { rows: existingRows }: FactTypeResult = await connection.query(lookUpSql, [types]);
     const factTypeIds = existingRows.reduce(
@@ -178,8 +204,8 @@ async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
     }
 
     // Insert new fact types
-    const insertSql = 'INSERT INTO public.fact_type (name) VALUES ' +
-        remainingNames.map((name, index) => `($${index+1})`).join(', ') +
+    const values = remainingNames.map((name, index) => `($${index + 1})`);
+    const insertSql = 'INSERT INTO public.fact_type (name) VALUES ' + values.join(', ') +
         ' RETURNING fact_type_id, name;';
     const { rows: newRows }: FactTypeResult = await connection.query(insertSql, remainingNames);
     if (newRows.length !== remainingNames.length) {
@@ -190,6 +216,65 @@ async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
         factTypeIds
     );
     return allFactTypeIds;
+}
+
+async function storeRoles(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
+    // Find distinct roles
+    const roles = flatten(facts, fact => {
+        const defining_fact_type_id = factTypes.get(fact.type);
+        return Object.keys(fact.predecessors).map(role => ({
+            role,
+            defining_fact_type_id
+        }));
+    }).filter((role, index, array) => array.findIndex(r =>
+        r.role === role.role &&
+        r.defining_fact_type_id === role.defining_fact_type_id
+    ) === index);
+
+    if (roles.length > 0) {
+        const roleValues = roles.map((role, index) =>
+            `($${index * 2 + 1}, $${index * 2 + 2}::integer)`);
+        const roleParameters = flatten(roles, (role) => [
+            role.role,
+            role.defining_fact_type_id
+        ]);
+
+        // Look up existing roles
+        const lookUpSql = 'SELECT role.name, role.defining_fact_type_id, role.role_id' +
+            ' FROM public.role' +
+            ' JOIN (VALUES ' + roleValues.join(', ') + ') AS v (name, defining_fact_type_id)' +
+            ' ON v.name = role.name AND v.defining_fact_type_id = role.defining_fact_type_id;';
+        const { rows: existingRows }: RoleResult = await connection.query(lookUpSql, roleParameters);
+        const roleIds = existingRows.reduce(
+            (map, row) => addRole(map, row.defining_fact_type_id, row.name, row.role_id),
+            emptyRoleMap()
+        );
+        const remainingRoles = roles.filter(role => !hasRole(
+            roleIds, role.defining_fact_type_id, role.role));
+        if (remainingRoles.length === 0) {
+            return roleIds;
+        }
+
+        // Insert new roles
+        const remainingRoleValues = remainingRoles.map((role, index) =>
+            `($${index * 2 + 1}, $${index * 2 + 2}::integer)`);
+        const insertSql = 'INSERT INTO public.role (name, defining_fact_type_id) VALUES ' +
+            remainingRoleValues.join(', ') +
+            ' RETURNING role_id, name, defining_fact_type_id;';
+        const remainingRoleParameters = flatten(remainingRoles, (role) => [
+            role.role,
+            role.defining_fact_type_id
+        ]);
+        const { rows: newRows }: RoleResult = await connection.query(insertSql, remainingRoleParameters);
+        if (newRows.length !== remainingRoles.length) {
+            throw new Error('Failed to insert all new roles.');
+        }
+        const allRoleIds = newRows.reduce(
+            (map, row) => addRole(map, row.defining_fact_type_id, row.name, row.role_id),
+            roleIds
+        );
+        return allRoleIds;
+    }
 }
 
 async function findExistingFacts(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
@@ -215,7 +300,7 @@ async function findExistingFacts(facts: FactRecord[], factTypes: FactTypeMap, co
     }
 }
 
-async function insertFacts(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
+async function insertFacts(facts: FactRecord[], factTypes: FactTypeMap, existingFacts: FactMap, connection: PoolClient) {
     if (facts.length > 0) {
         const factValues = facts.map((f, i) =>
             `(\$${i * 3 + 1}, \$${i * 3 + 2}::integer, \$${i * 3 + 3})`);
@@ -227,18 +312,21 @@ async function insertFacts(facts: FactRecord[], factTypes: FactTypeMap, connecti
             '  FROM (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id, data))' +
             ' RETURNING fact_id, fact_type_id, hash;';
         const { rows }: FactResult = await connection.query(sql, factParameters);
-        const newFacts = rows.reduce(
+        if (rows.length !== facts.length) {
+            throw new Error('Failed to insert all new facts.');
+        }
+        const allFacts = rows.reduce(
             (map, row) => addFact(map, row.hash, row.fact_type_id, row.fact_id),
-            emptyFactMap()
+            existingFacts
         );
-        return newFacts;
+        return allFacts;
     }
     else {
         return emptyFactMap();
     }
 }
 
-async function insertEdges(facts: FactRecord[], connection: PoolClient) {
+async function insertEdges(facts: FactRecord[], allFacts: FactMap, factTypes: FactTypeMap, connection: PoolClient) {
     const edgeRecords = flatten(facts, makeEdgeRecords);
     if (edgeRecords.length > 0) {
         const edgeValues = edgeRecords.map((e, i) =>
