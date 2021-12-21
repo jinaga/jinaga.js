@@ -139,6 +139,7 @@ export class PostgresStore implements Storage {
                 const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
                 const roles = await storeRoles(newFacts, factTypes, connection);
                 await insertEdges(newFacts, allFacts, roles, factTypes, connection);
+                await insertAncestors(newFacts, allFacts, factTypes, connection);
                 // await insertSignatures(envelopes, connection);
                 return envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
@@ -350,6 +351,38 @@ async function insertEdges(facts: FactRecord[], allFacts: FactMap, roles: RoleMa
             ' (role_id, successor_fact_id, predecessor_fact_id)' +
             ' (VALUES ' + edgeValues.join(', ') + ')' +
             ' ON CONFLICT DO NOTHING', edgeParameters);
+    }
+}
+
+async function insertAncestors(facts: FactRecord[], allFacts: FactMap, factTypes: FactTypeMap, connection: PoolClient) {
+    // This function assumes that the facts are listed in topological order.
+    // A fact always appears later in the list than its predecessors.
+    // Let's check that by keeping track of all predecessors assumed to have been inserted.
+    const insertedPredecessors = new Set<number>();
+    for (const fact of facts) {
+        const factId = getFactId(allFacts, fact.hash, getFactTypeId(factTypes, fact.type));
+        if (insertedPredecessors.has(factId)) {
+            // We just found a fact after it was supposed to have been inserted.
+            throw new Error('Facts are not in topological order.');
+        }
+        const predecessorIds = makeEdgeRecords(fact).map(e =>
+            getFactId(allFacts, e.predecessor_hash, getFactTypeId(factTypes, e.predecessor_type)));
+        predecessorIds.forEach(predecessorId => insertedPredecessors.add(predecessorId));
+        if (predecessorIds.length > 0) {
+            const values = predecessorIds.map((id, index) => `($${index + 2}::integer)`).join(', ');
+            const parameters = [factId, ...predecessorIds];
+            const sql = 'INSERT INTO public.ancestor' +
+                ' (fact_id, ancestor_fact_id)' +
+                ' SELECT $1::integer, predecessor_fact_id' +
+                ' FROM (VALUES ' + values + ') AS v (predecessor_fact_id)' +
+                ' UNION ALL' +
+                ' SELECT $1::integer, ancestor_fact_id' +
+                ' FROM (VALUES ' + values + ') AS v (predecessor_fact_id)' +
+                ' JOIN public.ancestor' +
+                '  ON ancestor.fact_id = predecessor_fact_id' +
+                ' ON CONFLICT DO NOTHING;';
+            await connection.query(sql, parameters);
+        }
     }
 }
 
