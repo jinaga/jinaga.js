@@ -40,6 +40,10 @@ function addFactType(map: FactTypeMap, name: string, fact_type_id: number) {
     return map.set(name, fact_type_id);
 }
 
+function getFactTypeId(map: FactTypeMap, name: string) {
+    return map.get(name);
+}
+
 type RoleMap = Map<number, Map<string, number>>;
 
 function emptyRoleMap() {
@@ -55,6 +59,11 @@ function addRole(map: RoleMap, defining_fact_type_id: number, name: string, role
 function hasRole(map: RoleMap, defining_fact_type_id: number, name: string) {
     const roleMap = map.get(defining_fact_type_id);
     return roleMap && roleMap.has(name);
+}
+
+function getRoleId(map: RoleMap, defining_fact_type_id: number, name: string) {
+    const roleMap = map.get(defining_fact_type_id);
+    return roleMap && roleMap.get(name);
 }
 
 type FactMap = Map<string, Map<number, number>>;
@@ -129,7 +138,7 @@ export class PostgresStore implements Storage {
                 const newFacts = facts.filter(f => !hasFact(existingFacts, f.hash, factTypes.get(f.type)));
                 const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
                 const roles = await storeRoles(newFacts, factTypes, connection);
-                // await insertEdges(newFacts, allFacts, factTypes, connection);
+                await insertEdges(newFacts, allFacts, roles, factTypes, connection);
                 // await insertSignatures(envelopes, connection);
                 return envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
@@ -326,16 +335,19 @@ async function insertFacts(facts: FactRecord[], factTypes: FactTypeMap, existing
     }
 }
 
-async function insertEdges(facts: FactRecord[], allFacts: FactMap, factTypes: FactTypeMap, connection: PoolClient) {
+async function insertEdges(facts: FactRecord[], allFacts: FactMap, roles: RoleMap, factTypes: FactTypeMap, connection: PoolClient) {
     const edgeRecords = flatten(facts, makeEdgeRecords);
     if (edgeRecords.length > 0) {
         const edgeValues = edgeRecords.map((e, i) =>
-            '($' + (i * 5 + 1) + ', $' + (i * 5 + 2) + ', $' + (i * 5 + 3) + ', $' + (i * 5 + 4) + ', $' + (i * 5 + 5) + ')');
-        const edgeParameters = flatten(edgeRecords, (e) =>
-            [e.predecessor_hash, e.predecessor_type, e.successor_hash, e.successor_type, e.role]);
+            `(\$${i * 3 + 1}::integer, \$${i * 3 + 2}::integer, \$${i * 3 + 3}::integer)`);
+        const edgeParameters = flatten(edgeRecords, (e) => [
+            getRoleId(roles, getFactTypeId(factTypes, e.successor_type), e.role),
+            getFactId(allFacts, e.successor_hash, getFactTypeId(factTypes, e.successor_type)),
+            getFactId(allFacts, e.predecessor_hash, getFactTypeId(factTypes, e.predecessor_type))
+        ]);
 
         await connection.query('INSERT INTO public.edge' +
-            ' (predecessor_hash, predecessor_type, successor_hash, successor_type, role)' +
+            ' (role_id, successor_fact_id, predecessor_fact_id)' +
             ' (VALUES ' + edgeValues.join(', ') + ')' +
             ' ON CONFLICT DO NOTHING', edgeParameters);
     }
