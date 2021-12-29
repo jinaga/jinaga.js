@@ -153,16 +153,22 @@ export class PostgresStore implements Storage {
                 const factTypes = await storeFactTypes(facts, connection);
                 const existingFacts = await findExistingFacts(facts, factTypes, connection);
                 const newFacts = facts.filter(f => !hasFact(existingFacts, f.hash, factTypes.get(f.type)));
+                if (newFacts.length === 0) {
+                    return [];
+                }
+
                 const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
                 const roles = await storeRoles(newFacts, factTypes, connection);
                 await insertEdges(newFacts, allFacts, roles, factTypes, connection);
                 await insertAncestors(newFacts, allFacts, factTypes, connection);
                 const newEnvelopes = envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
-                if (newEnvelopes.length > 0) {
-                    const publicKeys = await storePublicKeys(newEnvelopes, connection);
-                    await insertSignatures(newEnvelopes, allFacts, factTypes, publicKeys, connection);
+                if (newEnvelopes.length === 0) {
+                    return [];
                 }
+
+                const publicKeys = await storePublicKeys(newEnvelopes, connection);
+                await insertSignatures(newEnvelopes, allFacts, factTypes, publicKeys, connection);
                 return newEnvelopes;
             });
         }
