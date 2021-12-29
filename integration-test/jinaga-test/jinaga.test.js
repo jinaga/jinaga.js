@@ -25,6 +25,19 @@ describe("Jinaga", () => {
         expect(root.identifier).to.equal("test-root");
     });
 
+    it("should save a fact twice", async () => {
+        await j.fact({
+            type: "IntegrationTest.Root",
+            identifier: "test-root"
+        });
+        const root = await j.fact({
+            type: "IntegrationTest.Root",
+            identifier: "test-root"
+        });
+
+        expect(root.identifier).to.equal("test-root");
+    });
+
     it("should save a successor fact", async () => {
         const root = await j.fact({
             type: "IntegrationTest.Root",
@@ -39,5 +52,41 @@ describe("Jinaga", () => {
 
         expect(successor.identifier).to.equal("test-successor");
         expect(successor.predecessor).to.deep.equal(root);
+    });
+
+    it("should save a successor fact twice", async () => {
+        const root = await j.fact({
+            type: "IntegrationTest.Root",
+            identifier: "test-root"
+        });
+
+        await j.fact({
+            type: "IntegrationTest.Successor",
+            identifier: "test-successor",
+            predecessor: root
+        });
+        const successor = await j.fact({
+            type: "IntegrationTest.Successor",
+            identifier: "test-successor",
+            predecessor: root
+        });
+
+        expect(successor.identifier).to.equal("test-successor");
+        expect(successor.predecessor).to.deep.equal(root);
+    });
+
+
+    it("should save multiple facts", async () => {
+        const successor = await j.fact({
+            type: "IntegrationTest.Successor",
+            identifier: "test-successor",
+            predecessor: {
+                type: "IntegrationTest.Root",
+                identifier: "test-root"
+            }
+        });
+
+        expect(successor.identifier).to.equal("test-successor");
+        expect(successor.predecessor.identifier).to.equal("test-root");
     });
 })
