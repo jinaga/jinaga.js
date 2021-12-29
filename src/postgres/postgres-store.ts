@@ -101,6 +101,10 @@ function emptyPublicKeyMap() {
     return new Map<string, number>();
 }
 
+function getPublicKeyId(publicKeyMap: PublicKeyMap, publicKey: string) {
+    return publicKeyMap.get(publicKey);
+}
+
 function loadFactRecord(r: Row): FactRecord {
     return {
         type: r.type,
@@ -153,10 +157,13 @@ export class PostgresStore implements Storage {
                 const roles = await storeRoles(newFacts, factTypes, connection);
                 await insertEdges(newFacts, allFacts, roles, factTypes, connection);
                 await insertAncestors(newFacts, allFacts, factTypes, connection);
-                const publicKeys = await storePublicKeys(envelopes, connection);
-                // await insertSignatures(envelopes, connection);
-                return envelopes.filter(envelope => newFacts.some(
+                const newEnvelopes = envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
+                if (newEnvelopes.length > 0) {
+                    const publicKeys = await storePublicKeys(newEnvelopes, connection);
+                    await insertSignatures(newEnvelopes, allFacts, factTypes, publicKeys, connection);
+                }
+                return newEnvelopes;
             });
         }
         else {
@@ -430,25 +437,22 @@ async function storePublicKeys(envelopes: FactEnvelope[], connection: PoolClient
     return allPublicKeyIds;
 }
 
-async function insertSignatures(envelopes: FactEnvelope[], connection: PoolClient) {
+async function insertSignatures(envelopes: FactEnvelope[], allFacts: FactMap, factTypes: FactTypeMap, publicKey: PublicKeyMap, connection: PoolClient) {
     const signatureRecords = flatten(envelopes, envelope => envelope.signatures.map(signature => ({
-        type: envelope.fact.type,
-        hash: envelope.fact.hash,
-        publicKey: signature.publicKey,
+        factId: getFactId(allFacts, envelope.fact.hash, getFactTypeId(factTypes, envelope.fact.type)),
+        publicKeyId: getPublicKeyId(publicKey, signature.publicKey),
         signature: signature.signature
     })));
     if (signatureRecords.length > 0) {
         const signatureValues = signatureRecords.map((s, i) =>
-            `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`);
+            `($${i * 3 + 1}::integer, $${i * 3 + 2}::integer, $${i * 3 + 3})`);
         const signatureParameters = flatten(signatureRecords, s =>
-            [s.hash, s.type, s.publicKey, s.signature]);
+            [s.factId, s.publicKeyId, s.signature]);
 
         await connection.query(`INSERT INTO public.signature
-            (hash, type, public_key, signature) 
-            (SELECT hash, type, public_key, signature 
-            FROM (VALUES ${signatureValues.join(', ')}) AS v(hash, type, public_key, signature) 
-            WHERE NOT EXISTS (SELECT 1 FROM public.signature 
-            WHERE signature.hash = v.hash AND signature.type = v.type AND signature.public_key = v.public_key))
+            (fact_id, public_key_id, signature) 
+            (SELECT fact_id, public_key_id, signature 
+            FROM (VALUES ${signatureValues.join(', ')}) AS v(fact_id, public_key_id, signature) 
             ON CONFLICT DO NOTHING`, signatureParameters);
     }
 }
