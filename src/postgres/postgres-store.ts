@@ -88,6 +88,19 @@ function getFactId(map: FactMap, hash: string, fact_type_id: number) {
     return typeMap.get(fact_type_id);
 }
 
+interface PublicKeyResult {
+    rows: {
+        public_key_id: number;
+        public_key: string;
+    }[];
+}
+
+type PublicKeyMap = Map<string, number>;
+
+function emptyPublicKeyMap() {
+    return new Map<string, number>();
+}
+
 function loadFactRecord(r: Row): FactRecord {
     return {
         type: r.type,
@@ -140,6 +153,7 @@ export class PostgresStore implements Storage {
                 const roles = await storeRoles(newFacts, factTypes, connection);
                 await insertEdges(newFacts, allFacts, roles, factTypes, connection);
                 await insertAncestors(newFacts, allFacts, factTypes, connection);
+                const publicKeys = await storePublicKeys(envelopes, connection);
                 // await insertSignatures(envelopes, connection);
                 return envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
@@ -384,6 +398,36 @@ async function insertAncestors(facts: FactRecord[], allFacts: FactMap, factTypes
             await connection.query(sql, parameters);
         }
     }
+}
+
+async function storePublicKeys(envelopes: FactEnvelope[], connection: PoolClient) {
+    // Look up existing fact types
+    const publicKeys = flatten(envelopes, e => e.signatures.map(s => s.publicKey))
+        .filter(distinct);
+    const lookUpSql = 'SELECT public_key, public_key_id FROM public.public_key WHERE public_key=ANY($1);';
+    const { rows: existingRows }: PublicKeyResult = await connection.query(lookUpSql, [publicKeys]);
+    const publicKeyIds = existingRows.reduce(
+        (map, row) => addFactType(map, row.public_key, row.public_key_id),
+        emptyPublicKeyMap()
+    );
+    const remainingPublicKeys = publicKeys.filter(pk => !publicKeyIds.has(pk));
+    if (remainingPublicKeys.length === 0) {
+        return publicKeyIds;
+    }
+
+    // Insert new fact types
+    const values = remainingPublicKeys.map((name, index) => `($${index + 1})`);
+    const insertSql = 'INSERT INTO public.public_key (public_key) VALUES ' + values.join(', ') +
+        ' RETURNING public_key, public_key_id;';
+    const { rows: newRows }: PublicKeyResult = await connection.query(insertSql, remainingPublicKeys);
+    if (newRows.length !== remainingPublicKeys.length) {
+        throw new Error('Failed to insert all new public keys.');
+    }
+    const allPublicKeyIds = newRows.reduce(
+        (map, row) => addFactType(map, row.public_key, row.public_key_id),
+        publicKeyIds
+    );
+    return allPublicKeyIds;
 }
 
 async function insertSignatures(envelopes: FactEnvelope[], connection: PoolClient) {
