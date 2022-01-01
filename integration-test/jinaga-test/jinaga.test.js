@@ -1,5 +1,6 @@
 const { expect } = require("chai");
-const { JinagaServer } = require("./jinaga");
+const { Jinaga, JinagaServer } = require("./jinaga");
+const forge = require("node-forge");
 
 describe("Jinaga", () => {
     let j;
@@ -17,32 +18,21 @@ describe("Jinaga", () => {
     });
 
     it("should save a fact", async () => {
-        const root = await j.fact({
-            type: "IntegrationTest.Root",
-            identifier: "test-root"
-        });
+        const root = await j.fact(randomRoot());
 
-        expect(root.identifier).to.equal("test-root");
+        expect(root.type).to.equal("IntegrationTest.Root");
     });
 
     it("should save a fact twice", async () => {
-        await j.fact({
-            type: "IntegrationTest.Root",
-            identifier: "test-root"
-        });
-        const root = await j.fact({
-            type: "IntegrationTest.Root",
-            identifier: "test-root"
-        });
+        const root = randomRoot();
+        await j.fact(root);
+        await j.fact(root);
 
-        expect(root.identifier).to.equal("test-root");
+        expect(root.type).to.equal("IntegrationTest.Root");
     });
 
     it("should save a successor fact", async () => {
-        const root = await j.fact({
-            type: "IntegrationTest.Root",
-            identifier: "test-root"
-        });
+        const root = await j.fact(randomRoot());
 
         const successor = await j.fact({
             type: "IntegrationTest.Successor",
@@ -55,10 +45,7 @@ describe("Jinaga", () => {
     });
 
     it("should save a successor fact twice", async () => {
-        const root = await j.fact({
-            type: "IntegrationTest.Root",
-            identifier: "test-root"
-        });
+        const root = await j.fact(randomRoot());
 
         await j.fact({
             type: "IntegrationTest.Successor",
@@ -80,13 +67,20 @@ describe("Jinaga", () => {
         const successor = await j.fact({
             type: "IntegrationTest.Successor",
             identifier: "test-successor",
-            predecessor: {
-                type: "IntegrationTest.Root",
-                identifier: "test-root"
-            }
+            predecessor: randomRoot()
         });
 
         expect(successor.identifier).to.equal("test-successor");
-        expect(successor.predecessor.identifier).to.equal("test-root");
+        expect(successor.predecessor.type).to.equal("IntegrationTest.Root");
     });
 })
+
+function randomRoot() {
+    const num = forge.random.getBytesSync(16);
+    const identifier = forge.util.encode64(num);
+
+    return {
+        type: "IntegrationTest.Root",
+        identifier
+    };
+}
