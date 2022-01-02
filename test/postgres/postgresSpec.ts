@@ -1,9 +1,8 @@
-import 'source-map-support/register';
-
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
-
+import 'source-map-support/register';
 import { dehydrateReference } from '../../src/fact/hydrate';
+import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap } from "../../src/postgres/maps";
 import { sqlFromSteps } from '../../src/postgres/sql';
 import { fromDescriptiveString } from '../../src/query/descriptive-string';
 
@@ -14,7 +13,12 @@ describe('Postgres', () => {
 
   function sqlFor(descriptiveString: string) {
     const query = fromDescriptiveString(descriptiveString);
-    const sqlQuery = sqlFromSteps(start, query.steps);
+    let factTypes = emptyFactTypeMap();
+    factTypes = addFactType(factTypes, 'Root', 1);
+    factTypes = addFactType(factTypes, 'IntegrationTest.Successor', 2);
+    let roleMap = emptyRoleMap();
+    roleMap = addRole(roleMap, 1, 'predecessor', 1);
+    const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
     return sqlQuery;
   }
 
@@ -23,15 +27,15 @@ describe('Postgres', () => {
   });
 
   it('should parse successor query', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child');
+    const { sql, parameters, pathLength } = sqlFor('S.predecessor F.type="IntegrationTest.Successor"');
     expect(sql).to.equal(
       'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
       'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3'
+      'WHERE e1.role_id = $1 AND e1.predecessor_hash = $2'
     );
     expect(parameters[0]).to.equal('Root');
     expect(parameters[1]).to.equal(startHash);
-    expect(parameters[2]).to.equal('child');
+    expect(parameters[2]).to.equal('predecessor');
     expect(pathLength).to.equal(1);
   });
 
@@ -48,18 +52,18 @@ describe('Postgres', () => {
     expect(pathLength).to.equal(1);
   });
 
-  it('should parse successor query with type', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child F.type="Child"');
+  it.only('should parse successor query with type', () => {
+    const { sql, parameters, pathLength } = sqlFor('S.predecessor F.type="IntegrationTest.Successor"');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND e1.successor_type = $4'
+      'SELECT f2.hash ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = %3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
     );
       expect(parameters[0]).to.equal('Root');
       expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal('child');
-      expect(parameters[3]).to.equal('Child');
+      expect(parameters[2]).to.equal(1);
       expect(pathLength).to.equal(1);
   });
 

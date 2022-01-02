@@ -5,6 +5,7 @@ import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals,
 import { distinct, flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
 import { makeEdgeRecords } from './edge-record';
+import { hasFact, addFactType, emptyFactTypeMap, FactTypeMap, addRole, emptyRoleMap, hasRole, addFact, emptyFactMap, FactMap, RoleMap, getRoleId, getFactTypeId, getFactId, emptyPublicKeyMap, PublicKeyMap, getPublicKeyId, copyFactTypeMap, mergeFactTypes, copyRoleMap, mergeRoleMaps } from './maps';
 import { sqlFromSteps } from './sql';
 
 interface FactTypeResult {
@@ -30,79 +31,11 @@ interface FactResult {
     }[];
 }
 
-type FactTypeMap = Map<string, number>;
-
-function emptyFactTypeMap() {
-    return new Map<string, number>();
-}
-
-function addFactType(map: FactTypeMap, name: string, fact_type_id: number) {
-    return map.set(name, fact_type_id);
-}
-
-function getFactTypeId(map: FactTypeMap, name: string) {
-    return map.get(name);
-}
-
-type RoleMap = Map<number, Map<string, number>>;
-
-function emptyRoleMap() {
-    return new Map<number, Map<string, number>>();
-}
-
-function addRole(map: RoleMap, defining_fact_type_id: number, name: string, role_id: number) {
-    const factTypeRoles = map.get(defining_fact_type_id) || new Map<string, number>();
-    const modifiedFactTypeRoles = factTypeRoles.set(name, role_id);
-    return map.set(defining_fact_type_id, modifiedFactTypeRoles);
-}
-
-function hasRole(map: RoleMap, defining_fact_type_id: number, name: string) {
-    const roleMap = map.get(defining_fact_type_id);
-    return roleMap && roleMap.has(name);
-}
-
-function getRoleId(map: RoleMap, defining_fact_type_id: number, name: string) {
-    const roleMap = map.get(defining_fact_type_id);
-    return roleMap && roleMap.get(name);
-}
-
-type FactMap = Map<string, Map<number, number>>;
-
-function emptyFactMap() {
-    return new Map<string, Map<number, number>>();
-}
-
-function addFact(map: FactMap, hash: string, fact_type_id: number, fact_id: number) {
-    const typeMap = map.get(hash) || new Map<number, number>();
-    const modifiedTypeMap = typeMap.set(fact_type_id, fact_id);
-    return map.set(hash, modifiedTypeMap);
-}
-
-function hasFact(map: FactMap, hash: string, fact_type_id: number) {
-    const typeMap = map.get(hash);
-    return typeMap && typeMap.has(fact_type_id);
-}
-
-function getFactId(map: FactMap, hash: string, fact_type_id: number) {
-    const typeMap = map.get(hash) || new Map<number, number>();
-    return typeMap.get(fact_type_id);
-}
-
 interface PublicKeyResult {
     rows: {
         public_key_id: number;
         public_key: string;
     }[];
-}
-
-type PublicKeyMap = Map<string, number>;
-
-function emptyPublicKeyMap() {
-    return new Map<string, number>();
-}
-
-function getPublicKeyId(publicKeyMap: PublicKeyMap, publicKey: string) {
-    return publicKeyMap.get(publicKey);
 }
 
 function loadFactRecord(r: Row): FactRecord {
@@ -134,6 +67,8 @@ function loadFactPath(pathLength: number, r: Row): FactPath {
 
 export class PostgresStore implements Storage {
     private connectionFactory: ConnectionFactory;
+    private factTypeMap: FactTypeMap = emptyFactTypeMap();
+    private roleMap: RoleMap = emptyRoleMap();
 
     constructor (postgresUri: string) {
         this.connectionFactory = new ConnectionFactory(postgresUri);
@@ -150,7 +85,7 @@ export class PostgresStore implements Storage {
                 throw new Error('Attempted to save a fact with no hash or type.');
             }
             return await this.connectionFactory.withTransaction(async (connection) => {
-                const factTypes = await storeFactTypes(facts, connection);
+                const factTypes = await storeFactTypes(facts, copyFactTypeMap(this.factTypeMap), connection);
                 const existingFacts = await findExistingFacts(facts, factTypes, connection);
                 const newFacts = facts.filter(f => !hasFact(existingFacts, f.hash, factTypes.get(f.type)));
                 if (newFacts.length === 0) {
@@ -158,7 +93,7 @@ export class PostgresStore implements Storage {
                 }
 
                 const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
-                const roles = await storeRoles(newFacts, factTypes, connection);
+                const roles = await storeRoles(newFacts, factTypes, copyRoleMap(this.roleMap), connection);
                 await insertEdges(newFacts, allFacts, roles, factTypes, connection);
                 await insertAncestors(newFacts, allFacts, factTypes, connection);
                 const newEnvelopes = envelopes.filter(envelope => newFacts.some(
@@ -169,6 +104,8 @@ export class PostgresStore implements Storage {
 
                 const publicKeys = await storePublicKeys(newEnvelopes, connection);
                 await insertSignatures(newEnvelopes, allFacts, factTypes, publicKeys, connection);
+                this.factTypeMap = mergeFactTypes(this.factTypeMap, factTypes);
+                this.roleMap = mergeRoleMaps(this.roleMap, roles);
                 return newEnvelopes;
             });
         }
@@ -181,14 +118,17 @@ export class PostgresStore implements Storage {
         if (query.steps.length === 0) {
             return [[start]];
         }
-        
-        const sqlQuery = sqlFromSteps(start, query.steps);
+
+        const factTypes = copyFactTypeMap(this.factTypeMap);
+        const roleMap = copyRoleMap(this.roleMap);
+        const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
         if (!sqlQuery) {
             throw new Error(`Could not generate SQL for query "${query.toDescriptiveString()}"`);
         }
         const { rows } = await this.connectionFactory.with(async (connection) => {
             return await connection.query(sqlQuery.sql, sqlQuery.parameters);
         });
+        this.factTypeMap = mergeFactTypes(this.factTypeMap, factTypes);
         return rows.map(row => loadFactPath(sqlQuery.pathLength, row));
     }
 
@@ -226,7 +166,7 @@ export class PostgresStore implements Storage {
     }
 }
 
-async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
+async function storeFactTypes(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
     // Look up existing fact types
     const types = facts.map(fact => fact.type).filter(distinct);
     const lookUpSql = 'SELECT name, fact_type_id FROM public.fact_type WHERE name=ANY($1);';
@@ -255,7 +195,7 @@ async function storeFactTypes(facts: FactRecord[], connection: PoolClient) {
     return allFactTypeIds;
 }
 
-async function storeRoles(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
+async function storeRoles(facts: FactRecord[], factTypes: FactTypeMap, roleMap: RoleMap, connection: PoolClient) {
     // Find distinct roles
     const roles = flatten(facts, fact => {
         const defining_fact_type_id = factTypes.get(fact.type);
@@ -284,7 +224,7 @@ async function storeRoles(facts: FactRecord[], factTypes: FactTypeMap, connectio
         const { rows: existingRows }: RoleResult = await connection.query(lookUpSql, roleParameters);
         const roleIds = existingRows.reduce(
             (map, row) => addRole(map, row.defining_fact_type_id, row.name, row.role_id),
-            emptyRoleMap()
+            roleMap
         );
         const remainingRoles = roles.filter(role => !hasRole(
             roleIds, role.defining_fact_type_id, role.role));

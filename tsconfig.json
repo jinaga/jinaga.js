@@ -5,6 +5,7 @@
         "noImplicitAny": true,
         "moduleResolution": "node",
         "declaration": true,
+        "downlevelIteration": true,
         "outDir": "./dist/types",
         "baseUrl": ".",
         "lib": [ "dom", "es2015" ],
