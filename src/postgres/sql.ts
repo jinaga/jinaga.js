@@ -19,6 +19,7 @@ interface QueryJoinEdge {
     direction: 'predecessor' | 'successor';
     edgeAlias: number;
     roleParameter: number;
+    roleId: number;
 }
 
 interface QueryJoinFact {
@@ -58,29 +59,35 @@ class QueryBuilder {
     private queryParts: QueryParts = {
         joins: []
     };
-    private roleParameters: number[] = [];
 
     constructor(private factTypes: FactTypeMap, private roleMap: RoleMap) {
     }
 
     buildQuery(start: FactReference, steps: Step[]): SqlQuery {
+        const startTypeId = getFactTypeId(this.factTypes, start.type);
         const startState: QueryBuilderState = {
             state: 'predecessor-type',
-            typeId: getFactTypeId(this.factTypes, start.type)
+            typeId: startTypeId
         };
         const finalState = steps.reduce((state, step) => {
             return this.matchStep(state, step);
         }, startState);
         this.end(finalState);
 
-        const hashes = `f2.hash`;
+        const factAliases = this.queryParts.joins
+            .filter(j => j.table === 'fact')
+            .map(j => (j as QueryJoinFact).factAlias);
+        const hashes = factAliases.map(a => `f${a}.hash`).join(', ');
         const joins = this.buildJoins();
         const sql = `SELECT ${hashes} FROM public.fact f1 ${joins} WHERE f1.fact_type_id = $1 AND f1.hash = $2`;
 
+        const roleIds = this.queryParts.joins
+            .filter(j => j.table === 'edge')
+            .map(j => (j as QueryJoinEdge).roleId);
         return {
             sql,
-            parameters: [],
-            pathLength: 0
+            parameters: [startTypeId, start.hash, ...roleIds],
+            pathLength: factAliases.length
         };
     }
 
@@ -144,6 +151,9 @@ class QueryBuilder {
         if (step instanceof Join) {
             if (step.direction === Direction.Predecessor) {
                 const roleId = getRoleId(this.roleMap, state.typeId, step.role);
+                if (!roleId) {
+                    throw new Error(`Role ${step.role} not found in type id ${state.typeId}`);
+                }
                 this.emitEdge('predecessor', roleId);
                 return {
                     state: 'predecessor-join'
@@ -165,7 +175,13 @@ class QueryBuilder {
                 throw new Error(`Property condition on non-type property ${step.name}`);
             }
             const typeId = getFactTypeId(this.factTypes, step.value);
+            if (!typeId) {
+                throw new Error(`Unknown type ${step.value}`);
+            }
             const roleId = getRoleId(this.roleMap, typeId, state.role);
+            if (!roleId) {
+                throw new Error(`Role ${state.role} not found in type ${step.value}`);
+            }
             this.emitEdge('successor', roleId);
             return {
                 state: 'successor-type',
@@ -182,12 +198,13 @@ class QueryBuilder {
     }
 
     emitEdge(direction: 'predecessor' | 'successor', roleId: number) {
-        this.roleParameters.push(roleId);
+        const edgeCount = this.queryParts.joins.filter(j => j.table === 'edge').length;
         this.queryParts.joins.push({
             table: 'edge',
             direction: direction,
-            edgeAlias: this.queryParts.joins.filter(j => j.table === 'edge').length + 1,
-            roleParameter: this.roleParameters.length + 2
+            edgeAlias: edgeCount + 1,
+            roleParameter: edgeCount + 3,
+            roleId
         });
     }
 

@@ -17,7 +17,7 @@ describe('Postgres', () => {
     factTypes = addFactType(factTypes, 'Root', 1);
     factTypes = addFactType(factTypes, 'IntegrationTest.Successor', 2);
     let roleMap = emptyRoleMap();
-    roleMap = addRole(roleMap, 1, 'predecessor', 1);
+    roleMap = addRole(roleMap, 2, 'predecessor', 1);
     const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
     return sqlQuery;
   }
@@ -61,7 +61,7 @@ describe('Postgres', () => {
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
       'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
     );
-      expect(parameters[0]).to.equal('Root');
+      expect(parameters[0]).to.equal(1);
       expect(parameters[1]).to.equal(startHash);
       expect(parameters[2]).to.equal(1);
       expect(pathLength).to.equal(1);
