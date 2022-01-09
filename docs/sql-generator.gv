@@ -9,6 +9,7 @@ digraph {
 
     SuccessorJoin -> error [label="end" constraint=false]
     SuccessorType -> success [label="end\nemit fact"]
+    PredecessorJoin -> success [label="end\nemit fact" constraint=false]
 
-    {rank=same; SuccessorType; success }
+    // {rank=same; SuccessorType; success }
 }

@@ -6,7 +6,7 @@ import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap } from "../../src/
 import { sqlFromSteps } from '../../src/postgres/sql';
 import { fromDescriptiveString } from '../../src/query/descriptive-string';
 
-describe.only('Postgres', () => {
+describe('Postgres', () => {
 
   const start = dehydrateReference({ type: 'Root' });
   const startHash = 'fSS1hK7OGAeSX4ocN3acuFF87jvzCdPN3vLFUtcej0lOAsVV859UIYZLRcHUoMbyd/J31TdVn5QuE7094oqUPg==';
@@ -17,7 +17,8 @@ describe.only('Postgres', () => {
     factTypes = addFactType(factTypes, 'Root', 1);
     factTypes = addFactType(factTypes, 'IntegrationTest.Successor', 2);
     let roleMap = emptyRoleMap();
-    roleMap = addRole(roleMap, 2, 'predecessor', 1);
+    roleMap = addRole(roleMap, 1, 'parent', 1);
+    roleMap = addRole(roleMap, 2, 'predecessor', 2);
     const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
     return sqlQuery;
   }
@@ -34,13 +35,15 @@ describe.only('Postgres', () => {
   it('should parse predecessor query', () => {
     const { sql, parameters, pathLength } = sqlFor('P.parent');
     expect(sql).to.equal(
-      'SELECT e1.predecessor_type AS type0, e1.predecessor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.successor_type = $1 AND e1.successor_hash = $2 AND e1.role = $3'
+      'SELECT f2.hash ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.successor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.predecessor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
     );
-    expect(parameters[0]).to.equal('Root');
+    expect(parameters[0]).to.equal(1);
     expect(parameters[1]).to.equal(startHash);
-    expect(parameters[2]).to.equal('parent');
+    expect(parameters[2]).to.equal(1);
     expect(pathLength).to.equal(1);
   });
 
@@ -49,13 +52,13 @@ describe.only('Postgres', () => {
     expect(sql).to.equal(
       'SELECT f2.hash ' +
       'FROM public.fact f1 ' +
-      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = %3 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
       'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
     );
       expect(parameters[0]).to.equal(1);
       expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal(1);
+      expect(parameters[2]).to.equal(2);
       expect(pathLength).to.equal(1);
   });
 

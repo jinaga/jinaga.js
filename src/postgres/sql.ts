@@ -101,7 +101,7 @@ class QueryBuilder {
                 if (join.direction === 'successor') {
                     const clause = `JOIN public.edge e${join.edgeAlias} ` +
                         `ON e${join.edgeAlias}.predecessor_fact_id = ${joins.priorFactId} ` +
-                        `AND e${join.edgeAlias}.role_id = %${join.roleParameter}`;
+                        `AND e${join.edgeAlias}.role_id = $${join.roleParameter}`;
                     return {
                         priorFactId: `e${join.edgeAlias}.successor_fact_id`,
                         clauses: [...joins.clauses, clause]
@@ -110,7 +110,7 @@ class QueryBuilder {
                 else {
                     const clause = `JOIN public.edge e${join.edgeAlias} ` +
                         `ON e${join.edgeAlias}.successor_fact_id = ${joins.priorFactId} ` +
-                        `AND e${join.edgeAlias}.role_id = %${join.roleParameter}`;
+                        `AND e${join.edgeAlias}.role_id = $${join.roleParameter}`;
                     return {
                         priorFactId: `e${join.edgeAlias}.predecessor_fact_id`,
                         clauses: [...joins.clauses, clause]
@@ -197,6 +197,9 @@ class QueryBuilder {
 
     end(finalState: QueryBuilderState) {
         if (finalState.state === 'successor-type') {
+            this.emitFact();
+        }
+        else if (finalState.state === 'predecessor-join') {
             this.emitFact();
         }
         else if (finalState.state === 'successor-join') {
