@@ -6,7 +6,7 @@ import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap } from "../../src/
 import { sqlFromSteps } from '../../src/postgres/sql';
 import { fromDescriptiveString } from '../../src/query/descriptive-string';
 
-describe('Postgres', () => {
+describe.only('Postgres', () => {
 
   const start = dehydrateReference({ type: 'Root' });
   const startHash = 'fSS1hK7OGAeSX4ocN3acuFF87jvzCdPN3vLFUtcej0lOAsVV859UIYZLRcHUoMbyd/J31TdVn5QuE7094oqUPg==';
@@ -52,7 +52,7 @@ describe('Postgres', () => {
     expect(pathLength).to.equal(1);
   });
 
-  it.only('should parse successor query with type', () => {
+  it('should parse successor query with type', () => {
     const { sql, parameters, pathLength } = sqlFor('S.predecessor F.type="IntegrationTest.Successor"');
     expect(sql).to.equal(
       'SELECT f2.hash ' +

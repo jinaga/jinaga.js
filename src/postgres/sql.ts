@@ -74,6 +74,10 @@ class QueryBuilder {
         }, startState);
         this.end(finalState);
 
+        if (this.queryParts.joins.length === 0) {
+            return null;
+        }
+
         const factAliases = this.queryParts.joins
             .filter(j => j.table === 'fact')
             .map(j => (j as QueryJoinFact).factAlias);
