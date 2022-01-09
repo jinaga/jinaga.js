@@ -1,0 +1,9 @@
+digraph {
+    PredecessorType -> PredecessorJoin [label="Predecessor\nemit edge"]
+    PredecessorJoin -> PredecessorType [label="Type"]
+    PredecessorType -> SuccessorJoin [label="Successor" constraint=false]
+
+    SuccessorType -> SuccessorJoin [label="Successor"]
+    SuccessorJoin -> SuccessorType [label="Type\nemit edge"]
+    SuccessorType -> PredecessorJoin [label="Predecessor\nemit fact\nemit edge" constraint=false]
+}
