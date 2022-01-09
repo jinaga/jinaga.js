@@ -65,15 +65,15 @@ describe('Postgres', () => {
   it('should parse predecessor query with type', () => {
     const { sql, parameters, pathLength } = sqlFor('P.parent F.type="Parent"');
     expect(sql).to.equal(
-      'SELECT e1.predecessor_type AS type0, e1.predecessor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.successor_type = $1 AND e1.successor_hash = $2 AND e1.role = $3 ' +
-        'AND e1.predecessor_type = $4'
+      'SELECT f2.hash ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.successor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.predecessor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
     );
-    expect(parameters[0]).to.equal('Root');
+    expect(parameters[0]).to.equal(1);
     expect(parameters[1]).to.equal(startHash);
-    expect(parameters[2]).to.equal('parent');
-    expect(parameters[3]).to.equal('Parent');
+    expect(parameters[2]).to.equal(1);
     expect(pathLength).to.equal(1);
   });
 

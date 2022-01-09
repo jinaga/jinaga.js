@@ -134,6 +134,8 @@ class QueryBuilder {
         switch (state.state) {
             case 'predecessor-type':
                 return this.matchStepPredecessorType(state, step);
+            case 'predecessor-join':
+                return this.matchStepPredecessorJoin(state, step);
             case 'successor-join':
                 return this.matchStepSuccessorJoin(state, step);
             default:
@@ -173,6 +175,20 @@ class QueryBuilder {
         throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor type state`);
     }
 
+    matchStepPredecessorJoin(state: QueryBuilderStatePredecessorJoin, step: Step): QueryBuilderState {
+        if (step instanceof PropertyCondition) {
+            if (step.name !== 'type') {
+                throw new Error(`Property condition on non-type property ${step.name}`);
+            }
+            const typeId = getFactTypeId(this.factTypes, step.value);
+            return {
+                state: 'predecessor-type',
+                typeId
+            };
+        }
+        throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor join state`);
+    }
+
     matchStepSuccessorJoin(state: QueryBuilderStateSuccessorJoin, step: Step): QueryBuilderState {
         if (step instanceof PropertyCondition) {
             if (step.name !== 'type') {
@@ -196,14 +212,11 @@ class QueryBuilder {
     }
 
     end(finalState: QueryBuilderState) {
-        if (finalState.state === 'successor-type') {
-            this.emitFact();
-        }
-        else if (finalState.state === 'predecessor-join') {
-            this.emitFact();
-        }
-        else if (finalState.state === 'successor-join') {
+        if (finalState.state === 'successor-join') {
             throw new Error(`Missing type for role ${finalState.role}`);
+        }
+        else {
+            this.emitFact();
         }
     }
 
