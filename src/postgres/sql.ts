@@ -199,6 +199,9 @@ class QueryBuilder {
         if (finalState.state === 'successor-type') {
             this.emitFact();
         }
+        else if (finalState.state === 'successor-join') {
+            throw new Error(`Missing type for role ${finalState.role}`);
+        }
     }
 
     emitEdge(direction: 'predecessor' | 'successor', roleId: number) {

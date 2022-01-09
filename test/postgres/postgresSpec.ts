@@ -26,17 +26,9 @@ describe.only('Postgres', () => {
     expect(sqlFor('')).to.equal(null);
   });
 
-  it('should parse successor query', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.predecessor F.type="IntegrationTest.Successor"');
-    expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.role_id = $1 AND e1.predecessor_hash = $2'
-    );
-    expect(parameters[0]).to.equal('Root');
-    expect(parameters[1]).to.equal(startHash);
-    expect(parameters[2]).to.equal('predecessor');
-    expect(pathLength).to.equal(1);
+  it('should error on successor query', () => {
+    const parse = () => sqlFor('S.predecessor');
+    expect(parse).to.throw(Error, 'Missing type for role predecessor');
   });
 
   it('should parse predecessor query', () => {
