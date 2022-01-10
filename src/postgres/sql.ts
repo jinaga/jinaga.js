@@ -64,6 +64,10 @@ class QueryBuilder {
     }
 
     buildQuery(start: FactReference, steps: Step[]): SqlQuery {
+        if (steps.length === 0) {
+            return null;
+        }
+
         const startTypeId = getFactTypeId(this.factTypes, start.type);
         const startState: QueryBuilderState = {
             state: 'predecessor-type',
@@ -73,10 +77,6 @@ class QueryBuilder {
             return this.matchStep(state, step);
         }, startState);
         this.end(finalState);
-
-        if (this.queryParts.joins.length === 0) {
-            return null;
-        }
 
         const factAliases = this.queryParts.joins
             .filter(j => j.table === 'fact')
