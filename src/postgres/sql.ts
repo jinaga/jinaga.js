@@ -56,6 +56,8 @@ type QueryBuilderState =
     QueryBuilderStateSuccessorJoin;
 
 class QueryBuilder {
+    private nextEdge: number = 1;
+    private nextFact: number = 2;
     private queryParts: QueryParts = {
         joins: []
     };
@@ -254,20 +256,21 @@ class QueryBuilder {
     }
 
     emitEdge(direction: 'predecessor' | 'successor', roleId: number) {
-        const edgeCount = this.queryParts.joins.filter(j => j.table === 'edge').length;
+        const edgeAlias = this.nextEdge++;
         this.queryParts.joins.push({
             table: 'edge',
             direction: direction,
-            edgeAlias: edgeCount + 1,
-            roleParameter: edgeCount + 3,
+            edgeAlias: edgeAlias,
+            roleParameter: edgeAlias + 2,
             roleId
         });
     }
 
     emitFact() {
+        const factAlias = this.nextFact++;
         this.queryParts.joins.push({
             table: 'fact',
-            factAlias: this.queryParts.joins.filter(j => j.table === 'fact').length + 2
+            factAlias: factAlias
         });
     }
 }
