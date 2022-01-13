@@ -31,7 +31,13 @@ type QueryJoin = QueryJoinEdge | QueryJoinFact;
 
 interface QueryParts {
     joins: QueryJoin[];
+    existentialClauses: ExistentialClause[];
 };
+
+interface ExistentialClause {
+    quantifier: Quantifier;
+    query: QueryParts;
+}
 
 interface QueryBuilderStatePredecessorType {
     state: 'predecessor-type';
@@ -59,7 +65,8 @@ class QueryBuilder {
     private nextEdge: number = 1;
     private nextFact: number = 2;
     private queryParts: QueryParts = {
-        joins: []
+        joins: [],
+        existentialClauses: []
     };
 
     constructor(private factTypes: FactTypeMap, private roleMap: RoleMap) {
@@ -131,8 +138,31 @@ class QueryBuilder {
         }).clauses;
         return clauses.join(' ');
     }
+    
+    buildNestedSql(typeId: number, steps: Step[]): QueryParts {
+        // Push a new query to the stack.
+        const parentQuery = this.queryParts;
+        this.queryParts = {
+            joins: [],
+            existentialClauses: []
+        };
 
-    matchStep(state: QueryBuilderState, step: Step): QueryBuilderState {
+        const startState: QueryBuilderState = {
+            state: 'predecessor-type',
+            typeId: typeId
+        };
+        const finalState = steps.reduce((state, step) => {
+            return this.matchStep(state, step);
+        }, startState);
+        this.end(finalState);
+
+        // Pop the stack and return the nested query.
+        const nestedQuery = this.queryParts;
+        this.queryParts = parentQuery;
+        return nestedQuery;
+    }
+
+    private matchStep(state: QueryBuilderState, step: Step): QueryBuilderState {
         switch (state.state) {
             case 'predecessor-type':
                 return this.matchStepPredecessorType(state, step);
@@ -145,7 +175,7 @@ class QueryBuilder {
         }
     }
 
-    matchStepPredecessorType(state: QueryBuilderStatePredecessorType, step: Step): QueryBuilderState {
+    private matchStepPredecessorType(state: QueryBuilderStatePredecessorType, step: Step): QueryBuilderState {
         if (step instanceof PropertyCondition) {
             if (step.name !== 'type') {
                 throw new Error(`Property condition on non-type property ${step.name}`);
@@ -177,7 +207,7 @@ class QueryBuilder {
         throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor type state`);
     }
 
-    matchStepPredecessorJoin(state: QueryBuilderStatePredecessorJoin, step: Step): QueryBuilderState {
+    private matchStepPredecessorJoin(state: QueryBuilderStatePredecessorJoin, step: Step): QueryBuilderState {
         if (step instanceof PropertyCondition) {
             if (step.name !== 'type') {
                 throw new Error(`Property condition on non-type property ${step.name}`);
@@ -191,7 +221,7 @@ class QueryBuilder {
         throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor join state`);
     }
 
-    matchStepSuccessorJoin(state: QueryBuilderStateSuccessorJoin, step: Step): QueryBuilderState {
+    private matchStepSuccessorJoin(state: QueryBuilderStateSuccessorJoin, step: Step): QueryBuilderState {
         if (step instanceof PropertyCondition) {
             if (step.name !== 'type') {
                 throw new Error(`Property condition on non-type property ${step.name}`);
@@ -213,7 +243,7 @@ class QueryBuilder {
         throw new Error(`Cannot yet handle step ${step.constructor.name} from successor join state`);
     }
 
-    matchStepSuccessorType(state: QueryBuilderStateSuccessorType, step: Step): QueryBuilderState {
+    private matchStepSuccessorType(state: QueryBuilderStateSuccessorType, step: Step): QueryBuilderState {
         if (step instanceof PropertyCondition) {
             if (step.name !== 'type') {
                 throw new Error(`Property condition on non-type property ${step.name}`);
@@ -241,12 +271,14 @@ class QueryBuilder {
             }
         }
         else if (step instanceof ExistentialCondition) {
-            throw new Error(`Cannot yet handle existential condition in successor type state`);
+            const nested: QueryParts = this.buildNestedSql(state.typeId, step.steps);
+            this.queryParts.existentialClauses.push({ quantifier: step.quantifier, query: nested });
+            return state;
         }
         throw new Error(`Cannot yet handle step ${step.constructor.name} from successor type state`);
     }
 
-    end(finalState: QueryBuilderState) {
+    private end(finalState: QueryBuilderState) {
         if (finalState.state === 'successor-join') {
             throw new Error(`Missing type for role ${finalState.role}`);
         }
@@ -255,7 +287,7 @@ class QueryBuilder {
         }
     }
 
-    emitEdge(direction: 'predecessor' | 'successor', roleId: number) {
+    private emitEdge(direction: 'predecessor' | 'successor', roleId: number) {
         const edgeAlias = this.nextEdge++;
         this.queryParts.joins.push({
             table: 'edge',
@@ -266,7 +298,7 @@ class QueryBuilder {
         });
     }
 
-    emitFact() {
+    private emitFact() {
         const factAlias = this.nextFact++;
         this.queryParts.joins.push({
             table: 'fact',
