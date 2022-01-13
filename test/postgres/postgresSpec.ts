@@ -16,9 +16,11 @@ describe('Postgres', () => {
     let factTypes = emptyFactTypeMap();
     factTypes = addFactType(factTypes, 'Root', 1);
     factTypes = addFactType(factTypes, 'IntegrationTest.Successor', 2);
+    factTypes = addFactType(factTypes, 'IntegrationTest.Grandchild', 3);
     let roleMap = emptyRoleMap();
     roleMap = addRole(roleMap, 1, 'parent', 1);
     roleMap = addRole(roleMap, 2, 'predecessor', 2);
+    roleMap = addRole(roleMap, 3, 'successor', 3);
     const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
     return sqlQuery;
   }
@@ -78,20 +80,20 @@ describe('Postgres', () => {
   });
 
   it('should parse successor query with existential', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child E(S.grandchild)');
+    const { sql, parameters, pathLength } = sqlFor('S.predecessor F.type="IntegrationTest.Successor" E(S.successor F.type="IntegrationTest.Grandchild")');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND EXISTS (SELECT 1 ' +
-          'FROM public.edge e2  ' +
-          'WHERE e2.predecessor_type = e1.successor_type AND e2.predecessor_hash = e1.successor_hash ' +
-            'AND e2.role = $4)'
+      'SELECT f2.hash ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ON e2.predecessor_fact_id = e1.successor_fact_id AND e2.role_id = $4)'
     );
-      expect(parameters[0]).to.equal('Root');
+      expect(parameters[0]).to.equal(1);
       expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal('child');
-      expect(parameters[3]).to.equal('grandchild');
+      expect(parameters[2]).to.equal(1);
+      expect(parameters[3]).to.equal(3);
       expect(pathLength).to.equal(1);
   });
 

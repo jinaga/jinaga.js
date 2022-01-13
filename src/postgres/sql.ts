@@ -138,8 +138,8 @@ class QueryBuilder {
                 return this.matchStepPredecessorJoin(state, step);
             case 'successor-join':
                 return this.matchStepSuccessorJoin(state, step);
-            default:
-                throw new Error(`Unknown state ${state.state}`);
+            case 'successor-type':
+                return this.matchStepSuccessorType(state, step);
         }
     }
 
@@ -209,6 +209,39 @@ class QueryBuilder {
             };
         }
         throw new Error(`Cannot yet handle step ${step.constructor.name} from successor join state`);
+    }
+
+    matchStepSuccessorType(state: QueryBuilderStateSuccessorType, step: Step): QueryBuilderState {
+        if (step instanceof PropertyCondition) {
+            if (step.name !== 'type') {
+                throw new Error(`Property condition on non-type property ${step.name}`);
+            }
+            const typeId = getFactTypeId(this.factTypes, step.value);
+            if (typeId !== state.typeId) {
+                throw new Error(`Two property conditions in a row on different types, ending in ${step.value}`);
+            }
+            return state;
+        }
+        else if (step instanceof Join) {
+            if (step.direction === Direction.Predecessor) {
+                const roleId = getRoleId(this.roleMap, state.typeId, step.role);
+                this.emitFact();
+                this.emitEdge('predecessor', roleId);
+                return {
+                    state: 'predecessor-join'
+                };
+            }
+            else {
+                return {
+                    state: 'successor-join',
+                    role: step.role
+                };
+            }
+        }
+        else if (step instanceof ExistentialCondition) {
+            throw new Error(`Cannot yet handle existential condition in successor type state`);
+        }
+        throw new Error(`Cannot yet handle step ${step.constructor.name} from successor type state`);
     }
 
     end(finalState: QueryBuilderState) {
