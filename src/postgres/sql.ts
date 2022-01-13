@@ -36,6 +36,7 @@ interface QueryParts {
 
 interface ExistentialClause {
     quantifier: Quantifier;
+    priorEdgeJoin: QueryJoinEdge;
     query: QueryParts;
 }
 
@@ -64,6 +65,7 @@ type QueryBuilderState =
 class QueryBuilder {
     private nextEdge: number = 1;
     private nextFact: number = 2;
+    private shouldEmitFacts: boolean = true;
     private queryParts: QueryParts = {
         joins: [],
         existentialClauses: []
@@ -91,8 +93,9 @@ class QueryBuilder {
             .filter(j => j.table === 'fact')
             .map(j => (j as QueryJoinFact).factAlias);
         const hashes = factAliases.map(a => `f${a}.hash`).join(', ');
-        const joins = this.buildJoins();
-        const sql = `SELECT ${hashes} FROM public.fact f1 ${joins} WHERE f1.fact_type_id = $1 AND f1.hash = $2`;
+        const joins = this.buildJoins(this.queryParts.joins, 'f1.fact_id');
+        const whereClause = this.buildWhereClause(this.queryParts.existentialClauses);
+        const sql = `SELECT ${hashes} FROM public.fact f1${joins} WHERE f1.fact_type_id = $1 AND f1.hash = $2${whereClause}`;
 
         const roleIds = this.queryParts.joins
             .filter(j => j.table === 'edge')
@@ -104,11 +107,11 @@ class QueryBuilder {
         };
     }
 
-    private buildJoins() {
-        const clauses = this.queryParts.joins.reduce((joins, join) => {
+    private buildJoins(joins: QueryJoin[], priorFactId: string) {
+        const clauses = joins.reduce((joins, join) => {
             if (join.table === 'edge') {
                 if (join.direction === 'successor') {
-                    const clause = `JOIN public.edge e${join.edgeAlias} ` +
+                    const clause = ` JOIN public.edge e${join.edgeAlias} ` +
                         `ON e${join.edgeAlias}.predecessor_fact_id = ${joins.priorFactId} ` +
                         `AND e${join.edgeAlias}.role_id = $${join.roleParameter}`;
                     return {
@@ -117,7 +120,7 @@ class QueryBuilder {
                     };
                 }
                 else {
-                    const clause = `JOIN public.edge e${join.edgeAlias} ` +
+                    const clause = ` JOIN public.edge e${join.edgeAlias} ` +
                         `ON e${join.edgeAlias}.successor_fact_id = ${joins.priorFactId} ` +
                         `AND e${join.edgeAlias}.role_id = $${join.roleParameter}`;
                     return {
@@ -126,22 +129,49 @@ class QueryBuilder {
                     };
                 }
             } else {
-                const clause = `JOIN public.fact f${join.factAlias} ON f${join.factAlias}.fact_id = ${joins.priorFactId}`;
+                const clause = ` JOIN public.fact f${join.factAlias} ON f${join.factAlias}.fact_id = ${joins.priorFactId}`;
                 return {
                     priorFactId: joins.priorFactId,
                     clauses: [...joins.clauses, clause]
                 };
             }
         }, {
-            priorFactId: 'f1.fact_id',
+            priorFactId,
             clauses: []
         }).clauses;
-        return clauses.join(' ');
+        return clauses.join('');
     }
-    
+
+    buildWhereClause(existentialClauses: ExistentialClause[]) {
+        if (existentialClauses.length === 0) {
+            return '';
+        }
+
+        const clauses = existentialClauses.map(clause => {
+            const quantifierSql = clause.quantifier === Quantifier.Exists ? 'EXISTS' : 'NOT EXISTS';
+            const [first, ...rest] : QueryJoinEdge[] = clause.query.joins as QueryJoinEdge[];
+            const firstHeadFactId = first.direction === 'predecessor'
+                ? `e${first.edgeAlias}.predecessor_fact_id`
+                : `e${first.edgeAlias}.successor_fact_id`;
+            const firstTailFactId = first.direction === 'predecessor'
+                ? `e${first.edgeAlias}.successor_fact_id`
+                : `e${first.edgeAlias}.predecessor_fact_id`;
+            const joins = this.buildJoins(rest, firstHeadFactId);
+            const priorFactId = clause.priorEdgeJoin.direction === 'predecessor'
+                ? `e${clause.priorEdgeJoin.edgeAlias}.predecessor_fact_id`
+                : `e${clause.priorEdgeJoin.edgeAlias}.successor_fact_id`;
+            return ` AND ${quantifierSql} (SELECT 1 FROM public.edge e${first.edgeAlias}${joins} ` +
+                `WHERE ${firstTailFactId} = ${priorFactId} ` +
+                `AND e${first.edgeAlias}.role_id = $${first.roleParameter})`;
+        });
+        return clauses.join('');
+    }
+
     buildNestedSql(typeId: number, steps: Step[]): QueryParts {
         // Push a new query to the stack.
         const parentQuery = this.queryParts;
+        const parentShouldEmitFact = this.shouldEmitFacts;
+        this.shouldEmitFacts = false;
         this.queryParts = {
             joins: [],
             existentialClauses: []
@@ -158,6 +188,7 @@ class QueryBuilder {
 
         // Pop the stack and return the nested query.
         const nestedQuery = this.queryParts;
+        this.shouldEmitFacts = parentShouldEmitFact;
         this.queryParts = parentQuery;
         return nestedQuery;
     }
@@ -272,7 +303,15 @@ class QueryBuilder {
         }
         else if (step instanceof ExistentialCondition) {
             const nested: QueryParts = this.buildNestedSql(state.typeId, step.steps);
-            this.queryParts.existentialClauses.push({ quantifier: step.quantifier, query: nested });
+            const lastJoin = this.queryParts.joins[this.queryParts.joins.length - 1];
+            if (lastJoin.table !== 'edge') {
+                throw new Error(`Existential condition on non-edge table ${lastJoin.table}`);
+            }
+            this.queryParts.existentialClauses.push({
+                quantifier: step.quantifier,
+                priorEdgeJoin: lastJoin,
+                query: nested
+            });
             return state;
         }
         throw new Error(`Cannot yet handle step ${step.constructor.name} from successor type state`);
@@ -299,10 +338,12 @@ class QueryBuilder {
     }
 
     private emitFact() {
-        const factAlias = this.nextFact++;
-        this.queryParts.joins.push({
-            table: 'fact',
-            factAlias: factAlias
-        });
+        if (this.shouldEmitFacts) {
+            const factAlias = this.nextFact++;
+            this.queryParts.joins.push({
+                table: 'fact',
+                factAlias: factAlias
+            });
+        }
     }
 }
