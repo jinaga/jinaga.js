@@ -121,13 +121,14 @@ describe('Postgres', () => {
   it('should parse successor query with existential predecessor', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" E(P.uncle)');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND EXISTS (SELECT 1 ' +
-          'FROM public.edge e2  ' +
-          'WHERE e2.successor_type = e1.successor_type AND e2.successor_hash = e1.successor_hash ' +
-            'AND e2.role = $4)'
+      'SELECT f2.hash ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.successor_fact_id = e1.successor_fact_id AND e2.role_id = $4)'
     );
     expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
     expect(parameters[1]).to.equal(startHash);
@@ -139,13 +140,14 @@ describe('Postgres', () => {
   it('should parse successor query with negative existential predecessor', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" N(P.uncle)');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND NOT EXISTS (SELECT 1 ' +
-          'FROM public.edge e2  ' +
-          'WHERE e2.successor_type = e1.successor_type AND e2.successor_hash = e1.successor_hash ' +
-            'AND e2.role = $4)'
+      'SELECT f2.hash ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.successor_fact_id = e1.successor_fact_id AND e2.role_id = $4)'
     );
     expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
     expect(parameters[1]).to.equal(startHash);
@@ -157,17 +159,17 @@ describe('Postgres', () => {
   it('should parse consecutive existential queries', () => {
     const { sql, parameters, factTypes, roleMap } = sqlFor('S.parent F.type="Child" N(S.condition F.type="Condition") N(S.other F.type="Other")');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-        'FROM public.edge e1  ' +
-        'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-          'AND NOT EXISTS (SELECT 1 ' +
-            'FROM public.edge e2  ' +
-            'WHERE e2.predecessor_type = e1.successor_type AND e2.predecessor_hash = e1.successor_hash ' +
-              'AND e2.role = $4) ' +
-          'AND NOT EXISTS (SELECT 1 ' +
-            'FROM public.edge e3  ' +
-            'WHERE e3.predecessor_type = e1.successor_type AND e3.predecessor_hash = e1.successor_hash ' +
-              'AND e3.role = $5)'
+      'SELECT f2.hash ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.predecessor_fact_id = e1.successor_fact_id AND e2.role_id = $4) ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e3 ' +
+      'WHERE e3.predecessor_fact_id = e1.successor_fact_id AND e3.role_id = $5)'
     );
     expect(parameters).to.deep.equal([
       getFactTypeId(factTypes, 'Root'),
