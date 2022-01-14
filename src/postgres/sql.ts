@@ -268,7 +268,7 @@ class QueryBuilder {
                 typeId: typeId
             };
         }
-        throw new Error(`Cannot yet handle step ${step.constructor.name} from successor join state`);
+        throw new Error(`Missing type for role ${state.role}`);
     }
 
     private matchStepSuccessorType(state: QueryBuilderStateSuccessorType, step: Step): QueryBuilderState {
