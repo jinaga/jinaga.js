@@ -93,7 +93,7 @@ describe('Postgres', () => {
     );
       expect(parameters[0]).to.equal(1);
       expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal(1);
+      expect(parameters[2]).to.equal(2);
       expect(parameters[3]).to.equal(3);
       expect(pathLength).to.equal(1);
   });

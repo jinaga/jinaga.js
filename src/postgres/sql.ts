@@ -1,5 +1,5 @@
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
-import { FactReference, factReferenceEquals } from '../storage';
+import { FactReference } from '../storage';
 import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
 
 export type SqlQuery = {
@@ -19,7 +19,6 @@ interface QueryJoinEdge {
     direction: 'predecessor' | 'successor';
     edgeAlias: number;
     roleParameter: number;
-    roleId: number;
 }
 
 interface QueryJoinFact {
@@ -70,6 +69,7 @@ class QueryBuilder {
         joins: [],
         existentialClauses: []
     };
+    private roleIds: number[] = [];
 
     constructor(private factTypes: FactTypeMap, private roleMap: RoleMap) {
     }
@@ -97,12 +97,9 @@ class QueryBuilder {
         const whereClause = this.buildWhereClause(this.queryParts.existentialClauses);
         const sql = `SELECT ${hashes} FROM public.fact f1${joins} WHERE f1.fact_type_id = $1 AND f1.hash = $2${whereClause}`;
 
-        const roleIds = this.queryParts.joins
-            .filter(j => j.table === 'edge')
-            .map(j => (j as QueryJoinEdge).roleId);
         return {
             sql,
-            parameters: [startTypeId, start.hash, ...roleIds],
+            parameters: [startTypeId, start.hash, ...this.roleIds],
             pathLength: factAliases.length
         };
     }
@@ -328,12 +325,12 @@ class QueryBuilder {
 
     private emitEdge(direction: 'predecessor' | 'successor', roleId: number) {
         const edgeAlias = this.nextEdge++;
+        this.roleIds.push(roleId);
         this.queryParts.joins.push({
             table: 'edge',
             direction: direction,
             edgeAlias: edgeAlias,
-            roleParameter: edgeAlias + 2,
-            roleId
+            roleParameter: edgeAlias + 2
         });
     }
 
