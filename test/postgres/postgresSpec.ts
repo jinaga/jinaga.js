@@ -179,6 +179,30 @@ describe('Postgres', () => {
       getRoleId(roleMap, getFactTypeId(factTypes, 'Other'), 'other')
     ]);
   });
+
+  it('should parse zig-zag pipeline', () => {
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.user F.type="Assignment" P.project F.type="Project" S.project F.type="Task" S.task F.type="Task.Title"');
+    expect(sql).to.equal(
+      'SELECT f2.hash, f3.hash ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'JOIN public.edge e2 ON e2.successor_fact_id = e1.successor_fact_id AND e2.role_id = $4 ' +
+      'JOIN public.edge e3 ON e3.predecessor_fact_id = e2.predecessor_fact_id AND e3.role_id = $5 ' +
+      'JOIN public.edge e4 ON e4.predecessor_fact_id = e3.successor_fact_id AND e4.role_id = $6 ' +
+      'JOIN public.fact f3 ON f3.fact_id = e4.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
+    );
+    expect(parameters).to.deep.equal([
+      getFactTypeId(factTypes, 'Root'),
+      startHash,
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Assignment'), 'user'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Assignment'), 'project'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Task'), 'project'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Task.Title'), 'task')
+    ]);
+    expect(pathLength).to.equal(2);
+  })
 });
 
 function allFactTypes(steps: Step[]): string[] {
