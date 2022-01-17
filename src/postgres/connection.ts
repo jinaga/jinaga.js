@@ -45,6 +45,9 @@ export class ConnectionFactory {
                 }
             }
             catch (e) {
+                if (!isTransientError(e)) {
+                    throw e;
+                }
                 attempt++;
                 if (attempt === pause.length) {
                     throw e;
@@ -59,4 +62,12 @@ export class ConnectionFactory {
     private async createClient() {
         return await this.postgresPool.connect();
     }
+}
+
+function isTransientError(e: any) {
+    if (e.code === 'ECONNREFUSED') {
+        return true;
+    }
+    console.error("Postgres error:", e);
+    return false;
 }
