@@ -39,11 +39,14 @@ interface PublicKeyResult {
 }
 
 function loadFactRecord(r: Row): FactRecord {
+    const { fact_type_id, hash, data } = r;
+    const { predecessors, fields } = JSON.parse(data);
+    const factType = this.factTypes.get(fact_type_id);
     return {
-        type: r.type,
-        hash: r.hash,
-        predecessors: JSON.parse(r.predecessors),
-        fields: JSON.parse(r.fields)
+        type: factType,
+        hash: hash,
+        predecessors: predecessors,
+        fields: fields
     };
 }
 
@@ -146,21 +149,22 @@ export class PostgresStore implements Storage {
             return [];
         }
 
-        const tuples = references.map((r, i) => '($' + (i*2 + 1) + ', $' + (i*2 + 2) + ')');
-        const parameters = flatten(references, (r) => [r.type, r.hash]);
+        const factTypes = this.factTypeMap;
+        const factValues = references.map((f, i) =>
+            `(\$${i * 2 + 1}, \$${i * 2 + 2}::integer)`);
+        const factParameters = flatten(references, (f) =>
+            [f.hash, factTypes.get(f.type)]);
         const sql =
-            'WITH RECURSIVE a(ancestor_hash, ancestor_type, hash, type) AS (' +
-            ' SELECT v.hash AS ancestor_hash, v.type AS ancestor_type, v.hash, v.type' +
-            ' FROM (VALUES ' + tuples.join(', ') + ') AS v (type, hash)' +
-            ' UNION ALL' +
-            ' SELECT e.predecessor_hash AS ancestor_hash, e.predecessor_type AS ancestor_type, a.hash, a.type' +
-            ' FROM a' +
-            ' JOIN public.edge e ON e.successor_hash = a.ancestor_hash AND e.successor_type = a.ancestor_type)' +
-            ' SELECT fact.type, fact.hash, fact.fields, fact.predecessors' +
-            ' FROM (SELECT DISTINCT a.ancestor_hash, a.ancestor_type FROM a) AS d' +
-            ' JOIN public.fact ON d.ancestor_type = fact.type AND d.ancestor_hash = fact.hash;';
+            'SELECT f2.fact_type_id, f2.hash, f2.data ' +
+            'FROM public.fact f1 ' +
+            'JOIN (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id) ' +
+            '  ON v.fact_type_id = f1.fact_type_id AND v.hash = f1.hash ' +
+            'JOIN public.ancestor a ' +
+            '  ON a.fact_id = f1.fact_id ' +
+            'JOIN public.fact f2 ' +
+            '  ON f2.fact_id = a.ancestor_fact_id;';
         const { rows } = await this.connectionFactory.with(async (connection) => {
-            return await connection.query(sql, parameters);
+            return await connection.query(sql, factParameters);
         })
         return rows.map(loadFactRecord);
     }
