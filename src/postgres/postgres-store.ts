@@ -1,7 +1,7 @@
 import { PoolClient } from 'pg';
 import { canonicalizeFact } from "../fact/hash";
 import { Query } from '../query/query';
-import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
+import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, PredecessorCollection, Storage } from '../storage';
 import { distinct, flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
 import { makeEdgeRecords } from './edge-record';
@@ -38,16 +38,13 @@ interface PublicKeyResult {
     }[];
 }
 
-function loadFactRecord(r: Row): FactRecord {
-    const { fact_type_id, hash, data } = r;
-    const { predecessors, fields } = JSON.parse(data);
-    const factType = this.factTypes.get(fact_type_id);
-    return {
-        type: factType,
-        hash: hash,
-        predecessors: predecessors,
-        fields: fields
-    };
+interface AncestorResult {
+    rows: {
+        fact_type_id: number;
+        name: string;
+        hash: string;
+        data: string;
+    }[];
 }
 
 function loadFactReference(r: Row): FactReference {
@@ -88,7 +85,7 @@ export class PostgresStore implements Storage {
                 throw new Error('Attempted to save a fact with no hash or type.');
             }
             return await this.connectionFactory.withTransaction(async (connection) => {
-                const factTypes = await storeFactTypes(facts, copyFactTypeMap(this.factTypeMap), connection);
+                const factTypes = await storeFactTypes(facts, this.factTypeMap, connection);
                 const existingFacts = await findExistingFacts(facts, factTypes, connection);
                 const newFacts = facts.filter(f => !hasFact(existingFacts, f.hash, factTypes.get(f.type)));
                 if (newFacts.length === 0) {
@@ -149,39 +146,74 @@ export class PostgresStore implements Storage {
             return [];
         }
 
-        const factTypes = this.factTypeMap;
+        const factTypes = await this.loadFactTypesFromReferences(references);
+
         const factValues = references.map((f, i) =>
             `(\$${i * 2 + 1}, \$${i * 2 + 2}::integer)`);
         const factParameters = flatten(references, (f) =>
             [f.hash, factTypes.get(f.type)]);
         const sql =
-            'SELECT f2.fact_type_id, f2.hash, f2.data ' +
+            'SELECT f2.fact_type_id, t.name, f2.hash, f2.data ' +
             'FROM public.fact f1 ' +
             'JOIN (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id) ' +
             '  ON v.fact_type_id = f1.fact_type_id AND v.hash = f1.hash ' +
             'JOIN public.ancestor a ' +
             '  ON a.fact_id = f1.fact_id ' +
             'JOIN public.fact f2 ' +
-            '  ON f2.fact_id = a.ancestor_fact_id;';
-        const { rows } = await this.connectionFactory.with(async (connection) => {
+            '  ON f2.fact_id = a.ancestor_fact_id ' +
+            'JOIN public.fact_type t ' +
+            '  ON t.fact_type_id = f2.fact_type_id;';
+        const result: AncestorResult = await this.connectionFactory.with(async (connection) => {
             return await connection.query(sql, factParameters);
         })
-        return rows.map(loadFactRecord);
+        const resultFactTypes = result.rows.reduce(
+            (factTypes, r) => addFactType(factTypes, r.name, r.fact_type_id),
+            emptyFactTypeMap()
+        );
+        this.factTypeMap = mergeFactTypes(this.factTypeMap, resultFactTypes);
+        return result.rows.map((r) => {
+            const { fields, predecessors }: { fields: {}, predecessors: PredecessorCollection } = JSON.parse(r.data);
+            return <FactRecord>{
+                type: r.name,
+                hash: r.hash,
+                fields,
+                predecessors
+            }
+        });
+    }
+
+    private async loadFactTypesFromReferences(references: FactReference[]): Promise<FactTypeMap> {
+        const factTypes = this.factTypeMap;
+        const newFactTypes = references
+            .map(reference => reference.type)
+            .filter(type => !factTypes.has(type))
+            .filter(distinct);
+        if (newFactTypes.length > 0) {
+            const loadedFactTypes = await this.connectionFactory.with(async (connection) => {
+                return await loadFactTypes(newFactTypes, connection);
+            });
+            const mergedFactTypes = mergeFactTypes(factTypes, loadedFactTypes);
+            this.factTypeMap = mergedFactTypes;
+            return mergedFactTypes;
+        }
+        return factTypes;
     }
 }
 
 async function storeFactTypes(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
+    const newFactTypes = facts
+        .map(fact => fact.type)
+        .filter(type => !factTypes.has(type))
+        .filter(distinct);
+    if (newFactTypes.length === 0) {
+        return factTypes;
+    }
+
     // Look up existing fact types
-    const types = facts.map(fact => fact.type).filter(distinct);
-    const lookUpSql = 'SELECT name, fact_type_id FROM public.fact_type WHERE name=ANY($1);';
-    const { rows: existingRows }: FactTypeResult = await connection.query(lookUpSql, [types]);
-    const factTypeIds = existingRows.reduce(
-        (map, row) => addFactType(map, row.name, row.fact_type_id),
-        emptyFactTypeMap()
-    );
-    const remainingNames = types.filter(type => !factTypeIds.has(type));
+    const loadedFactTypes = await loadFactTypes(newFactTypes, connection);
+    const remainingNames = newFactTypes.filter(type => !loadedFactTypes.has(type));
     if (remainingNames.length === 0) {
-        return factTypeIds;
+        return mergeFactTypes(loadedFactTypes, factTypes);
     }
 
     // Insert new fact types
@@ -192,11 +224,21 @@ async function storeFactTypes(facts: FactRecord[], factTypes: FactTypeMap, conne
     if (newRows.length !== remainingNames.length) {
         throw new Error('Failed to insert all new fact types.');
     }
-    const allFactTypeIds = newRows.reduce(
+    const allFactTypes = newRows.reduce(
         (map, row) => addFactType(map, row.name, row.fact_type_id),
-        factTypeIds
+        mergeFactTypes(loadedFactTypes, factTypes)
     );
-    return allFactTypeIds;
+    return allFactTypes;
+}
+
+async function loadFactTypes(factTypeNames: string[], connection: PoolClient) {
+    const lookUpSql = 'SELECT name, fact_type_id FROM public.fact_type WHERE name=ANY($1);';
+    const { rows: existingRows }: FactTypeResult = await connection.query(lookUpSql, [factTypeNames]);
+    const factTypeIds = existingRows.reduce(
+        (map, row) => addFactType(map, row.name, row.fact_type_id),
+        emptyFactTypeMap()
+    );
+    return factTypeIds;
 }
 
 async function storeRoles(facts: FactRecord[], factTypes: FactTypeMap, roleMap: RoleMap, connection: PoolClient) {
