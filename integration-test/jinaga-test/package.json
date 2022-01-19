@@ -4,7 +4,8 @@
   "description": "Integration tests for Jinaga.JS",
   "main": "index.js",
   "scripts": {
-    "test": "jest --reporters jest-compact-reporter"
+    "test": "jest --reporters jest-compact-reporter",
+    "test:verbose": "jest --silent=false --verbose false"
   },
   "jest": {
     "verbose": false
