@@ -97,7 +97,7 @@ class QueryBuilder {
         const factAliases = this.queryParts.joins
             .filter(j => j.table === 'fact')
             .map(j => (j as QueryJoinFact).factAlias);
-        const hashes = factAliases.map(a => `f${a}.hash`).join(', ');
+        const hashes = factAliases.map(a => `f${a}.hash as hash${a}`).join(', ');
         const joins = this.buildJoins(this.queryParts.joins, 'f1.fact_id');
         const whereClause = this.buildWhereClause(this.queryParts.existentialClauses);
         const sql = `SELECT ${hashes} FROM public.fact f1${joins} WHERE f1.fact_type_id = $1 AND f1.hash = $2${whereClause}`;

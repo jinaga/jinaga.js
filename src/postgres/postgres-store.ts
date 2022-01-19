@@ -57,9 +57,13 @@ function loadFactReference(r: Row): FactReference {
 function loadFactPath(pathLength: number, factTypeNames: string[], r: Row): FactPath {
     let path: FactPath = [];
     for (let i = 0; i < pathLength; i++) {
+        const hash = r['hash' + (i + 2)];
+        if (!hash) {
+            throw new Error(`Cannot find column 'hash${i + 2}'`);
+        }
         path.push({
             type: factTypeNames[i],
-            hash: r['hash' + i]
+            hash: hash
         });
     }
     return path;
