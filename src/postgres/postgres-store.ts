@@ -54,11 +54,11 @@ function loadFactReference(r: Row): FactReference {
     };
 }
 
-function loadFactPath(pathLength: number, r: Row): FactPath {
+function loadFactPath(pathLength: number, factTypeNames: string[], r: Row): FactPath {
     let path: FactPath = [];
     for (let i = 0; i < pathLength; i++) {
         path.push({
-            type: r['type' + i],
+            type: factTypeNames[i],
             hash: r['hash' + i]
         });
     }
@@ -129,7 +129,7 @@ export class PostgresStore implements Storage {
             return await connection.query(sqlQuery.sql, sqlQuery.parameters);
         });
         this.factTypeMap = mergeFactTypes(this.factTypeMap, factTypes);
-        return rows.map(row => loadFactPath(sqlQuery.pathLength, row));
+        return rows.map(row => loadFactPath(sqlQuery.pathLength, sqlQuery.factTypeNames, row));
     }
 
     async exists(fact: FactReference): Promise<boolean> {

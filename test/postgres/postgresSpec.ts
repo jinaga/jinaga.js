@@ -35,19 +35,9 @@ describe('Postgres', () => {
     expect(parse).to.throw(Error, 'Missing type for role predecessor');
   });
 
-  it('should parse predecessor query', () => {
-    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('P.parent');
-    expect(sql).to.equal(
-      'SELECT f2.hash ' +
-      'FROM public.fact f1 ' +
-      'JOIN public.edge e1 ON e1.successor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
-      'JOIN public.fact f2 ON f2.fact_id = e1.predecessor_fact_id ' +
-      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
-    );
-    expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
-    expect(parameters[1]).to.equal(startHash);
-    expect(parameters[2]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'Root'), 'parent'));
-    expect(pathLength).to.equal(1);
+  it('should error on predecessor query', () => {
+    const parse = () => sqlFor('P.parent');
+    expect(parse).to.throw(Error, 'Missing final type');
   });
 
   it('should parse successor query with type', () => {
@@ -119,7 +109,7 @@ describe('Postgres', () => {
   });
 
   it('should parse successor query with existential predecessor', () => {
-    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" E(P.uncle)');
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" E(P.uncle F.type="Uncle")');
     expect(sql).to.equal(
       'SELECT f2.hash ' +
       'FROM public.fact f1 ' +
@@ -138,7 +128,7 @@ describe('Postgres', () => {
   });
 
   it('should parse successor query with negative existential predecessor', () => {
-    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" N(P.uncle)');
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" N(P.uncle F.type="Uncle")');
     expect(sql).to.equal(
       'SELECT f2.hash ' +
       'FROM public.fact f1 ' +

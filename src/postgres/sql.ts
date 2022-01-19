@@ -5,7 +5,8 @@ import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
 export type SqlQuery = {
     sql: string,
     parameters: any[],
-    pathLength: number
+    pathLength: number,
+    factTypeNames: string[]
 };
 
 export function sqlFromSteps(start: FactReference, steps: Step[], factTypes: FactTypeMap, roleMap: RoleMap) : SqlQuery {
@@ -42,10 +43,12 @@ interface ExistentialClause {
 interface QueryBuilderStatePredecessorType {
     state: 'predecessor-type';
     typeId: number;
+    typeName: string;
 }
 interface QueryBuilderStateSuccessorType {
     state: 'successor-type';
     typeId: number;
+    typeName: string;
 }
 interface QueryBuilderStatePredecessorJoin {
     state: 'predecessor-join';
@@ -70,6 +73,7 @@ class QueryBuilder {
         existentialClauses: []
     };
     private roleIds: number[] = [];
+    private factTypeNames: string[] = [];
 
     constructor(private factTypes: FactTypeMap, private roleMap: RoleMap) {
     }
@@ -82,7 +86,8 @@ class QueryBuilder {
         const startTypeId = getFactTypeId(this.factTypes, start.type);
         const startState: QueryBuilderState = {
             state: 'predecessor-type',
-            typeId: startTypeId
+            typeId: startTypeId,
+            typeName: start.type
         };
         const finalState = steps.reduce((state, step) => {
             return this.matchStep(state, step);
@@ -100,7 +105,8 @@ class QueryBuilder {
         return {
             sql,
             parameters: [startTypeId, start.hash, ...this.roleIds],
-            pathLength: factAliases.length
+            pathLength: factAliases.length,
+            factTypeNames: this.factTypeNames
         };
     }
 
@@ -164,7 +170,7 @@ class QueryBuilder {
         return clauses.join('');
     }
 
-    buildNestedSql(typeId: number, steps: Step[]): QueryParts {
+    buildNestedSql(typeId: number, typeName: string, steps: Step[]): QueryParts {
         // Push a new query to the stack.
         const parentQuery = this.queryParts;
         const parentShouldEmitFact = this.shouldEmitFacts;
@@ -176,7 +182,8 @@ class QueryBuilder {
 
         const startState: QueryBuilderState = {
             state: 'predecessor-type',
-            typeId: typeId
+            typeId: typeId,
+            typeName: typeName
         };
         const finalState = steps.reduce((state, step) => {
             return this.matchStep(state, step);
@@ -243,7 +250,8 @@ class QueryBuilder {
             const typeId = getFactTypeId(this.factTypes, step.value);
             return {
                 state: 'predecessor-type',
-                typeId
+                typeId,
+                typeName: step.value
             };
         }
         throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor join state`);
@@ -265,7 +273,8 @@ class QueryBuilder {
             this.emitEdge('successor', roleId);
             return {
                 state: 'successor-type',
-                typeId: typeId
+                typeId: typeId,
+                typeName: step.value
             };
         }
         throw new Error(`Missing type for role ${state.role}`);
@@ -285,7 +294,7 @@ class QueryBuilder {
         else if (step instanceof Join) {
             if (step.direction === Direction.Predecessor) {
                 const roleId = getRoleId(this.roleMap, state.typeId, step.role);
-                this.emitFact();
+                this.emitFact(state.typeName);
                 this.emitEdge('predecessor', roleId);
                 return {
                     state: 'predecessor-join'
@@ -299,7 +308,7 @@ class QueryBuilder {
             }
         }
         else if (step instanceof ExistentialCondition) {
-            const nested: QueryParts = this.buildNestedSql(state.typeId, step.steps);
+            const nested: QueryParts = this.buildNestedSql(state.typeId, state.typeName, step.steps);
             const lastJoin = this.queryParts.joins[this.queryParts.joins.length - 1];
             if (lastJoin.table !== 'edge') {
                 throw new Error(`Existential condition on non-edge table ${lastJoin.table}`);
@@ -318,8 +327,11 @@ class QueryBuilder {
         if (finalState.state === 'successor-join') {
             throw new Error(`Missing type for role ${finalState.role}`);
         }
+        else if (finalState.state === 'predecessor-join') {
+            throw new Error(`Missing final type`);
+        }
         else {
-            this.emitFact();
+            this.emitFact(finalState.typeName);
         }
     }
 
@@ -334,13 +346,14 @@ class QueryBuilder {
         });
     }
 
-    private emitFact() {
+    private emitFact(factTypeName: string) {
         if (this.shouldEmitFacts) {
             const factAlias = this.nextFact++;
             this.queryParts.joins.push({
                 table: 'fact',
                 factAlias: factAlias
             });
+            this.factTypeNames.push(factTypeName);
         }
     }
 }
