@@ -157,6 +157,13 @@ export class PostgresStore implements Storage {
         const factParameters = flatten(references, (f) =>
             [f.hash, factTypes.get(f.type)]);
         const sql =
+            'SELECT f.fact_type_id, t.name, f.hash, f.data ' +
+            'FROM public.fact f ' +
+            'JOIN public.fact_type t ' +
+            '  ON f.fact_type_id = t.fact_type_id ' +
+            'JOIN (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id) ' +
+            '  ON v.fact_type_id = f.fact_type_id AND v.hash = f.hash ' +
+            'UNION ' +
             'SELECT f2.fact_type_id, t.name, f2.hash, f2.data ' +
             'FROM public.fact f1 ' +
             'JOIN (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id) ' +
