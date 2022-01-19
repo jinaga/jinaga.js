@@ -43,7 +43,7 @@ describe('Postgres', () => {
   it('should parse successor query with type', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.predecessor F.type="IntegrationTest.Successor"');
     expect(sql).to.equal(
-      'SELECT f2.hash ' +
+      'SELECT f2.hash as hash2 ' +
       'FROM public.fact f1 ' +
       'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
@@ -58,7 +58,7 @@ describe('Postgres', () => {
   it('should parse predecessor query with type', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('P.parent F.type="Parent"');
     expect(sql).to.equal(
-      'SELECT f2.hash ' +
+      'SELECT f2.hash as hash2 ' +
       'FROM public.fact f1 ' +
       'JOIN public.edge e1 ON e1.successor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.predecessor_fact_id ' +
@@ -73,7 +73,7 @@ describe('Postgres', () => {
   it('should parse successor query with existential', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.predecessor F.type="IntegrationTest.Successor" E(S.successor F.type="IntegrationTest.Grandchild")');
     expect(sql).to.equal(
-      'SELECT f2.hash ' +
+      'SELECT f2.hash as hash2 ' +
       'FROM public.fact f1 ' +
       'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
@@ -92,7 +92,7 @@ describe('Postgres', () => {
   it('should parse successor query with negative existential', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.predecessor F.type="IntegrationTest.Successor" N(S.successor F.type="IntegrationTest.Grandchild")');
     expect(sql).to.equal(
-      'SELECT f2.hash ' +
+      'SELECT f2.hash as hash2 ' +
       'FROM public.fact f1 ' +
       'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
@@ -111,7 +111,7 @@ describe('Postgres', () => {
   it('should parse successor query with existential predecessor', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" E(P.uncle F.type="Uncle")');
     expect(sql).to.equal(
-      'SELECT f2.hash ' +
+      'SELECT f2.hash as hash2 ' +
       'FROM public.fact f1 ' +
       'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
@@ -130,7 +130,7 @@ describe('Postgres', () => {
   it('should parse successor query with negative existential predecessor', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" N(P.uncle F.type="Uncle")');
     expect(sql).to.equal(
-      'SELECT f2.hash ' +
+      'SELECT f2.hash as hash2 ' +
       'FROM public.fact f1 ' +
       'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
@@ -149,7 +149,7 @@ describe('Postgres', () => {
   it('should parse consecutive existential queries', () => {
     const { sql, parameters, factTypes, roleMap } = sqlFor('S.parent F.type="Child" N(S.condition F.type="Condition") N(S.other F.type="Other")');
     expect(sql).to.equal(
-      'SELECT f2.hash ' +
+      'SELECT f2.hash as hash2 ' +
       'FROM public.fact f1 ' +
       'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
@@ -173,7 +173,7 @@ describe('Postgres', () => {
   it('should parse zig-zag pipeline', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.user F.type="Assignment" P.project F.type="Project" S.project F.type="Task" S.task F.type="Task.Title"');
     expect(sql).to.equal(
-      'SELECT f2.hash, f3.hash ' +
+      'SELECT f2.hash as hash2, f3.hash as hash3 ' +
       'FROM public.fact f1 ' +
       'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
       'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
