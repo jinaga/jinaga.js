@@ -124,20 +124,25 @@ export class PostgresStore implements Storage {
             return [[start]];
         }
 
-        const factTypes = await this.loadFactTypesFromSteps(query.steps);
-        const roleMap = this.roleMap;
+        try {
+            const factTypes = await this.loadFactTypesFromSteps(query.steps);
+            const roleMap = this.roleMap;
 
-        const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
-        if (!sqlQuery) {
-            throw new Error(`Could not generate SQL for query "${query.toDescriptiveString()}"`);
+            const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
+            if (!sqlQuery) {
+                throw new Error(`Could not generate SQL for query "${query.toDescriptiveString()}" starting at "${start.type}"`);
+            }
+            if (sqlQuery.empty) {
+                return [];
+            }
+            const { rows } = await this.connectionFactory.with(async (connection) => {
+                return await connection.query(sqlQuery.sql, sqlQuery.parameters);
+            });
+            return rows.map(row => loadFactPath(sqlQuery.pathLength, sqlQuery.factTypeNames, row));
         }
-        if (sqlQuery.empty) {
-            return [];
+        catch (e) {
+            throw new Error(`Could not generate SQL for query "${query.toDescriptiveString()}" starting at "${start.type}": ${e}`);
         }
-        const { rows } = await this.connectionFactory.with(async (connection) => {
-            return await connection.query(sqlQuery.sql, sqlQuery.parameters);
-        });
-        return rows.map(row => loadFactPath(sqlQuery.pathLength, sqlQuery.factTypeNames, row));
     }
 
     private async loadFactTypesFromSteps(steps: Step[]) {
