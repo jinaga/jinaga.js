@@ -161,8 +161,13 @@ export class PostgresStore implements Storage {
     }
 
     async exists(fact: FactReference): Promise<boolean> {
-        const sql = 'SELECT COUNT(1) AS count FROM public.fact WHERE type=$1 AND hash=$2';
-        const parameters = [ fact.type, fact.hash ];
+        const factTypes = await this.loadFactTypesFromReferences([fact]);
+        const factTypeId = getFactTypeId(factTypes, fact.type);
+        if (!factTypeId) {
+            return false;
+        }
+        const sql = 'SELECT COUNT(1) AS count FROM public.fact WHERE fact_type_id=$1 AND hash=$2';
+        const parameters = [ factTypeId, fact.hash ];
         const { rows } = await this.connectionFactory.with(async (connection) => {
             return await connection.query(sql, parameters);
         });
