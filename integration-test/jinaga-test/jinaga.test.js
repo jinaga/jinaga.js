@@ -7,7 +7,7 @@ describe("Jinaga", () => {
     let close;
 
     beforeAll(() => {
-        ({ j, close } = JinagaServer.create({
+        ({ j, close, withSession } = JinagaServer.create({
             pgKeystore: "postgresql://dev:devpw@db:5432/integrationtest",
             pgStore:    "postgresql://dev:devpw@db:5432/integrationtest"
         }));
@@ -91,6 +91,23 @@ describe("Jinaga", () => {
         const device = await j.local();
 
         expect(device.type).to.equal("Jinaga.Device");
+    });
+
+    it("should get the user identity", async () => {
+        const req = {
+            user: {
+                provider: "test",
+                id: "test-user",
+                profile: {
+                    displayName: "Test User"
+                }
+            }
+        };
+        withSession(req, async (j) => {
+            const user = await j.login();
+
+            expect(user.type).to.equal("Jinaga.User");
+        });
     });
 })
 
