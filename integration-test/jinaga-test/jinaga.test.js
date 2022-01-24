@@ -57,6 +57,13 @@ describe("Jinaga", () => {
         expect(successors).to.deep.equal([successor]);
     })
 
+    it("should query a type that has never been seen", async () => {
+        const root = await j.fact(randomRoot());
+        const unknown = await j.query(root, j.for(unknownOfRoot));
+
+        expect(unknown).to.deep.equal([]);
+    });
+
     it("should save a successor fact twice", async () => {
         const root = await j.fact(randomRoot());
 
@@ -124,6 +131,13 @@ function randomRoot() {
 function successorsOfRoot(root) {
     return Jinaga.match({
         type: "IntegrationTest.Successor",
+        predecessor: root
+    });
+}
+
+function unknownOfRoot(root) {
+    return Jinaga.match({
+        type: "IntegrationTest.UnknownType",
         predecessor: root
     });
 }

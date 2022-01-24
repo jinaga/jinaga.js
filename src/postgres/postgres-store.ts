@@ -1,6 +1,7 @@
 import { PoolClient } from 'pg';
 import { canonicalizeFact } from "../fact/hash";
 import { Query } from '../query/query';
+import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../query/steps";
 import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, PredecessorCollection, Storage } from '../storage';
 import { distinct, flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
@@ -123,17 +124,35 @@ export class PostgresStore implements Storage {
             return [[start]];
         }
 
-        const factTypes = copyFactTypeMap(this.factTypeMap);
-        const roleMap = copyRoleMap(this.roleMap);
+        const factTypes = await this.loadFactTypesFromSteps(query.steps);
+        const roleMap = this.roleMap;
+
         const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
         if (!sqlQuery) {
             throw new Error(`Could not generate SQL for query "${query.toDescriptiveString()}"`);
         }
+        if (sqlQuery.empty) {
+            return [];
+        }
         const { rows } = await this.connectionFactory.with(async (connection) => {
             return await connection.query(sqlQuery.sql, sqlQuery.parameters);
         });
-        this.factTypeMap = mergeFactTypes(this.factTypeMap, factTypes);
         return rows.map(row => loadFactPath(sqlQuery.pathLength, sqlQuery.factTypeNames, row));
+    }
+
+    private async loadFactTypesFromSteps(steps: Step[]) {
+        const factTypes = this.factTypeMap;
+        const unknownFactTypes = allFactTypes(steps)
+            .filter(factType => !factTypes.has(factType));
+        if (unknownFactTypes.length > 0) {
+            const loadedFactTypes = await this.connectionFactory.with(async (connection) => {
+                return await loadFactTypes(unknownFactTypes, connection);
+            });
+            const merged = mergeFactTypes(this.factTypeMap, loadedFactTypes);
+            this.factTypeMap = merged;
+            return merged;
+        }
+        return factTypes;
     }
 
     async exists(fact: FactReference): Promise<boolean> {
@@ -458,4 +477,47 @@ async function insertSignatures(envelopes: FactEnvelope[], allFacts: FactMap, fa
             FROM (VALUES ${signatureValues.join(', ')}) AS v(fact_id, public_key_id, signature) 
             ON CONFLICT DO NOTHING`, signatureParameters);
     }
+}
+
+function allFactTypes(steps: Step[]): string[] {
+  const factTypes = steps
+    .filter(step => step instanceof PropertyCondition && step.name === 'type')
+    .map(step => (step as PropertyCondition).value);
+  const childFactTypes = steps
+    .filter(step => step instanceof ExistentialCondition)
+    .flatMap(step => allFactTypes((step as ExistentialCondition).steps));
+  return [...factTypes, ...childFactTypes].filter(distinct);
+}
+
+function allRoles(steps: Step[], initialType: string) {
+  let roles: { type: string; role: string }[] = [];
+  let type: string = initialType;
+  let role: string = undefined;
+
+  for (const step of steps) {
+    if (step instanceof PropertyCondition) {
+      if (step.name === 'type') {
+        type = step.value;
+        if (role) {
+          roles.push({ type, role });
+          role = undefined;
+        }
+      }
+    }
+    else if (step instanceof Join) {
+      if (step.direction === Direction.Predecessor) {
+        roles.push({ type, role: step.role });
+        role = undefined;
+      }
+      else {
+        role = step.role;
+      }
+      type = undefined;
+    }
+    else if (step instanceof ExistentialCondition) {
+      roles = roles.concat(allRoles(step.steps, type));
+    }
+  }
+
+  return roles;
 }

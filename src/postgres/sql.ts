@@ -3,6 +3,7 @@ import { FactReference } from '../storage';
 import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
 
 export type SqlQuery = {
+    empty: boolean,
     sql: string,
     parameters: any[],
     pathLength: number,
@@ -57,12 +58,16 @@ interface QueryBuilderStateSuccessorJoin {
     state: 'successor-join';
     role: string;
 }
+interface QueryBuilderStateEmpty {
+    state: 'empty';
+}
 
 type QueryBuilderState =
     QueryBuilderStatePredecessorType |
     QueryBuilderStateSuccessorType |
     QueryBuilderStatePredecessorJoin |
-    QueryBuilderStateSuccessorJoin;
+    QueryBuilderStateSuccessorJoin |
+    QueryBuilderStateEmpty;
 
 class QueryBuilder {
     private nextEdge: number = 1;
@@ -94,6 +99,16 @@ class QueryBuilder {
         }, startState);
         this.end(finalState);
 
+        if (finalState.state === 'empty') {
+            return {
+                empty: true,
+                sql: '',
+                parameters: [],
+                pathLength: 0,
+                factTypeNames: []
+            };
+        }
+
         const factAliases = this.queryParts.joins
             .filter(j => j.table === 'fact')
             .map(j => (j as QueryJoinFact).factAlias);
@@ -103,6 +118,7 @@ class QueryBuilder {
         const sql = `SELECT ${hashes} FROM public.fact f1${joins} WHERE f1.fact_type_id = $1 AND f1.hash = $2${whereClause}`;
 
         return {
+            empty: false,
             sql,
             parameters: [startTypeId, start.hash, ...this.roleIds],
             pathLength: factAliases.length,
@@ -207,6 +223,10 @@ class QueryBuilder {
                 return this.matchStepSuccessorJoin(state, step);
             case 'successor-type':
                 return this.matchStepSuccessorType(state, step);
+            case 'empty':
+                return state;
+            default:
+                throw new Error(`Unknown state: ${(state as any).state}`);
         }
     }
 
@@ -248,6 +268,11 @@ class QueryBuilder {
                 throw new Error(`Property condition on non-type property ${step.name}`);
             }
             const typeId = getFactTypeId(this.factTypes, step.value);
+            if (!typeId) {
+                return {
+                    state: 'empty'
+                };
+            }
             return {
                 state: 'predecessor-type',
                 typeId,
@@ -264,7 +289,9 @@ class QueryBuilder {
             }
             const typeId = getFactTypeId(this.factTypes, step.value);
             if (!typeId) {
-                throw new Error(`Unknown type ${step.value}`);
+                return {
+                    state: 'empty'
+                };
             }
             const roleId = getRoleId(this.roleMap, typeId, state.role);
             if (!roleId) {
@@ -330,7 +357,7 @@ class QueryBuilder {
         else if (finalState.state === 'predecessor-join') {
             throw new Error(`Missing final type`);
         }
-        else {
+        else if (finalState.state === 'predecessor-type' || finalState.state === 'successor-type') {
             this.emitFact(finalState.typeName);
         }
     }

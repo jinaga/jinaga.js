@@ -2,10 +2,9 @@ import { expect } from 'chai';
 import { describe, it } from 'mocha';
 import 'source-map-support/register';
 import { dehydrateReference } from '../../src/fact/hydrate';
-import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap, getFactId, getFactTypeId, getRoleId } from "../../src/postgres/maps";
+import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap, getFactTypeId, getRoleId } from "../../src/postgres/maps";
 import { sqlFromSteps } from '../../src/postgres/sql';
 import { fromDescriptiveString } from '../../src/query/descriptive-string';
-import { Query } from "../../src/query/query";
 import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../../src/query/steps";
 import { distinct } from "../../src/util/fn";
 
@@ -16,14 +15,14 @@ describe('Postgres', () => {
 
   function sqlFor(descriptiveString: string) {
     const query = fromDescriptiveString(descriptiveString);
-    const factTypes = allFactTypes(query.steps).reduce(
+    const factTypes = allFactTypes(query.steps).filter(t => t !== 'Unknown').reduce(
       (f, factType, i) => addFactType(f, factType, i + 1),
       emptyFactTypeMap());
     let roleMap = allRoles(query.steps, 'Root').reduce(
       (r, role, i) => addRole(r, getFactTypeId(factTypes, role.type), role.role, i + 1),
       emptyRoleMap());
     const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
-    return sqlQuery ? { sql: sqlQuery.sql, parameters: sqlQuery.parameters, pathLength: sqlQuery.pathLength, factTypes, roleMap } : null;
+    return sqlQuery ? { sql: sqlQuery.sql, parameters: sqlQuery.parameters, pathLength: sqlQuery.pathLength, empty: sqlQuery.empty, factTypes, roleMap } : null;
   }
 
   it('should parse empty query', () => {
@@ -192,7 +191,22 @@ describe('Postgres', () => {
       getRoleId(roleMap, getFactTypeId(factTypes, 'Task.Title'), 'task')
     ]);
     expect(pathLength).to.equal(2);
-  })
+  });
+
+  it('should parse query with unknown successor type', () => {
+    const { empty } = sqlFor('S.root F.type="Unknown"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with unknown predecessor type', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" P.unknown F.type="Unknown" P.user F.type="Jinaga.User"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with some unknown types', () => {
+    const { empty } = sqlFor('S.root F.type="Unknown" P.user F.type="Jinaga.User"');
+    expect(empty).to.be.true;
+  });
 });
 
 function allFactTypes(steps: Step[]): string[] {
