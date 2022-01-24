@@ -6,14 +6,14 @@ describe("Jinaga", () => {
     let j;
     let close;
 
-    beforeAll(() => {
+    beforeEach(() => {
         ({ j, close, withSession } = JinagaServer.create({
             pgKeystore: "postgresql://dev:devpw@db:5432/integrationtest",
             pgStore:    "postgresql://dev:devpw@db:5432/integrationtest"
         }));
     });
 
-    afterAll(async () => {
+    afterEach(async () => {
         await close();
     });
 
