@@ -71,7 +71,7 @@ export class PostgresKeystore implements Keystore {
     }
 
     private async getPublicKey(connection: PoolClient, userIdentity: UserIdentity): Promise<string> {
-        const { rows } = await connection.query('SELECT public_key FROM public.user WHERE provider = $1 AND user_id = $2',
+        const { rows } = await connection.query('SELECT public_key FROM public.user WHERE provider = $1 AND user_identifier = $2',
             [userIdentity.provider, userIdentity.id]);
         if (rows.length > 1) {
             throw new Error('Duplicate entries found in the keystore');
@@ -85,7 +85,7 @@ export class PostgresKeystore implements Keystore {
     }
 
     private async getPrivateKey(connection: PoolClient, userIdentity: UserIdentity) {
-        const { rows } = await connection.query('SELECT public_key, private_key FROM public.user WHERE provider = $1 AND user_id = $2',
+        const { rows } = await connection.query('SELECT public_key, private_key FROM public.user WHERE provider = $1 AND user_identifier = $2',
             [userIdentity.provider, userIdentity.id]);
         if (rows.length > 1) {
             throw new Error('Duplicate entries found in the keystore');
@@ -104,7 +104,7 @@ export class PostgresKeystore implements Keystore {
         const keypair = pki.rsa.generateKeyPair({ bits: 2048 });
         const privateKey = pki.privateKeyToPem(keypair.privateKey);
         const publicKey = pki.publicKeyToPem(keypair.publicKey);
-        await connection.query('INSERT INTO public.user (provider, user_id, private_key, public_key) VALUES ($1, $2, $3, $4)',
+        await connection.query('INSERT INTO public.user (provider, user_identifier, private_key, public_key) VALUES ($1, $2, $3, $4)',
             [userIdentity.provider, userIdentity.id, privateKey, publicKey]);
         return publicKey;
     }

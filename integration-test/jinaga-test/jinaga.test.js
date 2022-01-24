@@ -86,6 +86,12 @@ describe("Jinaga", () => {
         expect(successor.identifier).to.equal("test-successor");
         expect(successor.predecessor.type).to.equal("IntegrationTest.Root");
     });
+
+    it("should get the device identity", async () => {
+        const device = await j.local();
+
+        expect(device.type).to.equal("Jinaga.Device");
+    });
 })
 
 function randomRoot() {
