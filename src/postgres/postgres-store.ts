@@ -126,7 +126,7 @@ export class PostgresStore implements Storage {
 
         try {
             const factTypes = await this.loadFactTypesFromSteps(query.steps);
-            const roleMap = this.roleMap;
+            const roleMap = await this.loadRolesFromSteps(query.steps, factTypes, start.type);
 
             const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
             if (!sqlQuery) {
@@ -158,6 +158,21 @@ export class PostgresStore implements Storage {
             return merged;
         }
         return factTypes;
+    }
+
+    private async loadRolesFromSteps(steps: Step[], factTypes: FactTypeMap, initialType: string) {
+        const roleMap = this.roleMap;
+        const unknownRoles = allRoles(steps, factTypes, getFactTypeId(factTypes, initialType))
+            .filter(r => !hasRole(roleMap, r.defining_fact_type_id, r.role));
+        if (unknownRoles.length > 0) {
+            const loadedRoles = await this.connectionFactory.with(async (connection) => {
+                return await loadRoles(unknownRoles, roleMap, connection);
+            });
+            const merged = mergeRoleMaps(this.roleMap, loadedRoles);
+            this.roleMap = merged;
+            return merged;
+        }
+        return roleMap;
     }
 
     async exists(fact: FactReference): Promise<boolean> {
@@ -295,23 +310,8 @@ async function storeRoles(facts: FactRecord[], factTypes: FactTypeMap, roleMap: 
     ) === index);
 
     if (roles.length > 0) {
-        const roleValues = roles.map((role, index) =>
-            `($${index * 2 + 1}, $${index * 2 + 2}::integer)`);
-        const roleParameters = flatten(roles, (role) => [
-            role.role,
-            role.defining_fact_type_id
-        ]);
-
         // Look up existing roles
-        const lookUpSql = 'SELECT role.name, role.defining_fact_type_id, role.role_id' +
-            ' FROM public.role' +
-            ' JOIN (VALUES ' + roleValues.join(', ') + ') AS v (name, defining_fact_type_id)' +
-            ' ON v.name = role.name AND v.defining_fact_type_id = role.defining_fact_type_id;';
-        const { rows: existingRows }: RoleResult = await connection.query(lookUpSql, roleParameters);
-        const roleIds = existingRows.reduce(
-            (map, row) => addRole(map, row.defining_fact_type_id, row.name, row.role_id),
-            roleMap
-        );
+        const roleIds = await loadRoles(roles, roleMap, connection);
         const remainingRoles = roles.filter(role => !hasRole(
             roleIds, role.defining_fact_type_id, role.role));
         if (remainingRoles.length === 0) {
@@ -338,6 +338,26 @@ async function storeRoles(facts: FactRecord[], factTypes: FactTypeMap, roleMap: 
         );
         return allRoleIds;
     }
+}
+
+async function loadRoles(roles: { role: string; defining_fact_type_id: number; }[], roleMap: RoleMap, connection: PoolClient) {
+    const roleValues = roles.map((role, index) =>
+        `($${index * 2 + 1}, $${index * 2 + 2}::integer)`);
+    const roleParameters = flatten(roles, (role) => [
+        role.role,
+        role.defining_fact_type_id
+    ]);
+
+    const lookUpSql = 'SELECT role.name, role.defining_fact_type_id, role.role_id' +
+        ' FROM public.role' +
+        ' JOIN (VALUES ' + roleValues.join(', ') + ') AS v (name, defining_fact_type_id)' +
+        ' ON v.name = role.name AND v.defining_fact_type_id = role.defining_fact_type_id;';
+    const { rows }: RoleResult = await connection.query(lookUpSql, roleParameters);
+    const roleIds = rows.reduce(
+        (map, row) => addRole(map, row.defining_fact_type_id, row.name, row.role_id),
+        roleMap
+    );
+    return roleIds;
 }
 
 async function findExistingFacts(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
@@ -490,44 +510,46 @@ async function insertSignatures(envelopes: FactEnvelope[], allFacts: FactMap, fa
 }
 
 function allFactTypes(steps: Step[]): string[] {
-  const factTypes = steps
-    .filter(step => step instanceof PropertyCondition && step.name === 'type')
-    .map(step => (step as PropertyCondition).value);
-  const childFactTypes = steps
-    .filter(step => step instanceof ExistentialCondition)
-    .flatMap(step => allFactTypes((step as ExistentialCondition).steps));
-  return [...factTypes, ...childFactTypes].filter(distinct);
+    const factTypes = steps
+        .filter(step => step instanceof PropertyCondition && step.name === 'type')
+        .map(step => (step as PropertyCondition).value);
+    const childFactTypes = steps
+        .filter(step => step instanceof ExistentialCondition)
+        .flatMap(step => allFactTypes((step as ExistentialCondition).steps));
+    return [...factTypes, ...childFactTypes].filter(distinct);
 }
 
-function allRoles(steps: Step[], initialType: string) {
-  let roles: { type: string; role: string }[] = [];
-  let type: string = initialType;
-  let role: string = undefined;
+function allRoles(steps: Step[], factTypes: FactTypeMap, initialTypeId: number) {
+    let roles: { defining_fact_type_id: number; role: string }[] = [];
+    let defining_fact_type_id = initialTypeId;
+    let role: string | undefined = undefined;
 
-  for (const step of steps) {
-    if (step instanceof PropertyCondition) {
-      if (step.name === 'type') {
-        type = step.value;
-        if (role) {
-          roles.push({ type, role });
-          role = undefined;
+    for (const step of steps) {
+        if (step instanceof PropertyCondition) {
+            if (step.name === 'type') {
+                defining_fact_type_id = getFactTypeId(factTypes, step.value);
+                if (defining_fact_type_id && role) {
+                    roles.push({ defining_fact_type_id, role });
+                }
+                role = undefined;
+            }
         }
-      }
+        else if (step instanceof Join) {
+            if (step.direction === Direction.Predecessor) {
+                if (defining_fact_type_id) {
+                    roles.push({ defining_fact_type_id, role: step.role });
+                }
+                role = undefined;
+            }
+            else {
+                role = step.role;
+            }
+            defining_fact_type_id = undefined;
+        }
+        else if (step instanceof ExistentialCondition) {
+            roles = roles.concat(allRoles(step.steps, factTypes, defining_fact_type_id));
+        }
     }
-    else if (step instanceof Join) {
-      if (step.direction === Direction.Predecessor) {
-        roles.push({ type, role: step.role });
-        role = undefined;
-      }
-      else {
-        role = step.role;
-      }
-      type = undefined;
-    }
-    else if (step instanceof ExistentialCondition) {
-      roles = roles.concat(allRoles(step.steps, type));
-    }
-  }
 
-  return roles;
+    return roles;
 }
