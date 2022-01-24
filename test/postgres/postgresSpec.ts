@@ -18,7 +18,7 @@ describe('Postgres', () => {
     const factTypes = allFactTypes(query.steps).filter(t => t !== 'Unknown').reduce(
       (f, factType, i) => addFactType(f, factType, i + 1),
       emptyFactTypeMap());
-    let roleMap = allRoles(query.steps, 'Root').reduce(
+    let roleMap = allRoles(query.steps, 'Root').filter(r => r.role !== 'unknown').reduce(
       (r, role, i) => addRole(r, getFactTypeId(factTypes, role.type), role.role, i + 1),
       emptyRoleMap());
     const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
@@ -199,12 +199,27 @@ describe('Postgres', () => {
   });
 
   it('should parse query with unknown predecessor type', () => {
-    const { empty } = sqlFor('S.root F.type="Assignment" P.unknown F.type="Unknown" P.user F.type="Jinaga.User"');
+    const { empty } = sqlFor('S.root F.type="Assignment" P.pred F.type="Unknown" P.user F.type="Jinaga.User"');
     expect(empty).to.be.true;
   });
 
   it('should parse query with some unknown types', () => {
     const { empty } = sqlFor('S.root F.type="Unknown" P.user F.type="Jinaga.User"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with unknown successor role', () => {
+    const { empty } = sqlFor('S.unknown F.type="Successor"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with unknown predecessor role', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" P.unknown F.type="Jinaga.User"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with some unknown predecessor roles', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" P.predecessor F.type="Predecessor" P.unknown F.type="Jinaga.User"');
     expect(empty).to.be.true;
   });
 });

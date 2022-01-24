@@ -245,7 +245,9 @@ class QueryBuilder {
             if (step.direction === Direction.Predecessor) {
                 const roleId = getRoleId(this.roleMap, state.typeId, step.role);
                 if (!roleId) {
-                    throw new Error(`Role ${step.role} not found in type id ${state.typeId}`);
+                    return {
+                        state: 'empty'
+                    };
                 }
                 this.emitEdge('predecessor', roleId);
                 return {
@@ -295,7 +297,9 @@ class QueryBuilder {
             }
             const roleId = getRoleId(this.roleMap, typeId, state.role);
             if (!roleId) {
-                throw new Error(`Role ${state.role} not found in type ${step.value}`);
+                return {
+                    state: 'empty'
+                };
             }
             this.emitEdge('successor', roleId);
             return {
@@ -321,6 +325,11 @@ class QueryBuilder {
         else if (step instanceof Join) {
             if (step.direction === Direction.Predecessor) {
                 const roleId = getRoleId(this.roleMap, state.typeId, step.role);
+                if (!roleId) {
+                    return {
+                        state: 'empty'
+                    };
+                }
                 this.emitFact(state.typeName);
                 this.emitEdge('predecessor', roleId);
                 return {
