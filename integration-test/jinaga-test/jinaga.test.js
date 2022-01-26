@@ -113,7 +113,7 @@ describe("Jinaga", () => {
         await withSession(req, async (j) => {
             const user = await j.login();
 
-            expect(user.type).to.equal("Jinaga.User");
+            expect(user.userFact.type).to.equal("Jinaga.User");
         });
     });
 })
