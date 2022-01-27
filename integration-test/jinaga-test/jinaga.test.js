@@ -2,14 +2,18 @@ const { expect } = require("chai");
 const { Jinaga, JinagaServer } = require("./jinaga");
 const forge = require("node-forge");
 
+const host = "db";
+// const host = "localhost";
+const connectionString = `postgresql://dev:devpw@${host}:5432/integrationtest`;
+
 describe("Jinaga", () => {
     let j;
     let close;
 
     beforeEach(() => {
         ({ j, close, withSession } = JinagaServer.create({
-            pgKeystore: "postgresql://dev:devpw@db:5432/integrationtest",
-            pgStore:    "postgresql://dev:devpw@db:5432/integrationtest"
+            pgKeystore: connectionString,
+            pgStore:    connectionString
         }));
     });
 
@@ -126,14 +130,15 @@ describe("Jinaga", () => {
         });
 
         await check(async j => {
-            const device = await j.local();
+            const checkDevice = await j.local();
+            expect(checkDevice).to.deep.equal(device);
 
-            const configurations = await j.query(device, j.for(configurationFromDevice));
+            const configurations = await j.query(checkDevice, j.for(configurationFromDevice));
 
             expect(configurations).to.deep.equal([
                 {
                     type: "Configuration",
-                    from: device
+                    from: checkDevice
                 }
             ]);
         });
@@ -166,15 +171,15 @@ function unknownOfRoot(root) {
 
 function configurationFromDevice(device) {
     return Jinaga.match({
-        type: "ImprovingU.Configuration",
+        type: "Configuration",
         from: device
     });
 }
 
 async function check(callback) {
     const { j, close } = JinagaServer.create({
-        pgKeystore: "postgresql://dev:devpw@db:5432/integrationtest",
-        pgStore:    "postgresql://dev:devpw@db:5432/integrationtest"
+        pgKeystore: connectionString,
+        pgStore:    connectionString
     });
 
     try {
