@@ -116,6 +116,28 @@ describe("Jinaga", () => {
             expect(user.userFact.type).to.equal("Jinaga.User");
         });
     });
+
+    it("should get device information", async () => {
+        const device = await j.local();
+
+        await j.fact({
+            type: "Configuration",
+            from: device
+        });
+
+        await check(async j => {
+            const device = await j.local();
+
+            const configurations = await j.query(device, j.for(configurationFromDevice));
+
+            expect(configurations).to.deep.equal([
+                {
+                    type: "Configuration",
+                    from: device
+                }
+            ]);
+        });
+    });
 })
 
 function randomRoot() {
@@ -140,4 +162,25 @@ function unknownOfRoot(root) {
         type: "IntegrationTest.UnknownType",
         predecessor: root
     });
+}
+
+function configurationFromDevice(device) {
+    return Jinaga.match({
+        type: "ImprovingU.Configuration",
+        from: device
+    });
+}
+
+async function check(callback) {
+    const { j, close } = JinagaServer.create({
+        pgKeystore: "postgresql://dev:devpw@db:5432/integrationtest",
+        pgStore:    "postgresql://dev:devpw@db:5432/integrationtest"
+    });
+
+    try {
+        await callback(j);
+    }
+    finally {
+        await close();
+    }
 }
