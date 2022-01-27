@@ -125,7 +125,7 @@ export class PostgresStore implements Storage {
         }
 
         try {
-            const factTypes = await this.loadFactTypesFromSteps(query.steps);
+            const factTypes = await this.loadFactTypesFromSteps(query.steps, start.type);
             const roleMap = await this.loadRolesFromSteps(query.steps, factTypes, start.type);
 
             const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
@@ -145,10 +145,11 @@ export class PostgresStore implements Storage {
         }
     }
 
-    private async loadFactTypesFromSteps(steps: Step[]) {
+    private async loadFactTypesFromSteps(steps: Step[], startType: string): Promise<FactTypeMap> {
         const factTypes = this.factTypeMap;
-        const unknownFactTypes = allFactTypes(steps)
-            .filter(factType => !factTypes.has(factType));
+        const unknownFactTypes = [...allFactTypes(steps), startType]
+            .filter(factType => !factTypes.has(factType))
+            .filter(distinct);
         if (unknownFactTypes.length > 0) {
             const loadedFactTypes = await this.connectionFactory.with(async (connection) => {
                 return await loadFactTypes(unknownFactTypes, connection);
