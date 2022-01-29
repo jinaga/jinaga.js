@@ -246,7 +246,7 @@ class QueryBuilder {
             }
             return state;
         }
-        if (step instanceof Join) {
+        else if (step instanceof Join) {
             if (step.direction === Direction.Predecessor) {
                 const roleId = getRoleId(this.roleMap, state.typeId, step.role);
                 if (!roleId) {
@@ -266,7 +266,12 @@ class QueryBuilder {
                 }
             }
         }
-        throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor type state`);
+        else if (step instanceof ExistentialCondition) {
+            return this.pushExistentialCondition(state.typeId, state.typeName, state, step);
+        }
+        else {
+            throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor type state`);
+        }
     }
 
     private matchStepPredecessorJoin(state: QueryBuilderStatePredecessorJoin, step: Step): QueryBuilderState {
@@ -349,31 +354,11 @@ class QueryBuilder {
             }
         }
         else if (step instanceof ExistentialCondition) {
-            const nested = this.buildNestedSql(state.typeId, state.typeName, step.steps);
-            if (!nested) {
-                if (step.quantifier === Quantifier.Exists) {
-                    // An empty positive existential condition cannot match any facts.
-                    return {
-                        state: 'empty'
-                    };
-                }
-                else {
-                    // An empty negative existential condition cannot exclude any facts.
-                    return state;
-                }
-            }
-            const lastJoin = this.queryParts.joins[this.queryParts.joins.length - 1];
-            if (lastJoin.table !== 'edge') {
-                throw new Error(`Existential condition on non-edge table ${lastJoin.table}`);
-            }
-            this.queryParts.existentialClauses.push({
-                quantifier: step.quantifier,
-                priorEdgeJoin: lastJoin,
-                query: nested
-            });
-            return state;
+            return this.pushExistentialCondition(state.typeId, state.typeName, state, step);
         }
-        throw new Error(`Cannot yet handle step ${step.constructor.name} from successor type state`);
+        else {
+            throw new Error(`Cannot yet handle step ${step.constructor.name} from successor type state`);
+        }
     }
 
     private end(finalState: QueryBuilderState) {
@@ -408,5 +393,31 @@ class QueryBuilder {
             });
             this.factTypeNames.push(factTypeName);
         }
+    }
+
+    private pushExistentialCondition(typeId: number, typeName: string, state: QueryBuilderState, step: ExistentialCondition): QueryBuilderState {
+        const nested = this.buildNestedSql(typeId, typeName, step.steps);
+        if (!nested) {
+            if (step.quantifier === Quantifier.Exists) {
+                // An empty positive existential condition cannot match any facts.
+                return {
+                    state: 'empty'
+                };
+            }
+            else {
+                // An empty negative existential condition cannot exclude any facts.
+                return state;
+            }
+        }
+        const lastJoin = this.queryParts.joins[this.queryParts.joins.length - 1];
+        if (lastJoin.table !== 'edge') {
+            throw new Error(`Existential condition on non-edge table ${lastJoin.table}`);
+        }
+        this.queryParts.existentialClauses.push({
+            quantifier: step.quantifier,
+            priorEdgeJoin: lastJoin,
+            query: nested
+        });
+        return state;
     }
 }

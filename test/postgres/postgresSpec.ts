@@ -169,6 +169,33 @@ describe('Postgres', () => {
     ]);
   });
 
+  it('should parse existential query form predecessor', () => {
+    const { sql, parameters, factTypes, roleMap } = sqlFor('S.root F.type="Identifier" N(S.prior F.type="Identifier") P.identified F.type="Identified" N(S.identified F.type="Delete")');
+    expect(sql).to.equal(
+      'SELECT f2.hash as hash2, f3.hash as hash3 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'JOIN public.edge e3 ON e3.successor_fact_id = e1.successor_fact_id AND e3.role_id = $5 ' +
+      'JOIN public.fact f3 ON f3.fact_id = e3.predecessor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.predecessor_fact_id = e1.successor_fact_id AND e2.role_id = $4) ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e4 ' +
+      'WHERE e4.predecessor_fact_id = e3.predecessor_fact_id AND e4.role_id = $6)'
+    );
+    expect(parameters).to.deep.equal([
+      getFactTypeId(factTypes, 'Root'),
+      startHash,
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Identifier'), 'root'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Identifier'), 'prior'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Identifier'), 'identified'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Delete'), 'identified')
+    ]);
+  });
+
   it('should parse zig-zag pipeline', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.user F.type="Assignment" P.project F.type="Project" S.project F.type="Task" S.task F.type="Task.Title"');
     expect(sql).to.equal(
