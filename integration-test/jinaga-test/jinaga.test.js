@@ -168,6 +168,19 @@ describe("Jinaga as a user", () => {
         expect(user.userFact.type).to.equal("Jinaga.User");
     });
 
+    it("should not allow an unauthorized fact", async () => {
+        try {
+            await j.fact({
+                type: "IntegrationTest.Unauthorized",
+                identifier: "test-unauthorized"
+            });
+            throw new Error("Expected fact to be rejected");
+        }
+        catch (e) {
+            expect(e.message).to.equal("Unauthorized");
+        }
+    });
+
     it("should save user name", async () => {
         const { userFact: user, profile } = await j.login();
 
