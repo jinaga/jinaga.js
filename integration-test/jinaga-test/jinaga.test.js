@@ -1,17 +1,17 @@
 const { expect } = require("chai");
-const { Jinaga, JinagaServer } = require("./jinaga");
+const { Jinaga, JinagaServer, ensure } = require("./jinaga");
 const forge = require("node-forge");
 
 const host = "db";
 // const host = "localhost";
 const connectionString = `postgresql://dev:devpw@${host}:5432/integrationtest`;
 
-describe("Jinaga", () => {
+describe("Jinaga as a device", () => {
     let j;
     let close;
 
     beforeEach(() => {
-        ({ j, close, withSession } = JinagaServer.create({
+        ({ j, close } = JinagaServer.create({
             pgKeystore: connectionString,
             pgStore:    connectionString
         }));
@@ -104,23 +104,6 @@ describe("Jinaga", () => {
         expect(device.type).to.equal("Jinaga.Device");
     });
 
-    it("should get the user identity", async () => {
-        const req = {
-            user: {
-                provider: "test",
-                id: "test-user",
-                profile: {
-                    displayName: "Test User"
-                }
-            }
-        };
-        await withSession(req, async (j) => {
-            const user = await j.login();
-
-            expect(user.userFact.type).to.equal("Jinaga.User");
-        });
-    });
-
     it("should get device information", async () => {
         const device = await j.local();
 
@@ -142,6 +125,64 @@ describe("Jinaga", () => {
                 }
             ]);
         });
+    });
+});
+
+describe("Jinaga as a user", () => {
+    let j;
+    let jDevice;
+    let close;
+    let done;
+    let session;
+
+    beforeEach(() => {
+        const promise = new Promise((resolve) => {
+            done = resolve;
+        });
+        ({ j: jDevice, close, withSession } = JinagaServer.create({
+            pgKeystore: connectionString,
+            pgStore:    connectionString,
+            authorization
+        }));
+        session = withSession({ user: {
+            provider: "test",
+            id: "test-user",
+            profile: {
+                displayName: "Test User"
+            }
+        } }, async jUser => {
+            j = jUser;
+            await promise;
+        });
+    });
+
+    afterEach(async () => {
+        done();
+        await session;
+        await close();
+    });
+
+    it("should get the user identity", async () => {
+        const user = await j.login();
+
+        expect(user.userFact.type).to.equal("Jinaga.User");
+    });
+
+    it("should save user name", async () => {
+        const { userFact: user, profile } = await j.login();
+
+        const userName = {
+            type: "MyApplication.UserName",
+            value: profile.displayName,
+            from: user,
+            prior: []
+        };
+        await j.fact(userName);
+
+        const userNames = await jDevice.query(user, Jinaga.for(namesOfUser));
+
+        expect(userNames.length).to.equal(1);
+        expect(userNames[0].value).to.equal("Test User");
     });
 })
 
@@ -176,6 +217,25 @@ function configurationFromDevice(device) {
     });
 }
 
+function namesOfUser(user) {
+    return Jinaga.match({
+        type: "MyApplication.UserName",
+        from: user
+    }).suchThat(nameIsCurrent);
+}
+
+function nameIsCurrent(name) {
+    return Jinaga.notExists({
+        type: "MyApplication.UserName",
+        prior: [name]
+    });
+}
+
+function nameUser(name) {
+    ensure(name).has("from");
+    return Jinaga.match(name.from);
+}
+
 async function check(callback) {
     const { j, close } = JinagaServer.create({
         pgKeystore: connectionString,
@@ -188,4 +248,10 @@ async function check(callback) {
     finally {
         await close();
     }
+}
+
+function authorization(a) {
+    return a
+        // .type("MyApplication.UserName", Jinaga.for(nameUser))
+        ;
 }
