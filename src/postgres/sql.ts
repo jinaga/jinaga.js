@@ -53,6 +53,7 @@ interface QueryBuilderStateSuccessorType {
 }
 interface QueryBuilderStatePredecessorJoin {
     state: 'predecessor-join';
+    position: string;
 }
 interface QueryBuilderStateSuccessorJoin {
     state: 'successor-join';
@@ -256,7 +257,8 @@ class QueryBuilder {
                 }
                 this.emitEdge('predecessor', roleId);
                 return {
-                    state: 'predecessor-join'
+                    state: 'predecessor-join',
+                    position: `${state.typeName}.${step.role}`
                 }
             }
             if (step.direction === Direction.Successor) {
@@ -291,7 +293,12 @@ class QueryBuilder {
                 typeName: step.value
             };
         }
-        throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor join state`);
+        else if (step instanceof ExistentialCondition) {
+            throw new Error(`Missing type of "${state.position}"`);
+        }
+        else {
+            throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor join state`);
+        }
     }
 
     private matchStepSuccessorJoin(state: QueryBuilderStateSuccessorJoin, step: Step): QueryBuilderState {
@@ -343,7 +350,8 @@ class QueryBuilder {
                 this.emitFact(state.typeName);
                 this.emitEdge('predecessor', roleId);
                 return {
-                    state: 'predecessor-join'
+                    state: 'predecessor-join',
+                    position: `${state.typeName}.${step.role}`
                 };
             }
             else {
@@ -366,7 +374,7 @@ class QueryBuilder {
             throw new Error(`Missing type for role ${finalState.role}`);
         }
         else if (finalState.state === 'predecessor-join') {
-            throw new Error(`Missing final type`);
+            throw new Error(`Missing type of "${finalState.position}"`);
         }
         else if (finalState.state === 'predecessor-type' || finalState.state === 'successor-type') {
             this.emitFact(finalState.typeName);

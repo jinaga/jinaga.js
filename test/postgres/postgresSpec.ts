@@ -36,7 +36,7 @@ describe('Postgres', () => {
 
   it('should error on predecessor query', () => {
     const parse = () => sqlFor('P.parent');
-    expect(parse).to.throw(Error, 'Missing final type');
+    expect(parse).to.throw(Error, /Missing type of "Root.parent"/);
   });
 
   it('should parse successor query with type', () => {
@@ -194,6 +194,11 @@ describe('Postgres', () => {
       getRoleId(roleMap, getFactTypeId(factTypes, 'Identifier'), 'identified'),
       getRoleId(roleMap, getFactTypeId(factTypes, 'Delete'), 'identified')
     ]);
+  });
+
+  it('should error on existential query on predecessor with no type', () => {
+    const parse = () => sqlFor('S.root F.type="Identifier" N(S.prior F.type="Identifier") P.identified N(S.identified F.type="Delete")');
+    expect(parse).to.throw(/Missing type of "Identifier.identified"/);
   });
 
   it('should parse zig-zag pipeline', () => {
