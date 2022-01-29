@@ -157,10 +157,13 @@ export class AuthorizationRules {
         return result;
     }
 
+    hasRule(type: string) {
+        return !!this.rulesByType[type];
+    }
+
     async isAuthorized(userFact: FactReference, fact: FactRecord, factRecords: FactRecord[], store: Storage) {
         const rules = this.rulesByType[fact.type];
         if (!rules) {
-            Trace.warn(`No authorization rules defined for type ${fact.type}.`);
             return false;
         }
 
