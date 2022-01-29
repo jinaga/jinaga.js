@@ -39,6 +39,11 @@ describe('Postgres', () => {
     expect(parse).to.throw(Error, /Missing type of "Root.parent"/);
   });
 
+  it('should error on double predecessor query', () => {
+    const parse = () => sqlFor('P.parent P.grandparent');
+    expect(parse).to.throw(Error, /Missing type of "Root.parent"/);
+  });
+
   it('should parse successor query with type', () => {
     const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.predecessor F.type="IntegrationTest.Successor"');
     expect(sql).to.equal(

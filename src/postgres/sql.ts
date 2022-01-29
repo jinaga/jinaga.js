@@ -272,7 +272,7 @@ class QueryBuilder {
             return this.pushExistentialCondition(state.typeId, state.typeName, state, step);
         }
         else {
-            throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor type state`);
+            throw new Error(`Unknown step ${step.constructor.name}`);
         }
     }
 
@@ -293,11 +293,8 @@ class QueryBuilder {
                 typeName: step.value
             };
         }
-        else if (step instanceof ExistentialCondition) {
-            throw new Error(`Missing type of "${state.position}"`);
-        }
         else {
-            throw new Error(`Cannot yet handle step ${step.constructor.name} from predecessor join state`);
+            throw new Error(`Missing type of "${state.position}"`);
         }
     }
 
@@ -325,7 +322,9 @@ class QueryBuilder {
                 typeName: step.value
             };
         }
-        throw new Error(`Missing type for role ${state.role}`);
+        else {
+            throw new Error(`Missing type for role ${state.role}`);
+        }
     }
 
     private matchStepSuccessorType(state: QueryBuilderStateSuccessorType, step: Step): QueryBuilderState {
@@ -365,7 +364,7 @@ class QueryBuilder {
             return this.pushExistentialCondition(state.typeId, state.typeName, state, step);
         }
         else {
-            throw new Error(`Cannot yet handle step ${step.constructor.name} from successor type state`);
+            throw new Error(`Unknown step ${step.constructor.name}`);
         }
     }
 
