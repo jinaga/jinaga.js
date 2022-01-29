@@ -49,7 +49,8 @@ export class JinagaServer {
         const feed = new FeedImpl(store);
         const fork = createFork(config, feed, syncStatusNotifier);
         const keystore = new PostgresKeystore(config.pgKeystore);
-        const authorization = createAuthorization(config, fork, keystore);
+        const authorizationRules = config.authorization ? config.authorization(new AuthorizationRules()) : null;
+        const authorization = createAuthorization(authorizationRules, fork, keystore);
         const router = new HttpRouter(authorization);
         const authentication = new AuthenticationDevice(fork, keystore, localDeviceIdentity);
         const memory = new MemoryStore();
@@ -63,7 +64,7 @@ export class JinagaServer {
             handler: router.handler,
             j,
             withSession: (req, callback) => {
-                return withSession(feed, keystore, req, callback);
+                return withSession(feed, keystore, authorizationRules, req, callback);
             },
             close
         }
@@ -96,9 +97,8 @@ function createFork(config: JinagaServerConfig, feed: Feed, syncStatusNotifier: 
     }
 }
 
-function createAuthorization(config: JinagaServerConfig, feed: Feed, keystore: Keystore | null): Authorization {
+function createAuthorization(authorizationRules: AuthorizationRules | null, feed: Feed, keystore: Keystore | null): Authorization {
     if (keystore) {
-        const authorizationRules = config.authorization ? config.authorization(new AuthorizationRules()) : null;
         const authorization = new AuthorizationKeystore(feed, keystore, authorizationRules);
         return authorization;
     }
@@ -107,13 +107,13 @@ function createAuthorization(config: JinagaServerConfig, feed: Feed, keystore: K
     }
 }
 
-async function withSession(feed: Feed, keystore: Keystore, req: Request, callback: ((j: Jinaga) => Promise<void>)) {
+async function withSession(feed: Feed, keystore: Keystore, authorizationRules: AuthorizationRules | null, req: Request, callback: ((j: Jinaga) => Promise<void>)) {
     const user = <RequestUser>req.user;
     const userIdentity: UserIdentity = {
         provider: user.provider,
         id: user.id
     }
-    const authentication = new AuthenticationSession(feed, keystore, userIdentity, user.profile.displayName, localDeviceIdentity);
+    const authentication = new AuthenticationSession(feed, keystore, authorizationRules, userIdentity, user.profile.displayName, localDeviceIdentity);
     const syncStatusNotifier = new SyncStatusNotifier();
     const j = new Jinaga(authentication, new MemoryStore(), syncStatusNotifier);
     await callback(j);

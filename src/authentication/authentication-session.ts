@@ -1,19 +1,28 @@
+import { AuthorizationRules } from "..";
+import { AuthorizationEngine } from "../authorization/authorization-engine";
 import { Feed, Observable } from '../feed/feed';
 import { Channel } from "../fork/channel";
 import { LoginResponse } from '../http/messages';
 import { Keystore, UserIdentity } from '../keystore';
 import { Query } from '../query/query';
 import { FactEnvelope, FactRecord, FactReference } from '../storage';
+import { mapAsync } from "../util/fn";
 import { Authentication } from './authentication';
 
 export class AuthenticationSession implements Authentication {
+    private authorizationEngine: AuthorizationEngine | null;
+
     constructor(
         private inner: Feed,
         private keystore: Keystore,
+        authorizationRules: AuthorizationRules | null,
         private userIdentity: UserIdentity,
         private displayName: string,
         private localDeviceIdentity: UserIdentity
-    ) {}
+    ) {
+        this.authorizationEngine = authorizationRules &&
+            new AuthorizationEngine(authorizationRules, inner);
+    }
 
     async close(): Promise<void> {
         await this.inner.close();
@@ -38,8 +47,15 @@ export class AuthenticationSession implements Authentication {
         return this.inner.from(fact, query);
     }
 
-    save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
-        return this.inner.save(envelopes);
+    async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+        const userFact = await this.keystore.getUserFact(this.userIdentity);
+        const facts = envelopes.map(envelope => envelope.fact);
+        const authorizedFacts = await this.authorizationEngine.authorizeFacts(facts, userFact);
+        const signedFacts = await mapAsync(authorizedFacts, async fact => (<FactEnvelope>{
+            fact,
+            signatures: await this.keystore.signFact(this.userIdentity, fact)
+        }))
+        return await this.inner.save(signedFacts);
     }
 
     query(start: FactReference, query: Query): Promise<FactReference[][]> {

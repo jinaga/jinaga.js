@@ -177,7 +177,7 @@ describe("Jinaga as a user", () => {
             throw new Error("Expected fact to be rejected");
         }
         catch (e) {
-            expect(e.message).to.equal("Unauthorized");
+            expect(e.message).to.equal("Rejected 1 fact of type IntegrationTest.Unauthorized.");
         }
     });
 
