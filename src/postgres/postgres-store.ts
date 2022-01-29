@@ -363,9 +363,13 @@ async function loadRoles(roles: { role: string; defining_fact_type_id: number; }
 
 async function findExistingFacts(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
     if (facts.length > 0) {
-        const factValues = facts.map((f, i) =>
+        const factReferences: FactReference[] = facts.flatMap(fact => [
+            ...predecessorsOf(fact),
+            fact
+        ]);
+        const factValues = factReferences.map((f, i) =>
             `(\$${i * 2 + 1}, \$${i * 2 + 2}::integer)`);
-        const factParameters = flatten(facts, (f) =>
+        const factParameters = factReferences.flatMap((f) =>
             [f.hash, factTypes.get(f.type)]);
 
         const sql = 'SELECT fact_id, fact.fact_type_id, fact.hash' +
@@ -502,11 +506,12 @@ async function insertSignatures(envelopes: FactEnvelope[], allFacts: FactMap, fa
         const signatureParameters = flatten(signatureRecords, s =>
             [s.factId, s.publicKeyId, s.signature]);
 
-        await connection.query(`INSERT INTO public.signature
+        const sql = `INSERT INTO public.signature
             (fact_id, public_key_id, signature) 
             (SELECT fact_id, public_key_id, signature 
-            FROM (VALUES ${signatureValues.join(', ')}) AS v(fact_id, public_key_id, signature) 
-            ON CONFLICT DO NOTHING`, signatureParameters);
+             FROM (VALUES ${signatureValues.join(', ')}) AS v(fact_id, public_key_id, signature)) 
+            ON CONFLICT DO NOTHING`;
+        await connection.query(sql, signatureParameters);
     }
 }
 
@@ -553,4 +558,11 @@ function allRoles(steps: Step[], factTypes: FactTypeMap, initialTypeId: number) 
     }
 
     return roles;
+}
+
+function predecessorsOf(fact: FactRecord): FactReference[] {
+    const references = Object.values(fact.predecessors).flatMap(predecessor =>
+        Array.isArray(predecessor) ? predecessor : [predecessor]
+    );
+    return references;
 }
