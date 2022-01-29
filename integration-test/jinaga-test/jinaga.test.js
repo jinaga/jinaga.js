@@ -265,6 +265,6 @@ async function check(callback) {
 
 function authorization(a) {
     return a
-        // .type("MyApplication.UserName", Jinaga.for(nameUser))
+        .type("MyApplication.UserName", Jinaga.for(nameUser))
         ;
 }

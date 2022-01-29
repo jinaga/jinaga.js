@@ -31,6 +31,12 @@ export class AuthenticationSession implements Authentication {
     
     async login(): Promise<LoginResponse> {
         const userFact = await this.keystore.getUserFact(this.userIdentity);
+        const signatures = await this.keystore.signFact(this.userIdentity, userFact);
+        const signedFact: FactEnvelope = {
+            fact: userFact,
+            signatures
+        };
+        await this.inner.save([signedFact]);
         return {
             userFact,
             profile: {
