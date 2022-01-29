@@ -245,7 +245,7 @@ function nameIsCurrent(name) {
 }
 
 function nameUser(name) {
-    ensure(name).has("from");
+    ensure(name).has("from", "Jinaga.User");
     return Jinaga.match(name.from);
 }
 

@@ -20,7 +20,8 @@ class Removed {
 }
 
 class Person {
-    type: string;
+    static Type = "Person" as const;
+    type = Person.Type;
     identifier: number;
 }
 
@@ -76,7 +77,7 @@ describe("Nested watch", function () {
     }
 
     function namesOfSender(m: Message) {
-        ensure(m).has("sender");
+        ensure(m).has("sender", Person);
         m.sender.type = 'Person';
         return j.match<Name>({
             type: 'Name',

@@ -200,19 +200,19 @@ async function whenSave(authorization: AuthorizationKeystore, facts: FactRecord[
 }
 
 function tweetSender(t: { sender: {} }) {
-    ensure(t).has("sender");
+    ensure(t).has("sender", "Jinaga.User");
 
     return j.match(t.sender);
 }
 
 function likeUser(l: { user: {} }) {
-    ensure(l).has("user");
+    ensure(l).has("user", "Jinaga.User");
 
     return j.match(l.user);
 }
 
 function deleteSender(d: { tweet: { sender: {} } }) {
-    ensure(d).has("tweet").has("sender");
+    ensure(d).has("tweet", "Tweet").has("sender", "Jinaga.User");
 
     return j.match(d.tweet.sender);
 }

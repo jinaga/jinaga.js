@@ -12,7 +12,6 @@ describe('Query parser', () => {
     const j = new Jinaga(null, null, null);
 
     function tasksInList(l: List): Specification<Task> {
-        l.type = 'List';
         return j.match({
             type: 'Task',
             list: l
@@ -20,7 +19,6 @@ describe('Query parser', () => {
     }
 
     function completionsInList(l: List): Specification<Completion> {
-        l.type = 'List';
         return j.match({
             type: 'Completion',
             task: {
@@ -31,15 +29,12 @@ describe('Query parser', () => {
     }
 
     function listOfTask(t: Task): Specification<List> {
-        ensure(t).has("list");
-        t.type = 'Task';
+        ensure(t).has("list", "List");
         return j.match(t.list);
     }
 
     function listOfCompletion(c: Completion): Specification<List> {
-        ensure(c).has("task").has("list");
-        c.type = 'Completion';
-        c.task.type = 'Task';
+        ensure(c).has("task", "Task").has("list", "List");
         return j.match(c.task.list);
     }
 
@@ -79,7 +74,6 @@ describe('Query parser', () => {
     }
 
     function uncompletedTasksInList(l: List): Specification<Completion> {
-        l.type = 'List';
         return j.match({
             type: 'Task',
             list: l
@@ -87,7 +81,6 @@ describe('Query parser', () => {
     }
 
     function completedTasksInList(l: List): Specification<Completion> {
-        l.type = 'List';
         return j.match({
             type: 'Task',
             list: l
@@ -95,7 +88,6 @@ describe('Query parser', () => {
     }
 
     function completedTasksInListWithArray(l: List): Specification<Task> {
-        l.type = 'List';
         return j.match({
             type: 'Task',
             list: <any>[l]
@@ -103,7 +95,6 @@ describe('Query parser', () => {
     }
 
     function uncompletedTasksInListAlt(l: List): Specification<Task> {
-        l.type = 'List';
         return j.match({
             type: 'Task',
             list: l
@@ -111,7 +102,6 @@ describe('Query parser', () => {
     }
 
     function completedTasksInListAlt(l: List): Specification<Task> {
-        l.type = 'List';
         return j.match({
             type: 'Task',
             list: l
@@ -146,52 +136,52 @@ describe('Query parser', () => {
     
     it('should parse to a successor query', function () {
         const query = parseQuery(j.for(tasksInList));
-        expect(query.toDescriptiveString()).to.equal('F.type="List" S.list F.type="Task"');
+        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task"');
     });
 
     it('should find two successors', function () {
         var query = parseQuery(j.for(completionsInList));
-        expect(query.toDescriptiveString()).to.equal('F.type="List" S.list F.type="Task" S.task F.type="Completion"');
+        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" S.task F.type="Completion"');
     });
 
     it('should find predecessor', function () {
         var query = parseQuery(j.for(listOfTask));
-        expect(query.toDescriptiveString()).to.equal('F.type="Task" P.list');
+        expect(query.toDescriptiveString()).to.equal('P.list F.type="List"');
     });
 
     it('should find two predecessors', function () {
         var query = parseQuery(j.for(listOfCompletion));
-        expect(query.toDescriptiveString()).to.equal('F.type="Completion" P.task F.type="Task" P.list');
+        expect(query.toDescriptiveString()).to.equal('P.task F.type="Task" P.list F.type="List"');
     });
 
     it('should parse a negative existential condition', function () {
         var query = parseQuery(j.for(uncompletedTasksInList));
-        expect(query.toDescriptiveString()).to.equal('F.type="List" S.list F.type="Task" N(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" N(S.task F.type="Completion")');
     });
 
     it('should parse a positive existential condition', function () {
         var query = parseQuery(j.for(completedTasksInList));
-        expect(query.toDescriptiveString()).to.equal('F.type="List" S.list F.type="Task" E(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" E(S.task F.type="Completion")');
     });
 
     it('should parse a negative outside of template function', function () {
         var query = parseQuery(j.for(uncompletedTasksInListAlt));
-        expect(query.toDescriptiveString()).to.equal('F.type="List" S.list F.type="Task" N(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" N(S.task F.type="Completion")');
     });
 
     it('should parse a double negative', function () {
         var query = parseQuery(j.for(completedTasksInListAlt));
-        expect(query.toDescriptiveString()).to.equal('F.type="List" S.list F.type="Task" E(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" E(S.task F.type="Completion")');
     });
 
     it('should chain to find siblings', function () {
         var query = parseQuery(j.for(listOfTask).then(uncompletedTasksInList));
-        expect(query.toDescriptiveString()).to.equal('F.type="Task" P.list F.type="List" S.list F.type="Task" N(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).to.equal('P.list F.type="List" S.list F.type="Task" N(S.task F.type="Completion")');
     })
 
     it('should allow array with one predecessor', function () {
         var query = parseQuery(j.for(completedTasksInListWithArray));
-        expect(query.toDescriptiveString()).to.equal('F.type="List" S.list F.type="Task" E(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" E(S.task F.type="Completion")');
     });
 
     it('should parse nested conditions', function() {

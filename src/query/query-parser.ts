@@ -2,7 +2,7 @@ import { Template } from '../template';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from './steps';
 
 interface Proxy {
-    has(name: string): Proxy;
+    has(name: string, type: string): Proxy;
 }
 
 export class Specification<T> {
@@ -61,9 +61,10 @@ class ParserProxy implements Proxy {
 
     [key:string]: any;
 
-    has(name:string):Proxy {
+    has(name:string, type: string):Proxy {
         const proxy = new ParserProxy(this, name);
         this[name] = proxy;
+        proxy.type = type;
         return proxy;
     }
 
@@ -133,13 +134,19 @@ function parseTemplate(template: (target: any) => any): Step[] {
     return steps;
 }
 
+type FactConstructor<T> =
+    (new (...args: any[]) => T) & {
+        Type: string;
+    }
+
 export class FactDescription<T> {
     constructor(
         private fact: T
     ) { }
 
-    has<K extends keyof T>(field: K): FactDescription<T[K]> {
-        (<any>this.fact).has(field);
+    has<K extends keyof T>(field: K, type: FactConstructor<T[K]> | string): FactDescription<T[K]> {
+        const typeName = (typeof type === "string") ? type : type.Type;
+        (<any>this.fact).has(field, typeName);
         return new FactDescription<T[K]>(this.fact[field]);
     }
 }
