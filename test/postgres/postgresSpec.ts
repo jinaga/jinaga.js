@@ -222,6 +222,50 @@ describe('Postgres', () => {
     const { empty } = sqlFor('S.root F.type="Assignment" P.predecessor F.type="Predecessor" P.unknown F.type="Jinaga.User"');
     expect(empty).to.be.true;
   });
+
+  it('should ignore negative existential with unknown type', () => {
+    const { empty, sql, parameters, factTypes, roleMap } = sqlFor('S.root F.type="Assignment" N(S.assignment F.type="Unknown")');
+    expect(empty).to.be.false;
+    expect(sql).to.equal(
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
+    );
+    expect(parameters).to.deep.equal([
+      getFactTypeId(factTypes, 'Root'),
+      startHash,
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Assignment'), 'root')
+    ]);
+  });
+
+  it('should ignore negative existential with unknown role', () => {
+    const { empty, sql, parameters, factTypes, roleMap } = sqlFor('S.root F.type="Assignment" N(S.unknown F.type="Assignment.Delete")');
+    expect(empty).to.be.false;
+    expect(sql).to.equal(
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
+    );
+    expect(parameters).to.deep.equal([
+      getFactTypeId(factTypes, 'Root'),
+      startHash,
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Assignment'), 'root')
+    ]);
+  });
+
+  it('should elevate positive existential with unknown type', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" E(S.assignment F.type="Unknown")');
+    expect(empty).to.be.true;
+  });
+
+  it('should elevate positive existential with unknown role', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" E(S.unknown F.type="Assignment.Delete")');
+    expect(empty).to.be.true;
+  });
 });
 
 function allFactTypes(steps: Step[]): string[] {

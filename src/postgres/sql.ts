@@ -186,7 +186,7 @@ class QueryBuilder {
         return clauses.join('');
     }
 
-    buildNestedSql(typeId: number, typeName: string, steps: Step[]): QueryParts {
+    buildNestedSql(typeId: number, typeName: string, steps: Step[]): QueryParts | null {
         // Push a new query to the stack.
         const parentQuery = this.queryParts;
         const parentShouldEmitFact = this.shouldEmitFacts;
@@ -210,6 +210,11 @@ class QueryBuilder {
         const nestedQuery = this.queryParts;
         this.shouldEmitFacts = parentShouldEmitFact;
         this.queryParts = parentQuery;
+
+        // If the nested query cannot match any results, return null.
+        if (finalState.state === 'empty') {
+            return null;
+        }
         return nestedQuery;
     }
 
@@ -344,7 +349,19 @@ class QueryBuilder {
             }
         }
         else if (step instanceof ExistentialCondition) {
-            const nested: QueryParts = this.buildNestedSql(state.typeId, state.typeName, step.steps);
+            const nested = this.buildNestedSql(state.typeId, state.typeName, step.steps);
+            if (!nested) {
+                if (step.quantifier === Quantifier.Exists) {
+                    // An empty positive existential condition cannot match any facts.
+                    return {
+                        state: 'empty'
+                    };
+                }
+                else {
+                    // An empty negative existential condition cannot exclude any facts.
+                    return state;
+                }
+            }
             const lastJoin = this.queryParts.joins[this.queryParts.joins.length - 1];
             if (lastJoin.table !== 'edge') {
                 throw new Error(`Existential condition on non-edge table ${lastJoin.table}`);
