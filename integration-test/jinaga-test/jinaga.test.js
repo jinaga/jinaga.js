@@ -197,6 +197,24 @@ describe("Jinaga as a user", () => {
         expect(userNames.length).to.equal(1);
         expect(userNames[0].value).to.equal("Test User");
     });
+
+    it("should set default tenant", async () => {
+        const { userFact: user } = await j.login();
+        const device = await j.local();
+
+        const defaultTenant = await j.fact({
+            type: "MyApplication.DefaultTenant",
+            tenant: {
+                type: "MyApplication.Tenant",
+                identifier: "test-tenant",
+                creator: user
+            },
+            device
+        });
+
+        const defaultTenants = await jDevice.query(device, Jinaga.for(defaultTenantsOfDevice));
+        expect(defaultTenants).to.deep.equal([defaultTenant]);
+    });
 })
 
 function randomRoot() {
@@ -249,6 +267,32 @@ function nameUser(name) {
     return Jinaga.match(name.from);
 }
 
+function defaultTenantIsCurrent(defaultTenant) {
+    return Jinaga.notExists({
+        type: "MyApplication.DefaultTenant",
+        prior: [defaultTenant]
+    });
+}
+
+function defaultTenantsOfDevice(device) {
+    return Jinaga.match({
+        type: "MyApplication.DefaultTenant",
+        device
+    }).suchThat(defaultTenantIsCurrent);
+}
+
+function tenantCreator(tenant) {
+    ensure(tenant).has("creator", "Jinaga.User");
+    return Jinaga.match(tenant.creator);
+}
+
+function defaultTenantCreator(defaultTenant) {
+    ensure(defaultTenant)
+        .has("tenant", "MyApplication.Tenant")
+        .has("creator", "Jinaga.User");
+    return Jinaga.match(defaultTenant.tenant.creator);
+}
+
 async function check(callback) {
     const { j, close } = JinagaServer.create({
         pgKeystore: connectionString,
@@ -266,5 +310,7 @@ async function check(callback) {
 function authorization(a) {
     return a
         .type("MyApplication.UserName", Jinaga.for(nameUser))
+        .type("MyApplication.Tenant", Jinaga.for(tenantCreator))
+        .type("MyApplication.DefaultTenant", Jinaga.for(defaultTenantCreator));
         ;
 }
