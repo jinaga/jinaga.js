@@ -256,9 +256,20 @@ export class PostgresStore implements Storage {
     }
 }
 
+function predecessorTypes(predecessor: FactReference[] | FactReference): string[] {
+    if (Array.isArray(predecessor)) {
+        return predecessor.map(p => p.type);
+    }
+    return [predecessor.type];
+}
+
+function predecessorCollectionTypes(predecessors: PredecessorCollection): string[] {
+    return Object.keys(predecessors).flatMap(key => predecessorTypes(predecessors[key]));
+}
+
 async function storeFactTypes(facts: FactRecord[], factTypes: FactTypeMap, connection: PoolClient) {
     const newFactTypes = facts
-        .map(fact => fact.type)
+        .flatMap(fact => [fact.type, ...predecessorCollectionTypes(fact.predecessors)])
         .filter(type => !factTypes.has(type))
         .filter(distinct);
     if (newFactTypes.length === 0) {
