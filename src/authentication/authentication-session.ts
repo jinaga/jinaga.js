@@ -46,7 +46,13 @@ export class AuthenticationSession implements Authentication {
     }
 
     async local(): Promise<FactRecord> {
-        return await this.keystore.getDeviceFact(this.localDeviceIdentity);
+        const deviceFact = await this.keystore.getDeviceFact(this.localDeviceIdentity);
+        const signedFact: FactEnvelope = {
+            fact: deviceFact,
+            signatures: []
+        };
+        await this.inner.save([signedFact]);
+        return deviceFact;
     }
 
     from(fact: FactReference, query: Query): Observable {
