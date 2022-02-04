@@ -22,7 +22,7 @@ export function verifyHash(fact: FactRecord) {
     return fact.hash === computedHash;
 }
 
-function canonicalPredecessors(predecessors: PredecessorCollection) {
+export function canonicalPredecessors(predecessors: PredecessorCollection) {
     let result: PredecessorCollection = {};
     for(const role in predecessors) {
         const referenceMessages = predecessors[role];

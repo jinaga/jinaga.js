@@ -1,12 +1,12 @@
 import { PoolClient } from 'pg';
-import { canonicalizeFact } from "../fact/hash";
+import { canonicalPredecessors } from "../fact/hash";
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../query/steps";
 import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, PredecessorCollection, Storage } from '../storage';
 import { distinct, flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
 import { makeEdgeRecords } from './edge-record';
-import { hasFact, addFactType, emptyFactTypeMap, FactTypeMap, addRole, emptyRoleMap, hasRole, addFact, emptyFactMap, FactMap, RoleMap, getRoleId, getFactTypeId, getFactId, emptyPublicKeyMap, PublicKeyMap, getPublicKeyId, copyFactTypeMap, mergeFactTypes, copyRoleMap, mergeRoleMaps } from './maps';
+import { addFact, addFactType, addRole, copyRoleMap, emptyFactMap, emptyFactTypeMap, emptyPublicKeyMap, emptyRoleMap, FactMap, FactTypeMap, getFactId, getFactTypeId, getPublicKeyId, getRoleId, hasFact, hasRole, mergeFactTypes, mergeRoleMaps, PublicKeyMap, RoleMap } from './maps';
 import { sqlFromSteps } from './sql';
 
 interface FactTypeResult {
@@ -228,7 +228,7 @@ export class PostgresStore implements Storage {
         );
         this.factTypeMap = mergeFactTypes(this.factTypeMap, resultFactTypes);
         return result.rows.map((r) => {
-            const { fields, predecessors }: { fields: {}, predecessors: PredecessorCollection } = JSON.parse(r.data);
+            const { fields, predecessors }: { fields: {}, predecessors: PredecessorCollection } = r.data as any;
             return <FactRecord>{
                 type: r.name,
                 hash: r.hash,
@@ -402,12 +402,15 @@ async function findExistingFacts(facts: FactRecord[], factTypes: FactTypeMap, co
 async function insertFacts(facts: FactRecord[], factTypes: FactTypeMap, existingFacts: FactMap, connection: PoolClient) {
     if (facts.length > 0) {
         const factValues = facts.map((f, i) =>
-            `(\$${i * 3 + 1}, \$${i * 3 + 2}::integer, \$${i * 3 + 3})`);
+            `(\$${i * 3 + 1}, \$${i * 3 + 2}::integer, \$${i * 3 + 3}::jsonb)`);
         const factParameters = flatten(facts, (f) =>
-            [f.hash, factTypes.get(f.type), canonicalizeFact(f.fields, f.predecessors)]);
+            [f.hash, factTypes.get(f.type), {
+                fields: f.fields,
+                predecessors: canonicalPredecessors(f.predecessors)
+            }]);
 
         const sql = 'INSERT INTO public.fact (hash, fact_type_id, data)' +
-            ' (SELECT hash, fact_type_id, to_jsonb(data)' +
+            ' (SELECT hash, fact_type_id, data' +
             '  FROM (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id, data))' +
             ' RETURNING fact_id, fact_type_id, hash;';
         const { rows }: FactResult = await connection.query(sql, factParameters);
