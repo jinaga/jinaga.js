@@ -17,34 +17,72 @@
 --   VALID UNTIL 'infinity';
 --
 
+-- \set appdatabase `echo "$APP_DATABASE"`
+
+-- \connect :appdatabase
+
 DO
 $do$
 BEGIN
 
+IF ((SELECT to_regclass('public.ancestor') IS NULL) AND
+	(SELECT to_regclass('public.fact') IS NOT NULL)) THEN
+	
+	-- Move the legacy tables to the legacy schema
+
+	CREATE SCHEMA legacy;
+
+	ALTER TABLE public.edge
+		SET SCHEMA legacy;
+
+	ALTER TABLE public.fact
+		SET SCHEMA legacy;
+
+	ALTER TABLE public.signature
+		SET SCHEMA legacy;
+
+	ALTER TABLE public."user"
+		SET SCHEMA legacy;
+
+END IF;
+
 --
--- Edge
+-- Fact Type
 --
 
-IF (SELECT to_regclass('public.edge') IS NULL) THEN
+IF (SELECT to_regclass('public.fact_type')) IS NULL THEN
 
-    CREATE TABLE public.edge (
-        successor_type character varying(50),
-        successor_hash character varying(100),
-        predecessor_type character varying(50),
-        predecessor_hash character varying(100),
-        role character varying(20)
+    CREATE TABLE fact_type (
+        fact_type_id serial PRIMARY KEY,
+        name character varying(50) NOT NULL
     );
 
-    ALTER TABLE public.edge OWNER TO postgres;
 
-    -- Most unique first, for fastest uniqueness check on insert.
-    CREATE UNIQUE INDEX ux_edge ON public.edge USING btree (successor_hash, predecessor_hash, role, successor_type, predecessor_type);
-    -- Covering index based on successor, favoring most likely members of WHERE clause.
-    CREATE INDEX ix_successor ON public.edge USING btree (successor_hash, role, successor_type, predecessor_hash, predecessor_type);
-    -- Covering index based on predecessor, favoring most likely members of WHERE clause.
-    CREATE INDEX ix_predecessor ON public.edge USING btree (predecessor_hash, role, predecessor_type, successor_hash, successor_type);
+    ALTER TABLE public.fact_type OWNER TO postgres;
 
-    GRANT SELECT,INSERT ON TABLE public.edge TO dev;
+    CREATE UNIQUE INDEX ux_fact_type ON fact_type (name);
+
+END IF;
+
+--
+-- Role
+--
+
+IF (SELECT to_regclass('public.role')) IS NULL THEN
+
+    CREATE TABLE role (
+        role_id serial PRIMARY KEY,
+        defining_fact_type_id integer NOT NULL,
+        CONSTRAINT fk_defining_fact_type_id
+            FOREIGN KEY (defining_fact_type_id)
+            REFERENCES fact_type (fact_type_id),
+        name character varying(20) NOT NULL
+    );
+
+
+    ALTER TABLE public.role OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_role ON public.role USING btree (defining_fact_type_id, name);
 
 END IF;
 
@@ -55,10 +93,13 @@ END IF;
 IF (SELECT to_regclass('public.fact') IS NULL) THEN
 
     CREATE TABLE public.fact (
-        type character varying(50),
+        fact_id SERIAL PRIMARY KEY,
+        fact_type_id integer NOT NULL,
+        CONSTRAINT fk_fact_type_id
+            FOREIGN KEY (fact_type_id)
+            REFERENCES fact_type (fact_type_id),
         hash character varying(100),
-        fields jsonb,
-        predecessors jsonb,
+        data jsonb,
         date_learned timestamp NOT NULL
             DEFAULT (now() at time zone 'utc')
     );
@@ -66,20 +107,97 @@ IF (SELECT to_regclass('public.fact') IS NULL) THEN
 
     ALTER TABLE public.fact OWNER TO postgres;
 
-    CREATE UNIQUE INDEX ux_fact ON public.fact USING btree (hash, type);
+    CREATE UNIQUE INDEX ux_fact ON public.fact USING btree (hash, fact_type_id);
 
-    GRANT SELECT,INSERT ON TABLE public.fact TO dev;
+END IF;
 
-ELSE
+--
+-- Edge
+--
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='fact' AND column_name='date_learned') THEN
+IF (SELECT to_regclass('public.edge') IS NULL) THEN
 
-        ALTER TABLE public.fact
-            ADD date_learned timestamp NOT NULL
-            DEFAULT (now() at time zone 'utc');
-            
-    END IF;
+    CREATE TABLE public.edge (
+        role_id integer NOT NULL,
+        successor_fact_id integer NOT NULL,
+        predecessor_fact_id integer NOT NULL
+    );
+
+
+    ALTER TABLE public.edge OWNER TO postgres;
+
+    -- Most unique first, for fastest uniqueness check on insert.
+    CREATE UNIQUE INDEX ux_edge ON public.edge USING btree (successor_fact_id, predecessor_fact_id, role_id);
+    -- Covering index based on successor, favoring most likely members of WHERE clause.
+    CREATE INDEX ix_successor ON public.edge USING btree (successor_fact_id, role_id, predecessor_fact_id);
+    -- Covering index based on predecessor, favoring most likely members of WHERE clause.
+    CREATE INDEX ix_predecessor ON public.edge USING btree (predecessor_fact_id, role_id, successor_fact_id);
+
+END IF;
+
+--
+-- Ancestor
+--
+
+IF (SELECT to_regclass('public.ancestor') IS NULL) THEN
+
+    CREATE TABLE public.ancestor (
+        fact_id integer NOT NULL,
+        CONSTRAINT fk_fact_id
+            FOREIGN KEY (fact_id)
+            REFERENCES fact (fact_id),
+        ancestor_fact_id integer NOT NULL,
+        CONSTRAINT fk_ancestor_fact_id
+            FOREIGN KEY (ancestor_fact_id)
+            REFERENCES fact (fact_id)
+    );
+
+
+    ALTER TABLE public.ancestor OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_ancestor ON public.ancestor USING btree (fact_id, ancestor_fact_id);
+
+END IF;
+
+--
+-- Public Key
+--
+
+IF (SELECT to_regclass('public.public_key') IS NULL) THEN
+
+    CREATE TABLE public.public_key (
+        public_key_id serial PRIMARY KEY,
+        public_key character varying(500) NOT NULL
+    );
+
+
+    ALTER TABLE public.public_key OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_public_key ON public.public_key (public_key);
+
+END IF;
+
+--
+-- Signature
+--
+
+IF (SELECT to_regclass('public.signature') IS NULL) THEN
+
+    CREATE TABLE public."signature" (
+        fact_id integer NOT NULL,
+        CONSTRAINT fk_fact_id
+            FOREIGN KEY (fact_id)
+            REFERENCES fact (fact_id),
+        public_key_id integer NOT NULL,
+        signature character varying(400),
+        date_learned timestamp NOT NULL
+            DEFAULT (now() at time zone 'utc')
+    );
+
+
+    ALTER TABLE public."signature" OWNER TO postgres;
+
+    CREATE UNIQUE INDEX ux_signature ON public."signature" USING btree (fact_id, public_key_id);
 
 END IF;
 
@@ -91,7 +209,7 @@ IF (SELECT to_regclass('public.user') IS NULL) THEN
 
     CREATE TABLE public."user" (
         provider character varying(100),
-        user_id character varying(50),
+        user_identifier character varying(50),
         private_key character varying(1800),
         public_key character varying(500)
     );
@@ -99,91 +217,97 @@ IF (SELECT to_regclass('public.user') IS NULL) THEN
 
     ALTER TABLE public."user" OWNER TO postgres;
 
-    CREATE UNIQUE INDEX ux_user ON public."user" USING btree (user_id, provider);
-
+    CREATE UNIQUE INDEX ux_user ON public."user" USING btree (user_identifier, provider);
     CREATE UNIQUE INDEX ux_user_public_key ON public."user" (public_key);
-
-    GRANT SELECT,INSERT ON TABLE public."user" TO dev;
-
-ELSE
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='user' AND column_name='public_key'
-            AND character_maximum_length >= 500) THEN
-        
-        ALTER TABLE public.user
-            ALTER COLUMN public_key TYPE character varying(500);
-        
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='user' AND column_name='private_key'
-            AND character_maximum_length >= 1800) THEN
-        
-        ALTER TABLE public.user
-            ALTER COLUMN private_key TYPE character varying(1800);
-        
-    END IF;
-
-    IF (SELECT to_regclass('public.duplicate_users') IS NULL) THEN
-
-        CREATE TABLE public.duplicate_users AS
-            SELECT u.provider, u.user_id, u.public_key, u.private_key
-            FROM public."user" AS u
-            JOIN (SELECT public_key FROM public."user" GROUP BY public_key HAVING count(*) > 1) AS dup
-                ON dup.public_key = u.public_key;
-                
-        DELETE FROM public."user" AS u
-            WHERE EXISTS (SELECT 1 FROM public.duplicate_users AS d
-                WHERE d.provider = u.provider AND d.user_id = u.user_id);
-
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_user_public_key ON public."user" (public_key);
-
-    END IF;
 
 END IF;
 
---
--- Signature
---
+IF (SELECT to_regclass('legacy.fact') IS NOT NULL) THEN
 
-IF (SELECT to_regclass('public.signature') IS NULL) THEN
+	INSERT INTO public."user"
+		(provider, user_identifier, private_key, public_key)
+	SELECT provider, user_id, private_key, public_key
+	FROM legacy."user"
+	ON CONFLICT DO NOTHING;
 
-    CREATE TABLE public."signature" (
-        type character varying(50),
-        hash character varying(100),
-        public_key character varying(500),
-        signature character varying(400),
-        date_learned timestamp NOT NULL
-            DEFAULT (now() at time zone 'utc')
-    );
-
-
-    ALTER TABLE public."signature" OWNER TO postgres;
-
-    CREATE UNIQUE INDEX ux_signature ON public."signature" USING btree (hash, public_key, type);
-
-    GRANT SELECT,INSERT ON TABLE public."signature" TO dev;
-
-ELSE
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='signature' AND column_name='public_key'
-            AND character_maximum_length >= 500) THEN
-        
-        ALTER TABLE public.signature
-            ALTER COLUMN public_key TYPE character varying(500);
-        
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='signature' AND column_name='signature'
-            AND character_maximum_length >= 400) THEN
-        
-        ALTER TABLE public.signature
-            ALTER COLUMN signature TYPE character varying(400);
-        
-    END IF;
+	INSERT INTO public.fact_type
+		(name)
+	SELECT DISTINCT type
+	FROM legacy.fact
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO public.role
+		(defining_fact_type_id, name)
+	SELECT DISTINCT f.fact_type_id, e.role
+	FROM legacy.edge e
+	JOIN public.fact_type f
+	  ON f.name = e.successor_type
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO public.fact
+		(fact_type_id, hash, data, date_learned)
+	SELECT
+		t.fact_type_id,
+		f.hash,
+		('{"fields":' || (('{"a":' || f.fields::text || '}')::json ->> 'a') ||
+		 ',"predecessors":' || (('{"a":' || f.predecessors::text || '}')::json ->> 'a') || '}')::jsonb,
+		f.date_learned
+	FROM legacy.fact f
+	JOIN public.fact_type t
+	  ON t.name = f.type
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO public.edge
+	  (role_id, successor_fact_id, predecessor_fact_id)
+	SELECT r.role_id, s.fact_id, p.fact_id
+	FROM legacy.edge e
+	JOIN public.fact_type st
+	  ON st.name = e.successor_type
+	JOIN public.fact s
+	  ON s.fact_type_id = st.fact_type_id
+	  AND s.hash = e.successor_hash
+	JOIN public.fact_type pt
+	  ON pt.name = e.predecessor_type
+	JOIN public.fact p
+	  ON p.fact_type_id = pt.fact_type_id
+	  AND p.hash = e.predecessor_hash
+	JOIN public.role r
+	  ON r.defining_fact_type_id = st.fact_type_id
+	  AND r.name = e.role
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO public.ancestor
+		(fact_id, ancestor_fact_id)
+	WITH RECURSIVE a(fact_id, ancestor_fact_id) AS (
+		SELECT e.successor_fact_id, e.predecessor_fact_id
+		FROM public.edge e
+		UNION ALL
+		SELECT e.successor_fact_id, a.ancestor_fact_id
+		FROM public.edge e
+		JOIN a ON a.fact_id = e.predecessor_fact_id
+	)
+	SELECT DISTINCT fact_id, ancestor_fact_id
+	FROM a
+	ORDER BY fact_id
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO public.public_key
+		(public_key)
+	SELECT DISTINCT public_key
+	FROM legacy.signature
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO public.signature
+		(fact_id, public_key_id, signature, date_learned)
+	SELECT f.fact_id, pk.public_key_id, s.signature, s.date_learned
+	FROM legacy.signature s
+	JOIN public.fact_type t
+	  ON t.name = s.type
+	JOIN public.fact f
+	  ON f.fact_type_id = t.fact_type_id AND f.hash = s.hash
+	JOIN public.public_key pk
+	  ON pk.public_key = s.public_key
+	ON CONFLICT DO NOTHING;
 
 END IF;
 
