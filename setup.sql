@@ -119,8 +119,17 @@ IF (SELECT to_regclass('public.edge') IS NULL) THEN
 
     CREATE TABLE public.edge (
         role_id integer NOT NULL,
+        CONSTRAINT fk_role_id
+            FOREIGN KEY (role_id)
+            REFERENCES role (role_id),
         successor_fact_id integer NOT NULL,
-        predecessor_fact_id integer NOT NULL
+        CONSTRAINT fk_successor_fact_id
+            FOREIGN KEY (successor_fact_id)
+            REFERENCES fact (fact_id),
+        predecessor_fact_id integer NOT NULL,
+        CONSTRAINT fk_predecessor_fact_id
+            FOREIGN KEY (predecessor_fact_id)
+            REFERENCES fact (fact_id)
     );
 
 
@@ -189,6 +198,9 @@ IF (SELECT to_regclass('public.signature') IS NULL) THEN
             FOREIGN KEY (fact_id)
             REFERENCES fact (fact_id),
         public_key_id integer NOT NULL,
+        CONSTRAINT fk_public_key_id
+            FOREIGN KEY (public_key_id)
+            REFERENCES public_key (public_key_id),
         signature character varying(400),
         date_learned timestamp NOT NULL
             DEFAULT (now() at time zone 'utc')
@@ -286,9 +298,8 @@ IF (SELECT to_regclass('legacy.fact') IS NOT NULL) THEN
 		FROM public.edge e
 		JOIN a ON a.fact_id = e.predecessor_fact_id
 	)
-	SELECT DISTINCT fact_id, ancestor_fact_id
+	SELECT DISTINCT a.fact_id, a.ancestor_fact_id
 	FROM a
-	ORDER BY fact_id
 	ON CONFLICT DO NOTHING;
 	
 	INSERT INTO public.public_key
