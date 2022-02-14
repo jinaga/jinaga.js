@@ -126,6 +126,10 @@ export class IndexedDBStore implements Storage {
   constructor (
     private indexName: string
   ) { }
+  
+  close() {
+    return Promise.resolve();
+  }
 
   save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
     const ancestorMap = findAllAncestors(envelopes.map(e => e.fact));

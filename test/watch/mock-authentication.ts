@@ -15,6 +15,9 @@ export class MockAuthentication implements Authentication {
       this.inner = new FeedImpl(storage);
   }
 
+  async close(): Promise<void> {
+      return this.inner.close();
+  }
   login(): Promise<LoginResponse> {
       throw new Error("Method not implemented: login.");
   }

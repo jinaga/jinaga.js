@@ -12,6 +12,9 @@ export class AuthenticationOffline implements Authentication {
   constructor(private inner: Fork, private store: IndexedDBLoginStore, private client: WebClient) {
   }
 
+  async close(): Promise<void> {
+    await this.inner.close();
+  }
   async login() {    
     try {
       return await this.loginRemote();

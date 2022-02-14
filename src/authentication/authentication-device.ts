@@ -14,6 +14,11 @@ export class AuthenticationDevice implements Authentication {
         private localDeviceIdentity: UserIdentity
     ) {}
 
+    async close(): Promise<void> {
+        await this.inner.close();
+        await this.keystore.close();
+    }
+
     async login(): Promise<LoginResponse> {
         throw new Error('No logged in user.');
     }

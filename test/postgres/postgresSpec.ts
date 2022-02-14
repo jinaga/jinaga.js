@@ -1,11 +1,12 @@
-import 'source-map-support/register';
-
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
-
+import 'source-map-support/register';
 import { dehydrateReference } from '../../src/fact/hydrate';
+import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap, getFactTypeId, getRoleId } from "../../src/postgres/maps";
 import { sqlFromSteps } from '../../src/postgres/sql';
 import { fromDescriptiveString } from '../../src/query/descriptive-string';
+import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../../src/query/steps";
+import { distinct } from "../../src/util/fn";
 
 describe('Postgres', () => {
 
@@ -14,222 +15,335 @@ describe('Postgres', () => {
 
   function sqlFor(descriptiveString: string) {
     const query = fromDescriptiveString(descriptiveString);
-    const sqlQuery = sqlFromSteps(start, query.steps);
-    return sqlQuery;
+    const factTypes = allFactTypes(query.steps).filter(t => t !== 'Unknown').reduce(
+      (f, factType, i) => addFactType(f, factType, i + 1),
+      emptyFactTypeMap());
+    let roleMap = allRoles(query.steps, 'Root').filter(r => r.role !== 'unknown').reduce(
+      (r, role, i) => addRole(r, getFactTypeId(factTypes, role.type), role.role, i + 1),
+      emptyRoleMap());
+    const sqlQuery = sqlFromSteps(start, query.steps, factTypes, roleMap);
+    return sqlQuery ? { sql: sqlQuery.sql, parameters: sqlQuery.parameters, pathLength: sqlQuery.pathLength, empty: sqlQuery.empty, factTypes, roleMap } : null;
   }
 
   it('should parse empty query', () => {
     expect(sqlFor('')).to.equal(null);
   });
 
-  it('should parse successor query', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child');
-    expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3'
-    );
-    expect(parameters[0]).to.equal('Root');
-    expect(parameters[1]).to.equal(startHash);
-    expect(parameters[2]).to.equal('child');
-    expect(pathLength).to.equal(1);
+  it('should error on successor query', () => {
+    const parse = () => sqlFor('S.predecessor');
+    expect(parse).to.throw(Error, 'Missing type for role predecessor');
   });
 
-  it('should parse predecessor query', () => {
-    const { sql, parameters, pathLength } = sqlFor('P.parent');
-    expect(sql).to.equal(
-      'SELECT e1.predecessor_type AS type0, e1.predecessor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.successor_type = $1 AND e1.successor_hash = $2 AND e1.role = $3'
-    );
-    expect(parameters[0]).to.equal('Root');
-    expect(parameters[1]).to.equal(startHash);
-    expect(parameters[2]).to.equal('parent');
-    expect(pathLength).to.equal(1);
+  it('should error on predecessor query', () => {
+    const parse = () => sqlFor('P.parent');
+    expect(parse).to.throw(Error, /Missing type of "Root.parent"/);
+  });
+
+  it('should error on double predecessor query', () => {
+    const parse = () => sqlFor('P.parent P.grandparent');
+    expect(parse).to.throw(Error, /Missing type of "Root.parent"/);
   });
 
   it('should parse successor query with type', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child F.type="Child"');
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.predecessor F.type="IntegrationTest.Successor"');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND e1.successor_type = $4'
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
     );
-      expect(parameters[0]).to.equal('Root');
-      expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal('child');
-      expect(parameters[3]).to.equal('Child');
-      expect(pathLength).to.equal(1);
+    expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
+    expect(parameters[1]).to.equal(startHash);
+    expect(parameters[2]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Successor'), 'predecessor'));
+    expect(pathLength).to.equal(1);
   });
 
   it('should parse predecessor query with type', () => {
-    const { sql, parameters, pathLength } = sqlFor('P.parent F.type="Parent"');
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('P.parent F.type="Parent"');
     expect(sql).to.equal(
-      'SELECT e1.predecessor_type AS type0, e1.predecessor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.successor_type = $1 AND e1.successor_hash = $2 AND e1.role = $3 ' +
-        'AND e1.predecessor_type = $4'
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.successor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.predecessor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
     );
-    expect(parameters[0]).to.equal('Root');
+    expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
     expect(parameters[1]).to.equal(startHash);
-    expect(parameters[2]).to.equal('parent');
-    expect(parameters[3]).to.equal('Parent');
+    expect(parameters[2]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'Root'), 'parent'));
     expect(pathLength).to.equal(1);
   });
 
   it('should parse successor query with existential', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child E(S.grandchild)');
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.predecessor F.type="IntegrationTest.Successor" E(S.successor F.type="IntegrationTest.Grandchild")');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND EXISTS (SELECT 1 ' +
-          'FROM public.edge e2  ' +
-          'WHERE e2.predecessor_type = e1.successor_type AND e2.predecessor_hash = e1.successor_hash ' +
-            'AND e2.role = $4)'
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.predecessor_fact_id = e1.successor_fact_id AND e2.role_id = $4)'
     );
-      expect(parameters[0]).to.equal('Root');
+      expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
       expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal('child');
-      expect(parameters[3]).to.equal('grandchild');
+      expect(parameters[2]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Successor'), 'predecessor'));
+      expect(parameters[3]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Grandchild'), 'successor'));
       expect(pathLength).to.equal(1);
   });
 
   it('should parse successor query with negative existential', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child N(S.grandchild)');
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.predecessor F.type="IntegrationTest.Successor" N(S.successor F.type="IntegrationTest.Grandchild")');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND NOT EXISTS (SELECT 1 ' +
-          'FROM public.edge e2  ' +
-          'WHERE e2.predecessor_type = e1.successor_type AND e2.predecessor_hash = e1.successor_hash ' +
-            'AND e2.role = $4)'
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.predecessor_fact_id = e1.successor_fact_id AND e2.role_id = $4)'
     );
-      expect(parameters[0]).to.equal('Root');
-      expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal('child');
-      expect(parameters[3]).to.equal('grandchild');
-      expect(pathLength).to.equal(1);
+    expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
+    expect(parameters[1]).to.equal(startHash);
+    expect(parameters[2]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Successor'), 'predecessor'));
+    expect(parameters[3]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Grandchild'), 'successor'));
+    expect(pathLength).to.equal(1);
   });
 
   it('should parse successor query with existential predecessor', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child E(P.uncle)');
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" E(P.uncle F.type="Uncle")');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND EXISTS (SELECT 1 ' +
-          'FROM public.edge e2  ' +
-          'WHERE e2.successor_type = e1.successor_type AND e2.successor_hash = e1.successor_hash ' +
-            'AND e2.role = $4)'
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.successor_fact_id = e1.successor_fact_id AND e2.role_id = $4)'
     );
-      expect(parameters[0]).to.equal('Root');
-      expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal('child');
-      expect(parameters[3]).to.equal('uncle');
-      expect(pathLength).to.equal(1);
+    expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
+    expect(parameters[1]).to.equal(startHash);
+    expect(parameters[2]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'Child'), 'parent'));
+    expect(parameters[3]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'Child'), 'uncle'));
+    expect(pathLength).to.equal(1);
   });
 
   it('should parse successor query with negative existential predecessor', () => {
-    const { sql, parameters, pathLength } = sqlFor('S.child N(P.uncle)');
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.parent F.type="Child" N(P.uncle F.type="Uncle")');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-      'FROM public.edge e1  ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-        'AND NOT EXISTS (SELECT 1 ' +
-          'FROM public.edge e2  ' +
-          'WHERE e2.successor_type = e1.successor_type AND e2.successor_hash = e1.successor_hash ' +
-            'AND e2.role = $4)'
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.successor_fact_id = e1.successor_fact_id AND e2.role_id = $4)'
     );
-      expect(parameters[0]).to.equal('Root');
-      expect(parameters[1]).to.equal(startHash);
-      expect(parameters[2]).to.equal('child');
-      expect(parameters[3]).to.equal('uncle');
-      expect(pathLength).to.equal(1);
+    expect(parameters[0]).to.equal(getFactTypeId(factTypes, 'Root'));
+    expect(parameters[1]).to.equal(startHash);
+    expect(parameters[2]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'Child'), 'parent'));
+    expect(parameters[3]).to.equal(getRoleId(roleMap, getFactTypeId(factTypes, 'Child'), 'uncle'));
+    expect(pathLength).to.equal(1);
   });
 
   it('should parse consecutive existential queries', () => {
-    const { sql, parameters } = sqlFor('S.child N(S.condition) N(S.other)');
+    const { sql, parameters, factTypes, roleMap } = sqlFor('S.parent F.type="Child" N(S.condition F.type="Condition") N(S.other F.type="Other")');
     expect(sql).to.equal(
-      'SELECT e1.successor_type AS type0, e1.successor_hash AS hash0 ' +
-        'FROM public.edge e1  ' +
-        'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 AND e1.role = $3 ' +
-          'AND NOT EXISTS (SELECT 1 ' +
-            'FROM public.edge e2  ' +
-            'WHERE e2.predecessor_type = e1.successor_type AND e2.predecessor_hash = e1.successor_hash ' +
-              'AND e2.role = $4) ' +
-          'AND NOT EXISTS (SELECT 1 ' +
-            'FROM public.edge e3  ' +
-            'WHERE e3.predecessor_type = e1.successor_type AND e3.predecessor_hash = e1.successor_hash ' +
-              'AND e3.role = $5)'
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.predecessor_fact_id = e1.successor_fact_id AND e2.role_id = $4) ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e3 ' +
+      'WHERE e3.predecessor_fact_id = e1.successor_fact_id AND e3.role_id = $5)'
     );
     expect(parameters).to.deep.equal([
-      'Root',
+      getFactTypeId(factTypes, 'Root'),
       startHash,
-      'child',
-      'condition',
-      'other'
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Child'), 'parent'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Condition'), 'condition'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Other'), 'other')
     ]);
   });
 
-  it('should parse migration query', () => {
-    const query =
-      'S.company F.type="ImprovingU.Office" ' +
-      'S.office F.type="ImprovingU.Semester" ' +
-      'S.semester F.type="ImprovingU.Idea" ' +
-      'S.idea F.type="ImprovingU.Abstract" ' +
-      'N(S.prior F.type="ImprovingU.Abstract") ' +
-      'N(S.oldAbstract F.type="ImprovingU.Abstract.Migration")'
-
-    const { sql, parameters } = sqlFor(query);
+  it('should parse existential query form predecessor', () => {
+    const { sql, parameters, factTypes, roleMap } = sqlFor('S.root F.type="Identifier" N(S.prior F.type="Identifier") P.identified F.type="Identified" N(S.identified F.type="Delete")');
     expect(sql).to.equal(
-      'SELECT ' +
-        'e1.successor_type AS type0, e1.successor_hash AS hash0, ' +
-        'e2.successor_type AS type1, e2.successor_hash AS hash1, ' +
-        'e3.successor_type AS type2, e3.successor_hash AS hash2, ' +
-        'e4.successor_type AS type3, e4.successor_hash AS hash3 ' +
-      'FROM public.edge e1  ' +
-      'JOIN public.edge e2 ' +
-        'ON e2.predecessor_hash = e1.successor_hash ' +
-          'AND e2.predecessor_type = e1.successor_type ' +
-      'JOIN public.edge e3 ' +
-        'ON e3.predecessor_hash = e2.successor_hash ' +
-          'AND e3.predecessor_type = e2.successor_type ' +
-      'JOIN public.edge e4 ' +
-        'ON e4.predecessor_hash = e3.successor_hash ' +
-          'AND e4.predecessor_type = e3.successor_type ' +
-      'WHERE e1.predecessor_type = $1 AND e1.predecessor_hash = $2 ' +
-        'AND e1.role = $3 AND e1.successor_type = $4 ' +
-        'AND e2.role = $5 AND e2.successor_type = $6 ' +
-        'AND e3.role = $7 AND e3.successor_type = $8 ' +
-        'AND e4.role = $9 AND e4.successor_type = $10 ' +
-        'AND NOT EXISTS (SELECT 1 ' +
-          'FROM public.edge e5  ' +
-          'WHERE e5.predecessor_type = e4.successor_type ' +
-            'AND e5.predecessor_hash = e4.successor_hash ' +
-            'AND e5.role = $11 AND e5.successor_type = $12) ' +
-        'AND NOT EXISTS (SELECT 1 ' +
-          'FROM public.edge e6  ' +
-            'WHERE e6.predecessor_type = e4.successor_type AND e6.predecessor_hash = e4.successor_hash ' +
-            'AND e6.role = $13 AND e6.successor_type = $14)'
+      'SELECT f2.hash as hash2, f3.hash as hash3 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'JOIN public.edge e3 ON e3.successor_fact_id = e1.successor_fact_id AND e3.role_id = $5 ' +
+      'JOIN public.fact f3 ON f3.fact_id = e3.predecessor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e2 ' +
+      'WHERE e2.predecessor_fact_id = e1.successor_fact_id AND e2.role_id = $4) ' +
+      'AND NOT EXISTS (SELECT 1 ' +
+      'FROM public.edge e4 ' +
+      'WHERE e4.predecessor_fact_id = e3.predecessor_fact_id AND e4.role_id = $6)'
     );
     expect(parameters).to.deep.equal([
-      'Root',
+      getFactTypeId(factTypes, 'Root'),
       startHash,
-      'company',
-      'ImprovingU.Office',
-      'office',
-      'ImprovingU.Semester',
-      'semester',
-      'ImprovingU.Idea',
-      'idea',
-      'ImprovingU.Abstract',
-      'prior',
-      'ImprovingU.Abstract',
-      'oldAbstract',
-      'ImprovingU.Abstract.Migration'
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Identifier'), 'root'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Identifier'), 'prior'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Identifier'), 'identified'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Delete'), 'identified')
     ]);
+  });
+
+  it('should error on existential query on predecessor with no type', () => {
+    const parse = () => sqlFor('S.root F.type="Identifier" N(S.prior F.type="Identifier") P.identified N(S.identified F.type="Delete")');
+    expect(parse).to.throw(/Missing type of "Identifier.identified"/);
+  });
+
+  it('should parse zig-zag pipeline', () => {
+    const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor('S.user F.type="Assignment" P.project F.type="Project" S.project F.type="Task" S.task F.type="Task.Title"');
+    expect(sql).to.equal(
+      'SELECT f2.hash as hash2, f3.hash as hash3 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'JOIN public.edge e2 ON e2.successor_fact_id = e1.successor_fact_id AND e2.role_id = $4 ' +
+      'JOIN public.edge e3 ON e3.predecessor_fact_id = e2.predecessor_fact_id AND e3.role_id = $5 ' +
+      'JOIN public.edge e4 ON e4.predecessor_fact_id = e3.successor_fact_id AND e4.role_id = $6 ' +
+      'JOIN public.fact f3 ON f3.fact_id = e4.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
+    );
+    expect(parameters).to.deep.equal([
+      getFactTypeId(factTypes, 'Root'),
+      startHash,
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Assignment'), 'user'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Assignment'), 'project'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Task'), 'project'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Task.Title'), 'task')
+    ]);
+    expect(pathLength).to.equal(2);
+  });
+
+  it('should parse query with unknown successor type', () => {
+    const { empty } = sqlFor('S.root F.type="Unknown"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with unknown predecessor type', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" P.pred F.type="Unknown" P.user F.type="Jinaga.User"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with some unknown types', () => {
+    const { empty } = sqlFor('S.root F.type="Unknown" P.user F.type="Jinaga.User"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with unknown successor role', () => {
+    const { empty } = sqlFor('S.unknown F.type="Successor"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with unknown predecessor role', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" P.unknown F.type="Jinaga.User"');
+    expect(empty).to.be.true;
+  });
+
+  it('should parse query with some unknown predecessor roles', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" P.predecessor F.type="Predecessor" P.unknown F.type="Jinaga.User"');
+    expect(empty).to.be.true;
+  });
+
+  it('should ignore negative existential with unknown type', () => {
+    const { empty, sql, parameters, factTypes, roleMap } = sqlFor('S.root F.type="Assignment" N(S.assignment F.type="Unknown")');
+    expect(empty).to.be.false;
+    expect(sql).to.equal(
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
+    );
+    expect(parameters).to.deep.equal([
+      getFactTypeId(factTypes, 'Root'),
+      startHash,
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Assignment'), 'root')
+    ]);
+  });
+
+  it('should ignore negative existential with unknown role', () => {
+    const { empty, sql, parameters, factTypes, roleMap } = sqlFor('S.root F.type="Assignment" N(S.unknown F.type="Assignment.Delete")');
+    expect(empty).to.be.false;
+    expect(sql).to.equal(
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
+    );
+    expect(parameters).to.deep.equal([
+      getFactTypeId(factTypes, 'Root'),
+      startHash,
+      getRoleId(roleMap, getFactTypeId(factTypes, 'Assignment'), 'root')
+    ]);
+  });
+
+  it('should elevate positive existential with unknown type', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" E(S.assignment F.type="Unknown")');
+    expect(empty).to.be.true;
+  });
+
+  it('should elevate positive existential with unknown role', () => {
+    const { empty } = sqlFor('S.root F.type="Assignment" E(S.unknown F.type="Assignment.Delete")');
+    expect(empty).to.be.true;
   });
 });
+
+function allFactTypes(steps: Step[]): string[] {
+  const factTypes = steps
+    .filter(step => step instanceof PropertyCondition && step.name === 'type')
+    .map(step => (step as PropertyCondition).value);
+  const childFactTypes = steps
+    .filter(step => step instanceof ExistentialCondition)
+    .flatMap(step => allFactTypes((step as ExistentialCondition).steps));
+  return [...factTypes, ...childFactTypes].filter(distinct);
+}
+
+function allRoles(steps: Step[], initialType: string) {
+  let roles: { type: string; role: string }[] = [];
+  let type: string = initialType;
+  let role: string = undefined;
+
+  for (const step of steps) {
+    if (step instanceof PropertyCondition) {
+      if (step.name === 'type') {
+        type = step.value;
+        if (role) {
+          roles.push({ type, role });
+          role = undefined;
+        }
+      }
+    }
+    else if (step instanceof Join) {
+      if (step.direction === Direction.Predecessor) {
+        roles.push({ type, role: step.role });
+        role = undefined;
+      }
+      else {
+        role = step.role;
+      }
+      type = undefined;
+    }
+    else if (step instanceof ExistentialCondition) {
+      roles = roles.concat(allRoles(step.steps, type));
+    }
+  }
+
+  return roles;
+}

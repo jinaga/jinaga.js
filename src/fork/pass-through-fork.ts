@@ -9,6 +9,10 @@ export class PassThroughFork implements Fork {
         private inner: Feed
     ) { }
 
+    async close(): Promise<void> {
+        await this.inner.close();
+    }
+
     from(fact: FactReference, query: Query): Observable {
         return this.inner.from(fact, query);
     }

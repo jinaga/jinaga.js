@@ -1,262 +1,430 @@
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
-import { FactReference, factReferenceEquals } from '../storage';
+import { FactReference } from '../storage';
+import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
 
 export type SqlQuery = {
+    empty: boolean,
     sql: string,
     parameters: any[],
-    pathLength: number
+    pathLength: number,
+    factTypeNames: string[]
 };
 
-export function sqlFromSteps(start: FactReference, steps: Step[]) : SqlQuery {
-    const builder = new QueryBuilder();
+export function sqlFromSteps(start: FactReference, steps: Step[], factTypes: FactTypeMap, roleMap: RoleMap) : SqlQuery {
+    const builder = new QueryBuilder(factTypes, roleMap);
 
     return builder.buildQuery(start, steps);
 }
 
-type QueryParts = {
-    prefixes: string[],
-    fromClause: string,
-    joins: string,
-    whereClause: string
+interface QueryJoinEdge {
+    table: 'edge';
+    direction: 'predecessor' | 'successor';
+    edgeAlias: number;
+    roleParameter: number;
+}
+
+interface QueryJoinFact {
+    table: 'fact';
+    factAlias: number;
+}
+
+type QueryJoin = QueryJoinEdge | QueryJoinFact;
+
+interface QueryParts {
+    joins: QueryJoin[];
+    existentialClauses: ExistentialClause[];
 };
 
-type State = {
-    parts: QueryParts,
-    transition: (step: Step) => State
-};
+interface ExistentialClause {
+    quantifier: Quantifier;
+    priorEdgeJoin: QueryJoinEdge;
+    query: QueryParts;
+}
+
+interface QueryBuilderStatePredecessorType {
+    state: 'predecessor-type';
+    typeId: number;
+    typeName: string;
+}
+interface QueryBuilderStateSuccessorType {
+    state: 'successor-type';
+    typeId: number;
+    typeName: string;
+}
+interface QueryBuilderStatePredecessorJoin {
+    state: 'predecessor-join';
+    position: string;
+}
+interface QueryBuilderStateSuccessorJoin {
+    state: 'successor-join';
+    role: string;
+}
+interface QueryBuilderStateEmpty {
+    state: 'empty';
+}
+
+type QueryBuilderState =
+    QueryBuilderStatePredecessorType |
+    QueryBuilderStateSuccessorType |
+    QueryBuilderStatePredecessorJoin |
+    QueryBuilderStateSuccessorJoin |
+    QueryBuilderStateEmpty;
 
 class QueryBuilder {
-    private parameters: any[] = [];
-    private nextAlias: number = 1;
+    private nextEdge: number = 1;
+    private nextFact: number = 2;
+    private shouldEmitFacts: boolean = true;
+    private queryParts: QueryParts = {
+        joins: [],
+        existentialClauses: []
+    };
+    private roleIds: number[] = [];
+    private factTypeNames: string[] = [];
+
+    constructor(private factTypes: FactTypeMap, private roleMap: RoleMap) {
+    }
 
     buildQuery(start: FactReference, steps: Step[]): SqlQuery {
-        const final = steps.reduce((state, step) => {
-            return state.transition(step);
-        }, this.stateStart(start));
-        if (!final.parts) {
+        if (steps.length === 0) {
             return null;
         }
 
-        const sql = this.assembleQueryString(final.parts);
-        const parameters = this.parameters;
-        return { sql, parameters, pathLength: final.parts.prefixes.length };
-    }
+        const startTypeId = getFactTypeId(this.factTypes, start.type);
+        const startState: QueryBuilderState = {
+            state: 'predecessor-type',
+            typeId: startTypeId,
+            typeName: start.type
+        };
+        const finalState = steps.reduce((state, step) => {
+            return this.matchStep(state, step);
+        }, startState);
+        this.end(finalState);
 
-    private assembleQueryString(parts: QueryParts): string {
-        const select = parts.prefixes.map((prefix, i) =>
-            prefix + 'type AS type' + i + ', ' + prefix + 'hash AS hash' + i).join(', ');
-        const sql = 'SELECT ' + select + ' ' +
-            parts.fromClause + ' ' + parts.joins + ' WHERE ' + parts.whereClause;
-        return sql;
-    }
+        if (finalState.state === 'empty') {
+            return {
+                empty: true,
+                sql: '',
+                parameters: [],
+                pathLength: 0,
+                factTypeNames: []
+            };
+        }
 
-    private buildChildQuery(prefix: string, steps: Step[]): string {
-        const final = steps.reduce((state, step) => {
-            return state.transition(step);
-        }, this.stateSubquery(prefix));
-        return this.assembleChildQueryString(final.parts);
-    }
+        const factAliases = this.queryParts.joins
+            .filter(j => j.table === 'fact')
+            .map(j => (j as QueryJoinFact).factAlias);
+        const hashes = factAliases.map(a => `f${a}.hash as hash${a}`).join(', ');
+        const joins = this.buildJoins(this.queryParts.joins, 'f1.fact_id');
+        const whereClause = this.buildWhereClause(this.queryParts.existentialClauses);
+        const sql = `SELECT ${hashes} FROM public.fact f1${joins} WHERE f1.fact_type_id = $1 AND f1.hash = $2${whereClause}`;
 
-    private assembleChildQueryString(parts: QueryParts): string {
-        const sql = 'SELECT 1 ' + parts.fromClause + ' ' + parts.joins + ' WHERE ' + parts.whereClause;
-        return sql;
-    }
-
-    private stateStart(start: FactReference): State {
         return {
-            parts: null,
-            transition: (step: Step) => this.transitionFromStart(start, step)
+            empty: false,
+            sql,
+            parameters: [startTypeId, start.hash, ...this.roleIds],
+            pathLength: factAliases.length,
+            factTypeNames: this.factTypeNames
         };
     }
 
-    private transitionFromStart(start: FactReference, step: Step): State {
-        if (step instanceof Join) {
-            if (step.direction === Direction.Successor) {
-                return this.handleStartSuccessor(start, step.role);
+    private buildJoins(joins: QueryJoin[], priorFactId: string) {
+        const clauses = joins.reduce((joins, join) => {
+            if (join.table === 'edge') {
+                if (join.direction === 'successor') {
+                    const clause = ` JOIN public.edge e${join.edgeAlias} ` +
+                        `ON e${join.edgeAlias}.predecessor_fact_id = ${joins.priorFactId} ` +
+                        `AND e${join.edgeAlias}.role_id = $${join.roleParameter}`;
+                    return {
+                        priorFactId: `e${join.edgeAlias}.successor_fact_id`,
+                        clauses: [...joins.clauses, clause]
+                    };
+                }
+                else {
+                    const clause = ` JOIN public.edge e${join.edgeAlias} ` +
+                        `ON e${join.edgeAlias}.successor_fact_id = ${joins.priorFactId} ` +
+                        `AND e${join.edgeAlias}.role_id = $${join.roleParameter}`;
+                    return {
+                        priorFactId: `e${join.edgeAlias}.predecessor_fact_id`,
+                        clauses: [...joins.clauses, clause]
+                    };
+                }
+            } else {
+                const clause = ` JOIN public.fact f${join.factAlias} ON f${join.factAlias}.fact_id = ${joins.priorFactId}`;
+                return {
+                    priorFactId: joins.priorFactId,
+                    clauses: [...joins.clauses, clause]
+                };
             }
-            else if (step.direction === Direction.Predecessor) {
-                return this.handleStartPredecessor(start, step.role);
-            }
-        }
-        else if (step instanceof PropertyCondition && step.name === 'type') {
-            return this.handleStartType(start, step.value);
-        }
-    
-        throw new Error("Cannot yet handle this query: " + step.toDeclarativeString());
+        }, {
+            priorFactId,
+            clauses: []
+        }).clauses;
+        return clauses.join('');
     }
 
-    private handleStartSuccessor(start: FactReference, role: string): State {
-        const alias = this.allocateAlias();
-        const prefixes = [alias + '.successor_'];
-        const fromClause = 'FROM public.edge ' + alias;
-        const joins = '';
-        const whereClause = alias + '.predecessor_type = ' + this.addParameter(start.type) +
-            ' AND ' + alias + '.predecessor_hash = ' + this.addParameter(start.hash) +
-            ' AND ' + alias + '.role = ' + this.addParameter(role);
-        const parts = { prefixes, fromClause, joins, whereClause };
-
-        return this.stateMatched(parts);
-    }
-
-    private handleStartPredecessor(start: FactReference, role: string): State {
-        const alias = this.allocateAlias();
-        const prefixes = [alias + '.predecessor_'];
-        const fromClause = 'FROM public.edge ' + alias;
-        const joins = '';
-        const whereClause = alias + '.successor_type = ' + this.addParameter(start.type) +
-            ' AND ' + alias + '.successor_hash = ' + this.addParameter(start.hash) +
-            ' AND ' + alias + '.role = ' + this.addParameter(role);
-        const parts = { prefixes, fromClause, joins, whereClause };
-
-        return this.stateMatched(parts);
-    }
-
-    private handleStartType(start: FactReference, type: string): State {
-        if (type === start.type) {
-            return this.stateStart(start);
+    buildWhereClause(existentialClauses: ExistentialClause[]) {
+        if (existentialClauses.length === 0) {
+            return '';
         }
 
-        throw new Error("Type does not match: " + start.type + ' != ' + type);
+        const clauses = existentialClauses.map(clause => {
+            const quantifierSql = clause.quantifier === Quantifier.Exists ? 'EXISTS' : 'NOT EXISTS';
+            const [first, ...rest] : QueryJoinEdge[] = clause.query.joins as QueryJoinEdge[];
+            const firstHeadFactId = first.direction === 'predecessor'
+                ? `e${first.edgeAlias}.predecessor_fact_id`
+                : `e${first.edgeAlias}.successor_fact_id`;
+            const firstTailFactId = first.direction === 'predecessor'
+                ? `e${first.edgeAlias}.successor_fact_id`
+                : `e${first.edgeAlias}.predecessor_fact_id`;
+            const joins = this.buildJoins(rest, firstHeadFactId);
+            const priorFactId = clause.priorEdgeJoin.direction === 'predecessor'
+                ? `e${clause.priorEdgeJoin.edgeAlias}.predecessor_fact_id`
+                : `e${clause.priorEdgeJoin.edgeAlias}.successor_fact_id`;
+            return ` AND ${quantifierSql} (SELECT 1 FROM public.edge e${first.edgeAlias}${joins} ` +
+                `WHERE ${firstTailFactId} = ${priorFactId} ` +
+                `AND e${first.edgeAlias}.role_id = $${first.roleParameter})`;
+        });
+        return clauses.join('');
     }
 
-    private stateSubquery(prefix: string): State {
-        return {
-            parts: null,
-            transition: (step: Step) => this.transitionFromSubquery(prefix, step)
+    buildNestedSql(typeId: number, typeName: string, steps: Step[]): QueryParts | null {
+        // Push a new query to the stack.
+        const parentQuery = this.queryParts;
+        const parentShouldEmitFact = this.shouldEmitFacts;
+        this.shouldEmitFacts = false;
+        this.queryParts = {
+            joins: [],
+            existentialClauses: []
         };
-    }
 
-    private transitionFromSubquery(prefix: string, step: Step): State {
-        if (step instanceof Join) {
-            if (step.direction === Direction.Successor) {
-                return this.handleSubquerySuccessor(prefix, step.role);
-            }
-            else if (step.direction === Direction.Predecessor) {
-                return this.handleSubqueryPredecessor(prefix, step.role);
-            }
-        }
-    
-        throw new Error("Cannot yet handle this query: " + step.toDeclarativeString());
-    }
-
-    private handleSubquerySuccessor(outerPrefix: string, role: string): State {
-        const alias = this.allocateAlias();
-        const fromClause = 'FROM public.edge ' + alias;
-        const joins = '';
-        const prefixes = [alias + '.successor_'];
-        const whereClause = alias + '.predecessor_type = ' + outerPrefix + 'type' +
-            ' AND ' + alias + '.predecessor_hash = ' + outerPrefix + 'hash' +
-            ' AND ' + alias + '.role = ' + this.addParameter(role);
-        const parts = { prefixes, fromClause, joins, whereClause };
-
-        return this.stateMatched(parts);
-    }
-
-    private handleSubqueryPredecessor(outerPrefix: string, role: string): State {
-        const alias = this.allocateAlias();
-        const fromClause = 'FROM public.edge ' + alias;
-        const joins = '';
-        const prefixes = [alias + '.predecessor_'];
-        const whereClause = alias + '.successor_type = ' + outerPrefix + 'type' +
-            ' AND ' + alias + '.successor_hash = ' + outerPrefix + 'hash' +
-            ' AND ' + alias + '.role = ' + this.addParameter(role);
-        const parts = { prefixes, fromClause, joins, whereClause };
-
-        return this.stateMatched(parts);
-    }
-
-    private stateMatched(parts: QueryParts): State {
-        return {
-            parts,
-            transition: (step: Step) => this.transitionFromMatched(parts, step)
+        const startState: QueryBuilderState = {
+            state: 'predecessor-type',
+            typeId: typeId,
+            typeName: typeName
         };
+        const finalState = steps.reduce((state, step) => {
+            return this.matchStep(state, step);
+        }, startState);
+        this.end(finalState);
+
+        // Pop the stack and return the nested query.
+        const nestedQuery = this.queryParts;
+        this.shouldEmitFacts = parentShouldEmitFact;
+        this.queryParts = parentQuery;
+
+        // If the nested query cannot match any results, return null.
+        if (finalState.state === 'empty') {
+            return null;
+        }
+        return nestedQuery;
     }
 
-    private transitionFromMatched(parts: QueryParts, step: Step): State {
-        if (step instanceof PropertyCondition && step.name === "type") {
-            return this.handleMatchedType(parts, step.value);
+    private matchStep(state: QueryBuilderState, step: Step): QueryBuilderState {
+        switch (state.state) {
+            case 'predecessor-type':
+                return this.matchStepPredecessorType(state, step);
+            case 'predecessor-join':
+                return this.matchStepPredecessorJoin(state, step);
+            case 'successor-join':
+                return this.matchStepSuccessorJoin(state, step);
+            case 'successor-type':
+                return this.matchStepSuccessorType(state, step);
+            case 'empty':
+                return state;
+            default:
+                throw new Error(`Unknown state: ${(state as any).state}`);
+        }
+    }
+
+    private matchStepPredecessorType(state: QueryBuilderStatePredecessorType, step: Step): QueryBuilderState {
+        if (step instanceof PropertyCondition) {
+            if (step.name !== 'type') {
+                throw new Error(`Property condition on non-type property ${step.name}`);
+            }
+            const typeId = getFactTypeId(this.factTypes, step.value);
+            if (typeId !== state.typeId) {
+                throw new Error(`Two property conditions in a row on different types, ending in ${step.value}`);
+            }
+            return state;
         }
         else if (step instanceof Join) {
-            if (step.direction === Direction.Successor) {
-                return this.handleMatchedSuccessor(parts, step.role);
+            if (step.direction === Direction.Predecessor) {
+                const roleId = getRoleId(this.roleMap, state.typeId, step.role);
+                if (!roleId) {
+                    return {
+                        state: 'empty'
+                    };
+                }
+                this.emitEdge('predecessor', roleId);
+                return {
+                    state: 'predecessor-join',
+                    position: `${state.typeName}.${step.role}`
+                }
             }
-            else if (step.direction === Direction.Predecessor) {
-                return this.handleMatchedPredecessor(parts, step.role);
+            if (step.direction === Direction.Successor) {
+                return {
+                    state: 'successor-join',
+                    role: step.role
+                }
             }
         }
         else if (step instanceof ExistentialCondition) {
-            return this.handleMatchedExistentialCondition(parts, step.quantifier, step.steps);
+            return this.pushExistentialCondition(state.typeId, state.typeName, state, step);
         }
-
-        throw new Error("Cannot yet handle this query: " + step.toDeclarativeString());
+        else {
+            throw new Error(`Unknown step ${step.constructor.name}`);
+        }
     }
 
-    private handleMatchedType(parts: QueryParts, type: string): State {
-        const prefix = parts.prefixes[parts.prefixes.length - 1];
-        const whereClause = parts.whereClause +
-            ' AND ' + prefix + 'type = ' + this.addParameter(type);
-        return this.stateMatched({
-            prefixes: parts.prefixes,
-            fromClause: parts.fromClause,
-            joins: parts.joins,
-            whereClause
+    private matchStepPredecessorJoin(state: QueryBuilderStatePredecessorJoin, step: Step): QueryBuilderState {
+        if (step instanceof PropertyCondition) {
+            if (step.name !== 'type') {
+                throw new Error(`Property condition on non-type property ${step.name}`);
+            }
+            const typeId = getFactTypeId(this.factTypes, step.value);
+            if (!typeId) {
+                return {
+                    state: 'empty'
+                };
+            }
+            return {
+                state: 'predecessor-type',
+                typeId,
+                typeName: step.value
+            };
+        }
+        else {
+            throw new Error(`Missing type of "${state.position}"`);
+        }
+    }
+
+    private matchStepSuccessorJoin(state: QueryBuilderStateSuccessorJoin, step: Step): QueryBuilderState {
+        if (step instanceof PropertyCondition) {
+            if (step.name !== 'type') {
+                throw new Error(`Property condition on non-type property ${step.name}`);
+            }
+            const typeId = getFactTypeId(this.factTypes, step.value);
+            if (!typeId) {
+                return {
+                    state: 'empty'
+                };
+            }
+            const roleId = getRoleId(this.roleMap, typeId, state.role);
+            if (!roleId) {
+                return {
+                    state: 'empty'
+                };
+            }
+            this.emitEdge('successor', roleId);
+            return {
+                state: 'successor-type',
+                typeId: typeId,
+                typeName: step.value
+            };
+        }
+        else {
+            throw new Error(`Missing type for role ${state.role}`);
+        }
+    }
+
+    private matchStepSuccessorType(state: QueryBuilderStateSuccessorType, step: Step): QueryBuilderState {
+        if (step instanceof PropertyCondition) {
+            if (step.name !== 'type') {
+                throw new Error(`Property condition on non-type property ${step.name}`);
+            }
+            const typeId = getFactTypeId(this.factTypes, step.value);
+            if (typeId !== state.typeId) {
+                throw new Error(`Two property conditions in a row on different types, ending in ${step.value}`);
+            }
+            return state;
+        }
+        else if (step instanceof Join) {
+            if (step.direction === Direction.Predecessor) {
+                const roleId = getRoleId(this.roleMap, state.typeId, step.role);
+                if (!roleId) {
+                    return {
+                        state: 'empty'
+                    };
+                }
+                this.emitFact(state.typeName);
+                this.emitEdge('predecessor', roleId);
+                return {
+                    state: 'predecessor-join',
+                    position: `${state.typeName}.${step.role}`
+                };
+            }
+            else {
+                return {
+                    state: 'successor-join',
+                    role: step.role
+                };
+            }
+        }
+        else if (step instanceof ExistentialCondition) {
+            return this.pushExistentialCondition(state.typeId, state.typeName, state, step);
+        }
+        else {
+            throw new Error(`Unknown step ${step.constructor.name}`);
+        }
+    }
+
+    private end(finalState: QueryBuilderState) {
+        if (finalState.state === 'successor-join') {
+            throw new Error(`Missing type for role ${finalState.role}`);
+        }
+        else if (finalState.state === 'predecessor-join') {
+            throw new Error(`Missing type of "${finalState.position}"`);
+        }
+        else if (finalState.state === 'predecessor-type' || finalState.state === 'successor-type') {
+            this.emitFact(finalState.typeName);
+        }
+    }
+
+    private emitEdge(direction: 'predecessor' | 'successor', roleId: number) {
+        const edgeAlias = this.nextEdge++;
+        this.roleIds.push(roleId);
+        this.queryParts.joins.push({
+            table: 'edge',
+            direction: direction,
+            edgeAlias: edgeAlias,
+            roleParameter: edgeAlias + 2
         });
     }
 
-    private handleMatchedSuccessor(parts: QueryParts, role: string): State {
-        const roleParameter = this.addParameter(role);
-        const priorPrefix = parts.prefixes[parts.prefixes.length - 1];
-        const alias = this.allocateAlias();
-        const joins = parts.joins + ' JOIN public.edge ' + alias +
-            ' ON ' + alias + '.predecessor_hash = ' + priorPrefix + 'hash' +
-            ' AND ' + alias + '.predecessor_type = ' + priorPrefix + 'type';
-        const whereClause = parts.whereClause + ' AND ' + alias + '.role = ' + roleParameter;
-        const prefixes = parts.prefixes.concat([alias + '.successor_']);
-        return this.stateMatched({
-            prefixes,
-            fromClause: parts.fromClause,
-            joins,
-            whereClause
+    private emitFact(factTypeName: string) {
+        if (this.shouldEmitFacts) {
+            const factAlias = this.nextFact++;
+            this.queryParts.joins.push({
+                table: 'fact',
+                factAlias: factAlias
+            });
+            this.factTypeNames.push(factTypeName);
+        }
+    }
+
+    private pushExistentialCondition(typeId: number, typeName: string, state: QueryBuilderState, step: ExistentialCondition): QueryBuilderState {
+        const nested = this.buildNestedSql(typeId, typeName, step.steps);
+        if (!nested) {
+            if (step.quantifier === Quantifier.Exists) {
+                // An empty positive existential condition cannot match any facts.
+                return {
+                    state: 'empty'
+                };
+            }
+            else {
+                // An empty negative existential condition cannot exclude any facts.
+                return state;
+            }
+        }
+        const lastJoin = this.queryParts.joins[this.queryParts.joins.length - 1];
+        if (lastJoin.table !== 'edge') {
+            throw new Error(`Existential condition on non-edge table ${lastJoin.table}`);
+        }
+        this.queryParts.existentialClauses.push({
+            quantifier: step.quantifier,
+            priorEdgeJoin: lastJoin,
+            query: nested
         });
-    }
-
-    private handleMatchedPredecessor(parts: QueryParts, role: string): State {
-        const roleParameter = this.addParameter(role);
-        const priorPrefix = parts.prefixes[parts.prefixes.length - 1];
-        const alias = this.allocateAlias();
-        const joins = parts.joins + ' JOIN public.edge ' + alias +
-            ' ON ' + alias + '.successor_hash = ' + priorPrefix + 'hash' +
-            ' AND ' + alias + '.successor_type = ' + priorPrefix + 'type';
-        const whereClause = parts.whereClause + ' AND ' + alias + '.role = ' + roleParameter;
-        const prefixes = parts.prefixes.concat([alias + '.predecessor_']);
-        return this.stateMatched({
-            prefixes,
-            fromClause: parts.fromClause,
-            joins,
-            whereClause
-        });
-    }
-
-    private handleMatchedExistentialCondition(parts: QueryParts, quantifier: Quantifier, steps: Step[]): State {
-        const existence = quantifier === Quantifier.Exists ? 'EXISTS' : 'NOT EXISTS';
-        const prefix = parts.prefixes[parts.prefixes.length - 1];
-        const childQuery = this.buildChildQuery(prefix, steps);
-        const whereClause = parts.whereClause +
-            ' AND ' + existence + ' (' + childQuery + ')';
-        return this.stateMatched({
-            prefixes: parts.prefixes,
-            fromClause: parts.fromClause,
-            joins: parts.joins,
-            whereClause
-        });
-    }
-
-    private allocateAlias() {
-        return 'e' + this.nextAlias++;
-    }
-
-    private addParameter(value: any) {
-        this.parameters.push(value);
-        return '$' + this.parameters.length;
+        return state;
     }
 }

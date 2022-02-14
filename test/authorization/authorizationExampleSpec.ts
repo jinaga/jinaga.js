@@ -85,7 +85,7 @@ class Site {
   ) { }
 
   static creator(site: Site) {
-    ensure(site).has("creator");
+    ensure(site).has("creator", User);
     return j.match(site.creator);
   }
 }
@@ -100,7 +100,7 @@ class Content {
   ) { }
 
   static site(content: Content) {
-    ensure(content).has("site");
+    ensure(content).has("site", Site);
     return j.match(content.site);
   }
 }
@@ -116,7 +116,7 @@ class Comment {
   ) { }
 
   static author(comment: Comment) {
-    ensure(comment).has("author");
+    ensure(comment).has("author", User);
     return j.match(comment.author);
   }
 }

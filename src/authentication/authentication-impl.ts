@@ -16,6 +16,10 @@ export class AuthenticationImpl implements Authentication {
     constructor(private inner: Fork, private client: WebClient) {
     }
 
+    async close(): Promise<void> {
+        await this.inner.close();
+    }
+
     login() {
         return this.client.login();
     }

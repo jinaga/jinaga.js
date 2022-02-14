@@ -96,6 +96,7 @@ async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: F
 }
 
 class User {
+    static Type = "Jinaga.User" as const;
     publicKey: string;
 }
 
@@ -121,7 +122,7 @@ class Member {
     user: User;
 
     static user(m: Member) {
-        ensure(m).has("user");
+        ensure(m).has("user", User);
 
         return j.match(m.user);
     }
@@ -135,13 +136,13 @@ class Message {
     group: Group;
 
     static authorOf(m: Message) {
-        ensure(m).has("author");
+        ensure(m).has("author", User);
 
         return j.match(m.author);
     }
 
     static group(m: Message) {
-        ensure(m).has("group");
+        ensure(m).has("group", Group);
 
         return j.match(m.group);
     }
@@ -162,7 +163,7 @@ class Approval {
     }
 
     static by(a: Approval) {
-        ensure(a).has("approver");
+        ensure(a).has("approver", User);
 
         return j.match(a.approver);
     }
@@ -173,7 +174,7 @@ function emptyQuery(m: Message) {
 }
 
 function typeQuery(m: Message) {
-    ensure(m).has("author");
+    ensure(m).has("author", User);
     m.type = Message.Type;
 
     return j.match(m.author);

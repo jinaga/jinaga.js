@@ -47,6 +47,13 @@ export class TransientFork implements Fork {
         
     }
 
+    async close() {
+        this.channelProcessor.stop();
+        this.channelProcessor = null;
+        this.channels = [];
+        await this.feed.close();
+    }
+
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const response = await this.client.save(serializeSave(envelopes));
         const saved = await this.feed.save(envelopes);

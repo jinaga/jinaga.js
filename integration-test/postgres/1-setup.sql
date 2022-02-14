@@ -17,34 +17,13 @@
 --   VALID UNTIL 'infinity';
 --
 
--- \set appdatabase `echo "$APP_DATABASE"`
+\set appdatabase `echo "$APP_DATABASE"`
 
--- \connect :appdatabase
+\connect :appdatabase
 
 DO
 $do$
 BEGIN
-
-IF ((SELECT to_regclass('public.ancestor') IS NULL) AND
-	(SELECT to_regclass('public.fact') IS NOT NULL)) THEN
-	
-	-- Move the legacy tables to the legacy schema
-
-	CREATE SCHEMA legacy;
-
-	ALTER TABLE public.edge
-		SET SCHEMA legacy;
-
-	ALTER TABLE public.fact
-		SET SCHEMA legacy;
-
-	ALTER TABLE public.signature
-		SET SCHEMA legacy;
-
-	ALTER TABLE public."user"
-		SET SCHEMA legacy;
-
-END IF;
 
 --
 -- Fact Type
@@ -231,94 +210,6 @@ IF (SELECT to_regclass('public.user') IS NULL) THEN
 
     CREATE UNIQUE INDEX ux_user ON public."user" USING btree (user_identifier, provider);
     CREATE UNIQUE INDEX ux_user_public_key ON public."user" (public_key);
-
-END IF;
-
-IF (SELECT to_regclass('legacy.fact') IS NOT NULL) THEN
-
-	INSERT INTO public."user"
-		(provider, user_identifier, private_key, public_key)
-	SELECT provider, user_id, private_key, public_key
-	FROM legacy."user"
-	ON CONFLICT DO NOTHING;
-
-	INSERT INTO public.fact_type
-		(name)
-	SELECT DISTINCT type
-	FROM legacy.fact
-	ON CONFLICT DO NOTHING;
-	
-	INSERT INTO public.role
-		(defining_fact_type_id, name)
-	SELECT DISTINCT f.fact_type_id, e.role
-	FROM legacy.edge e
-	JOIN public.fact_type f
-	  ON f.name = e.successor_type
-	ON CONFLICT DO NOTHING;
-	
-	INSERT INTO public.fact
-		(fact_type_id, hash, data, date_learned)
-	SELECT
-		t.fact_type_id,
-		f.hash,
-		('{"fields":' || (('{"a":' || f.fields::text || '}')::json ->> 'a') ||
-		 ',"predecessors":' || (('{"a":' || f.predecessors::text || '}')::json ->> 'a') || '}')::jsonb,
-		f.date_learned
-	FROM legacy.fact f
-	JOIN public.fact_type t
-	  ON t.name = f.type
-	ON CONFLICT DO NOTHING;
-	
-	INSERT INTO public.edge
-	  (role_id, successor_fact_id, predecessor_fact_id)
-	SELECT r.role_id, s.fact_id, p.fact_id
-	FROM legacy.edge e
-	JOIN public.fact_type st
-	  ON st.name = e.successor_type
-	JOIN public.fact s
-	  ON s.fact_type_id = st.fact_type_id
-	  AND s.hash = e.successor_hash
-	JOIN public.fact_type pt
-	  ON pt.name = e.predecessor_type
-	JOIN public.fact p
-	  ON p.fact_type_id = pt.fact_type_id
-	  AND p.hash = e.predecessor_hash
-	JOIN public.role r
-	  ON r.defining_fact_type_id = st.fact_type_id
-	  AND r.name = e.role
-	ON CONFLICT DO NOTHING;
-	
-	INSERT INTO public.ancestor
-		(fact_id, ancestor_fact_id)
-	WITH RECURSIVE a(fact_id, ancestor_fact_id) AS (
-		SELECT e.successor_fact_id, e.predecessor_fact_id
-		FROM public.edge e
-		UNION ALL
-		SELECT e.successor_fact_id, a.ancestor_fact_id
-		FROM public.edge e
-		JOIN a ON a.fact_id = e.predecessor_fact_id
-	)
-	SELECT DISTINCT a.fact_id, a.ancestor_fact_id
-	FROM a
-	ON CONFLICT DO NOTHING;
-	
-	INSERT INTO public.public_key
-		(public_key)
-	SELECT DISTINCT public_key
-	FROM legacy.signature
-	ON CONFLICT DO NOTHING;
-	
-	INSERT INTO public.signature
-		(fact_id, public_key_id, signature, date_learned)
-	SELECT f.fact_id, pk.public_key_id, s.signature, s.date_learned
-	FROM legacy.signature s
-	JOIN public.fact_type t
-	  ON t.name = s.type
-	JOIN public.fact f
-	  ON f.fact_type_id = t.fact_type_id AND f.hash = s.hash
-	JOIN public.public_key pk
-	  ON pk.public_key = s.public_key
-	ON CONFLICT DO NOTHING;
 
 END IF;
 

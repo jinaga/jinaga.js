@@ -43,6 +43,10 @@ function loadAll(references: FactReference[], source: FactRecord[], target: Fact
 export class MemoryStore implements Storage {
     private factRecords: FactRecord[] = [];
 
+    close(): Promise<void> {
+        return Promise.resolve();
+    }
+
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const added: FactEnvelope[] = [];
         envelopes.forEach(envelope => {

@@ -84,6 +84,10 @@ export class FeedImpl implements Feed {
         this.listenersByTypeAndQuery = {};
     }
 
+    async close(): Promise<void> {
+        await this.inner.close();
+    }
+
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const saved = await this.inner.save(envelopes);
         for (let index = 0; index < saved.length; index++) {

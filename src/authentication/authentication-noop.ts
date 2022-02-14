@@ -10,6 +10,9 @@ export class AuthenticationNoOp implements Authentication {
         private inner: Feed
     ) { }
 
+    async close(): Promise<void> {
+        await this.inner.close();
+    }
     login(): Promise<LoginResponse> {
         throw new Error('No logged in user.');
     }

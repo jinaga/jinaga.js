@@ -74,7 +74,11 @@ export class AuthorizationEngine {
         const isAuthorized = await this.authorizationRules.isAuthorized(userFact, fact, factRecords, this.feed);
         if (predecessors.some(p => p.verdict === "New") || !(await this.feed.exists(fact))) {
             if (!isAuthorized) {
-                Trace.warn(`The fact of type ${fact.type} is not authorized.`);
+                if (this.authorizationRules.hasRule(fact.type)) {
+                    Trace.warn(`The user is not authorized to create a fact of type ${fact.type}.`);
+                } else {
+                    Trace.warn(`The fact ${fact.type} has no authorization rules.`);
+                }
             }
             return isAuthorized ? "New" : "Forbidden";
         }
