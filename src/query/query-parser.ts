@@ -62,6 +62,9 @@ class ParserProxy implements Proxy {
     [key:string]: any;
 
     has(name:string, type: string):Proxy {
+        if (type === undefined) {
+            throw new Error("The `has` function now takes two parameters. Please pass the predecessor type as the second.");
+        }
         const proxy = new ParserProxy(this, name);
         this[name] = proxy;
         proxy.type = type;
