@@ -1,207 +1,164 @@
 # Jinaga
 
-Resilient, reliable, and connected web applications.
+Application-agnostic back end for web applications.
 
-Make a change in the browser and it is automatically sent to the server, saved to the database, and shared with other users. Jinaga is journaled isolated nodes approaching global agreement.
+Add Jinaga.JS to a React app to manage application state.
+Point it to a Jinaga back end and it will persist that state to the server.
 
-Documentation at [Jinaga.com](https://jinaga.com).
+## Install
 
-[Contributing](contributing.md)
+Install Jinaga.JS from the NPM package.
 
-## Universal Back End
-
-Install the Jinaga NPM package.
-
-```
-npm install jinaga
+```bash
+npm i jinaga
 ```
 
-Create a server.js.
+This installs both the client side and server side components.
+See [jinaga.com](https://jinaga.com) for details on how to use them.
 
-``` JavaScript
-var JinagaDistributor = require("jinaga/jinaga.distributor.server");
-var MongoProvider = require("jinaga/jinaga.mongo");
-var url = 'mongodb://localhost:27017/dev';
-var port = 8888;
+## Build
 
-var mongo = new MongoProvider(url);
-JinagaDistributor.listen(mongo, mongo, port);
+To build Jinaga.JS, you will need Node 16.
+
+```bash
+npm ci
+npm run build
+npm test
 ```
 
-Start Mongo.
+## Changes in version 3
 
-```
-mongod.exe
-```
+In version 3 of Jinaga.JS, the `has` function takes two parameters.
+The second is the name of the predecessor type.
+In version 2, the function took only one parameter: the field name.
 
-Run the application.
+To upgrade, change this:
 
-```
-node server
-```
-
-Your back end is now running. Spend the rest of your time on the front end.
-
-## Front End
-
-Your front end application saves facts whenever the user does something. These facts are persisted to your back end, and shared in real-time with other browsers.
-
-Install the client-side library.
-
-```
-bower install jinaga
-```
-
-Include the script in your page.
-
-```
-<script src="bower_components/jinaga/jinaga.js"></script>
-<script src="main.js"></script>
-```
-
-Create facts inside of main.js.
-
-```JavaScript
-var j = new Jinaga();
-j.sync(new JinagaDistributor("ws://localhost:8888/"));
-
-j.fact({
-  type: "Task",
-  list: {
-    type: "TodoList",
-    name: "Chores"
-  },
-  description: "Take out the trash"
-});
-```
-
-This code actually represents two facts. The first is:
-
-```JavaScript
-var chores = {
-  type: "TodoList",
-  name: "Chores"
-};
-```
-
-The second is:
-
-```JavaScript
-var trash = {
-  type: "Task",
-  list: chores,
-  description: "Take out the trash"
-};
-```
-
-The second fact knows about the first. That makes the first fact (**chores**) a predecessor to the second (**trash**). The order between these two is known. **Chores** will always come before **trash**. But facts with no such relationship can occur in any order.
-
-## Watches
-
-Now that you can express that **chores** is a predecessor of **trash**, you might want to watch for all facts with that same predecessor. These are called successors. For example, you might want to find all of the tasks on the **chores** list. Provide a template that all desired facts will fit. For example, for a given list, this template will match all tasks on that list:
-
-```JavaScript
-function tasksInList(l) {
-  return {
-    type: "Task",
-    list: l
-  };
+```javascript
+function assignmentUser(assignment) {
+  ensure(assignment).has("user");
+  return j.match(assignment.user);
 }
 ```
 
-When a fact matching the template is found, we want to call a function. We'll watch the template, and call a function when the results change.
+To this:
 
-```JavaScript
-function taskAdded(task) {
-  // Render the task in the UI
-}
-
-j.watch(chores, [tasksInList], taskAdded);
-```
-
-Now if I add a new task to the list, the **taskAdded** function will be called.
-
-```JavaScript
-var dishes = {
-  type: "Task",
-  list: chores,
-  description: "Empty the dishwasher"
-};
-
-j.fact(dishes);
-
-// taskAdded is called with the dishes fact.
-```
-
-A callback is only executed once per fact. If you happen to add the same fact again, the callback will not be invoked.
-
-The watch is in effect for the current session. It is destroyed implicitly with the Jinaga instance when no longer in use. If you wish to explicitly stop watching, capture the return value.
-
-```JavaScript
-var watch = j.watch(chores, [tasksInList], taskAdded);
-
-// Some time later...
-
-watch.stop();
-``` 
-
-## Conditions
-
-Now I want to mark a task completed. Let's capture that as another fact.
-
-```JavaScript
-j.fact({
-  type: "TaskCompleted",
-  task: trash,
-  completed: true
-});
-```
-
-Let's write a template that matches this fact for a given task.
-
-```JavaScript
-function taskIsNotCompleted(t) {
-  return j.not({
-    type: "TaskCompleted",
-    task: t,
-    completed: true
-  });
+```javascript
+function assignmentUser(assignment) {
+  ensure(assignment).has("user", "Jinaga.User");
+  return j.match(assignment.user);
 }
 ```
 
-Now we can write a query so that only the uncompleted tasks match the template.
+## Running a Database in a Docker Container
 
-```JavaScript
-function uncompletedTasksInList(l) {
-  return j.where({
-    type: "Task",
-    list: l
-  }, [taskIsNotCompleted]);
-}
+The Jinaga server stores its data in a PostgreSQL database.
+The easiest way to get a database up and running is to start a Docker container.
 
-j.watch(chores, [uncompletedTasksInList], taskAdded);
+```bash
+docker run --name jinaga-postgres -p5432:5432 -e POSTGRES_PASSWORD=secretpw -e APP_USERNAME=appuser -e APP_PASSWORD=apppw -e APP_DATABASE=appdb jinaga/jinaga-postgres-fact-keystore
 ```
 
-When this query is created, only the existing tasks that have not been completed will be added to the UI. So you will see "Empty the dishwasher", but not "Take out the trash". But what about when a task changes? We want to remove tasks from the UI once they are marked completed. So let's add another callback to the query.
+## Installing a Database
 
-```JavaScript
-function taskRemoved(t) {
-  // Remove the task from the UI
-}
+If you are running Postgres yourself, you can create a Jinaga database on your server.
+The setup script is written for Linux.
+To run the script, make sure you have the `psql` command [installed](https://www.postgresql.org/download/).
+To check, run:
 
-j.watch(chores, [uncompletedTasksInList], taskAdded, taskRemoved);
+```bash
+psql --version
 ```
 
-Now when you complete a task, the taskRemoved function will be called to remove it from the UI.
+If you don't have `psql` installed, install it:
 
-```JavaScript
-j.fact({
-  type: "TaskCompleted",
-  task: dishes,
-  completed: true
-});
-
-// taskRemoved is called with the dishes fact.
+```bash
+sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+sudo apt-get update
+sudo apt-get install postgresql-client
 ```
 
-Facts are immutable, so there is no callback for updating a result. They can only be added or removed. To handle updates, please see [Mutablity](https://github.com/michaellperry/jinaga/blob/master/mutability.md).
+Then run the setup script.
+To create a new database, you will need to know the following information about your PostgreSQL installation:
+
+- Host name
+- Port (probably 5432)
+- Admin user name (probably postgres)
+- Admin database name (also probably postgres)
+- Admin password
+
+Then you will need to decide on the following:
+
+- Application user name
+- Application database name
+- Application password
+
+Once you have those values, set some environment variables and run the script:
+
+```bash
+export JINAGA_POSTGRES_HOST="localhost"
+export JINAGA_POSTGRES_PORT="5432"
+export JINAGA_POSTGRES_ADMIN_USER="postgres"
+export JINAGA_POSTGRES_ADMIN_DATABASE="postgres"
+export JINAGA_POSTGRES_ADMIN_PASSWORD="$ecr3t"
+export JINAGA_POSTGRES_APP_USER="appuser"
+export JINAGA_POSTGRES_APP_DATABASE="appdb"
+export JINAGA_POSTGRES_APP_PASSWORD="apppw"
+
+./setup.sh
+```
+
+## Migrating from version 2
+
+If you are already running a Jinaga database, whether in a container or on your own PostgreSQL server, you will need to upgrade to get it to work with version 3.
+The Jinaga server version 2 used a less efficient database schema.
+Run the setup script to upgrade the database schema.
+
+Your data is moved to a new Postgres schema called `legacy`.
+It is not modified during the process.
+Nevertheless, it would be wise to back up your database before running this operation.
+
+The upgrade script is written for Linux.
+To run the upgrade, make sure you have the `psql` command [installed](https://www.postgresql.org/download/).
+To check, run:
+
+```bash
+psql --version
+```
+
+If you don't have `psql` installed, install it:
+
+```bash
+sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+sudo apt-get update
+sudo apt-get install postgresql-client
+```
+
+Then run the upgrade script.
+To upgrade, you will need to know the following information about your PostgreSQL installation:
+
+- Host name
+- Port (probably 5432)
+- Admin user name (probably postgres)
+- Admin database name (also probably postgres)
+- Admin password
+- Application user name
+- Application database name
+- Application password
+
+Once you have those values, set some environment variables and run the script:
+
+```bash
+export JINAGA_POSTGRES_HOST="localhost"
+export JINAGA_POSTGRES_PORT="5432"
+export JINAGA_POSTGRES_ADMIN_USER="postgres"
+export JINAGA_POSTGRES_ADMIN_DATABASE="postgres"
+export JINAGA_POSTGRES_ADMIN_PASSWORD="$ecr3t"
+export JINAGA_POSTGRES_APP_USER="appuser"
+export JINAGA_POSTGRES_APP_DATABASE="appdb"
+export JINAGA_POSTGRES_APP_PASSWORD="apppw"
+
+./upgrade.sh
+```
