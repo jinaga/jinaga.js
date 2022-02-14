@@ -148,6 +148,9 @@ export class FactDescription<T> {
     ) { }
 
     has<K extends keyof T>(field: K, type: FactConstructor<T[K]> | string): FactDescription<T[K]> {
+        if (type === undefined) {
+            throw new Error("The `has` function now takes two parameters. Please pass the predecessor type as the second.");
+        }
         const typeName = (typeof type === "string") ? type : type.Type;
         (<any>this.fact).has(field, typeName);
         return new FactDescription<T[K]>(this.fact[field]);
