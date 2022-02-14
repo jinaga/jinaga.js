@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/types/index.d.ts",
   "scripts": {
-    "clean": "rm -rf ./dist",
+    "clean": "rimraf dist/",
     "build": "webpack",
     "test": "mocha --opts mocha.opts",
     "test:watch": "mocha --opts mocha.opts --watch",
@@ -40,6 +40,7 @@
     "del": "^5.1.0",
     "mocha": "^7.2.0",
     "nodemon": "^2.0.15",
+    "rimraf": "^3.0.2",
     "source-map-support": "^0.5.21",
     "ts-loader": "^6.2.2",
     "ts-node": "^8.10.2",
@@ -50,8 +51,8 @@
   },
   "dependencies": {
     "express": "^4.17.2",
-    "node-forge": "^0.10.0",
-    "passport": "^0.5.0",
+    "node-forge": "^1.0.0",
+    "passport": "^0.5.2",
     "pg": "^8.7.1",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"

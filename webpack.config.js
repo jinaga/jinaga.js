@@ -40,7 +40,10 @@ module.exports = [
         output: {
             libraryTarget: 'commonjs',
             path: path.resolve(__dirname, './dist'),
-            filename: 'index.js'
+            filename: 'index.js',
+            devtoolModuleFilenameTemplate: function (info) {
+                return path.relative(path.resolve(__dirname, './dist'), info.absoluteResourcePath);
+            },
         },
         externals: [
             nodeExternals()
