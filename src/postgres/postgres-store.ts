@@ -350,6 +350,9 @@ async function storeRoles(facts: FactRecord[], factTypes: FactTypeMap, roleMap: 
         );
         return allRoleIds;
     }
+    else {
+        return roleMap;
+    }
 }
 
 async function loadRoles(roles: { role: string; defining_fact_type_id: number; }[], roleMap: RoleMap, connection: PoolClient) {

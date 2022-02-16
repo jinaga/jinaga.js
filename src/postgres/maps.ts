@@ -47,16 +47,13 @@ export function getRoleId(map: RoleMap, defining_fact_type_id: number, name: str
 }
 
 export function mergeRoleMaps(map1: RoleMap, map2: RoleMap) {
-    return map2;
-    // let merged = new Map<number, Map<string, number>>(map1);
-    // for (const entry of map2) {
-    //     const defining_fact_type_id = entry[0];
-    //     const roleMap = entry[1];
-    //     const mergedRoleMap = merged.get(defining_fact_type_id) || new Map<string, number>();
-    //     const mergedFactTypeRoles = new Map<string, number>([...mergedRoleMap, ...roleMap]);
-    //     merged = merged.set(defining_fact_type_id, mergedFactTypeRoles);
-    // }
-    // return merged;
+    let merged = new Map<number, Map<string, number>>(map1);
+    for (const [defining_fact_type_id, roleMap] of map2) {
+        const mergedRoleMap = merged.get(defining_fact_type_id) || new Map<string, number>();
+        const mergedFactTypeRoles = new Map<string, number>([...mergedRoleMap, ...roleMap]);
+        merged = merged.set(defining_fact_type_id, mergedFactTypeRoles);
+    }
+    return merged;
 }
 
 export type FactMap = Map<string, Map<number, number>>;
