@@ -246,6 +246,7 @@ IF (SELECT to_regclass('legacy.fact') IS NOT NULL) THEN
 		(name)
 	SELECT DISTINCT type
 	FROM legacy.fact
+    WHERE type IS NOT NULL
 	ON CONFLICT DO NOTHING;
 	
 	INSERT INTO public.role
