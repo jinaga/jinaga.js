@@ -215,6 +215,76 @@ describe("Jinaga as a user", () => {
         const defaultTenants = await jDevice.query(device, Jinaga.for(defaultTenantsOfDevice));
         expect(defaultTenants).to.deep.equal([defaultTenant]);
     });
+
+    it("should find no memberships", async () => {
+        const { userFact: user } = await j.login();
+
+        const memberships = await j.query(user, Jinaga.for(membershipsForUser));
+        expect(memberships).to.deep.equal([]);
+    });
+
+    it("should find assigned membership", async () => {
+        const { userFact: user } = await j.login();
+
+        const membership = await j.fact({
+            type: "MyApplication.Membership",
+            tenant: {
+                type: "MyApplication.Tenant",
+                identifier: "test-tenant",
+                creator: user
+            },
+            user
+        });
+
+        const memberships = await j.query(user, Jinaga.for(membershipsForUser));
+        expect(memberships).to.deep.equal([membership]);
+    });
+
+    it("should not find deleted membership", async () => {
+        const { userFact: user } = await j.login();
+
+        const membership = await j.fact({
+            type: "MyApplication.Membership",
+            tenant: {
+                type: "MyApplication.Tenant",
+                identifier: "test-tenant",
+                creator: user
+            },
+            user
+        });
+        await j.fact({
+            type: "MyApplication.Membership.Deleted",
+            membership
+        });
+
+        const memberships = await j.query(user, Jinaga.for(membershipsForUser));
+        expect(memberships).to.deep.equal([]);
+    });
+
+    it("should find restored membership", async () => {
+        const { userFact: user } = await j.login();
+
+        const membership = await j.fact({
+            type: "MyApplication.Membership",
+            tenant: {
+                type: "MyApplication.Tenant",
+                identifier: "test-tenant",
+                creator: user
+            },
+            user
+        });
+        const deleted = await j.fact({
+            type: "MyApplication.Membership.Deleted",
+            membership
+        });
+        await j.fact({
+            type: "MyApplication.Membership.Restored",
+            deleted
+        });
+
+        const memberships = await j.query(user, Jinaga.for(membershipsForUser));
+        expect(memberships).to.deep.equal([membership]);
+    });
 })
 
 function randomRoot() {
@@ -293,6 +363,44 @@ function defaultTenantCreator(defaultTenant) {
     return Jinaga.match(defaultTenant.tenant.creator);
 }
 
+function membershipsForUser(user) {
+    return Jinaga.match({
+        type: "MyApplication.Membership",
+        user
+    }).suchThat(Jinaga.not(membershipIsDeleted));
+}
+
+function membershipIsDeleted(membership) {
+    return Jinaga.exists({
+        type: "MyApplication.Membership.Deleted",
+        membership
+    }).suchThat(Jinaga.not(membershipIsRestored));
+}
+
+function membershipIsRestored(deleted) {
+    return Jinaga.exists({
+        type: "MyApplication.Membership.Restored",
+        deleted
+    });
+}
+
+function tenantOfMembership(membership) {
+    ensure(membership).has("tenant", "MyApplication.Tenant");
+    return Jinaga.match(membership.tenant);
+}
+
+function deletedMembership(deleted) {
+    ensure(deleted).has("membership", "MyApplication.Membership");
+    return Jinaga.match(deleted.membership);
+}
+
+function restoredMembership(restored) {
+    ensure(restored)
+        .has("deleted", "MyApplication.Membership.Deleted")
+        .has("membership", "MyApplication.Membership");
+    return Jinaga.match(restored.deleted.membership);
+}
+
 async function check(callback) {
     const { j, close } = JinagaServer.create({
         pgKeystore: connectionString,
@@ -311,6 +419,9 @@ function authorization(a) {
     return a
         .type("MyApplication.UserName", Jinaga.for(nameUser))
         .type("MyApplication.Tenant", Jinaga.for(tenantCreator))
-        .type("MyApplication.DefaultTenant", Jinaga.for(defaultTenantCreator));
+        .type("MyApplication.DefaultTenant", Jinaga.for(defaultTenantCreator))
+        .type("MyApplication.Membership", Jinaga.for(tenantOfMembership).then(tenantCreator))
+        .type("MyApplication.Membership.Deleted", Jinaga.for(deletedMembership).then(tenantOfMembership).then(tenantCreator))
+        .type("MyApplication.Membership.Restored", Jinaga.for(restoredMembership).then(tenantOfMembership).then(tenantCreator))
         ;
 }
