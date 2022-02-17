@@ -162,7 +162,7 @@ class QueryBuilder {
         return clauses.join('');
     }
 
-    buildWhereClause(existentialClauses: ExistentialClause[]) {
+    buildWhereClause(existentialClauses: ExistentialClause[]): string {
         if (existentialClauses.length === 0) {
             return '';
         }
@@ -180,9 +180,10 @@ class QueryBuilder {
             const priorFactId = clause.priorEdgeJoin.direction === 'predecessor'
                 ? `e${clause.priorEdgeJoin.edgeAlias}.predecessor_fact_id`
                 : `e${clause.priorEdgeJoin.edgeAlias}.successor_fact_id`;
+            const whereClause = this.buildWhereClause(clause.query.existentialClauses);
             return ` AND ${quantifierSql} (SELECT 1 FROM public.edge e${first.edgeAlias}${joins} ` +
                 `WHERE ${firstTailFactId} = ${priorFactId} ` +
-                `AND e${first.edgeAlias}.role_id = $${first.roleParameter})`;
+                `AND e${first.edgeAlias}.role_id = $${first.roleParameter}${whereClause})`;
         });
         return clauses.join('');
     }

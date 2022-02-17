@@ -303,6 +303,34 @@ describe('Postgres', () => {
     const { empty } = sqlFor('S.root F.type="Assignment" E(S.unknown F.type="Assignment.Delete")');
     expect(empty).to.be.true;
   });
+
+  it('should parse nested existential condition', () => {
+    const { sql, parameters, factTypes, roleMap } = sqlFor('S.catalog F.type="ImprovingU.Idea" N(S.idea F.type="ImprovingU.Idea.Deletion" N(S.ideaDeletion F.type="ImprovingU.Idea.Restore"))');
+
+    expect(sql).to.equal(
+      'SELECT f2.hash as hash2 ' +
+      'FROM public.fact f1 ' +
+      'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+      'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+      'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+      'AND NOT EXISTS (' +
+        'SELECT 1 ' +
+        'FROM public.edge e2 ' +
+        'WHERE e2.predecessor_fact_id = e1.successor_fact_id AND e2.role_id = $4 ' +
+        'AND NOT EXISTS (' +
+          'SELECT 1 ' +
+          'FROM public.edge e3 ' +
+          'WHERE e3.predecessor_fact_id = e2.successor_fact_id AND e3.role_id = $5' +
+        ')' +
+      ')');
+    expect(parameters).to.deep.equal([
+      getFactTypeId(factTypes, 'Catalog'),
+      startHash,
+      getRoleId(roleMap, getFactTypeId(factTypes, 'ImprovingU.Idea'), 'catalog'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'ImprovingU.Idea.Deletion'), 'idea'),
+      getRoleId(roleMap, getFactTypeId(factTypes, 'ImprovingU.Idea.Restore'), 'ideaDeletion')
+    ]);
+  });
 });
 
 function allFactTypes(steps: Step[]): string[] {
