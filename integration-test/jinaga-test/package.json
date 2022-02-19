@@ -17,7 +17,7 @@
     "express": "^4.17.2",
     "jest": "^27.4.5",
     "jest-compact-reporter": "^1.2.9",
-    "node-forge": "^0.10.0",
+    "node-forge": "^1.0.0",
     "passport": "^0.5.2",
     "pg": "^8.7.1",
     "tweetnacl": "^1.0.3",
