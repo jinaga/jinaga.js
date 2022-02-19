@@ -41,6 +41,11 @@ interface ExistentialClause {
     query: QueryParts;
 }
 
+interface QueryBuilderStateStart {
+    state: 'start';
+    typeId: number;
+    typeName: string;
+}
 interface QueryBuilderStatePredecessorType {
     state: 'predecessor-type';
     typeId: number;
@@ -64,6 +69,7 @@ interface QueryBuilderStateEmpty {
 }
 
 type QueryBuilderState =
+    QueryBuilderStateStart |
     QueryBuilderStatePredecessorType |
     QueryBuilderStateSuccessorType |
     QueryBuilderStatePredecessorJoin |
@@ -91,7 +97,7 @@ class QueryBuilder {
 
         const startTypeId = getFactTypeId(this.factTypes, start.type);
         const startState: QueryBuilderState = {
-            state: 'predecessor-type',
+            state: 'start',
             typeId: startTypeId,
             typeName: start.type
         };
@@ -222,6 +228,8 @@ class QueryBuilder {
 
     private matchStep(state: QueryBuilderState, step: Step): QueryBuilderState {
         switch (state.state) {
+            case 'start':
+                return this.matchStepStart(state, step);
             case 'predecessor-type':
                 return this.matchStepPredecessorType(state, step);
             case 'predecessor-join':
@@ -237,7 +245,7 @@ class QueryBuilder {
         }
     }
 
-    private matchStepPredecessorType(state: QueryBuilderStatePredecessorType, step: Step): QueryBuilderState {
+    private matchStepStart(state: QueryBuilderStateStart, step: Step): QueryBuilderState {
         if (step instanceof PropertyCondition) {
             if (step.name !== 'type') {
                 throw new Error(`Property condition on non-type property ${step.name}`);
@@ -263,6 +271,48 @@ class QueryBuilder {
                 }
             }
             if (step.direction === Direction.Successor) {
+                return {
+                    state: 'successor-join',
+                    role: step.role
+                }
+            }
+        }
+        else if (step instanceof ExistentialCondition) {
+            return this.pushExistentialCondition(state.typeId, state.typeName, state, step);
+        }
+        else {
+            throw new Error(`Unknown step ${step.constructor.name}`);
+        }
+    }
+
+    private matchStepPredecessorType(state: QueryBuilderStatePredecessorType, step: Step): QueryBuilderState {
+        if (step instanceof PropertyCondition) {
+            if (step.name !== 'type') {
+                throw new Error(`Property condition on non-type property ${step.name}`);
+            }
+            const typeId = getFactTypeId(this.factTypes, step.value);
+            if (typeId !== state.typeId) {
+                throw new Error(`Two property conditions in a row on different types, ending in ${step.value}`);
+            }
+            return state;
+        }
+        else if (step instanceof Join) {
+            if (step.direction === Direction.Predecessor) {
+                const roleId = getRoleId(this.roleMap, state.typeId, step.role);
+                if (!roleId) {
+                    return {
+                        state: 'empty'
+                    };
+                }
+                this.emitFact(state.typeName);
+                this.emitEdge('predecessor', roleId);
+                return {
+                    state: 'predecessor-join',
+                    position: `${state.typeName}.${step.role}`
+                }
+            }
+            if (step.direction === Direction.Successor) {
+                this.emitFact(state.typeName);
                 return {
                     state: 'successor-join',
                     role: step.role
@@ -355,6 +405,7 @@ class QueryBuilder {
                 };
             }
             else {
+                this.emitFact(state.typeName);
                 return {
                     state: 'successor-join',
                     role: step.role
