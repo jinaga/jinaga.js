@@ -65,28 +65,41 @@ export class WebClient {
     }
 
     async query(query: QueryMessage) {
-        return <QueryResponse> await this.post('/query', query);
+        return <QueryResponse> await this.postWithLimitedRetry('/query', query);
     }
 
     async save(save: SaveMessage) {
-        return <SaveResponse> await this.postWithRetry('/save', save);
+        return <SaveResponse> await this.postWithInfiniteRetry('/save', save);
     }
 
     async load(load: LoadMessage) {
-        return <LoadResponse> await this.post('/load', load);
+        return <LoadResponse> await this.postWithLimitedRetry('/load', load);
     }
 
-    private async post(path: string, body: {}) {
-        const response = await this.httpConnection.post(path, body, this.config.timeoutSeconds);
-        if (response.result === 'success') {
-            return response.response;
-        }
-        else {
-            throw new Error(response.error);
+    private async postWithLimitedRetry(path: string, body: {}) {
+        let timeoutSeconds = this.config.timeoutSeconds;
+        let retrySeconds = 1;
+
+        while (true) {
+            const response = await this.httpConnection.post(path, body, this.config.timeoutSeconds);
+            if (response.result === 'success') {
+                return response.response;
+            }
+            else if (response.result === 'failure') {
+                throw new Error(response.error);
+            }
+            else {
+                await delay(retrySeconds + Math.random());
+                timeoutSeconds = Math.min(timeoutSeconds * 2, 60);
+                retrySeconds = retrySeconds * 2;
+                if (retrySeconds >= 8) {
+                    throw new Error(response.error);
+                }
+            }
         }
     }
 
-    private async postWithRetry(path: string, body: {}) {
+    private async postWithInfiniteRetry(path: string, body: {}) {
         let timeoutSeconds = this.config.timeoutSeconds;
         let retrySeconds = 1;
 
@@ -123,7 +136,7 @@ export class WebClient {
                     retryInSeconds: retrySeconds,
                     warning: response.error
                 });
-                await delay(retrySeconds);
+                await delay(retrySeconds + Math.random());
                 timeoutSeconds = Math.min(timeoutSeconds * 2, 60);
                 retrySeconds = Math.min(retrySeconds * 2, 60);
             }
