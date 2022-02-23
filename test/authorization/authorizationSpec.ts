@@ -161,6 +161,7 @@ function givenStorage() {
 
 function givenAuthorizationWithStorage(storage: MemoryStore) {
     const keystore = new MemoryKeystore();
+    keystore.getOrCreateUserFact(givenMockUserIdentity());
     const feed = new FeedImpl(storage);
     const authorizationRules = new AuthorizationRules()
         .any('Hashtag')

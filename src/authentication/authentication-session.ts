@@ -31,12 +31,8 @@ export class AuthenticationSession implements Authentication {
     
     async login(): Promise<LoginResponse> {
         const userFact = await this.keystore.getUserFact(this.userIdentity);
-        const signatures = await this.keystore.signFact(this.userIdentity, userFact);
-        const signedFact: FactEnvelope = {
-            fact: userFact,
-            signatures
-        };
-        await this.inner.save([signedFact]);
+        const signedFacts = await this.keystore.signFacts(this.userIdentity, [userFact]);
+        await this.inner.save(signedFacts);
         return {
             userFact,
             profile: {
@@ -63,10 +59,7 @@ export class AuthenticationSession implements Authentication {
         const userFact = await this.keystore.getUserFact(this.userIdentity);
         const facts = envelopes.map(envelope => envelope.fact);
         const authorizedFacts = await this.authorizationEngine.authorizeFacts(facts, userFact);
-        const signedFacts = await mapAsync(authorizedFacts, async fact => (<FactEnvelope>{
-            fact,
-            signatures: await this.keystore.signFact(this.userIdentity, fact)
-        }))
+        const signedFacts = await this.keystore.signFacts(this.userIdentity, authorizedFacts);
         return await this.inner.save(signedFacts);
     }
 

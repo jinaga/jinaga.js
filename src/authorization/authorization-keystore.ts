@@ -50,10 +50,7 @@ export class AuthorizationKeystore implements Authorization {
 
         const userFact = await this.keystore.getUserFact(userIdentity);
         const authorizedFacts = await this.authorizationEngine.authorizeFacts(facts, userFact);
-        const signedFacts = await mapAsync(authorizedFacts, async fact => (<FactEnvelope>{
-            fact,
-            signatures: await this.keystore.signFact(userIdentity, fact)
-        }))
+        const signedFacts = await this.keystore.signFacts(userIdentity, authorizedFacts);
         const envelopes = await this.feed.save(signedFacts);
         return envelopes.map(envelope => envelope.fact);
     }
