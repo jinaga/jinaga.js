@@ -32,6 +32,13 @@ interface FactResult {
     }[];
 }
 
+interface ExistsResult {
+    rows: {
+        fact_type_id: number;
+        hash: string;
+    }[];
+}
+
 interface PublicKeyResult {
     rows: {
         public_key_id: number;
@@ -176,18 +183,28 @@ export class PostgresStore implements Storage {
         return roleMap;
     }
 
-    async exists(fact: FactReference): Promise<boolean> {
-        const factTypes = await this.loadFactTypesFromReferences([fact]);
-        const factTypeId = getFactTypeId(factTypes, fact.type);
-        if (!factTypeId) {
-            return false;
-        }
-        const sql = 'SELECT COUNT(1) AS count FROM public.fact WHERE fact_type_id=$1 AND hash=$2';
-        const parameters = [ factTypeId, fact.hash ];
-        const { rows } = await this.connectionFactory.with(async (connection) => {
-            return await connection.query(sql, parameters);
+    async whichExist(references: FactReference[]): Promise<FactReference[]> {
+        const factTypes = await this.loadFactTypesFromReferences(references);
+
+        const factValues = references.map((f, i) =>
+            `(\$${i * 2 + 1}, \$${i * 2 + 2}::integer)`);
+        const factParameters = flatten(references, (f) =>
+            [f.hash, factTypes.get(f.type)]);
+        const sql =
+            'SELECT f.fact_type_id, f.hash ' +
+            'FROM public.fact f ' +
+            'JOIN (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id) ' +
+            '  ON v.fact_type_id = f.fact_type_id AND v.hash = f.hash ';
+        const result: ExistsResult = await this.connectionFactory.with(async (connection) => {
+            return await connection.query(sql, factParameters);
         });
-        return rows[0].count > 0;
+
+        const existing = references.filter(r =>
+            result.rows.some(row =>
+                row.fact_type_id === factTypes.get(r.type) && row.hash === r.hash
+            )
+        );
+        return existing;
     }
 
     async load(references: FactReference[]): Promise<FactRecord[]> {

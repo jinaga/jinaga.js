@@ -29,8 +29,8 @@ export class AuthenticationNoOp implements Authentication {
     query(start: FactReference, query: Query) {
         return this.inner.query(start, query);
     }
-    exists(fact: FactReference) {
-        return this.inner.exists(fact);
+    whichExist(references: FactReference[]): Promise<FactReference[]> {
+        return this.inner.whichExist(references);
     }
     load(references: FactReference[]) {
         return this.inner.load(references);

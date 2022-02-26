@@ -1,7 +1,7 @@
 import { computeHash, verifyHash } from '../fact/hash';
 import { TopologicalSorter } from '../fact/sorter';
 import { Feed } from '../feed/feed';
-import { FactRecord } from '../storage';
+import { FactRecord, FactReference } from '../storage';
 import { distinct, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 import { AuthorizationRules } from './authorizationRules';
@@ -72,7 +72,7 @@ export class AuthorizationEngine {
         }
 
         const isAuthorized = await this.authorizationRules.isAuthorized(userFact, fact, factRecords, this.feed);
-        if (predecessors.some(p => p.verdict === "New") || !(await this.feed.exists(fact))) {
+        if (predecessors.some(p => p.verdict === "New") || !(await this.factExists(fact))) {
             if (!isAuthorized) {
                 if (this.authorizationRules.hasRule(fact.type)) {
                     Trace.warn(`The user is not authorized to create a fact of type ${fact.type}.`);
@@ -84,5 +84,12 @@ export class AuthorizationEngine {
         }
 
         return isAuthorized ? "Signed" : "Existing";
+    }
+
+    async factExists(fact: FactReference) {
+        console.log(`Checking if fact ${fact.type} exists`);
+        const e = await this.feed.whichExist([fact]);
+        console.log(`Fact ${fact.type} exists: ${e}`);
+        return e.length > 0;
     }
 }

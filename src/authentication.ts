@@ -30,8 +30,8 @@ export class Authentication implements Feed {
         return this.inner.query(start, query);
     }
 
-    exists(fact: FactReference): Promise<boolean> {
-        throw new Error("Exists method not implemented on Authentication.");
+    whichExist(references: FactReference[]): Promise<FactReference[]> {
+        throw new Error("whichExist method not implemented on Authentication.");
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {

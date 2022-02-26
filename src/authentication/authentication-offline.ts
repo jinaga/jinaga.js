@@ -46,8 +46,8 @@ export class AuthenticationOffline implements Authentication {
     return this.inner.query(start, query);
   }
 
-  exists(fact: FactReference): Promise<boolean> {
-    throw new Error("Exists method not implemented on AuthenticationImpl.");
+  whichExist(references: FactReference[]): Promise<FactReference[]> {
+      throw new Error("whichExist method not implemented on AuthenticationImpl.");
   }
 
   load(references: FactReference[]): Promise<FactRecord[]> {

@@ -160,8 +160,8 @@ export class IndexedDBStore implements Storage {
     });
   }
 
-  exists(fact: FactReference): Promise<boolean> {
-    throw new Error('Exists not yet implemented on IndexedDB store.');
+  whichExist(references: FactReference[]): Promise<FactReference[]> {
+      throw new Error('whichExist not yet implemented on IndexedDB store.');
   }
 
   load(references: FactReference[]): Promise<FactRecord[]> {

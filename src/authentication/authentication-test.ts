@@ -58,8 +58,8 @@ export class AuthenticationTest implements Authentication {
     return this.inner.query(start, query);
   }
 
-  exists(fact: FactReference) {
-    return this.inner.exists(fact);
+  whichExist(references: FactReference[]): Promise<FactReference[]> {
+    return this.inner.whichExist(references);
   }
 
   load(references: FactReference[]) {
