@@ -33,7 +33,7 @@ export interface Storage {
     close(): Promise<void>;
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     query(start: FactReference, query: Query): Promise<FactPath[]>;
-    exists(fact: FactReference): Promise<boolean>;
+    whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;
 }
 

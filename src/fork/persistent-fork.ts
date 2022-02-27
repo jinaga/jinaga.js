@@ -91,8 +91,8 @@ export class PersistentFork implements Fork {
         }
     }
 
-    exists(fact: FactReference): Promise<boolean> {
-        throw new Error("Exists method not implemented on Fork.");
+    whichExist(references: FactReference[]): Promise<FactReference[]> {
+        throw new Error("whichExist method not implemented on Fork.");
     }
 
     async load(references: FactReference[]): Promise<FactRecord[]> {

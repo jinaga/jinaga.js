@@ -1,7 +1,7 @@
 import { computeHash, verifyHash } from '../fact/hash';
 import { TopologicalSorter } from '../fact/sorter';
 import { Feed } from '../feed/feed';
-import { FactRecord } from '../storage';
+import { FactRecord, FactReference } from '../storage';
 import { distinct, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 import { AuthorizationRules } from './authorizationRules';
@@ -30,8 +30,9 @@ export class AuthorizationEngine {
     ) { }
 
     async authorizeFacts(facts: FactRecord[], userFact: FactRecord) {
+        const existing = await this.feed.whichExist(facts);
         const sorter = new TopologicalSorter<Promise<AuthorizationResult>>();
-        const results = await mapAsync(sorter.sort(facts, (p, f) => this.visit(p, f, userFact, facts)), x => x);
+        const results = await mapAsync(sorter.sort(facts, (p, f) => this.visit(p, f, userFact, facts, existing)), x => x);
         const rejected = results.filter(r => r.verdict === "Forbidden");
         if (rejected.length > 0) {
             const distinctTypes = rejected
@@ -49,13 +50,13 @@ export class AuthorizationEngine {
     }
 
 
-    private async visit(predecessors: Promise<AuthorizationResult>[], fact: FactRecord, userFact: FactRecord, factRecords: FactRecord[]): Promise<AuthorizationResult> {
+    private async visit(predecessors: Promise<AuthorizationResult>[], fact: FactRecord, userFact: FactRecord, factRecords: FactRecord[], existing: FactReference[]): Promise<AuthorizationResult> {
         const predecessorResults = await mapAsync(predecessors, p => p);
-        const verdict = await this.authorize(predecessorResults, userFact, fact, factRecords);
+        const verdict = await this.authorize(predecessorResults, userFact, fact, factRecords, existing);
         return { fact, verdict };
     }
 
-    private async authorize(predecessors: AuthorizationResult[], userFact: FactRecord, fact: FactRecord, factRecords: FactRecord[]) : Promise<AuthorizationVerdict> {
+    private async authorize(predecessors: AuthorizationResult[], userFact: FactRecord, fact: FactRecord, factRecords: FactRecord[], existing: FactReference[]) : Promise<AuthorizationVerdict> {
         if (predecessors.some(p => p.verdict === "Forbidden")) {
             const predecessor = predecessors
                 .filter(p => p.verdict === 'Forbidden')
@@ -72,7 +73,7 @@ export class AuthorizationEngine {
         }
 
         const isAuthorized = await this.authorizationRules.isAuthorized(userFact, fact, factRecords, this.feed);
-        if (predecessors.some(p => p.verdict === "New") || !(await this.feed.exists(fact))) {
+        if (predecessors.some(p => p.verdict === "New") || !existing.some(f => f.hash === fact.hash && f.type === fact.type)) {
             if (!isAuthorized) {
                 if (this.authorizationRules.hasRule(fact.type)) {
                     Trace.warn(`The user is not authorized to create a fact of type ${fact.type}.`);

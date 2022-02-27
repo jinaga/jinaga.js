@@ -63,9 +63,10 @@ export class MemoryStore implements Storage {
         return Promise.resolve(results);
     }
 
-    exists(fact: FactReference): Promise<boolean> {
-        const exists = this.factRecords.some(factReferenceEquals(fact));
-        return Promise.resolve(exists);
+    whichExist(references: FactReference[]): Promise<FactReference[]> {
+        const existing = references.filter(reference =>
+            this.factRecords.some(factReferenceEquals(reference)));
+        return Promise.resolve(existing);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {

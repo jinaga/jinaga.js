@@ -25,8 +25,8 @@ export class PassThroughFork implements Fork {
         return this.inner.query(start, query);
     }
 
-    exists(fact: FactReference): Promise<boolean> {
-        return this.inner.exists(fact);
+    whichExist(references: FactReference[]): Promise<FactReference[]> {
+        return this.inner.whichExist(references);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {
