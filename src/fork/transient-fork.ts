@@ -72,7 +72,7 @@ export class TransientFork implements Fork {
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
-        throw new Error("WhichExist method not implemented on Fork.");
+        return this.feed.whichExist(references);
     }
 
     async load(references: FactReference[]): Promise<FactRecord[]> {
