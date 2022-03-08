@@ -96,12 +96,20 @@ export class PostgresStore implements Storage {
             if (facts.some(f => !f.hash || !f.type)) {
                 throw new Error('Attempted to save a fact with no hash or type.');
             }
-            return await this.connectionFactory.withTransaction(async (connection) => {
+            const { newEnvelopes, factTypes, roles } : {
+                newEnvelopes: FactEnvelope[];
+                factTypes: FactTypeMap;
+                roles: RoleMap;
+            } = await this.connectionFactory.withTransaction(async (connection) => {
                 const factTypes = await storeFactTypes(facts, this.factTypeMap, connection);
                 const existingFacts = await findExistingFacts(facts, factTypes, connection);
                 const newFacts = facts.filter(f => !hasFact(existingFacts, f.hash, factTypes.get(f.type)));
                 if (newFacts.length === 0) {
-                    return [];
+                    return {
+                        newEnvelopes: [],
+                        factTypes,
+                        roles: emptyRoleMap()
+                    };
                 }
 
                 const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
@@ -111,15 +119,24 @@ export class PostgresStore implements Storage {
                 const newEnvelopes = envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
                 if (newEnvelopes.length === 0) {
-                    return [];
+                    return {
+                        newEnvelopes,
+                        factTypes,
+                        roles
+                    };
                 }
 
                 const publicKeys = await storePublicKeys(newEnvelopes, connection);
                 await insertSignatures(newEnvelopes, allFacts, factTypes, publicKeys, connection);
-                this.factTypeMap = mergeFactTypes(this.factTypeMap, factTypes);
-                this.roleMap = mergeRoleMaps(this.roleMap, roles);
-                return newEnvelopes;
+                return {
+                    newEnvelopes,
+                    factTypes,
+                    roles
+                };
             });
+            this.factTypeMap = mergeFactTypes(this.factTypeMap, factTypes);
+            this.roleMap = mergeRoleMaps(this.roleMap, roles);
+            return newEnvelopes;
         }
         else {
             return [];
