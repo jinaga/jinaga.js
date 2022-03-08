@@ -1,6 +1,6 @@
 {
   "name": "jinaga",
-  "version": "3.0.6",
+  "version": "3.0.7",
   "description": "Application-agnostic back end for web applications",
   "main": "dist/index.js",
   "types": "dist/types/index.d.ts",
