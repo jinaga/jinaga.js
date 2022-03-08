@@ -93,7 +93,7 @@ export class HttpRouter {
     }
 
     private async login(user: RequestUser) {
-        const userFact = await this.authorization.getUserFact({
+        const userFact = await this.authorization.getOrCreateUserFact({
             provider: user.provider,
             id: user.id
         });

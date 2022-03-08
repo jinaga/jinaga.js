@@ -10,7 +10,7 @@ export class AuthorizationNoOp implements Authorization {
         private feed: Feed
     ) { }
 
-    getUserFact(userIdentity: UserIdentity): Promise<FactRecord> {
+    getOrCreateUserFact(userIdentity: UserIdentity): Promise<FactRecord> {
         throw new Forbidden();
     }
 

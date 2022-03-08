@@ -19,8 +19,8 @@ export class AuthorizationKeystore implements Authorization {
             new AuthorizationEngine(authorizationRules, feed);
     }
 
-    async getUserFact(userIdentity: UserIdentity) {
-        const userFact = await this.keystore.getUserFact(userIdentity);
+    async getOrCreateUserFact(userIdentity: UserIdentity) {
+        const userFact = await this.keystore.getOrCreateUserFact(userIdentity);
         const envelopes = [
             <FactEnvelope>{
                 fact: userFact,

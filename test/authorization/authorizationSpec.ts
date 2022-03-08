@@ -182,7 +182,7 @@ function givenOtherUser() {
 
 async function givenLoggedInUser(authorization: AuthorizationKeystore) {
     const userIdentity = givenMockUserIdentity();
-    const userFact = await authorization.getUserFact(userIdentity);
+    const userFact = await authorization.getOrCreateUserFact(userIdentity);
     const user = hydrate<{}>(userFact);
     return user;
 }
