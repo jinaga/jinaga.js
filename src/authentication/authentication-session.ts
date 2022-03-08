@@ -30,7 +30,7 @@ export class AuthenticationSession implements Authentication {
     }
     
     async login(): Promise<LoginResponse> {
-        const userFact = await this.keystore.getUserFact(this.userIdentity);
+        const userFact = await this.keystore.getOrCreateUserFact(this.userIdentity);
         const signedFacts = await this.keystore.signFacts(this.userIdentity, [userFact]);
         await this.inner.save(signedFacts);
         return {
@@ -42,7 +42,7 @@ export class AuthenticationSession implements Authentication {
     }
 
     async local(): Promise<FactRecord> {
-        const deviceFact = await this.keystore.getDeviceFact(this.localDeviceIdentity);
+        const deviceFact = await this.keystore.getOrCreateDeviceFact(this.localDeviceIdentity);
         const signedFact: FactEnvelope = {
             fact: deviceFact,
             signatures: []
