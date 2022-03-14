@@ -17,23 +17,23 @@ JOIN public.fact AS predecessor
 ON CONFLICT DO NOTHING;
 
 
+WITH e AS (
+	SELECT successor.fact_id AS successor_fact_id, predecessor.fact_id AS predecessor_fact_id
+	FROM (VALUES ('hash2', 2, 'hash1', 1)) AS v (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id)
+	JOIN public.fact AS successor
+		ON successor.hash = v.successor_hash AND successor.fact_type_id = v.successor_fact_type_id
+	JOIN public.fact AS predecessor
+		ON predecessor.hash = v.predecessor_hash AND predecessor.fact_type_id = v.predecessor_fact_type_id
+)
 INSERT INTO public.ancestor
 	(fact_id, ancestor_fact_id)
-	SELECT successor.fact_id, predecessor.fact_id
-	FROM (VALUES ('hash2', 2, 'hash1', 1)) AS v (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id)
-	JOIN public.fact AS successor
-		ON successor.hash = v.successor_hash AND successor.fact_type_id = v.successor_fact_type_id
-	JOIN public.fact AS predecessor
-		ON predecessor.hash = v.predecessor_hash AND predecessor.fact_type_id = v.predecessor_fact_type_id
+	SELECT e.successor_fact_id, e.predecessor_fact_id
+	FROM e
 UNION ALL
-	SELECT successor.fact_id, ancestor_fact_id
-	FROM (VALUES ('hash2', 2, 'hash1', 1)) AS v (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id)
-	JOIN public.fact AS successor
-		ON successor.hash = v.successor_hash AND successor.fact_type_id = v.successor_fact_type_id
-	JOIN public.fact AS predecessor
-		ON predecessor.hash = v.predecessor_hash AND predecessor.fact_type_id = v.predecessor_fact_type_id
+	SELECT e.successor_fact_id, ancestor_fact_id
+	FROM e
 	JOIN public.ancestor
-		ON ancestor.fact_id = predecessor.fact_id
+		ON ancestor.fact_id = e.predecessor_fact_id
 ON CONFLICT DO NOTHING;
 
 
