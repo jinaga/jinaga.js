@@ -112,10 +112,8 @@ export class PostgresStore implements Storage {
                     };
                 }
 
-                const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
                 const roles = await storeRoles(newFacts, factTypes, copyRoleMap(this.roleMap), connection);
-                await insertEdges(newFacts, allFacts, roles, factTypes, connection);
-                await insertAncestors(newFacts, allFacts, factTypes, connection);
+                const allFacts = await insertFactsEdgesAndAncestors(newFacts, factTypes, existingFacts, connection, roles);
                 const newEnvelopes = envelopes.filter(envelope => newFacts.some(
                     factReferenceEquals(envelope.fact)));
                 if (newEnvelopes.length === 0) {
@@ -434,6 +432,13 @@ async function findExistingFacts(facts: FactRecord[], factTypes: FactTypeMap, co
     else {
         return emptyFactMap();
     }
+}
+
+async function insertFactsEdgesAndAncestors(newFacts: FactRecord[], factTypes: FactTypeMap, existingFacts: Map<string, Map<number, number>>, connection: PoolClient, roles: RoleMap) {
+    const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
+    await insertEdges(newFacts, allFacts, roles, factTypes, connection);
+    await insertAncestors(newFacts, allFacts, factTypes, connection);
+    return allFacts;
 }
 
 async function insertFacts(facts: FactRecord[], factTypes: FactTypeMap, existingFacts: FactMap, connection: PoolClient) {
