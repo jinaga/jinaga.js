@@ -553,59 +553,6 @@ function sqlInsertFactsEdgesAndAncestors(factParameters: (string | number | { fi
     return { sql, parameters };
 }
 
-function sqlInsertEdgesAndAncestors(facts: FactRecord[], roles: RoleMap, factTypes: FactTypeMap, parameterOffset: number) {
-    const edgeRecords = flatten(facts, fact => makeEdgeRecords(fact));
-    if (edgeRecords.length === 0) {
-        return { sql: '', parameters: [] };
-    }
-
-    const edgeValues = edgeRecords.map((e, i) =>
-        `(\$${i * 5 + 1 + parameterOffset}, \$${i * 5 + 2 + parameterOffset}::integer, \$${i * 5 + 3 + parameterOffset}, \$${i * 5 + 4 + parameterOffset}::integer, \$${i * 5 + 5 + parameterOffset}::integer)`);
-    const ancestorValues = edgeRecords.map((e, i) =>
-        `(\$${i * 5 + 1 + parameterOffset}, \$${i * 5 + 2 + parameterOffset}::integer, \$${i * 5 + 3 + parameterOffset}, \$${i * 5 + 4 + parameterOffset}::integer)`);
-    const parameters = flatten(edgeRecords, (e) => {
-        const successor_fact_type_id = getFactTypeId(factTypes, e.successor_type);
-        const predecessor_fact_type_id = getFactTypeId(factTypes, e.predecessor_type);
-        return [
-            e.successor_hash,
-            successor_fact_type_id,
-            e.predecessor_hash,
-            predecessor_fact_type_id,
-            getRoleId(roles, successor_fact_type_id, e.role)
-        ];
-    });
-
-    const sql = 'INSERT INTO public.edge' +
-        ' (role_id, successor_fact_id, predecessor_fact_id)' +
-        ' SELECT v.role_id, successor.fact_id, predecessor.fact_id' +
-        ' FROM (VALUES ' + edgeValues.join(', ') + ') AS v (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id, role_id)' +
-        ' JOIN public.fact AS successor' +
-        '   ON successor.hash = v.successor_hash AND successor.fact_type_id = v.successor_fact_type_id' +
-        ' JOIN public.fact AS predecessor' +
-        '   ON predecessor.hash = v.predecessor_hash AND predecessor.fact_type_id = v.predecessor_fact_type_id' +
-        ' ON CONFLICT DO NOTHING;' + "\n" +
-
-        'WITH e AS (' +
-        '    SELECT successor.fact_id AS successor_fact_id, predecessor.fact_id AS predecessor_fact_id' +
-        '    FROM (VALUES ' + ancestorValues.join(', ') + ') AS v (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id)' +
-        '    JOIN public.fact AS successor' +
-        '        ON successor.hash = v.successor_hash AND successor.fact_type_id = v.successor_fact_type_id' +
-        '    JOIN public.fact AS predecessor' +
-        '        ON predecessor.hash = v.predecessor_hash AND predecessor.fact_type_id = v.predecessor_fact_type_id' +
-        ')' +
-        ' INSERT INTO public.ancestor' +
-        '    (fact_id, ancestor_fact_id)' +
-        '    SELECT e.successor_fact_id, e.predecessor_fact_id' +
-        '    FROM e' +
-        ' UNION ALL' +
-        '    SELECT e.successor_fact_id, ancestor_fact_id' +
-        '    FROM e' +
-        '    JOIN public.ancestor' +
-        '        ON ancestor.fact_id = e.predecessor_fact_id' +
-        ' ON CONFLICT DO NOTHING;' + "\n";
-    return { sql, parameters };
-}
-
 async function storePublicKeys(envelopes: FactEnvelope[], connection: PoolClient) {
     // Look up existing fact types
     const publicKeys = flatten(envelopes, e => e.signatures.map(s => s.publicKey))
