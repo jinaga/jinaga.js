@@ -23,7 +23,13 @@ edge_id AS (
     JOIN inserted_fact AS successor
         ON successor.hash = new_edge.successor_hash
         AND successor.fact_type_id = new_edge.successor_fact_type_id
-    JOIN public.fact AS predecessor
+    JOIN (
+        SELECT fact_id, fact_type_id, hash
+        FROM inserted_fact
+        UNION ALL
+        SELECT fact_id, fact_type_id, hash
+        FROM public.fact
+    ) AS predecessor
         ON predecessor.hash = new_edge.predecessor_hash
         AND predecessor.fact_type_id = new_edge.predecessor_fact_type_id
 ),
