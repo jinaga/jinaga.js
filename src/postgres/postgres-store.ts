@@ -1,13 +1,43 @@
-import { PoolClient } from 'pg';
+import { PoolClient } from "pg";
+
 import { canonicalPredecessors } from "../fact/hash";
-import { Query } from '../query/query';
+import { Query } from "../query/query";
 import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../query/steps";
-import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, PredecessorCollection, Storage } from '../storage';
-import { distinct, flatten } from '../util/fn';
-import { ConnectionFactory, Row } from './connection';
-import { makeEdgeRecords } from './edge-record';
-import { addFact, addFactType, addRole, copyRoleMap, emptyFactMap, emptyFactTypeMap, emptyPublicKeyMap, emptyRoleMap, FactMap, FactTypeMap, getFactId, getFactTypeId, getPublicKeyId, getRoleId, hasFact, hasRole, mergeFactTypes, mergeRoleMaps, PublicKeyMap, RoleMap } from './maps';
-import { sqlFromSteps } from './sql';
+import {
+    FactEnvelope,
+    FactPath,
+    FactRecord,
+    FactReference,
+    factReferenceEquals,
+    PredecessorCollection,
+    Storage,
+} from "../storage";
+import { distinct, flatten } from "../util/fn";
+import { ConnectionFactory, Row } from "./connection";
+import { makeEdgeRecords } from "./edge-record";
+import {
+    addFact,
+    addFactType,
+    addRole,
+    copyRoleMap,
+    emptyFactMap,
+    emptyFactTypeMap,
+    emptyPublicKeyMap,
+    emptyRoleMap,
+    FactMap,
+    FactTypeMap,
+    getFactId,
+    getFactTypeId,
+    getPublicKeyId,
+    getRoleId,
+    hasFact,
+    hasRole,
+    mergeFactTypes,
+    mergeRoleMaps,
+    PublicKeyMap,
+    RoleMap,
+} from "./maps";
+import { sqlFromSteps } from "./sql";
 
 interface FactTypeResult {
     rows: {
@@ -434,90 +464,92 @@ async function findExistingFacts(facts: FactRecord[], factTypes: FactTypeMap, co
     }
 }
 
-async function insertFactsEdgesAndAncestors(newFacts: FactRecord[], factTypes: FactTypeMap, existingFacts: Map<string, Map<number, number>>, connection: PoolClient, roles: RoleMap) {
-    const allFacts = await insertFacts(newFacts, factTypes, existingFacts, connection);
-    await insertEdges(newFacts, allFacts, roles, factTypes, connection);
-    await insertAncestors(newFacts, allFacts, factTypes, connection);
+async function insertFactsEdgesAndAncestors(facts: FactRecord[], factTypes: FactTypeMap, existingFacts: Map<string, Map<number, number>>, connection: PoolClient, roles: RoleMap) {
+    if (facts.length === 0) {
+        return emptyFactMap();
+    }
+
+    const { sql: sqlFacts, parameters: parametersFacts } = sqlInsertFacts(facts, factTypes);
+    const { sql: sqlEdges, parameters: parametersEdges } = sqlInsertEdgesAndAncestors(facts, roles, factTypes, parametersFacts.length);
+    const sql = sqlFacts + sqlEdges;
+    const parameters = [...parametersFacts, ...parametersEdges];
+
+    const { rows }: FactResult = await connection.query(sql, parameters);
+    if (rows.length !== facts.length) {
+        throw new Error('Failed to insert all new facts.');
+    }
+    const allFacts = rows.reduce(
+        (map, row) => addFact(map, row.hash, row.fact_type_id, row.fact_id),
+        existingFacts
+    );
     return allFacts;
 }
 
-async function insertFacts(facts: FactRecord[], factTypes: FactTypeMap, existingFacts: FactMap, connection: PoolClient) {
-    if (facts.length > 0) {
-        const factValues = facts.map((f, i) =>
-            `(\$${i * 3 + 1}, \$${i * 3 + 2}::integer, \$${i * 3 + 3}::jsonb)`);
-        const factParameters = flatten(facts, (f) =>
-            [f.hash, factTypes.get(f.type), {
-                fields: f.fields,
-                predecessors: canonicalPredecessors(f.predecessors)
-            }]);
+function sqlInsertFacts(facts: FactRecord[], factTypes: FactTypeMap) {
+    const values = facts.map((f, i) => `(\$${i * 3 + 1}, \$${i * 3 + 2}::integer, \$${i * 3 + 3}::jsonb)`);
+    const parameters = flatten(facts, (f) => [f.hash, factTypes.get(f.type), {
+        fields: f.fields,
+        predecessors: canonicalPredecessors(f.predecessors)
+    }]);
 
-        const sql = 'INSERT INTO public.fact (hash, fact_type_id, data)' +
-            ' (SELECT hash, fact_type_id, data' +
-            '  FROM (VALUES ' + factValues.join(', ') + ') AS v (hash, fact_type_id, data))' +
-            ' RETURNING fact_id, fact_type_id, hash;';
-        const { rows }: FactResult = await connection.query(sql, factParameters);
-        if (rows.length !== facts.length) {
-            throw new Error('Failed to insert all new facts.');
-        }
-        const allFacts = rows.reduce(
-            (map, row) => addFact(map, row.hash, row.fact_type_id, row.fact_id),
-            existingFacts
-        );
-        return allFacts;
-    }
-    else {
-        return emptyFactMap();
-    }
+    const sql = 'INSERT INTO public.fact (hash, fact_type_id, data)' +
+        ' (SELECT hash, fact_type_id, data' +
+        '  FROM (VALUES ' + values.join(', ') + ') AS v (hash, fact_type_id, data))' +
+        ' RETURNING fact_id, fact_type_id, hash;' + "\n";
+    return { sql, parameters };
 }
 
-async function insertEdges(facts: FactRecord[], allFacts: FactMap, roles: RoleMap, factTypes: FactTypeMap, connection: PoolClient) {
-    const edgeRecords = flatten(facts, makeEdgeRecords);
-    if (edgeRecords.length > 0) {
-        const edgeValues = edgeRecords.map((e, i) =>
-            `(\$${i * 3 + 1}::integer, \$${i * 3 + 2}::integer, \$${i * 3 + 3}::integer)`);
-        const edgeParameters = flatten(edgeRecords, (e) => [
-            getRoleId(roles, getFactTypeId(factTypes, e.successor_type), e.role),
-            getFactId(allFacts, e.successor_hash, getFactTypeId(factTypes, e.successor_type)),
-            getFactId(allFacts, e.predecessor_hash, getFactTypeId(factTypes, e.predecessor_type))
-        ]);
-
-        await connection.query('INSERT INTO public.edge' +
-            ' (role_id, successor_fact_id, predecessor_fact_id)' +
-            ' (VALUES ' + edgeValues.join(', ') + ')' +
-            ' ON CONFLICT DO NOTHING', edgeParameters);
+function sqlInsertEdgesAndAncestors(facts: FactRecord[], roles: RoleMap, factTypes: FactTypeMap, parameterOffset: number) {
+    const edgeRecords = flatten(facts, fact => makeEdgeRecords(fact));
+    if (edgeRecords.length === 0) {
+        return { sql: '', parameters: [] };
     }
-}
 
-async function insertAncestors(facts: FactRecord[], allFacts: FactMap, factTypes: FactTypeMap, connection: PoolClient) {
-    // This function assumes that the facts are listed in topological order.
-    // A fact always appears later in the list than its predecessors.
-    // Let's check that by keeping track of all predecessors assumed to have been inserted.
-    const insertedPredecessors = new Set<number>();
-    for (const fact of facts) {
-        const factId = getFactId(allFacts, fact.hash, getFactTypeId(factTypes, fact.type));
-        if (insertedPredecessors.has(factId)) {
-            // We just found a fact after it was supposed to have been inserted.
-            throw new Error('Facts are not in topological order.');
-        }
-        const predecessorIds = makeEdgeRecords(fact).map(e =>
-            getFactId(allFacts, e.predecessor_hash, getFactTypeId(factTypes, e.predecessor_type)));
-        predecessorIds.forEach(predecessorId => insertedPredecessors.add(predecessorId));
-        if (predecessorIds.length > 0) {
-            const values = predecessorIds.map((id, index) => `($${index + 2}::integer)`).join(', ');
-            const parameters = [factId, ...predecessorIds];
-            const sql = 'INSERT INTO public.ancestor' +
-                ' (fact_id, ancestor_fact_id)' +
-                ' SELECT $1::integer, predecessor_fact_id' +
-                ' FROM (VALUES ' + values + ') AS v (predecessor_fact_id)' +
-                ' UNION ALL' +
-                ' SELECT $1::integer, ancestor_fact_id' +
-                ' FROM (VALUES ' + values + ') AS v (predecessor_fact_id)' +
-                ' JOIN public.ancestor' +
-                '  ON ancestor.fact_id = predecessor_fact_id' +
-                ' ON CONFLICT DO NOTHING;';
-            await connection.query(sql, parameters);
-        }
-    }
+    const edgeValues = edgeRecords.map((e, i) =>
+        `(\$${i * 5 + 1 + parameterOffset}, \$${i * 5 + 2 + parameterOffset}::integer, \$${i * 5 + 3 + parameterOffset}, \$${i * 5 + 4 + parameterOffset}::integer, \$${i * 5 + 5 + parameterOffset}::integer)`);
+    const ancestorValues = edgeRecords.map((e, i) =>
+        `(\$${i * 5 + 1 + parameterOffset}, \$${i * 5 + 2 + parameterOffset}::integer, \$${i * 5 + 3 + parameterOffset}, \$${i * 5 + 4 + parameterOffset}::integer)`);
+    const parameters = flatten(edgeRecords, (e) => {
+        const successor_fact_type_id = getFactTypeId(factTypes, e.successor_type);
+        const predecessor_fact_type_id = getFactTypeId(factTypes, e.predecessor_type);
+        return [
+            e.successor_hash,
+            successor_fact_type_id,
+            e.predecessor_hash,
+            predecessor_fact_type_id,
+            getRoleId(roles, successor_fact_type_id, e.role)
+        ];
+    });
+
+    const sql = 'INSERT INTO public.edge' +
+        ' (role_id, successor_fact_id, predecessor_fact_id)' +
+        ' SELECT v.role_id, successor.fact_id, predecessor.fact_id' +
+        ' FROM (VALUES ' + edgeValues.join(', ') + ') AS v (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id, role_id)' +
+        ' JOIN public.fact AS successor' +
+        '   ON successor.hash = v.successor_hash AND successor.fact_type_id = v.successor_fact_type_id' +
+        ' JOIN public.fact AS predecessor' +
+        '   ON predecessor.hash = v.predecessor_hash AND predecessor.fact_type_id = v.predecessor_fact_type_id' +
+        ' ON CONFLICT DO NOTHING;' + "\n" +
+
+        'WITH e AS (' +
+        '    SELECT successor.fact_id AS successor_fact_id, predecessor.fact_id AS predecessor_fact_id' +
+        '    FROM (VALUES ' + ancestorValues.join(', ') + ') AS v (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id)' +
+        '    JOIN public.fact AS successor' +
+        '        ON successor.hash = v.successor_hash AND successor.fact_type_id = v.successor_fact_type_id' +
+        '    JOIN public.fact AS predecessor' +
+        '        ON predecessor.hash = v.predecessor_hash AND predecessor.fact_type_id = v.predecessor_fact_type_id' +
+        ')' +
+        ' INSERT INTO public.ancestor' +
+        '    (fact_id, ancestor_fact_id)' +
+        '    SELECT e.successor_fact_id, e.predecessor_fact_id' +
+        '    FROM e' +
+        ' UNION ALL' +
+        '    SELECT e.successor_fact_id, ancestor_fact_id' +
+        '    FROM e' +
+        '    JOIN public.ancestor' +
+        '        ON ancestor.fact_id = e.predecessor_fact_id' +
+        ' ON CONFLICT DO NOTHING;' + "\n";
+    return { sql, parameters };
 }
 
 async function storePublicKeys(envelopes: FactEnvelope[], connection: PoolClient) {
