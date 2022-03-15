@@ -469,10 +469,7 @@ async function insertFactsEdgesAndAncestors(facts: FactRecord[], factTypes: Fact
         return emptyFactMap();
     }
 
-    const { sql: sqlFacts, parameters: parametersFacts } = sqlInsertFacts(facts, factTypes);
-    const { sql: sqlEdges, parameters: parametersEdges } = sqlInsertEdgesAndAncestors(facts, roles, factTypes, parametersFacts.length);
-    const sql = sqlFacts + sqlEdges;
-    const parameters = [...parametersFacts, ...parametersEdges];
+    const { sql, parameters } = sqlInsertFacts(facts, roles, factTypes);
 
     const { rows }: FactResult = await connection.query(sql, parameters);
     if (rows.length !== facts.length) {
@@ -485,17 +482,74 @@ async function insertFactsEdgesAndAncestors(facts: FactRecord[], factTypes: Fact
     return allFacts;
 }
 
-function sqlInsertFacts(facts: FactRecord[], factTypes: FactTypeMap) {
-    const values = facts.map((f, i) => `(\$${i * 3 + 1}, \$${i * 3 + 2}::integer, \$${i * 3 + 3}::jsonb)`);
-    const parameters = flatten(facts, (f) => [f.hash, factTypes.get(f.type), {
+function sqlInsertFacts(facts: FactRecord[], roles: RoleMap, factTypes: FactTypeMap) {
+    const factValues = facts.map((f, i) => `(\$${i * 3 + 1}, \$${i * 3 + 2}::integer, \$${i * 3 + 3}::jsonb)`);
+    const factParameters = flatten(facts, (f) => [f.hash, factTypes.get(f.type), {
         fields: f.fields,
         predecessors: canonicalPredecessors(f.predecessors)
     }]);
 
-    const sql = 'INSERT INTO public.fact (hash, fact_type_id, data)' +
+    const edgeRecords = flatten(facts, fact => makeEdgeRecords(fact));
+    if (edgeRecords.length > 0) {
+        return sqlInsertFactsEdgesAndAncestors(factParameters, edgeRecords, factTypes, roles, factValues);
+    }
+    else {
+        return {
+            sql: 'INSERT INTO public.fact (hash, fact_type_id, data) VALUES ' +
+                factValues.join(', ') +
+                ' RETURNING fact_id, hash, fact_type_id;',
+            parameters: factParameters
+        };
+    }
+}
+
+function sqlInsertFactsEdgesAndAncestors(factParameters: (string | number | { fields: {}; predecessors: PredecessorCollection; })[], edgeRecords: import("/Users/michaelperry/Projects/jinaga/src/postgres/edge-record").EdgeRecord[], factTypes: FactTypeMap, roles: RoleMap, factValues: string[]) {
+    const parameterOffset = factParameters.length;
+    const edgeValues = edgeRecords.map((e, i) => `(\$${i * 5 + 1 + parameterOffset}, \$${i * 5 + 2 + parameterOffset}::integer, \$${i * 5 + 3 + parameterOffset}, \$${i * 5 + 4 + parameterOffset}::integer, \$${i * 5 + 5 + parameterOffset}::integer)`);
+    const edgeParameters = flatten(edgeRecords, (e) => {
+        const successor_fact_type_id = getFactTypeId(factTypes, e.successor_type);
+        const predecessor_fact_type_id = getFactTypeId(factTypes, e.predecessor_type);
+        return [
+            e.successor_hash,
+            successor_fact_type_id,
+            e.predecessor_hash,
+            predecessor_fact_type_id,
+            getRoleId(roles, successor_fact_type_id, e.role)
+        ];
+    });
+
+    const sql = 'WITH new_fact AS (SELECT hash, fact_type_id, data' +
+        '  FROM (VALUES ' + factValues.join(', ') + ') AS fv (hash, fact_type_id, data)),' +
+        ' new_edge AS (SELECT successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id, role_id' +
+        '  FROM (VALUES ' + edgeValues.join(', ') + ') AS ev (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id, role_id)),' +
+        ' inserted_fact AS (INSERT INTO public.fact (hash, fact_type_id, data)' +
         ' (SELECT hash, fact_type_id, data' +
-        '  FROM (VALUES ' + values.join(', ') + ') AS v (hash, fact_type_id, data))' +
-        ' RETURNING fact_id, fact_type_id, hash;' + "\n";
+        '  FROM new_fact)' +
+        ' RETURNING fact_id, fact_type_id, hash),' +
+        ' edge_id AS (SELECT new_edge.role_id, successor.fact_id AS successor_fact_id, predecessor.fact_id AS predecessor_fact_id' +
+        ' FROM new_edge' +
+        ' JOIN public.fact AS successor' +
+        '   ON successor.hash = new_edge.successor_hash AND successor.fact_type_id = new_edge.successor_fact_type_id' +
+        ' JOIN public.fact AS predecessor' +
+        '   ON predecessor.hash = new_edge.predecessor_hash AND predecessor.fact_type_id = new_edge.predecessor_fact_type_id),' +
+        ' inserted_edge AS (INSERT INTO public.edge' +
+        '  (role_id, successor_fact_id, predecessor_fact_id)' +
+        ' SELECT role_id, successor_fact_id, predecessor_fact_id' +
+        ' FROM edge_id' +
+        ' ON CONFLICT DO NOTHING),' +
+        ' inserted_ancestor AS (INSERT INTO public.ancestor' +
+        '    (fact_id, ancestor_fact_id)' +
+        '    SELECT edge_id.successor_fact_id, edge_id.predecessor_fact_id' +
+        '    FROM edge_id' +
+        ' UNION ALL' +
+        '    SELECT edge_id.successor_fact_id, ancestor_fact_id' +
+        '    FROM edge_id' +
+        '    JOIN public.ancestor' +
+        '        ON ancestor.fact_id = edge_id.predecessor_fact_id' +
+        ' ON CONFLICT DO NOTHING)' +
+        ' SELECT fact_id, fact_type_id, hash' +
+        ' FROM inserted_fact;';
+    const parameters = [...factParameters, ...edgeParameters];
     return { sql, parameters };
 }
 
