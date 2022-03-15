@@ -523,12 +523,12 @@ function sqlInsertFactsEdgesAndAncestors(factParameters: (string | number | { fi
         ' new_edge AS (SELECT successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id, role_id' +
         '  FROM (VALUES ' + edgeValues.join(', ') + ') AS ev (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id, role_id)),' +
         ' inserted_fact AS (INSERT INTO public.fact (hash, fact_type_id, data)' +
-        ' (SELECT hash, fact_type_id, data' +
-        '  FROM new_fact)' +
+        ' SELECT hash, fact_type_id, data' +
+        '  FROM new_fact' +
         ' RETURNING fact_id, fact_type_id, hash),' +
         ' edge_id AS (SELECT new_edge.role_id, successor.fact_id AS successor_fact_id, predecessor.fact_id AS predecessor_fact_id' +
         ' FROM new_edge' +
-        ' JOIN public.fact AS successor' +
+        ' JOIN inserted_fact AS successor' +
         '   ON successor.hash = new_edge.successor_hash AND successor.fact_type_id = new_edge.successor_fact_type_id' +
         ' JOIN public.fact AS predecessor' +
         '   ON predecessor.hash = new_edge.predecessor_hash AND predecessor.fact_type_id = new_edge.predecessor_fact_type_id),' +
