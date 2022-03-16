@@ -14,7 +14,7 @@ import {
 } from "../storage";
 import { distinct, flatten } from "../util/fn";
 import { ConnectionFactory, Row } from "./connection";
-import { makeEdgeRecords } from "./edge-record";
+import { EdgeRecord, makeEdgeRecords } from "./edge-record";
 import {
     addFact,
     addFactType,
@@ -491,7 +491,7 @@ function sqlInsertFacts(facts: FactRecord[], roles: RoleMap, factTypes: FactType
 
     const edgeRecords = flatten(facts, fact => makeEdgeRecords(fact));
     if (edgeRecords.length > 0) {
-        return sqlInsertFactsEdgesAndAncestors(factParameters, edgeRecords, factTypes, roles, factValues);
+        return sqlInsertFactsEdgesAndAncestors(facts, factParameters, edgeRecords, factTypes, roles, factValues);
     }
     else {
         return {
@@ -503,8 +503,8 @@ function sqlInsertFacts(facts: FactRecord[], roles: RoleMap, factTypes: FactType
     }
 }
 
-function sqlInsertFactsEdgesAndAncestors(factParameters: (string | number | { fields: {}; predecessors: PredecessorCollection; })[], edgeRecords: import("/Users/michaelperry/Projects/jinaga/src/postgres/edge-record").EdgeRecord[], factTypes: FactTypeMap, roles: RoleMap, factValues: string[]) {
-    const parameterOffset = factParameters.length;
+function sqlInsertFactsEdgesAndAncestors(facts: FactRecord[], factParameters: (string | number | { fields: {}; predecessors: PredecessorCollection; })[], edgeRecords: EdgeRecord[], factTypes: FactTypeMap, roles: RoleMap, factValues: string[]) {
+    let parameterOffset = factParameters.length;
     const edgeValues = edgeRecords.map((e, i) => `(\$${i * 5 + 1 + parameterOffset}, \$${i * 5 + 2 + parameterOffset}::integer, \$${i * 5 + 3 + parameterOffset}, \$${i * 5 + 4 + parameterOffset}::integer, \$${i * 5 + 5 + parameterOffset}::integer)`);
     const edgeParameters = flatten(edgeRecords, (e) => {
         const successor_fact_type_id = getFactTypeId(factTypes, e.successor_type);
@@ -518,6 +518,16 @@ function sqlInsertFactsEdgesAndAncestors(factParameters: (string | number | { fi
         ];
     });
 
+    parameterOffset += edgeParameters.length;
+    const ancestors = ancestorRecords(facts);
+    const ancestorValues = ancestors.map((a, i) => `(\$${i * 4 + 1 + parameterOffset}, \$${i * 4 + 2 + parameterOffset}::integer, \$${i * 4 + 3 + parameterOffset}, \$${i * 4 + 4 + parameterOffset}::integer)`);
+    const ancestorParameters = flatten(ancestors, (a) => [
+        a.fact.hash,
+        factTypes.get(a.fact.type),
+        a.ancestor.hash,
+        factTypes.get(a.ancestor.type)
+    ]);
+
     const sql =
 `WITH new_fact AS (
     SELECT hash, fact_type_id, data
@@ -529,17 +539,24 @@ new_edge AS (
     FROM (VALUES ${edgeValues.join(', ')})
         AS ev (successor_hash, successor_fact_type_id, predecessor_hash, predecessor_fact_type_id, role_id)
 ),
+new_ancestor AS (
+    SELECT hash, fact_type_id, ancestor_hash, ancestor_fact_type_id
+    FROM (VALUES ${ancestorValues.join(', ')})
+        AS ev (hash, fact_type_id, ancestor_hash, ancestor_fact_type_id)
+),
 inserted_fact AS (
     INSERT INTO public.fact (hash, fact_type_id, data)
     SELECT hash, fact_type_id, data
     FROM new_fact
     RETURNING fact_id, fact_type_id, hash
 ),
-edge_id AS (
+inserted_edge AS (
+    INSERT INTO public.edge
+        (role_id, successor_fact_id, predecessor_fact_id)
     SELECT
         new_edge.role_id,
-        successor.fact_id AS successor_fact_id,
-        predecessor.fact_id AS predecessor_fact_id
+        successor.fact_id,
+        predecessor.fact_id
     FROM new_edge
     JOIN inserted_fact AS successor
         ON successor.hash = new_edge.successor_hash
@@ -553,29 +570,73 @@ edge_id AS (
     ) AS predecessor
         ON predecessor.hash = new_edge.predecessor_hash
         AND predecessor.fact_type_id = new_edge.predecessor_fact_type_id
+    ON CONFLICT DO NOTHING
 ),
-inserted_edge AS (
-    INSERT INTO public.edge
-        (role_id, successor_fact_id, predecessor_fact_id)
-    SELECT role_id, successor_fact_id, predecessor_fact_id
-    FROM edge_id ON CONFLICT DO NOTHING
+ancestor_id AS (
+    SELECT
+        fact.fact_id,
+        ancestor.fact_id AS ancestor_fact_id
+    FROM new_ancestor
+    JOIN inserted_fact AS fact
+        ON fact.hash = new_ancestor.hash
+        AND fact.fact_type_id = new_ancestor.fact_type_id
+    JOIN (
+        SELECT fact_id, fact_type_id, hash
+        FROM inserted_fact
+        UNION ALL
+        SELECT fact_id, fact_type_id, hash
+        FROM public.fact
+    ) AS ancestor
+        ON ancestor.hash = new_ancestor.ancestor_hash
+        AND ancestor.fact_type_id = new_ancestor.ancestor_fact_type_id
 ),
 inserted_ancestor AS (
     INSERT INTO public.ancestor
         (fact_id, ancestor_fact_id)
-        SELECT edge_id.successor_fact_id, edge_id.predecessor_fact_id
-        FROM edge_id
+        SELECT ancestor_id.fact_id, ancestor_id.ancestor_fact_id
+        FROM ancestor_id
     UNION ALL
-        SELECT edge_id.successor_fact_id, ancestor_fact_id
-        FROM edge_id
+        SELECT ancestor_id.fact_id, ancestor.ancestor_fact_id
+        FROM ancestor_id
         JOIN public.ancestor
-            ON ancestor.fact_id = edge_id.predecessor_fact_id
+            ON ancestor.fact_id = ancestor_id.ancestor_fact_id
     ON CONFLICT DO NOTHING
 )
 SELECT fact_id, fact_type_id, hash
 FROM inserted_fact;`;
-    const parameters = [...factParameters, ...edgeParameters];
+    const parameters = [...factParameters, ...edgeParameters, ...ancestorParameters];
     return { sql, parameters };
+}
+
+function ancestorRecords(facts: FactRecord[]): { fact: FactReference, ancestor: FactReference }[] {
+    return facts.flatMap(fact => {
+        const factReference: FactReference = { hash: fact.hash, type: fact.type };
+        const ancestorReferences: FactReference[] = recursivePredecessors(factReference, facts);
+        return ancestorReferences.map(ancestor => (
+            {
+                fact: factReference,
+                ancestor
+            }
+        ));
+    });
+}
+
+function recursivePredecessors(factReference: FactReference, facts: FactRecord[]): FactReference[] {
+    return facts
+        .filter(f => f.hash === factReference.hash && f.type === factReference.type)
+        .flatMap(fact => {
+            const predecessorReferences = Object.keys(fact.predecessors).flatMap(role => {
+                const predecessors = fact.predecessors[role];
+                if (Array.isArray(predecessors)) {
+                    return predecessors;
+                }
+                else {
+                    return [predecessors];
+                }
+            });
+            const ancestorReferences = predecessorReferences.flatMap(predecessor => recursivePredecessors(predecessor, facts));
+            return [...predecessorReferences, ...ancestorReferences];
+        });
 }
 
 async function storePublicKeys(envelopes: FactEnvelope[], connection: PoolClient) {
