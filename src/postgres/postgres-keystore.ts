@@ -41,7 +41,7 @@ export class PostgresKeystore implements Keystore {
 
     async signFacts(userIdentity: UserIdentity, facts: FactRecord[]): Promise<FactEnvelope[]> {
         if (!userIdentity) {
-            return [];
+            return facts.map(fact => ({ fact, signatures: [] }));
         }
         
         const { publicPem, privatePem } = await this.getKeyPair(userIdentity);
