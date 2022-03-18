@@ -201,6 +201,10 @@ export class PostgresStore implements Storage {
     }
 
     async whichExist(references: FactReference[]): Promise<FactReference[]> {
+        if (references.length === 0) {
+            return [];
+        }
+
         const factTypes = await this.loadFactTypesFromReferences(references);
 
         const factValues = references.map((f, i) =>
