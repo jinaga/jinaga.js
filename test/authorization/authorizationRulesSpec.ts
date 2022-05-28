@@ -1,5 +1,3 @@
-import { expect } from 'chai';
-
 import { AuthorizationRules } from '../../src/authorization/authorizationRules';
 import { dehydrateFact } from '../../src/fact/hydrate';
 import { Jinaga as j, ensure } from '../../src/jinaga';
@@ -188,7 +186,7 @@ describe('Authorization rules', () => {
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, null, fact);
 
-        expect(authorized).to.be.false;
+        expect(authorized).toBeFalsy();
     });
 
     it('should accept known facts', async () => {
@@ -197,7 +195,7 @@ describe('Authorization rules', () => {
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, null, fact);
 
-        expect(authorized).to.be.true;
+        expect(authorized).toBeTruthy();
     });
 
     it('should reject unknown facts', async () => {
@@ -206,7 +204,7 @@ describe('Authorization rules', () => {
         const fact = givenUserFact();
         const authorized = await whenAuthorize(authorizationRules, null, fact);
 
-        expect(authorized).to.be.false;
+        expect(authorized).toBeFalsy();
     });
 
     it('should reject known fact when not logged in', async () => {
@@ -215,7 +213,7 @@ describe('Authorization rules', () => {
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, null, fact);
 
-        expect(authorized).to.be.false;
+        expect(authorized).toBeFalsy();
     });
 
     it('should accept permissive fact when not logged in', async () => {
@@ -224,7 +222,7 @@ describe('Authorization rules', () => {
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, null, fact);
 
-        expect(authorized).to.be.true;
+        expect(authorized).toBeTruthy();
     });
 
     it('should reject known fact from no user', async () => {
@@ -234,7 +232,7 @@ describe('Authorization rules', () => {
         const fact = givenAnonymousMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
-        expect(authorized).to.be.false;
+        expect(authorized).toBeFalsy();
     });
 
     it('should reject known fact from unauthorized user', async () => {
@@ -244,7 +242,7 @@ describe('Authorization rules', () => {
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
-        expect(authorized).to.be.false;
+        expect(authorized).toBeFalsy();
     });
 
     it('should accept known fact from authorized user', async () => {
@@ -254,7 +252,7 @@ describe('Authorization rules', () => {
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
-        expect(authorized).to.be.true;
+        expect(authorized).toBeTruthy();
     });
 
     it('should accept known fact from multiple users', async () => {
@@ -264,7 +262,7 @@ describe('Authorization rules', () => {
         const fact = givenMessageFromMultipleAuthors();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
-        expect(authorized).to.be.true;
+        expect(authorized).toBeTruthy();
     });
 
     it('should reject fact from multiple users when authorized is not in list', async () => {
@@ -274,7 +272,7 @@ describe('Authorization rules', () => {
         const fact = givenUnauthorizedMessageFromPotentiallyMultipleAuthors();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
-        expect(authorized).to.be.false;
+        expect(authorized).toBeFalsy();
     });
 
     it('should accept fact from a member of a group', async () => {
@@ -284,7 +282,7 @@ describe('Authorization rules', () => {
         const fact = givenMessageInGroup();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
-        expect(authorized).to.be.true;
+        expect(authorized).toBeTruthy();
     });
 
     it('should reject fact from a non-member of a group', async () => {
@@ -294,26 +292,26 @@ describe('Authorization rules', () => {
         const fact = givenMessageInGroup();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
-        expect(authorized).to.be.false;
+        expect(authorized).toBeFalsy();
     });
 
     it('should throw on empty query', async () => {
         expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(emptyQuery)))).to.throw(
+            .type(Message.Type, j.for(emptyQuery)))).toThrow(
                 'Invalid authorization rule for type Message: the query matches the fact itself.'
             );
     });
 
     it('should throw on successor query', async () => {
         expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Approval.of).then(Approval.by)))).to.throw(
+            .type(Message.Type, j.for(Approval.of).then(Approval.by)))).toThrow(
                 'Invalid authorization rule for type Message: the query expects successors.'
             );
     });
 
     it('should throw on query that doesn\'t start with a join', async () => {
         expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(typeQuery)))).to.throw(
+            .type(Message.Type, j.for(typeQuery)))).toThrow(
                 'Invalid authorization rule for type Message: the query does not begin with a predecessor.'
             );
     });

@@ -1,9 +1,8 @@
-import { expect } from 'chai';
 import { computeHash, verifyHash } from '../../src/fact/hash';
 import { dehydrateFact } from '../../src/fact/hydrate';
 
-describe ('Hash', function () {
-    it ('should be independent of field order', function () {
+describe ('Hash', () => {
+    it('should be independent of field order', () => {
         const hash1 = computeHash({
             a: 'one',
             b: 'two'
@@ -13,10 +12,10 @@ describe ('Hash', function () {
             a: 'one'
         }, {});
         
-        expect(hash1).to.equal(hash2);
+        expect(hash1).toEqual(hash2);
     });
     
-    it ('should be independent of array order', function () {
+    it('should be independent of array order', () => {
         const one = {
             type: 'pred', hash: 'one'
         };
@@ -30,10 +29,10 @@ describe ('Hash', function () {
             preds: [ two, one ]
         });
         
-        expect(hash1).to.equal(hash2);
+        expect(hash1).toEqual(hash2);
     });
 
-    it ('should verify hash', function () {
+    it('should verify hash', () => {
         const records = dehydrateFact({
             type: 'Child',
             parent: {
@@ -43,7 +42,7 @@ describe ('Hash', function () {
             value: 'fum'
         });
 
-        expect(verifyHash(records[0])).to.be.true;
-        expect(verifyHash(records[1])).to.be.true;
+        expect(verifyHash(records[0])).toBeTruthy();
+        expect(verifyHash(records[1])).toBeTruthy();
     })
 })

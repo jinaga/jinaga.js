@@ -1,4 +1,3 @@
-import { expect } from "chai";
 import { Jinaga, ensure } from "../../src/jinaga";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { MockAuthentication } from "./mock-authentication";
@@ -40,12 +39,12 @@ class MessageViewModel {
 }
 
 
-describe("Nested watch", function () {
+describe("Nested watch", () => {
     var j: Jinaga;
     var room: Room;
     var messageViewModels: MessageViewModel[];
 
-    beforeEach(function () {
+    beforeEach(() => {
         const memory = new MemoryStore();
         j = new Jinaga(new MockAuthentication(memory), memory, null);
         room = {
@@ -115,12 +114,12 @@ describe("Nested watch", function () {
             setting.vm.from.splice(index, 1);
     }
 
-    it("can be expressed", async function () {
+    it("can be expressed", async () => {
         const watch = await startWatch();
         watch.stop();
     });
 
-    it("should find existing fact", async function () {
+    it("should find existing fact", async () => {
         const person = await addPerson();
         await setName(person, 'George');
         await addMessage(person);
@@ -130,7 +129,7 @@ describe("Nested watch", function () {
         watch.stop();
     });
 
-    it("should find new facts", async function () {
+    it("should find new facts", async () => {
         const watch = await startWatch();
         const person = await addPerson();
         await setName(person, 'George');
@@ -140,7 +139,7 @@ describe("Nested watch", function () {
         watch.stop();
     });
 
-    it("should find new facts in other order", async function () {
+    it("should find new facts in other order", async () => {
         const watch = await startWatch();
         const person = await addPerson();
         await addMessage(person);
@@ -150,7 +149,7 @@ describe("Nested watch", function () {
         watch.stop();
     });
 
-    it("should not find facts after stopped", async function () {
+    it("should not find facts after stopped", async () => {
         const watch = await startWatch();
         const person = await addPerson();
         await addMessage(person);
@@ -159,7 +158,7 @@ describe("Nested watch", function () {
         expectName(undefined);
     });
 
-    it("should stop child", async function () {
+    it("should stop child", async () => {
         const messages = j.watch(room, j.for(messagesInRoom), makeMessageViewModel, vm => {});
         await messages.load();
         const names = messages.watch(j.for(namesOfSender), setMessageFrom, removeMessageFrom);
@@ -174,7 +173,7 @@ describe("Nested watch", function () {
         messages.stop();
     });
 
-    it("should remove messages", async function () {
+    it("should remove messages", async () => {
         const person = await addPerson();
         await setName(person, 'George');
         const message = await addMessage(person);
@@ -185,7 +184,7 @@ describe("Nested watch", function () {
         watch.stop();
     });
 
-    it("should replace names", async function () {
+    it("should replace names", async () => {
         const person = await addPerson();
         const name = await setName(person, 'George');
         await addMessage(person);
@@ -236,17 +235,17 @@ describe("Nested watch", function () {
     }
 
     function expectName(name: string) {
-        expect(messageViewModels.length).to.equal(1);
+        expect(messageViewModels.length).toEqual(1);
         if (name) {
-            expect(messageViewModels[0].from.length).to.equal(1);
-            expect(messageViewModels[0].from[0]).to.equal(name);
+            expect(messageViewModels[0].from.length).toEqual(1);
+            expect(messageViewModels[0].from[0]).toEqual(name);
         }
         else {
-            expect(messageViewModels[0].from.length).to.equal(0);
+            expect(messageViewModels[0].from.length).toEqual(0);
         }
     }
 
     function expectNoMessages() {
-        expect(messageViewModels.length).to.equal(0);
+        expect(messageViewModels.length).toEqual(0);
     }
 });

@@ -87,3 +87,7 @@ export function watchSemester(viewModel: any, company: any, user: any, observabl
         removeFrom(viewModel.coordinators));
     coordinatorsWatch.watch(j.for(namesForUser), setChildValue('nameFact'));
 }
+
+test("Types", () => {
+
+})

@@ -1,8 +1,5 @@
 import 'source-map-support/register';
 
-import { expect } from 'chai';
-import { describe, it } from 'mocha';
-
 import { Jinaga } from '../../src/jinaga';
 import { Query } from '../../src/query/query';
 import { Condition, Preposition, Specification, ensure } from '../../src/query/query-parser';
@@ -134,59 +131,59 @@ describe('Query parser', () => {
         return new Query(preposition.steps);
     }
     
-    it('should parse to a successor query', function () {
+    it('should parse to a successor query', () => {
         const query = parseQuery(j.for(tasksInList));
-        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task"');
+        expect(query.toDescriptiveString()).toEqual('S.list F.type="Task"');
     });
 
-    it('should find two successors', function () {
+    it('should find two successors', () => {
         var query = parseQuery(j.for(completionsInList));
-        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" S.task F.type="Completion"');
+        expect(query.toDescriptiveString()).toEqual('S.list F.type="Task" S.task F.type="Completion"');
     });
 
-    it('should find predecessor', function () {
+    it('should find predecessor', () => {
         var query = parseQuery(j.for(listOfTask));
-        expect(query.toDescriptiveString()).to.equal('P.list F.type="List"');
+        expect(query.toDescriptiveString()).toEqual('P.list F.type="List"');
     });
 
-    it('should find two predecessors', function () {
+    it('should find two predecessors', () => {
         var query = parseQuery(j.for(listOfCompletion));
-        expect(query.toDescriptiveString()).to.equal('P.task F.type="Task" P.list F.type="List"');
+        expect(query.toDescriptiveString()).toEqual('P.task F.type="Task" P.list F.type="List"');
     });
 
-    it('should parse a negative existential condition', function () {
+    it('should parse a negative existential condition', () => {
         var query = parseQuery(j.for(uncompletedTasksInList));
-        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" N(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).toEqual('S.list F.type="Task" N(S.task F.type="Completion")');
     });
 
-    it('should parse a positive existential condition', function () {
+    it('should parse a positive existential condition', () => {
         var query = parseQuery(j.for(completedTasksInList));
-        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" E(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).toEqual('S.list F.type="Task" E(S.task F.type="Completion")');
     });
 
-    it('should parse a negative outside of template function', function () {
+    it('should parse a negative outside of template function', () => {
         var query = parseQuery(j.for(uncompletedTasksInListAlt));
-        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" N(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).toEqual('S.list F.type="Task" N(S.task F.type="Completion")');
     });
 
-    it('should parse a double negative', function () {
+    it('should parse a double negative', () => {
         var query = parseQuery(j.for(completedTasksInListAlt));
-        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" E(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).toEqual('S.list F.type="Task" E(S.task F.type="Completion")');
     });
 
-    it('should chain to find siblings', function () {
+    it('should chain to find siblings', () => {
         var query = parseQuery(j.for(listOfTask).then(uncompletedTasksInList));
-        expect(query.toDescriptiveString()).to.equal('P.list F.type="List" S.list F.type="Task" N(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).toEqual('P.list F.type="List" S.list F.type="Task" N(S.task F.type="Completion")');
     })
 
-    it('should allow array with one predecessor', function () {
+    it('should allow array with one predecessor', () => {
         var query = parseQuery(j.for(completedTasksInListWithArray));
-        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" E(S.task F.type="Completion")');
+        expect(query.toDescriptiveString()).toEqual('S.list F.type="Task" E(S.task F.type="Completion")');
     });
 
-    it('should parse nested conditions', function() {
+    it('should parse nested conditions', () => {
         const query = parseQuery(j.for(stillCompletedTasksInList));
-        expect(query.toDescriptiveString()).to.equal('S.list F.type="Task" N(S.task F.type="Completion" N(S.completion F.type="Revocation"))');
+        expect(query.toDescriptiveString()).toEqual('S.list F.type="Task" N(S.task F.type="Completion" N(S.completion F.type="Revocation"))');
     })
 
     it('should allow positive conjunction', () => {
@@ -198,7 +195,7 @@ describe('Query parser', () => {
         }
 
         var query = parseQuery(j.for(conjoin));
-        expect(query.toDescriptiveString()).to.equal('S.x F.type="A" E(S.y F.type="B") E(S.z F.type="C")');
+        expect(query.toDescriptiveString()).toEqual('S.x F.type="A" E(S.y F.type="B") E(S.z F.type="C")');
     });
 
     it('should allow positive with negative conjunction', () => {
@@ -210,7 +207,7 @@ describe('Query parser', () => {
         }
 
         var query = parseQuery(j.for(conjoin));
-        expect(query.toDescriptiveString()).to.equal('S.x F.type="A" E(S.y F.type="B") N(S.z F.type="C")');
+        expect(query.toDescriptiveString()).toEqual('S.x F.type="A" E(S.y F.type="B") N(S.z F.type="C")');
     });
 
     it('should allow negative conjunction', () => {
@@ -222,7 +219,7 @@ describe('Query parser', () => {
         }
 
         var query = parseQuery(j.for(conjoin));
-        expect(query.toDescriptiveString()).to.equal('S.x F.type="A" N(S.y F.type="B") N(S.z F.type="C")');
+        expect(query.toDescriptiveString()).toEqual('S.x F.type="A" N(S.y F.type="B") N(S.z F.type="C")');
     });
 
     it('should allow condition', () => {
@@ -234,7 +231,7 @@ describe('Query parser', () => {
         }
 
         var query = parseQuery(j.for(conjoin));
-        expect(query.toDescriptiveString()).to.equal('S.x F.type="A" N(S.y F.type="B")');
+        expect(query.toDescriptiveString()).toEqual('S.x F.type="A" N(S.y F.type="B")');
     });
 
     it('should parse nested predecessors', () => {
@@ -249,7 +246,7 @@ describe('Query parser', () => {
         }
 
         const query = parseQuery(j.for(grandchildren));
-        expect(query.toDescriptiveString()).to.equal('S.grandparent F.type="Parent" S.parent F.type="Child"');
+        expect(query.toDescriptiveString()).toEqual('S.grandparent F.type="Parent" S.parent F.type="Child"');
     });
 
     it('should parse consecutive existential conditions', () => {
@@ -284,7 +281,7 @@ describe('Query parser', () => {
         }
 
         const query = parseQuery(j.for(ideaAbstractsInCompany));
-        expect(query.toDescriptiveString()).to.equal(
+        expect(query.toDescriptiveString()).toEqual(
             'S.company F.type="ImprovingU.Office" ' +
             'S.office F.type="ImprovingU.Semester" ' +
             'S.semester F.type="ImprovingU.Idea" ' +

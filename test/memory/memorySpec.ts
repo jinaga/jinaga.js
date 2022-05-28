@@ -1,5 +1,3 @@
-import { expect } from 'chai';
-import { describe, it } from 'mocha';
 import { dehydrateFact, dehydrateReference, HashMap } from '../../src/fact/hydrate';
 import { MemoryStore } from '../../src/memory/memory-store';
 import { fromDescriptiveString } from '../../src/query/descriptive-string';
@@ -17,10 +15,10 @@ function dehydrateEnvelope(obj: HashMap) {
     return envelopes;
 }
 
-describe('Memory', function() {
+describe('Memory', () => {
     let memory: MemoryStore = null;
 
-    beforeEach(function () {
+    beforeEach(() => {
         memory = new MemoryStore();
     });
 
@@ -69,7 +67,7 @@ describe('Memory', function() {
 
     it('should return no results when has no facts', async () => {
         const results = await memory.query(dehydrateReference(chores), query);
-        expect(results.length).to.equal(0);
+        expect(results.length).toEqual(0);
     });
 
     it('should return one result when has a matching fact', async () => {
@@ -82,9 +80,9 @@ describe('Memory', function() {
         await memory.save(task);
 
         const results = await memory.query(dehydrateReference(chores), query);
-        expect(results.length).to.equal(1);
-        expect(results[0].length).to.equal(1);
-        expect(results[0][0].hash).to.equal(task[1].fact.hash);
+        expect(results.length).toEqual(1);
+        expect(results[0].length).toEqual(1);
+        expect(results[0][0].hash).toEqual(task[1].fact.hash);
     });
 
     it('should add nested messages', async () => {
@@ -96,9 +94,9 @@ describe('Memory', function() {
         await memory.save(task);
 
         const results = await memory.query(dehydrateReference(chores), query);
-        expect(results.length).to.equal(1);
-        expect(results[0].length).to.equal(1);
-        expect(results[0][0].hash).to.equal(task[1].fact.hash);
+        expect(results.length).toEqual(1);
+        expect(results[0].length).toEqual(1);
+        expect(results[0][0].hash).toEqual(task[1].fact.hash);
     });
 
     it('should compare based on value', async () => {
@@ -110,9 +108,9 @@ describe('Memory', function() {
         await memory.save(task);
 
         const results = await memory.query(dehydrateReference(chores), query);
-        expect(results.length).to.equal(1);
-        expect(results[0].length).to.equal(1);
-        expect(results[0][0].hash).to.equal(task[1].fact.hash);
+        expect(results.length).toEqual(1);
+        expect(results[0].length).toEqual(1);
+        expect(results[0][0].hash).toEqual(task[1].fact.hash);
     });
 
     it('should not match if predecessor is different', async () => {
@@ -123,7 +121,7 @@ describe('Memory', function() {
         }));
 
         const results = await memory.query(dehydrateReference(chores), query);
-        expect(results.length).to.equal(0);
+        expect(results.length).toEqual(0);
     });
 
     it('should find grandchildren', async () => {
@@ -131,9 +129,9 @@ describe('Memory', function() {
         await memory.save(completionPath);
 
         const results = await memory.query(dehydrateReference(chores), fromDescriptiveString('S.list S.task'));
-        expect(results.length).to.equal(1);
-        expect(results[0].length).to.equal(2);
-        expect(results[0][1].hash).to.equal(completionPath[2].fact.hash);
+        expect(results.length).toEqual(1);
+        expect(results[0].length).toEqual(2);
+        expect(results[0][1].hash).toEqual(completionPath[2].fact.hash);
     });
 
     it('should find grandchildren with array', async () => {
@@ -141,9 +139,9 @@ describe('Memory', function() {
         await memory.save(completionPath);
 
         const results = await memory.query(dehydrateReference(chores), fromDescriptiveString('S.list S.task'));
-        expect(results.length).to.equal(1);
-        expect(results[0].length).to.equal(2);
-        expect(results[0][1].hash).to.equal(completionPath[2].fact.hash);
+        expect(results.length).toEqual(1);
+        expect(results[0].length).toEqual(2);
+        expect(results[0][1].hash).toEqual(completionPath[2].fact.hash);
     });
 
     it('should find grandparents', async () => {
@@ -151,9 +149,9 @@ describe('Memory', function() {
         await memory.save(completionPath);
 
         const results = await memory.query(dehydrateReference(completion), fromDescriptiveString('P.task P.list'));
-        expect(results.length).to.equal(1);
-        expect(results[0].length).to.equal(2);
-        expect(results[0][1].hash).to.equal(completionPath[0].fact.hash);
+        expect(results.length).toEqual(1);
+        expect(results[0].length).toEqual(2);
+        expect(results[0][1].hash).toEqual(completionPath[0].fact.hash);
     });
 
     it('should match based on field values', async () => {
@@ -161,9 +159,9 @@ describe('Memory', function() {
         await memory.save(completionPath);
 
         const results = await memory.query(dehydrateReference(completion), fromDescriptiveString('P.task F.type="Task" P.list F.type="List"'));
-        expect(results.length).to.equal(1);
-        expect(results[0].length).to.equal(2);
-        expect(results[0][1].hash).to.equal(completionPath[0].fact.hash);
+        expect(results.length).toEqual(1);
+        expect(results[0].length).toEqual(2);
+        expect(results[0][1].hash).toEqual(completionPath[0].fact.hash);
     });
 
     it('should not match if final field values are different', async () => {
@@ -172,7 +170,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(completion), fromDescriptiveString(
             'P.task F.type="Task" P.list F.type="No Match"'
         ));
-        expect(results.length).to.equal(0);
+        expect(results.length).toEqual(0);
     });
 
     it('should not match if interior field values are different', async () => {
@@ -181,7 +179,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(completion), fromDescriptiveString(
             'P.task F.type="No Match" P.list F.type="List"'
         ));
-        expect(results.length).to.equal(0);
+        expect(results.length).toEqual(0);
     });
 
     it('should not match not exists if completion exists', async () => {
@@ -190,7 +188,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(chores), fromDescriptiveString(
             'S.list N(S.task)'
         ));
-        expect(results.length).to.equal(0);
+        expect(results.length).toEqual(0);
     });
 
     it('should match not exists if completion does not exist', async () => {
@@ -199,7 +197,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(chores), fromDescriptiveString(
             'S.list N(S.task)'
         ));
-        expect(results.length).to.equal(1);
+        expect(results.length).toEqual(1);
     });
 
     it('should match exists if completion exists', async () => {
@@ -208,7 +206,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(chores), fromDescriptiveString(
             'S.list E(S.task)'
         ));
-        expect(results.length).to.equal(1);
+        expect(results.length).toEqual(1);
     });
 
     it('should not match exists if completion does not exist', async () => {
@@ -217,7 +215,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(chores), fromDescriptiveString(
             'S.list E(S.task)'
         ));
-        expect(results.length).to.equal(0);
+        expect(results.length).toEqual(0);
     });
 
     it('existential condition works with field conditions negative', async () => {
@@ -226,7 +224,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(chores), fromDescriptiveString(
             'F.type="List" S.list F.type="Task" N(S.task F.type="TaskComplete")'
         ));
-        expect(results.length).to.equal(1);
+        expect(results.length).toEqual(1);
     });
 
     it('existential condition works with field conditions positive', async () => {
@@ -235,7 +233,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(chores), fromDescriptiveString(
             'F.type="List" S.list F.type="Task" N(S.task F.type="TaskComplete")'
         ));
-        expect(results.length).to.equal(0);
+        expect(results.length).toEqual(0);
     });
 
     it('should find successor based on array with multiple entries', async () => {
@@ -244,7 +242,7 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(task), fromDescriptiveString(
             'F.type="Task" S.task F.type="TaskComplete"'
         ));
-        expect(results.length).to.equal(1);
+        expect(results.length).toEqual(1);
     });
 
     it('order of predecessors should not matter', async () => {
@@ -254,6 +252,6 @@ describe('Memory', function() {
         const results = await memory.query(dehydrateReference(task), fromDescriptiveString(
             'S.task'
         ));
-        expect(results.length).to.equal(1);
+        expect(results.length).toEqual(1);
     });
 });

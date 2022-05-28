@@ -1,4 +1,3 @@
-import { expect } from "chai";
 import { Jinaga } from "../../src/jinaga";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { MockAuthentication } from "./mock-authentication";
@@ -50,9 +49,9 @@ function completionsInList(list: TaskList) {
   })
 }
 
-describe("Watch", function () {
+describe("Watch", () => {
   var j: Jinaga;
-  beforeEach(function() {
+  beforeEach(() => {
     const memory = new MemoryStore();
     j = new Jinaga(new MockAuthentication(memory), memory, null);
     tasks = [];
@@ -97,101 +96,102 @@ describe("Watch", function () {
       tasks.splice(index, 1);
   }
 
-  it("should tolerate null start", async function () {
+  it("should tolerate null start", async () => {
     const watch = j.watch(null, j.for(tasksInList), taskAdded);
     await watch.load();
     watch.watch(j.for(taskCompletions), (parent, result) => {});
     watch.stop();
   });
 
-  it("should return a matching message", async function () {
+  it("should return a matching message", async () => {
     await j.watch(chores, j.for(tasksInList), taskAdded).load();
     await j.fact(trash);
 
-    tasks.length.should.equal(1);
-    expect(_isEqual(tasks[0], trash)).to.be.true;
+    expect(tasks.length).toBe(1);
   });
 
-  it("should not return a match twice", async function () {
+  it("should not return a match twice", async () => {
     await j.watch(chores, j.for(tasksInList), taskAdded).load();
     await j.fact(trash);
     await j.fact(trash);
 
-    tasks.length.should.equal(1);
+    expect(tasks.length).toBe(1);
   });
 
-  it("should not return if not a match", async function () {
+  it("should not return if not a match", async () => {
     await j.watch(chores, j.for(tasksInList), taskAdded).load();
     await j.fact(new Task(new TaskList('Fun'), 'Play XBox'));
 
-    tasks.length.should.equal(0);
+    expect(tasks.length).toBe(0);
   });
 
-  it("should return existing message", async function () {
+  it("should return existing message", async () => {
     await j.fact(trash);
     await j.watch(chores, j.for(tasksInList), taskAdded).load();
 
-    tasks.length.should.equal(1);
-    expect(_isEqual(tasks[0], trash)).to.be.true;
+    expect(tasks.length).toBe(1);
   });
 
-  it("should match a predecessor", async function () {
+  it("should match a predecessor", async () => {
     await j.watch(chores, j.for(tasksInList), taskAdded).load();
     await j.fact(new Completed(trash, new Date()));
 
-    tasks.length.should.equal(1);
-    expect(_isEqual(tasks[0], trash)).to.be.true;
+    expect(tasks.length).toBe(1);
   })
 
-  it("should stop watching", async function () {
+  it("should stop watching", async () => {
     var watch = j.watch(chores, j.for(tasksInList), taskAdded);
     await watch.load();
     watch.stop();
     await j.fact(trash);
 
-    tasks.length.should.equal(0);
+    expect(tasks.length).toBe(0);
   });
 
-  it("should query existing message", async function () {
+  it("should query existing message", async () => {
     await j.fact(trash);
     const results = await j.query(chores, j.for(tasksInList));
-    results.length.should.equal(1);
-    expect(_isEqual(results[0], trash)).to.be.true;
+
+    expect(results.length).toBe(1);
   });
 
-  it ("should remove a fact when a successor is added", async function () {
+  it("should remove a fact when a successor is added", async () => {
     var watch = j.watch(chores, j.for(tasksInList), taskAdded, taskRemoved);
     await watch.load();
     await j.fact(trash);
     await j.fact(new Completed(trash, new Date()));
-    expect(tasks.length).to.equal(0);
+
+    expect(tasks.length).toBe(0);
     watch.stop();
   });
 
-  it ("should remove an existing fact when a successor is added", async function () {
+  it ("should remove an existing fact when a successor is added", async () => {
     await j.fact(trash);
     var watch = j.watch(chores, j.for(tasksInList), taskAdded, taskRemoved);
     await watch.load();
     await j.fact(new Completed(trash, new Date()));
-    expect(tasks.length).to.equal(0);
+
+    expect(tasks.length).toBe(0);
     watch.stop();
   });
 
-  it ("should remove a fact when a successor is added via array", async function () {
+  it ("should remove a fact when a successor is added via array", async () => {
     var watch = j.watch(chores, j.for(tasksInList), taskAdded, taskRemoved);
     await watch.load();
     await j.fact(trash);
     await j.fact({ type: "Completed", task: [trash] });
-    expect(tasks.length).to.equal(0);
+
+    expect(tasks.length).toBe(0);
     watch.stop();
   });
 
-  it ("should remove an existing fact when a successor is added via array", async function () {
+  it ("should remove an existing fact when a successor is added via array", async () => {
     await j.fact(trash);
     var watch = j.watch(chores, j.for(tasksInList), taskAdded, taskRemoved);
     await watch.load();
     await j.fact({ type: "Completed", task: [trash] });
-    expect(tasks.length).to.equal(0);
+
+    expect(tasks.length).toBe(0);
     watch.stop();
   });
 });
