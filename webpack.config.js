@@ -1,52 +1,35 @@
-var path = require('path');
-var nodeExternals = require('webpack-node-externals');
+const path = require('path');
 
-module.exports = [
-    {
-        mode: 'production',
-        target: 'web',
-        entry: './src/jinaga-browser.ts',
-        devtool: 'source-map',
-        module: {
-            rules: [{
-                test: /\.ts$/,
-                use: 'ts-loader'
-            }]
-        },
-        resolve: {
-            extensions: [ '.ts', '.js' ]
-        },
-        output: {
-            library: 'jinaga',
-            libraryTarget: 'amd',
-            path: path.resolve(__dirname, './dist'),
-            filename: 'jinaga.js'
-        }
+module.exports = {
+    // Inputs
+    entry: {
+        index: "./src/jinaga-browser.ts"
     },
-    {
-        mode: 'production',
-        target: 'node',
-        entry: './src/index.ts',
-        devtool: 'source-map',
-        module: {
-            rules: [{
+    resolve: {
+        extensions: [".js", ".ts"],
+    },
+
+    // Processing
+    mode: "production",
+    module: {
+        rules: [
+            {
                 test: /\.ts$/,
-                use: 'ts-loader'
-            }]
-        },
-        resolve: {
-            extensions: [ '.ts' ]
-        },
-        output: {
-            libraryTarget: 'commonjs',
-            path: path.resolve(__dirname, './dist'),
-            filename: 'index.js',
-            devtoolModuleFilenameTemplate: function (info) {
-                return path.relative(path.resolve(__dirname, './dist'), info.absoluteResourcePath);
+                loader: "ts-loader",
+                include: [
+                    path.resolve(__dirname, "./src"),
+                ],
+                exclude: [/node_modules/],
             },
-        },
-        externals: [
-            nodeExternals()
-        ]
-    }
-]
+        ],
+    },
+
+    // Outputs
+    output: {
+        library: 'jinaga',
+        libraryTarget: 'amd',
+        path: path.resolve(__dirname, './dist'),
+        filename: 'jinaga.js',
+    },
+    devtool: "source-map",
+};

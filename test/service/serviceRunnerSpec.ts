@@ -1,4 +1,3 @@
-import { expect } from "chai";
 import { ServiceRunner } from "../../src/util/serviceRunner";
 
 describe('ServiceRunner', () => {
@@ -26,11 +25,11 @@ describe('ServiceRunner', () => {
         }
         const serviceRunner = new ServiceRunner(error);
         serviceRunner.run(() => { throw new Error('Message'); return Promise.resolve(); });
-        expect(messages).to.deep.equal([
+        expect(messages).toEqual([
             'Message'
         ]);
         await serviceRunner.all();
-        expect(messages).to.deep.equal([
+        expect(messages).toEqual([
             'Message'
         ]);
     });
@@ -42,10 +41,10 @@ describe('ServiceRunner', () => {
         }
         const serviceRunner = new ServiceRunner(error);
         serviceRunner.run(async () => { await Promise.resolve(); throw new Error('Message'); });
-        expect(messages).to.deep.equal([
+        expect(messages).toEqual([
         ]);
         await serviceRunner.all();
-        expect(messages).to.deep.equal([
+        expect(messages).toEqual([
             'Message'
         ]);
     });

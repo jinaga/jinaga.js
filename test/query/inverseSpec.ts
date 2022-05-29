@@ -1,87 +1,85 @@
-import { expect } from 'chai';
-
 import { fromDescriptiveString } from '../../src/query/descriptive-string';
 import { invertQuery } from '../../src/query/inverter';
 
-describe("QueryInverter", function () {
-    it("the identity query does not affect any others", function () {
+describe("QueryInverter", () => {
+    it("the identity query does not affect any others", () => {
         var inverses = invertQuery(fromDescriptiveString(""));
-        expect(inverses.length).to.equal(0);
+        expect(inverses.length).toEqual(0);
     });
 
-    it("a predecessor query cannot affect anything: the successor does not yet exist", function () {
+    it("a predecessor query cannot affect anything: the successor does not yet exist", () => {
         var inverses = invertQuery(fromDescriptiveString("P.project"));
-        expect(inverses.length).to.equal(0);
+        expect(inverses.length).toEqual(0);
     });
 
-    it("a successor query affects its predecessor; it adds the new fact itself", function () {
+    it("a successor query affects its predecessor; it adds the new fact itself", () => {
         var inverses = invertQuery(fromDescriptiveString("S.project F.type=\"Task\""));
-        inverses.length.should.equal(1);
-        inverses[0].affected.toDescriptiveString().should.equal("F.type=\"Task\" P.project");
-        inverses[0].added.toDescriptiveString().should.equal("");
-        expect(inverses[0].removed).to.be.null;
+        expect(inverses.length).toEqual(1);
+        expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Task\" P.project");
+        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].removed).toBeNull();
     });
 
-    it("a grandchild query affects its grandparent", function () {
+    it("a grandchild query affects its grandparent", () => {
         var inverses = invertQuery(fromDescriptiveString("S.project S.task F.type=\"Completed\""));
-        inverses.length.should.equal(1);
-        inverses[0].affected.toDescriptiveString().should.equal("F.type=\"Completed\" P.task P.project");
-        inverses[0].added.toDescriptiveString().should.equal("");
-        expect(inverses[0].removed).to.be.null;
+        expect(inverses.length).toEqual(1);
+        expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Completed\" P.task P.project");
+        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].removed).toBeNull();
     });
 
-    it("a grandchild query can have field conditions", function () {
+    it("a grandchild query can have field conditions", () => {
         var inverses = invertQuery(fromDescriptiveString("F.type=\"Project\" S.project F.type=\"Task\" S.task F.type=\"Completion\""));
-        inverses.length.should.equal(1);
-        inverses[0].affected.toDescriptiveString().should.equal("F.type=\"Completion\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
-        inverses[0].added.toDescriptiveString().should.equal("");
-        expect(inverses[0].removed).to.be.null;
+        expect(inverses.length).toEqual(1);
+        expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Completion\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
+        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].removed).toBeNull();
     });
 
-    it("a query may begin with a field condition", function () {
+    it("a query may begin with a field condition", () => {
         var inverses = invertQuery(fromDescriptiveString("F.type=\"Project\" S.project F.type=\"Task\""));
-        inverses.length.should.equal(1);
-        inverses[0].affected.toDescriptiveString().should.equal("F.type=\"Task\" P.project F.type=\"Project\"");
-        inverses[0].added.toDescriptiveString().should.equal("");
-        expect(inverses[0].removed).to.be.null;
+        expect(inverses.length).toEqual(1);
+        expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Task\" P.project F.type=\"Project\"");
+        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].removed).toBeNull();
     });
 
-    it("a field value is applied to the affected query", function () {
+    it("a field value is applied to the affected query", () => {
         var inverses = invertQuery(fromDescriptiveString("S.user F.type=\"Assignment\" P.project"));
-        inverses.length.should.equal(1);
+        expect(inverses.length).toEqual(1);
 
-        inverses[0].affected.toDescriptiveString().should.equal("F.type=\"Assignment\" P.user");
-        inverses[0].added.toDescriptiveString().should.equal("P.project");
-        expect(inverses[0].removed).to.be.null;
+        expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Assignment\" P.user");
+        expect(inverses[0].added.toDescriptiveString()).toEqual("P.project");
+        expect(inverses[0].removed).toBeNull();
     });
 
-    it("an existential successor query affects the predecessor; it removes the child", function () {
+    it("an existential successor query affects the predecessor; it removes the child", () => {
         var inverses = invertQuery(fromDescriptiveString("F.type=\"Project\" S.project F.type=\"Task\" N(S.task F.type=\"TaskCompleted\")"));
-        inverses.length.should.equal(2);
-        inverses[0].affected.toDescriptiveString().should.equal("F.type=\"Task\" P.project F.type=\"Project\"");
-        inverses[0].added.toDescriptiveString().should.equal("");
-        expect(inverses[0].removed).to.be.null;
-        inverses[1].affected.toDescriptiveString().should.equal("F.type=\"TaskCompleted\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
-        inverses[1].removed.toDescriptiveString().should.equal("F.type=\"TaskCompleted\" P.task");
-        expect(inverses[1].added).to.be.null;
+        expect(inverses.length).toEqual(2);
+        expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Task\" P.project F.type=\"Project\"");
+        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].removed).toBeNull();
+        expect(inverses[1].affected.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
+        expect(inverses[1].removed.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task");
+        expect(inverses[1].added).toBeNull();
     });
 
-    it("an existential query for successor is always false for a new fact", function () {
+    it("an existential query for successor is always false for a new fact", () => {
         var inverses = invertQuery(fromDescriptiveString("F.type=\"Project\" S.project F.type=\"Task\" E(S.task F.type=\"TaskCompleted\")"));
-        inverses.length.should.equal(1);
-        inverses[0].affected.toDescriptiveString().should.equal("F.type=\"TaskCompleted\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
-        inverses[0].added.toDescriptiveString().should.equal("F.type=\"TaskCompleted\" P.task");
-        expect(inverses[0].removed).to.be.null;
+        expect(inverses.length).toEqual(1);
+        expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
+        expect(inverses[0].added.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task");
+        expect(inverses[0].removed).toBeNull();
     });
 
-    it("added does not start with existential query", function () {
+    it("added does not start with existential query", () => {
         var inverses = invertQuery(fromDescriptiveString('S.project F.type="Task" N(S.task F.type="TaskCompleted") N(S.oldTask F.type="Task.Migration")'));
         expect(inverses.map(i => ({
             appliedToType: i.appliedToType,
             affected: i.affected.toDescriptiveString(),
             added: i.added ? i.added.toDescriptiveString() : null,
             removed: i.removed ? i.removed.toDescriptiveString() : null
-        }))).to.deep.equal([
+        }))).toEqual([
             {
                 appliedToType: 'Task',
                 affected: 'F.type="Task" P.project',
@@ -103,14 +101,14 @@ describe("QueryInverter", function () {
         ]);
     });
 
-    it("first existential query is never satisfied", function () {
+    it("first existential query is never satisfied", () => {
         var inverses = invertQuery(fromDescriptiveString('S.project F.type="Task" E(S.task F.type="TaskCompleted") N(S.oldTask F.type="Task.Migration")'));
         expect(inverses.map(i => ({
             appliedToType: i.appliedToType,
             affected: i.affected.toDescriptiveString(),
             added: i.added ? i.added.toDescriptiveString() : null,
             removed: i.removed ? i.removed.toDescriptiveString() : null
-        }))).to.deep.equal([
+        }))).toEqual([
             {
                 appliedToType: 'TaskCompleted',
                 affected: 'F.type="TaskCompleted" P.task F.type="Task" P.project',
@@ -126,14 +124,14 @@ describe("QueryInverter", function () {
         ]);
     });
 
-    it("second existential query is never satisfied", function () {
+    it("second existential query is never satisfied", () => {
         var inverses = invertQuery(fromDescriptiveString('S.project F.type="Task" N(S.task F.type="TaskCompleted") E(S.oldTask F.type="Task.Migration")'));
         expect(inverses.map(i => ({
             appliedToType: i.appliedToType,
             affected: i.affected.toDescriptiveString(),
             added: i.added ? i.added.toDescriptiveString() : null,
             removed: i.removed ? i.removed.toDescriptiveString() : null
-        }))).to.deep.equal([
+        }))).toEqual([
             {
                 appliedToType: 'TaskCompleted',
                 affected: 'F.type="TaskCompleted" P.task F.type="Task" P.project',

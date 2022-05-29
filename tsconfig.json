@@ -1,15 +1,14 @@
 {
     "compilerOptions": {
-        "target": "es5",
-        "module": "commonjs",        
+        "target": "es6",
+        "module": "commonjs",
         "sourceMap": true,
         "noImplicitAny": true,
-        "moduleResolution": "node",
-        "declaration": true,
-        "downlevelIteration": true,
-        "outDir": "./dist/types",
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "outDir": "dist",
         "baseUrl": ".",
-        "lib": [ "dom", "es2015" ],
         "paths": {
             "*": [
                 "./node_modules/*",

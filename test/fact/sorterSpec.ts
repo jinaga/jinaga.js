@@ -1,17 +1,13 @@
 import { hydrateFromTree, dehydrateFact } from '../../src/fact/hydrate';
 import { FactRecord, FactReference } from '../../src/storage';
-import { should } from 'chai';
-import { describe, it } from 'mocha';
 
 import { TopologicalSorter } from '../../src/fact/sorter';
-
-should();
 
 describe('Topological sorter', () => {
     it('should accept empty array', () => {
         const sorter = givenTopologicalSorter();
         const sorted = whenSort(sorter, []);
-        sorted.should.be.empty;
+        expect(Object.keys(sorted)).toHaveLength(0);
     });
 
     it('should accept single fact', () => {
@@ -21,8 +17,8 @@ describe('Topological sorter', () => {
                 type: 'Singleton'
             })
         );
-        sorted.length.should.equal(1);
-        sorted[0].type.should.equal('Singleton');
+        expect(sorted.length).toEqual(1);
+        expect(sorted[0].type).toEqual('Singleton');
     });
 
     it ('should accept facts of same hash', () => {
@@ -34,9 +30,9 @@ describe('Topological sorter', () => {
                 type: 'Second'
             }))
         );
-        sorted.length.should.equal(2);
-        sorted[0].type.should.equal('First');
-        sorted[1].type.should.equal('Second');
+        expect(sorted.length).toEqual(2);
+        expect(sorted[0].type).toEqual('First');
+        expect(sorted[1].type).toEqual('Second');
     });
 
     it('should attribute predecessor of same hash', () => {
@@ -51,12 +47,12 @@ describe('Topological sorter', () => {
                 }
             }))
         );
-        sorted.length.should.equal(3);
-        sorted[0].type.should.equal('First');
-        sorted[1].type.should.equal('Second');
-        sorted[2].type.should.equal('Child');
+        expect(sorted.length).toEqual(3);
+        expect(sorted[0].type).toEqual('First');
+        expect(sorted[1].type).toEqual('Second');
+        expect(sorted[2].type).toEqual('Child');
         const predecessor = <FactReference>sorted[2].predecessors.parent;
-        predecessor.type.should.equal('Second');
+        expect(predecessor.type).toEqual('Second');
     });
 
     it('should wait for predecessor of correct type', () => {
@@ -75,12 +71,12 @@ describe('Topological sorter', () => {
         ];
         const sorter = givenTopologicalSorter();
         const sorted = whenSort(sorter, unsorted);
-        sorted.length.should.equal(3);
-        sorted[0].type.should.equal('First');
-        sorted[1].type.should.equal('Second');
-        sorted[2].type.should.equal('Child');
+        expect(sorted.length).toEqual(3);
+        expect(sorted[0].type).toEqual('First');
+        expect(sorted[1].type).toEqual('Second');
+        expect(sorted[2].type).toEqual('Child');
         const predecessor = <FactReference>sorted[2].predecessors.parent;
-        predecessor.type.should.equal('Second');
+        expect(predecessor.type).toEqual('Second');
     });
 
     it('should handle successor before predecessor', () => {
@@ -96,12 +92,12 @@ describe('Topological sorter', () => {
         ];
         const sorter = givenTopologicalSorter();
         const sorted = whenSort(sorter, unsorted);
-        sorted.length.should.equal(2);
-        sorted[0].type.should.equal('Parent');
-        sorted[0].hash.should.equal(facts[0].hash);
-        sorted[1].type.should.equal('Child');
-        sorted[1].hash.should.equal(facts[1].hash);
-        sorted[0].hash.should.not.equal(sorted[1].hash);
+        expect(sorted.length).toEqual(2);
+        expect(sorted[0].type).toEqual('Parent');
+        expect(sorted[0].hash).toEqual(facts[0].hash);
+        expect(sorted[1].type).toEqual('Child');
+        expect(sorted[1].hash).toEqual(facts[1].hash);
+        expect(sorted[0].hash).not.toEqual(sorted[1].hash);
     });
 
     it('should wait for all predecessors', () => {
@@ -117,8 +113,8 @@ describe('Topological sorter', () => {
         ];
         const sorter = givenTopologicalSorter();
         const sorted = whenSort(sorter, unsorted);
-        sorted.length.should.equal(3);
-        sorted[2].type.should.equal('Child');
+        expect(sorted.length).toEqual(3);
+        expect(sorted[2].type).toEqual('Child');
     })
 
     it('should handle a real world example', () => {
@@ -305,9 +301,9 @@ describe('Topological sorter', () => {
 
         const sorter = givenTopologicalSorter();
         const sorted = whenSort(sorter, facts);
-        sorter.finished().should.be.true;
+        expect(sorter.finished()).toBe(true);
         const last = sorted[sorted.length-1];
-        (<any>last.fields).value.should.equal("one\ntwo\nthree\nfour\nfive\n\nsix");
+        expect((<any>last.fields).value).toEqual("one\ntwo\nthree\nfour\nfive\n\nsix");
     })
 });
 

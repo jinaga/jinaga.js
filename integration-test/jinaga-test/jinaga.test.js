@@ -1,4 +1,3 @@
-const { expect } = require("chai");
 const { Jinaga, JinagaServer, ensure } = require("./jinaga");
 const forge = require("node-forge");
 
@@ -24,7 +23,7 @@ describe("Jinaga as a device", () => {
     it("should save a fact", async () => {
         const root = await j.fact(randomRoot());
 
-        expect(root.type).to.equal("IntegrationTest.Root");
+        expect(root.type).toEqual("IntegrationTest.Root");
     });
 
     it("should save a fact twice", async () => {
@@ -32,7 +31,7 @@ describe("Jinaga as a device", () => {
         await j.fact(root);
         await j.fact(root);
 
-        expect(root.type).to.equal("IntegrationTest.Root");
+        expect(root.type).toEqual("IntegrationTest.Root");
     });
 
     it("should save a successor fact", async () => {
@@ -44,8 +43,8 @@ describe("Jinaga as a device", () => {
             predecessor: root
         });
 
-        expect(successor.identifier).to.equal("test-successor");
-        expect(successor.predecessor).to.deep.equal(root);
+        expect(successor.identifier).toEqual("test-successor");
+        expect(successor.predecessor).toEqual(root);
     });
 
     it("should query a successor fact", async () => {
@@ -58,14 +57,14 @@ describe("Jinaga as a device", () => {
         });
         const successors = await j.query(root, j.for(successorsOfRoot));
 
-        expect(successors).to.deep.equal([successor]);
+        expect(successors).toEqual([successor]);
     })
 
     it("should query a type that has never been seen", async () => {
         const root = await j.fact(randomRoot());
         const unknown = await j.query(root, j.for(unknownOfRoot));
 
-        expect(unknown).to.deep.equal([]);
+        expect(unknown).toEqual([]);
     });
 
     it("should save a successor fact twice", async () => {
@@ -82,8 +81,8 @@ describe("Jinaga as a device", () => {
             predecessor: root
         });
 
-        expect(successor.identifier).to.equal("test-successor");
-        expect(successor.predecessor).to.deep.equal(root);
+        expect(successor.identifier).toEqual("test-successor");
+        expect(successor.predecessor).toEqual(root);
     });
 
 
@@ -94,14 +93,14 @@ describe("Jinaga as a device", () => {
             predecessor: randomRoot()
         });
 
-        expect(successor.identifier).to.equal("test-successor");
-        expect(successor.predecessor.type).to.equal("IntegrationTest.Root");
+        expect(successor.identifier).toEqual("test-successor");
+        expect(successor.predecessor.type).toEqual("IntegrationTest.Root");
     });
 
     it("should get the device identity", async () => {
         const device = await j.local();
 
-        expect(device.type).to.equal("Jinaga.Device");
+        expect(device.type).toEqual("Jinaga.Device");
     });
 
     it("should get device information", async () => {
@@ -114,16 +113,14 @@ describe("Jinaga as a device", () => {
 
         await check(async j => {
             const checkDevice = await j.local();
-            expect(checkDevice).to.deep.equal(device);
+            expect(checkDevice).toEqual(device);
 
             const configurations = await j.query(checkDevice, j.for(configurationFromDevice));
 
-            expect(configurations).to.deep.equal([
-                {
-                    type: "Configuration",
-                    from: checkDevice
-                }
-            ]);
+            expect(configurations.length).toEqual(1);
+            expect(configurations[0].type).toEqual("Configuration");
+            expect(configurations[0].from.type).toEqual("Jinaga.Device");
+            expect(configurations[0].from.publicKey).toEqual(checkDevice.publicKey);
         });
     });
 });
@@ -165,7 +162,7 @@ describe("Jinaga as a user", () => {
     it("should get the user identity", async () => {
         const user = await j.login();
 
-        expect(user.userFact.type).to.equal("Jinaga.User");
+        expect(user.userFact.type).toEqual("Jinaga.User");
     });
 
     it("should not allow an unauthorized fact", async () => {
@@ -177,7 +174,7 @@ describe("Jinaga as a user", () => {
             throw new Error("Expected fact to be rejected");
         }
         catch (e) {
-            expect(e.message).to.equal("Rejected 1 fact of type IntegrationTest.Unauthorized.");
+            expect(e.message).toEqual("Rejected 1 fact of type IntegrationTest.Unauthorized.");
         }
     });
 
@@ -194,8 +191,8 @@ describe("Jinaga as a user", () => {
 
         const userNames = await jDevice.query(user, Jinaga.for(namesOfUser));
 
-        expect(userNames.length).to.equal(1);
-        expect(userNames[0].value).to.equal("Test User");
+        expect(userNames.length).toEqual(1);
+        expect(userNames[0].value).toEqual("Test User");
     });
 
     it("should set default tenant", async () => {
@@ -213,14 +210,14 @@ describe("Jinaga as a user", () => {
         });
 
         const defaultTenants = await jDevice.query(device, Jinaga.for(defaultTenantsOfDevice));
-        expect(defaultTenants).to.deep.equal([defaultTenant]);
+        expect(defaultTenants).toEqual([defaultTenant]);
     });
 
     it("should find no memberships", async () => {
         const { userFact: user } = await j.login();
 
         const memberships = await j.query(user, Jinaga.for(membershipsForUser));
-        expect(memberships).to.deep.equal([]);
+        expect(memberships).toEqual([]);
     });
 
     it("should find assigned membership", async () => {
@@ -237,7 +234,7 @@ describe("Jinaga as a user", () => {
         });
 
         const memberships = await j.query(user, Jinaga.for(membershipsForUser));
-        expect(memberships).to.deep.equal([membership]);
+        expect(memberships).toEqual([membership]);
     });
 
     it("should not find deleted membership", async () => {
@@ -258,7 +255,7 @@ describe("Jinaga as a user", () => {
         });
 
         const memberships = await j.query(user, Jinaga.for(membershipsForUser));
-        expect(memberships).to.deep.equal([]);
+        expect(memberships).toEqual([]);
     });
 
     it("should find restored membership", async () => {
@@ -283,7 +280,7 @@ describe("Jinaga as a user", () => {
         });
 
         const memberships = await j.query(user, Jinaga.for(membershipsForUser));
-        expect(memberships).to.deep.equal([membership]);
+        expect(memberships).toEqual([membership]);
     });
 })
 

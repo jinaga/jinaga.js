@@ -1,4 +1,3 @@
-import { expect } from "chai";
 import { AuthorizationKeystore } from "../../src/authorization/authorization-keystore";
 import { AuthorizationRules } from "../../src/authorization/authorizationRules";
 import { dehydrateFact, hydrate } from "../../src/fact/hydrate";
@@ -8,16 +7,11 @@ import { MemoryKeystore } from "../../src/memory/memory-keystore";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { FactRecord } from "../../src/storage";
 
-const chaiAsPromised = require("chai-as-promised");
-const chai = require("chai");
-
-chai.use(chaiAsPromised);
-
 describe('Authorization', () => {
     it('should authorize empty save', async () => {
         const authorization = givenAuthorization();
         const result = await whenSave(authorization, []);
-        expect(result.length).to.equal(0);
+        expect(result.length).toEqual(0);
     });
 
     it('should save a new fact', async () => {
@@ -26,7 +20,7 @@ describe('Authorization', () => {
             type: 'Hashtag',
             word: 'vorpal'
         }));
-        expect(result.length).to.equal(1);
+        expect(result.length).toEqual(1);
     });
 
     it('should save a fact once', async () => {
@@ -37,7 +31,7 @@ describe('Authorization', () => {
         });
         await whenSave(authorization, facts);
         const result = await whenSave(authorization, facts);
-        expect(result.length).to.equal(0);
+        expect(result.length).toEqual(0);
     });
 
     it('should reject a fact from an unauthorized user', async () => {
@@ -48,7 +42,7 @@ describe('Authorization', () => {
             message: 'Twas brillig',
             sender: mickeyMouse
         }));
-        await expect(promise).to.be.rejected;
+        await expect(promise).rejects.not.toBeNull();
     });
 
     it('should accept a fact from an authorized user', async () => {
@@ -59,7 +53,7 @@ describe('Authorization', () => {
             message: 'Twas brillig',
             sender: lewiscarrol
         }));
-        expect(result.length).to.be.greaterThan(0);
+        expect(result.length).toBeGreaterThan(0);
     });
 
     it('should accept a predecessor from an authorized user', async () => {
@@ -74,7 +68,7 @@ describe('Authorization', () => {
                 sender: lewiscarrol
             }
         }));
-        expect(result.filter(r => r.type === 'Tweet').length).to.equal(1);
+        expect(result.filter(r => r.type === 'Tweet').length).toEqual(1);
     });
 
     it('should reject a predecessor from an unauthorized user', async () => {
@@ -90,7 +84,7 @@ describe('Authorization', () => {
                 sender: mickeyMouse
             }
         }));
-        await expect(promise).to.be.rejected;
+        await expect(promise).rejects.not.toBeNull();
     });
 
     it('should accept a pre-existing predecessor from an unauthorized user', async () => {
@@ -110,8 +104,8 @@ describe('Authorization', () => {
             user: lewiscarrol,
             tweet: tweet
         }));
-        expect(result.length).to.be.greaterThan(0);
-        expect(result.filter(r => r.type === 'Tweet').length).to.equal(0);
+        expect(result.length).toBeGreaterThan(0);
+        expect(result.filter(r => r.type === 'Tweet').length).toEqual(0);
     });
 
     it('should accept a fact authorized by predecessor', async () => {
@@ -128,7 +122,7 @@ describe('Authorization', () => {
             type: 'Delete',
             tweet: tweet
         }));
-        expect(result.length).to.be.greaterThan(0);
+        expect(result.length).toBeGreaterThan(0);
     });
 
     it('should accept a fact based on in-flight predecessor', async () => {
@@ -146,7 +140,7 @@ describe('Authorization', () => {
             type: 'Delete',
             tweet: tweet
         }));
-        expect(result.length).to.be.greaterThan(0);
+        expect(result.length).toBeGreaterThan(0);
     });
 });
 

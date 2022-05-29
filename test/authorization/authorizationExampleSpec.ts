@@ -1,5 +1,3 @@
-import { expect } from 'chai';
-
 import { AuthorizationRules, ensure, Jinaga, JinagaTest } from '../../src';
 
 describe("Feedback authorization", () => {
@@ -21,13 +19,13 @@ describe("Feedback authorization", () => {
   it("should have logged in user", async () => {
     const { userFact: user } = await j.login<User>();
 
-    expect(user.publicKey).to.equal("Logged in user");
+    expect(user.publicKey).toEqual("Logged in user");
   });
 
   it("should allow a user", async () => {
     const creator = await j.fact(new User("Other user"));
 
-    expect(creator.publicKey).to.equal("Other user");
+    expect(creator.publicKey).toEqual("Other user");
   });
 
   it("should not allow site created by a different user", async () => {
@@ -35,7 +33,7 @@ describe("Feedback authorization", () => {
 
     const promise = j.fact(new Site(creator, "site identifier"));
 
-    await expect(promise).to.be.rejected;
+    await expect(promise).rejects.not.toBeNull();
   });
 
   it("should allow a site created by the logged in user", async () => {
@@ -43,7 +41,7 @@ describe("Feedback authorization", () => {
 
     const site = await j.fact(new Site(creator, "site identifier"));
 
-    expect(site.creator.publicKey).to.equal("Logged in user");
+    expect(site.creator.publicKey).toEqual("Logged in user");
   });
 
   it("should not allow a comment from another user", async () => {
@@ -52,7 +50,7 @@ describe("Feedback authorization", () => {
 
     const promise = j.fact(new Comment("comment unique id", content, user));
 
-    await expect(promise).to.be.rejected;
+    await expect(promise).rejects.not.toBeNull();
   });
 
   it("should allow a comment from logged in user", async () => {
@@ -60,7 +58,7 @@ describe("Feedback authorization", () => {
     const content = await j.fact(new Content(site, "/path/to/content"));
     const comment = await j.fact(new Comment("comment unique id", content, user));
 
-    expect(comment.author.publicKey).to.equal(user.publicKey);
+    expect(comment.author.publicKey).toEqual(user.publicKey);
   });
 });
 

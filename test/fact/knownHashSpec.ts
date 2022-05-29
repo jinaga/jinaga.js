@@ -1,4 +1,3 @@
-import { expect } from "chai";
 import { Dehydration, HashMap } from "../../src/fact/hydrate";
 
 describe("Known hash", () => {
@@ -7,7 +6,7 @@ describe("Known hash", () => {
             type: "Skylane.Airline",
             identifier: "value"
         });
-        expect(hash).to.equal("uXcsBceLFAkZdRD71Ztvc+QwASayHA0Zg7wC2mc3zl28N1hKTbGBfBA2OnEHAWo+0yYVeUnABMn9MCRH8cRHWg==");
+        expect(hash).toEqual("uXcsBceLFAkZdRD71Ztvc+QwASayHA0Zg7wC2mc3zl28N1hKTbGBfBA2OnEHAWo+0yYVeUnABMn9MCRH8cRHWg==");
     });
 
     it("Predecessor", () => {
@@ -19,7 +18,7 @@ describe("Known hash", () => {
             },
             date: "2021-07-04T00:00:00.000Z"
         });
-        expect(hash).to.equal("cQaErYsizavFrTIGjD1C0g3shMG/uq+hVUXzs/kCzcvev9gPrVDom3pbrszUsmeRelNv8bRdIvOb6AbaYrVC7w==");
+        expect(hash).toEqual("cQaErYsizavFrTIGjD1C0g3shMG/uq+hVUXzs/kCzcvev9gPrVDom3pbrszUsmeRelNv8bRdIvOb6AbaYrVC7w==");
     });
 
     it("Integer field", () => {
@@ -35,7 +34,7 @@ describe("Known hash", () => {
             },
             flightNumber: 4247
         });
-        expect(hash).to.equal("PyXT7pCvBq7Vw63kEZGgbIVJxqA7jhoO+QbmeM3YC9laayG0gjln58khyOd4D/cmxXzocPaIuwXGWusVJxqEjQ==");
+        expect(hash).toEqual("PyXT7pCvBq7Vw63kEZGgbIVJxqA7jhoO+QbmeM3YC9laayG0gjln58khyOd4D/cmxXzocPaIuwXGWusVJxqEjQ==");
     });
 });
 

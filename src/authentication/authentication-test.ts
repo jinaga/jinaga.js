@@ -1,9 +1,9 @@
-import { Authentication } from '../../src/authentication/authentication';
-import { AuthorizationEngine } from '../../src/authorization/authorization-engine';
-import { Feed } from '../../src/feed/feed';
-import { LoginResponse } from '../../src/http/messages';
-import { Query } from '../../src/query/query';
-import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
+import { Authentication } from '../authentication/authentication';
+import { AuthorizationEngine } from '../authorization/authorization-engine';
+import { Feed } from '../feed/feed';
+import { LoginResponse } from '../http/messages';
+import { Query } from '../query/query';
+import { FactEnvelope, FactRecord, FactReference } from '../storage';
 import { AuthorizationRules } from '../authorization/authorizationRules';
 import { Channel } from "../fork/channel";
 
