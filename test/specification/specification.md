@@ -1,16 +1,16 @@
-# Projections
+# Specification
 
-To receive information from a server, send a query, inputs, and a bookmark.
-The server will respond with all distinct members of tuples satisfying the query and containing at least one fact learned after the bookmark.
+To receive information from a server, send a specification, inputs, and a bookmark.
+The server will respond with all distinct members of tuples satisfying the specification and containing at least one fact learned after the bookmark.
 
-To subscribe to a query, send the same information.
+To subscribe to a specification, send the same information.
 The server will push fact references as they arrive.
 The client will update its own bookmark.
 It will reconnect after the connection is broken and send the last bookmark that it received.
 
 ## Given
 
-The given section of a query lists the labels that must be provided.
+The given section of a specification lists the labels that must be provided.
 At least one label must be given.
 The block immediately following the given contains a sequence of match clauses.
 The block after the arrow contains a sequence of projections.
@@ -26,8 +26,8 @@ The block after the arrow contains a sequence of projections.
 ## Match
 
 A match clause adds one unknown label, and constrains it relative to prior labels.
-The new label must be distinct from all prior labels in the query.
-At least one match must appear within the query.
+The new label must be distinct from all prior labels in the specification.
+At least one match must appear within the specification.
 The block following the label contains conditions, either paths or existential.
 
 ```
@@ -44,7 +44,7 @@ A path is a pair of labels, and the sequence of roles leading to a common ancest
 A role is the name of a predecessor, and the expected type.
 The path joins the two labels.
 
-A path must join the unknown just introduced in the match to a label appearing earlier in the query, whether a given or an unknown.
+A path must join the unknown just introduced in the match to a label appearing earlier in the specification, whether a given or an unknown.
 Multiple paths may appear in the same match.
 
 ```
@@ -53,10 +53,10 @@ assignment->user:Jinaga.User = user
 
 ## Existential Conditions
 
-An existential condition is a sub-query.
-It can either require that a tuple exist, or that one not exist.
+An existential condition is an inner specification.
+It can either require that a satisfying tuple exist, or that one not exist.
 The paths of a condition must use the label introduced by the containing match.
-They may also use additional labels of the outer query.
+They may also use additional labels of the outer specification.
 
 ```
 !E {
@@ -107,7 +107,7 @@ descriptions {
 
 ## Tuples
 
-The result of a query is a set of tuples.
+The result of a specification is a set of tuples.
 Each member of a tuple is a labeled fact.
 The group of facts in the tuple are consistent with the paths and existential conditions.
 
