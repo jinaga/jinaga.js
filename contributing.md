@@ -9,33 +9,24 @@ Clone the repository and build the code. You will need to:
 Once:
 
 - Install [node](https://nodejs.org/)
-- Run "npm install bower -g" to install [Bower](http://bower.io/)
-- Run "npm install tsd@next -g" to install the [Typescript definition manager](http://definitelytyped.org/tsd/)
-- Run "npm install -g grunt-cli" to install the [grunt](http://gruntjs.com/getting-started) command-line interface
 
 Each time you pull:
 
-- Run "tsd reinstall"
-- Run "tsd rebundle"
-- Run "npm install"
-- Run "bower install"
+- Run `npm ci`
 
 As you work:
 
-- Run "grunt" to compile and run the tests
-- Run "grunt watch" to start the watcher that will compile and run tests
+- Run `npm run test:watch` to compile and run the tests during development
 
 ## Testing
 
-Follow the instructions in the [ImprovingU](https://github.com/jinaga/ImprovingU/blob/master/README.md) Jinaga sample app. Create your own application using Jinaga, and let me know what issues you find. Open [issues](https://github.com/michaellperry/jinaga/issues) in this repository.
-
-## Roadmap
-
-The large steps to achieve the vision of Historical Modeling in JavaScript and beyond are documented in the [Jinaga Roadmap](https://github.com/michaellperry/jinaga/blob/master/roadmap.md). Please look through that document to decide where you want to help out.
+Follow the instructions on [jinaga.com](https://jinaga.com) to create a new app.
+Let me know what issues you find.
+Open [issues](https://github.com/jinaga/jinaga/issues) in this repository.
 
 ## Recommendations
 
-Create [issues](https://github.com/michaellperry/jinaga/issues) for anything you would like to see changed in the roadmap. We will discuss it in the public arena. Keep in mind, however, that recommendations for changes are to be defended. Be prepared to provide evidence that it makes the system more resilient, more secure, or easier to use. Personal preference is not evidence.
+Create [issues](https://github.com/jinaga/jinaga/issues) for anything you would like to see changed. We will discuss it in the public arena. Keep in mind, however, that recommendations for changes are to be defended. Be prepared to provide evidence that it makes the system more resilient, more secure, or easier to use. Personal preference is not evidence.
 
 ## Sending pull requests
 
@@ -53,4 +44,4 @@ Reach out to me on Twitter [@michaellperry](https://twitter.com/michaellperry). 
 
 When you talk about the project, you can send people to http://jinaga.com. That will take them to this repository until I create a home page for the library. Then it will take them to documentation on getting started and a reference manual.
 
-When you talk about historical modeling in general, you can send people to http://historicalmodeling.com. This site describes the general concept, common patterns, examples, and the [Correspondence](https://correspondencecloud.com) reference implementation. The goal of this project is to become a new reference implementation and sandbox for the concept.
+When you talk about historical modeling in general, you can send people to https://immutablearchitecture.com. The book The Art of Immutable Architecture describes the principles of building distributed systems using immutable data structures. Jinaga is a realization of those principles.
