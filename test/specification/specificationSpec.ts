@@ -39,6 +39,6 @@ describe("Specification parser", () => {
             ],
             projections: []
         };
-        expect(specification).toBe(expected);
+        expect(specification).toEqual(expected);
     });
 });
