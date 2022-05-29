@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/types/index.d.ts",
   "scripts": {
-    "clean": "rimraf dist/",
-    "build": "webpack",
+    "clean": "rimraf dist/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
+    "build": "webpack && tsc",
     "test": "jest",
     "test:watch": "jest --watch",
     "dev": "nodemon -e ts -w ./src -x npm run test:watch",
