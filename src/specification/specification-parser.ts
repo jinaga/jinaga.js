@@ -67,6 +67,9 @@ class SpecificationParser {
         if (!this.expect("(")) {
             throw new Error("Expected '(' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
         }
+        if (this.expect(")")) {
+            throw new Error("The specification must contain at least one given label");
+        }
         const labels = [];
         labels.push(this.parseLabel());
         while (this.expect(",")) {

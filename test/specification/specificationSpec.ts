@@ -41,4 +41,8 @@ describe("Specification parser", () => {
         };
         expect(specification).toEqual(expected);
     });
+
+    it("requires at least one given", () => {
+        expect(() => parseSpecification("() { }")).toThrowError(/The specification must contain at least one given label/);
+    });
 });
