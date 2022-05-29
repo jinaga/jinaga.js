@@ -43,6 +43,20 @@ describe("Specification parser", () => {
     });
 
     it("requires at least one given", () => {
-        expect(() => parseSpecification("() { }")).toThrowError(/The specification must contain at least one given label/);
+        expect(() => parseSpecification("() { }")).toThrowError(
+            /The specification must contain at least one given label/
+        );
+    });
+
+    it("requires at least one match", () => {
+        expect(() => parseSpecification("(parent: MyApp.Parent) { }")).toThrowError(
+            /The specification must contain at least one match/
+        );
+    });
+
+    it("requires at least one condition", () => {
+        expect(() => parseSpecification("(parent: MyApp.Parent) { child: MyApp.Child [] }")).toThrowError(
+            /The match for child has no conditions/
+        );
     });
 });

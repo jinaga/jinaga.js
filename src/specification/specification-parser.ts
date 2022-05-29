@@ -110,6 +110,9 @@ class SpecificationParser {
         if (!this.expect("[")) {
             throw new Error("Expected '[' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
         }
+        if (this.expect("]")) {
+            throw new Error(`The match for ${unknown.name} has no conditions`);
+        }
         const conditions: Condition[] = [];
         while (!this.expect("]")) {
             conditions.push(this.parsePathCondition());
@@ -121,6 +124,9 @@ class SpecificationParser {
         const matches: Match[] = [];
         if (!this.expect("{")) {
             throw new Error("Expected '{' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
+        }
+        if (this.expect("}")) {
+            throw new Error("The specification must contain at least one match");
         }
         while (!this.expect("}")) {
             matches.push(this.parseMatch());
