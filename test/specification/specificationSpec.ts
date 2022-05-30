@@ -109,4 +109,75 @@ describe("Specification parser", () => {
             /The label 'sibling' has not been defined/
         );
     });
+
+    it("accepts multiple givens", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User, company: MyApp.Company) {
+                assignment: MyApp.Assignment [
+                    assignment->user:Jinaga.User = user
+                    assignment->project:MyApp.Project->company:MyApp.Company = company
+                ]
+            }`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "user",
+                    type: "Jinaga.User"
+                },
+                {
+                    name: "company",
+                    type: "MyApp.Company"
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "assignment",
+                        type: "MyApp.Assignment"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    targetType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        },
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "project",
+                                    targetType: "MyApp.Project"
+                                },
+                                {
+                                    name: "company",
+                                    targetType: "MyApp.Company"
+                                }
+                            ],
+                            labelRight: "company",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ],
+            projections: []
+        };
+        expect(specification).toEqual(expected);
+    });
+
+    it("requires that the graph be connected", () => {
+        expect(() => parseSpecification(`
+            (user: Jinaga.User, company: MyApp.Company) {
+                assignment: MyApp.Assignment [
+                    assignment->user:Jinaga.User = user
+                ]
+            }`)).toThrowError(
+            /The graph is not connected/
+        );
+    });
 });

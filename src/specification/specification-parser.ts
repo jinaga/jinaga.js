@@ -99,7 +99,7 @@ class SpecificationParser {
             throw new Error("Expected '=' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
         }
         const labelRight = this.parseIdentifier();
-        if (!labels.find(label => label.name === labelRight)) {
+        if (!labels.some(label => label.name === labelRight)) {
             throw new Error(`The label '${labelRight}' has not been defined`);
         }
         const rolesRight = this.parseRoles();
@@ -113,7 +113,7 @@ class SpecificationParser {
 
     parseMatch(labels: Label[]): Match {
         const unknown = this.parseLabel();
-        if (labels.find(label => label.name === unknown.name)) {
+        if (labels.some(label => label.name === unknown.name)) {
             throw new Error(`The name '${unknown.name}' has already been used`);
         }
         if (!this.expect("[")) {
@@ -148,6 +148,12 @@ class SpecificationParser {
     parseSpecification(): Specification {
         const given = this.parseGiven();
         const matches = this.parseMatches(given);
+        const clusters = matches.reduce(
+            mergeClusters,
+            given.map(label => [ label ]));
+        if (clusters.length > 1) {
+            throw new Error("The graph is not connected");
+        }
         const projections: Projection[] = [];
         return { given, matches, projections };
     }
@@ -157,4 +163,24 @@ export function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
     parser.skipWhitespace();
     return parser.parseSpecification();
+}
+
+function mergeClusters(clusters: Label[][], match: Match): Label[][] {
+    const joinedLabels = match.conditions
+        .filter(condition => condition.type === "path")
+        .map(condition => condition.labelRight);
+    const joinedClusters = clusters
+        .filter(cluster => cluster
+            .some(label => joinedLabels.includes(label.name))
+        );
+    const remainingClusters = clusters
+        .filter(cluster => !joinedClusters.includes(cluster));
+    const mergedCluster = [
+        ...joinedClusters.flat(),
+        match.unknown
+    ];
+    return [
+        ...remainingClusters,
+        mergedCluster
+    ];
 }
