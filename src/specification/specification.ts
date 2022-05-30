@@ -15,7 +15,13 @@ export interface PathCondition {
     rolesRight: Role[]
 }
 
-export type Condition = PathCondition;
+export interface ExistentialCondition {
+    type: "existential",
+    exists: boolean,
+    matches: Match[]
+}
+
+export type Condition = PathCondition | ExistentialCondition;
 
 export interface Projection {
 

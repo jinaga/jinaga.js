@@ -111,6 +111,31 @@ class SpecificationParser {
         };
     }
 
+    parseCondition(unknown: Label, labels: Label[]): Condition {
+        if (this.expect("!")) {
+            if (!this.expect("E")) {
+                throw new Error("Expected 'E' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
+            }
+            const matches = this.parseMatches([ ...labels, unknown ]);
+            return {
+                type: "existential",
+                exists: false,
+                matches
+            };
+        }
+        else if (this.expect("E")) {
+            const matches = this.parseMatches([ ...labels, unknown ]);
+            return {
+                type: "existential",
+                exists: true,
+                matches
+            };
+        }
+        else {
+            return this.parsePathCondition(unknown, labels);
+        }
+    }
+
     parseMatch(labels: Label[]): Match {
         const unknown = this.parseLabel();
         if (labels.some(label => label.name === unknown.name)) {
@@ -124,7 +149,7 @@ class SpecificationParser {
         }
         const conditions: Condition[] = [];
         while (!this.expect("]")) {
-            conditions.push(this.parsePathCondition(unknown, labels));
+            conditions.push(this.parseCondition(unknown, labels));
         }
         return { unknown, conditions };
     }
@@ -168,7 +193,7 @@ export function parseSpecification(input: string): Specification {
 function mergeClusters(clusters: Label[][], match: Match): Label[][] {
     const joinedLabels = match.conditions
         .filter(condition => condition.type === "path")
-        .map(condition => condition.labelRight);
+        .map((condition: PathCondition) => condition.labelRight);
     const joinedClusters = clusters
         .filter(cluster => cluster
             .some(label => joinedLabels.includes(label.name))

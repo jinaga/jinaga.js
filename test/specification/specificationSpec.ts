@@ -180,4 +180,94 @@ describe("Specification parser", () => {
             /The graph is not connected/
         );
     });
+
+    it("recognizes existential conditions", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User, company: MyApp.Company) {
+                assignment: MyApp.Assignment [
+                    assignment->user:Jinaga.User = user
+                    assignment->project:MyApp.Project->company:MyApp.Company = company
+                    !E {
+                        revoked: MyApp.Assignment.Revoked [
+                            revoked->assignment:MyApp.Assignment = assignment
+                        ]
+                    }
+                ]
+            }`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "user",
+                    type: "Jinaga.User"
+                },
+                {
+                    name: "company",
+                    type: "MyApp.Company"
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "assignment",
+                        type: "MyApp.Assignment"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    targetType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        },
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "project",
+                                    targetType: "MyApp.Project"
+                                },
+                                {
+                                    name: "company",
+                                    targetType: "MyApp.Company"
+                                }
+                            ],
+                            labelRight: "company",
+                            rolesRight: []
+                        },
+                        {
+                            type: "existential",
+                            exists: false,
+                            matches: [
+                                {
+                                    unknown: {
+                                        name: "revoked",
+                                        type: "MyApp.Assignment.Revoked"
+                                    },
+                                    conditions: [
+                                        {
+                                            type: "path",
+                                            rolesLeft: [
+                                                {
+                                                    name: "assignment",
+                                                    targetType: "MyApp.Assignment"
+                                                }
+                                            ],
+                                            labelRight: "assignment",
+                                            rolesRight: []
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            projections: []
+        };
+        expect(specification).toEqual(expected);
+    });
 });
