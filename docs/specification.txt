@@ -1,0 +1,5 @@
+(user: Jinaga.User) {
+    thing: MyApp.Thing [
+        thing->owner:Jinaga.User = user
+    ]
+}

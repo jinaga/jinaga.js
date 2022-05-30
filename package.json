@@ -11,7 +11,8 @@
     "test:watch": "jest --watch",
     "dev": "nodemon -e ts -w ./src -x npm run test:watch",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
-    "integration": "npm run build && cd ./integration-test && ./run.sh"
+    "integration": "npm run build && cd ./integration-test && ./run.sh",
+    "interactive": "nodemon -w docs/specification.txt -x \"cat docs/specification.txt | node interactive\""
   },
   "repository": {
     "type": "git",
