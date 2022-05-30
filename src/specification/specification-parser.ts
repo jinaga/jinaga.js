@@ -177,6 +177,27 @@ class SpecificationParser {
         return matches;
     }
 
+    parseProjection(labels: Label[]): Projection {
+        const name = this.parseIdentifier();
+        const matches = this.parseMatches(labels);
+        return { name, matches };
+    }
+
+    parseProjections(labels: Label[]): Projection[] {
+        if (!this.expect("=>")) {
+            return [];
+        }
+        if (!this.expect("{")) {
+            throw new Error("Expected '{' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
+        }
+        const projections: Projection[] = [];
+        while (!this.expect("}")) {
+            const projection = this.parseProjection(labels);
+            projections.push(projection);
+        }
+        return projections;
+    }
+
     parseSpecification(): Specification {
         const given = this.parseGiven();
         const matches = this.parseMatches(given);
@@ -186,7 +207,8 @@ class SpecificationParser {
         if (clusters.length > 1) {
             throw new Error("The graph is not connected");
         }
-        const projections: Projection[] = [];
+        const labels = clusters[0];
+        const projections = this.parseProjections(labels);
         return { given, matches, projections };
     }
 }

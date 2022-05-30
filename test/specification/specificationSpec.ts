@@ -287,4 +287,75 @@ describe("Specification parser", () => {
             /The existential condition must be based on the unknown 'assignment'/
         );
     });
+
+    it("accepts projections", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User) {
+                assignment: MyApp.Assignment [
+                    assignment->user:Jinaga.User = user
+                ]
+            } => {
+                descriptions {
+                    description: MyApp.Assignment.Description [
+                        description->assignment:MyApp.Assignment = assignment
+                    ]
+                }
+            }`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "user",
+                    type: "Jinaga.User"
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "assignment",
+                        type: "MyApp.Assignment"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    targetType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ],
+            projections: [
+                {
+                    name: "descriptions",
+                    matches: [
+                        {
+                            unknown: {
+                                name: "description",
+                                type: "MyApp.Assignment.Description"
+                            },
+                            conditions: [
+                                {
+                                    type: "path",
+                                    rolesLeft: [
+                                        {
+                                            name: "assignment",
+                                            targetType: "MyApp.Assignment"
+                                        }
+                                    ],
+                                    labelRight: "assignment",
+                                    rolesRight: []
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        };
+        expect(specification).toEqual(expected);
+    });
 });
