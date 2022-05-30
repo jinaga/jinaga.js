@@ -55,8 +55,36 @@ describe("Specification parser", () => {
     });
 
     it("requires at least one condition", () => {
-        expect(() => parseSpecification("(parent: MyApp.Parent) { child: MyApp.Child [] }")).toThrowError(
-            /The match for child has no conditions/
+        expect(() => parseSpecification(`
+            (parent: MyApp.Parent) {
+                child: MyApp.Child []
+            }`)).toThrowError(
+            /The match for 'child' has no conditions/
+        );
+    });
+
+    it("requires that each label be different from given", () => {
+        expect(() => parseSpecification(`
+            (parent: MyApp.Parent) {
+                parent: MyApp.Parent [
+                    parent->parent:MyApp.Parent = parent
+                ]
+            }`)).toThrowError(
+            /The name 'parent' has already been used/
+        );
+    });
+
+    it("requires that each label be unique", () => {
+        expect(() => parseSpecification(`
+            (parent: MyApp.Parent) {
+                child: MyApp.Child [
+                    child->parent:MyApp.Parent = parent
+                ]
+                child: MyApp.Child [
+                    child->parent:MyApp.Parent = child
+                ]
+            }`)).toThrowError(
+            /The name 'child' has already been used/
         );
     });
 });

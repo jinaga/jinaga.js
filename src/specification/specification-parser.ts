@@ -105,13 +105,16 @@ class SpecificationParser {
         };
     }
 
-    parseMatch(): Match {
+    parseMatch(labels: Label[]): Match {
         const unknown = this.parseLabel();
+        if (labels.find(label => label.name === unknown.name)) {
+            throw new Error(`The name '${unknown.name}' has already been used`);
+        }
         if (!this.expect("[")) {
             throw new Error("Expected '[' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
         }
         if (this.expect("]")) {
-            throw new Error(`The match for ${unknown.name} has no conditions`);
+            throw new Error(`The match for '${unknown.name}' has no conditions`);
         }
         const conditions: Condition[] = [];
         while (!this.expect("]")) {
@@ -120,7 +123,7 @@ class SpecificationParser {
         return { unknown, conditions };
     }
 
-    parseMatches(): Match[] {
+    parseMatches(labels: Label[]): Match[] {
         const matches: Match[] = [];
         if (!this.expect("{")) {
             throw new Error("Expected '{' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
@@ -129,14 +132,16 @@ class SpecificationParser {
             throw new Error("The specification must contain at least one match");
         }
         while (!this.expect("}")) {
-            matches.push(this.parseMatch());
+            const match = this.parseMatch(labels);
+            labels = [ ...labels, match.unknown ];
+            matches.push(match);
         }
         return matches;
     }
 
     parseSpecification(): Specification {
         const given = this.parseGiven();
-        const matches = this.parseMatches();
+        const matches = this.parseMatches(given);
         const projections: Projection[] = [];
         return { given, matches, projections };
     }
