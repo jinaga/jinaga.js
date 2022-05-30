@@ -270,4 +270,21 @@ describe("Specification parser", () => {
         };
         expect(specification).toEqual(expected);
     });
+
+    it("requires that the existential condition be based on the unknown", () => {
+        expect(() => parseSpecification(`
+            (user: Jinaga.User, company: MyApp.Company) {
+                assignment: MyApp.Assignment [
+                    assignment->user:Jinaga.User = user
+                    assignment->project:MyApp.Project->company:MyApp.Company = company
+                    !E {
+                        revoked: MyApp.Assignment.Revoked [
+                            revoked->assignment:MyApp.Assignment->user:Jinaga.User = user
+                        ]
+                    }
+                ]
+            }`)).toThrowError(
+            /The existential condition must be based on the unknown 'assignment'/
+        );
+    });
 });

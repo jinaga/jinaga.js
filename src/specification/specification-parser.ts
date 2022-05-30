@@ -1,4 +1,4 @@
-import { Condition, Label, Match, PathCondition, Projection, Role, Specification } from "./specification";
+import { Condition, Label, Match, PathCondition, ExistentialCondition, Projection, Role, Specification } from "./specification";
 
 class SpecificationParser {
     private offset: number = 0;
@@ -111,25 +111,32 @@ class SpecificationParser {
         };
     }
 
+    private parseExistentialCondition(labels: Label[], unknown: Label, exists: boolean): ExistentialCondition {
+        const matches = this.parseMatches([...labels, unknown]);
+        if (!matches.some(match =>
+            match.conditions.some(condition =>
+                condition.type === "path" &&
+                condition.labelRight === unknown.name
+            )
+        )) {
+            throw new Error(`The existential condition must be based on the unknown '${unknown.name}'`);
+        }
+        return {
+            type: "existential",
+            exists,
+            matches
+        };
+    }
+
     parseCondition(unknown: Label, labels: Label[]): Condition {
         if (this.expect("!")) {
             if (!this.expect("E")) {
                 throw new Error("Expected 'E' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
             }
-            const matches = this.parseMatches([ ...labels, unknown ]);
-            return {
-                type: "existential",
-                exists: false,
-                matches
-            };
+            return this.parseExistentialCondition(labels, unknown, false);
         }
         else if (this.expect("E")) {
-            const matches = this.parseMatches([ ...labels, unknown ]);
-            return {
-                type: "existential",
-                exists: true,
-                matches
-            };
+            return this.parseExistentialCondition(labels, unknown, true);
         }
         else {
             return this.parsePathCondition(unknown, labels);
