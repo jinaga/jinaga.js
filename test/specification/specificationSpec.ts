@@ -87,4 +87,26 @@ describe("Specification parser", () => {
             /The name 'child' has already been used/
         );
     });
+
+    it("requires that the left label be the unknown", () => {
+        expect(() => parseSpecification(`
+            (parent: MyApp.Parent) {
+                child: MyApp.Child [
+                    parent = child->parent:MyApp.Parent
+                ]
+            }`)).toThrowError(
+            /The unknown 'child' must appear on the left side of the path/
+        );
+    });
+
+    it("requires that a label be defined before use", () => {
+        expect(() => parseSpecification(`
+            (parent: MyApp.Parent) {
+                child: MyApp.Child [
+                    child->parent:MyApp.Parent = sibling
+                ]
+            }`)).toThrowError(
+            /The label 'sibling' has not been defined/
+        );
+    });
 });

@@ -89,13 +89,19 @@ class SpecificationParser {
         return roles;
     }
 
-    parsePathCondition(): PathCondition {
+    parsePathCondition(unknown: Label, labels: Label[]): PathCondition {
         const labelLeft = this.parseIdentifier();
+        if (labelLeft !== unknown.name) {
+            throw new Error(`The unknown '${unknown.name}' must appear on the left side of the path`);
+        }
         const rolesLeft = this.parseRoles();
         if (!this.expect("=")) {
             throw new Error("Expected '=' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
         }
         const labelRight = this.parseIdentifier();
+        if (!labels.find(label => label.name === labelRight)) {
+            throw new Error(`The label '${labelRight}' has not been defined`);
+        }
         const rolesRight = this.parseRoles();
         return {
             type: "path",
@@ -118,7 +124,7 @@ class SpecificationParser {
         }
         const conditions: Condition[] = [];
         while (!this.expect("]")) {
-            conditions.push(this.parsePathCondition());
+            conditions.push(this.parsePathCondition(unknown, labels));
         }
         return { unknown, conditions };
     }
