@@ -24,7 +24,9 @@ export interface ExistentialCondition {
 export type Condition = PathCondition | ExistentialCondition;
 
 export interface Projection {
-
+    name: string,
+    matches: Match[],
+    projections: Projection[]
 }
 
 export interface Match {

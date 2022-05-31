@@ -180,7 +180,9 @@ class SpecificationParser {
     parseProjection(labels: Label[]): Projection {
         const name = this.parseIdentifier();
         const matches = this.parseMatches(labels);
-        return { name, matches };
+        const allLabels = [ ...labels, ...matches.map(match => match.unknown) ];
+        const projections = this.parseProjections(allLabels);
+        return { name, matches, projections };
     }
 
     parseProjections(labels: Label[]): Projection[] {

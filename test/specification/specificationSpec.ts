@@ -352,6 +352,111 @@ describe("Specification parser", () => {
                                 }
                             ]
                         }
+                    ],
+                    projections: []
+                }
+            ]
+        };
+        expect(specification).toEqual(expected);
+    });
+
+    it("accepts projections on projections", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User) {
+                assignment: MyApp.Assignment [
+                    assignment->user:Jinaga.User = user
+                ]
+            } => {
+                projects {
+                    project: MyApp.Project [
+                        project->assignment:MyApp.Assignment = assignment
+                    ]
+                } => {
+                    descriptions {
+                        description: MyApp.Project.Description [
+                            description->project:MyApp.Project = project
+                        ]
+                    }
+                }
+            }`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "user",
+                    type: "Jinaga.User"
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "assignment",
+                        type: "MyApp.Assignment"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    targetType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ],
+            projections: [
+                {
+                    name: "projects",
+                    matches: [
+                        {
+                            unknown: {
+                                name: "project",
+                                type: "MyApp.Project"
+                            },
+                            conditions: [
+                                {
+                                    type: "path",
+                                    rolesLeft: [
+                                        {
+                                            name: "assignment",
+                                            targetType: "MyApp.Assignment"
+                                        }
+                                    ],
+                                    labelRight: "assignment",
+                                    rolesRight: []
+                                }
+                            ]
+                        }
+                    ],
+                    projections: [
+                        {
+                            name: "descriptions",
+                            matches: [
+                                {
+                                    unknown: {
+                                        name: "description",
+                                        type: "MyApp.Project.Description"
+                                    },
+                                    conditions: [
+                                        {
+                                            type: "path",
+                                            rolesLeft: [
+                                                {
+                                                    name: "project",
+                                                    targetType: "MyApp.Project"
+                                                }
+                                            ],
+                                            labelRight: "project",
+                                            rolesRight: []
+                                        }
+                                    ]
+                                }
+                            ],
+                            projections: []
+                        }
                     ]
                 }
             ]
