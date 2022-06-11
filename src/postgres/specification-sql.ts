@@ -3,58 +3,101 @@ import { FactReference } from "../storage";
 import { getFactTypeId, getRoleId } from "./maps";
 
 export type SpecificationSqlQuery = {
-    empty: boolean,
     sql: string,
-    parameters: any[],
-    pathLength: number,
-    factTypeNames: string[]
+    parameters: (string | number)[],
+    labels: string[]
 };
 
-class QueryBuilder {
-    private roleIds: number[] = [];
+interface InputDescription {
+    label: string;
+    factIndex: number;
+    factTypeParameter: number;
+    factHashParameter: number;
+}
 
+interface OutputDescription {
+    label: string;
+    factIndex: number;
+}
+
+class QueryDescription {
     constructor(
-        private factTypes: Map<string, number>,
-        private roleMap: Map<number, Map<string, number>>) { }
-
-    public buildQuery(start: FactReference, specification: Specification): SpecificationSqlQuery {
-        const startTypeId = getFactTypeId(this.factTypes, start.type);
-        const members = specification.matches.map((match, index) => ({
-            name: match.unknown.name,
-            index: index+2
-        }));
-        const hashes = members.map(a => `f${a.index}.hash as hash${a.index}`).join(', ');
-        const edges = [
-            {
-                index: 1,
-                roleIndex: 3,
-                predecesorMemberIndex: 1,
-                successorMemberIndex: 2
-            }
-        ]
-        this.roleIds.push(0);
-        const joins = edges.map(edge =>
-            ` JOIN public.edge e${edge.index}` +
-                ` ON e${edge.index}.predecessor_fact_id = f${edge.predecesorMemberIndex}.fact_id` +
-                ` AND e${edge.index}.role_id = $${edge.roleIndex}` +
-            ` JOIN public.fact f${edge.successorMemberIndex}` +
-                ` ON f${edge.successorMemberIndex}.fact_id = e${edge.index}.successor_fact_id`)
-            .join("");
-        const whereClause = "";
-        const sql = `SELECT ${hashes} FROM public.fact f1${joins} WHERE f1.fact_type_id = $1 AND f1.hash = $2${whereClause}`;
-
+        private readonly inputs: InputDescription[],
+        private readonly parameters: (string | number)[],
+        private readonly outputs: OutputDescription[]
+    ) {}
+    
+    generateSqlQuery(): SpecificationSqlQuery {
+        const hashes = this.outputs
+            .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
+            .join(" ");
+        const tables = this.inputs
+            .map(input => `public.fact f${input.factIndex}`)
+            .join(", ");
+        const sql = `SELECT ${hashes} FROM ${tables}`;
         return {
-            empty: false,
             sql,
-            parameters: [startTypeId, start.hash, ...this.roleIds],
-            pathLength: 1,
-            factTypeNames: []
+            parameters: this.parameters,
+            labels: this.inputs.map(input => input.label)
         };
     }
 }
 
-export function sqlFromSpecification(start: FactReference, specification: Specification, factTypes: Map<string, number>, roleMap: Map<number, Map<string, number>>): SpecificationSqlQuery {
-    const queryBuilder = new QueryBuilder(factTypes, roleMap);
-    const query = queryBuilder.buildQuery(start, specification);
-    return query;
+namespace TupleSql {
+    export interface Input {
+        label: string;
+        factIndex: number;
+        factTypeParameter: number;
+        factHashParameter: number;
+    }
+
+    export interface Join {
+        label?: string;
+        edgeIndex: number;
+        predecessorFactIndex: number;
+        successorFactIndex: number;
+        roleParameter: number;
+        roleId: number;
+    }
+
+    export interface Query {
+        inputs: Input[];
+        joins: Join[];
+    }    
+}
+
+class DescriptionBuilder {
+    constructor(
+        private factTypes: Map<string, number>,
+        private roleMap: Map<number, Map<string, number>>) { }
+
+    public buildDescriptions(start: FactReference[], specification: Specification): QueryDescription[] {
+        // TODO: Verify that the number of start facts equals the number of inputs
+        const inputs: InputDescription[] = specification.given
+            .map((label, i) => ({
+                label: label.name,
+                factIndex: i+1,
+                factTypeParameter: i*2 + 1,
+                factHashParameter: i*2 + 2
+            }));
+        const parameters: (string | number)[] = specification.given
+            .flatMap((label, i) => [
+                // TODO: Verify that the input type matches the start fact type
+                getFactTypeId(this.factTypes, label.type),
+                start[i].hash
+            ]);
+        const outputs: OutputDescription[] = specification.matches
+            .map((match, i) => ({
+                label: match.unknown.name,
+                factIndex: i+1 + inputs.length
+            }));
+        const specificationSql = new QueryDescription(inputs, parameters, outputs);
+        return [specificationSql];
+    }
+}
+
+export function sqlFromSpecification(start: FactReference[], specification: Specification, factTypes: Map<string, number>, roleMap: Map<number, Map<string, number>>): SpecificationSqlQuery[] {
+    const descriptionBuilder = new DescriptionBuilder(factTypes, roleMap);
+    const descriptions = descriptionBuilder.buildDescriptions(start, specification);
+    return descriptions.map(description => description.generateSqlQuery());
 }

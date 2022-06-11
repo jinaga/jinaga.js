@@ -16,29 +16,31 @@ function sqlFor(descriptiveString: string) {
     let roleMap = allRoles(specification, 'Root').filter(r => r.role !== 'unknown').reduce(
         (r, role, i) => addRole(r, getFactTypeId(factTypes, role.type), role.role, i + 1),
         emptyRoleMap());
-    const sqlQuery: SpecificationSqlQuery = sqlFromSpecification(start, specification, factTypes, roleMap);
-    return sqlQuery ? { sql: sqlQuery.sql, parameters: sqlQuery.parameters, pathLength: sqlQuery.pathLength, empty: sqlQuery.empty, factTypes, roleMap } : null;
+    const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification([start], specification, factTypes, roleMap);
+    return { sqlQueries, factTypes, roleMap };
 }
 
 describe("Postgres query generator", () => {
     it("should generate a join to successors", () => {
-        const { sql, parameters, pathLength, factTypes, roleMap } = sqlFor(`
+        const { sqlQueries, factTypes, roleMap } = sqlFor(`
             (predecessor: Root) {
                 successor: IntegrationTest.Successor [
                     successor->predecessor:Root = predecessor
                 ]
             }`);
-        expect(sql).toEqual(
+        expect(sqlQueries.length).toBe(1);
+        const query = sqlQueries[0];
+        expect(query.sql).toEqual(
             'SELECT f2.hash as hash2 ' +
             'FROM public.fact f1 ' +
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
         );
-        expect(parameters[0]).toEqual(getFactTypeId(factTypes, 'Root'));
-        expect(parameters[1]).toEqual(startHash);
-        expect(parameters[2]).toEqual(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Successor'), 'predecessor'));
-        expect(pathLength).toEqual(1);
+        expect(query.parameters[0]).toEqual(getFactTypeId(factTypes, 'Root'));
+        expect(query.parameters[1]).toEqual(startHash);
+        expect(query.parameters[2]).toEqual(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Successor'), 'predecessor'));
+        expect(query.labels).toEqual(['successor']);
     });
 });
 
