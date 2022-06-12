@@ -77,7 +77,12 @@ export function getAllRoles(specification: Specification): { declaringType: stri
             }
         }
     }
-    return roles;
+    const distinctRoles = roles.filter((value, index, array) => {
+        return array.findIndex(r =>
+            r.declaringType === value.declaringType &&
+            r.name === value.name) === index;
+    });
+    return distinctRoles;
 }
 
 function getTypeOfLabel(specification: Specification, label: string): string {
