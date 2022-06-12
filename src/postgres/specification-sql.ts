@@ -153,7 +153,10 @@ class QueryDescription {
                 throw new Error("Neither predecessor nor successor fact has been written");
             }
         });
-        const sql = `SELECT ${hashes} FROM ${tables}${joins.join("")}`;
+        const whereClauses = this.inputs
+            .map(input => `f${input.factIndex}.fact_type_id = $${input.factTypeParameter} AND f${input.factIndex}.hash = $${input.factHashParameter}`)
+            .join(" AND ");
+        const sql = `SELECT ${hashes} FROM ${tables}${joins.join("")} WHERE ${whereClauses}`;
         return {
             sql,
             parameters: this.parameters,
