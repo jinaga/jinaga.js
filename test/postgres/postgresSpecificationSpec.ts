@@ -1,6 +1,6 @@
 import { dehydrateReference } from "../../src/fact/hydrate";
 import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap, getFactTypeId, getRoleId } from "../../src/postgres/maps";
-import { Specification } from "../../src/specification/specification";
+import { getAllFactTypes, getAllRoles, Specification } from "../../src/specification/specification";
 import { parseSpecification } from "../../src/specification/specification-parser";
 import { SpecificationSqlQuery, sqlFromSpecification } from "../../src/postgres/specification-sql";
 
@@ -9,12 +9,12 @@ const startHash = 'fSS1hK7OGAeSX4ocN3acuFF87jvzCdPN3vLFUtcej0lOAsVV859UIYZLRcHUo
 
 function sqlFor(descriptiveString: string) {
     const specification = parseSpecification(descriptiveString);
-    const factTypeNames = specification.matches.map(match => match.unknown.type);
+    const factTypeNames = getAllFactTypes(specification);
     const factTypes = factTypeNames.filter(t => t !== 'Unknown').reduce(
         (f, factType, i) => addFactType(f, factType, i + 1),
         emptyFactTypeMap());
-    let roleMap = allRoles(specification, 'Root').filter(r => r.role !== 'unknown').reduce(
-        (r, role, i) => addRole(r, getFactTypeId(factTypes, role.type), role.role, i + 1),
+    let roleMap = getAllRoles(specification).filter(r => r.name !== 'unknown').reduce(
+        (r, role, i) => addRole(r, getFactTypeId(factTypes, role.declaringType), role.name, i + 1),
         emptyRoleMap());
     const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification([start], [], 100, specification, factTypes, roleMap);
     return { sqlQueries, factTypes, roleMap };
@@ -43,16 +43,3 @@ describe("Postgres query generator", () => {
         expect(query.labels).toEqual(['successor']);
     });
 });
-
-function allRoles(specification: Specification, initialType: string): { type: string; role: string }[] {
-    const roles: { type: string; role: string }[] = [];
-    for (const match of specification.matches) {
-        for (const condition of match.conditions) {
-            if (condition.type === 'path') {
-                roles.push(...condition.rolesLeft.map(role => ({ type: role.targetType, role: role.name })));
-                roles.push(...condition.rolesRight.map(role => ({ type: role.targetType, role: role.name })));
-            }
-        }
-    }
-    return roles;
-}
