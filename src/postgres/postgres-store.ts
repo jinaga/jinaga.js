@@ -2,7 +2,7 @@ import { PoolClient } from 'pg';
 import { canonicalPredecessors } from "../fact/hash";
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../query/steps";
-import { describeSpecification, Specification } from "../specification/specification";
+import { describeSpecification, getAllFactTypes, getAllRoles, Specification } from "../specification/specification";
 import { FactBookmark, FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, FactStream, FactTuple, PredecessorCollection, Storage } from '../storage';
 import { distinct, flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
@@ -201,7 +201,6 @@ export class PostgresStore implements Storage {
             const startDescription = start.map(r => `${r.type}:${r.hash}`).join(', ');
             throw new Error(`Could not generate SQL for specification "${description}" starting at "${startDescription}": ${e}`);
         }
-        throw new Error('Not implemented');
     }
 
     private async loadFactTypesFromSteps(steps: Step[], startType: string): Promise<FactTypeMap> {
@@ -209,6 +208,21 @@ export class PostgresStore implements Storage {
         const unknownFactTypes = [...allFactTypes(steps), startType]
             .filter(factType => !factTypes.has(factType))
             .filter(distinct);
+        if (unknownFactTypes.length > 0) {
+            const loadedFactTypes = await this.connectionFactory.with(async (connection) => {
+                return await loadFactTypes(unknownFactTypes, connection);
+            });
+            const merged = mergeFactTypes(this.factTypeMap, loadedFactTypes);
+            this.factTypeMap = merged;
+            return merged;
+        }
+        return factTypes;
+    }
+
+    async loadFactTypesFromSpecification(specification: Specification): Promise<FactTypeMap> {
+        const factTypes = this.factTypeMap;
+        const unknownFactTypes = getAllFactTypes(specification)
+            .filter(factType => !factTypes.has(factType));
         if (unknownFactTypes.length > 0) {
             const loadedFactTypes = await this.connectionFactory.with(async (connection) => {
                 return await loadFactTypes(unknownFactTypes, connection);
@@ -235,11 +249,23 @@ export class PostgresStore implements Storage {
         return roleMap;
     }
 
-    loadRolesFromSpecification(specification: Specification, factTypes: FactTypeMap): RoleMap | PromiseLike<RoleMap> {
-        throw new Error("Method not implemented.");
-    }
-    loadFactTypesFromSpecification(specification: Specification): FactTypeMap | PromiseLike<FactTypeMap> {
-        throw new Error("Method not implemented.");
+    async loadRolesFromSpecification(specification: Specification, factTypes: FactTypeMap): Promise<RoleMap> {
+        const roleMap = this.roleMap;
+        const unknownRoles = getAllRoles(specification)
+            .map(r => ({
+                defining_fact_type_id: getFactTypeId(factTypes, r.definingFactType),
+                role: r.name
+            }))
+            .filter(r => !hasRole(roleMap, r.defining_fact_type_id, r.role));
+        if (unknownRoles.length > 0) {
+            const loadedRoles = await this.connectionFactory.with(async (connection) => {
+                return await loadRoles(unknownRoles, roleMap, connection);
+            });
+            const merged = mergeRoleMaps(this.roleMap, loadedRoles);
+            this.roleMap = merged;
+            return merged;
+        }
+        return roleMap;
     }
 
     async whichExist(references: FactReference[]): Promise<FactReference[]> {

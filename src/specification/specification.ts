@@ -59,19 +59,19 @@ export function getAllFactTypes(specification: Specification): string[] {
     return distinctFactTypes;
 }
 
-export function getAllRoles(specification: Specification): { declaringType: string, name: string, targetType: string }[] {
-    const roles: { declaringType: string, name: string, targetType: string }[] = [];
+export function getAllRoles(specification: Specification): { definingFactType: string, name: string, targetType: string }[] {
+    const roles: { definingFactType: string, name: string, targetType: string }[] = [];
     for (const match of specification.matches) {
         for (const condition of match.conditions) {
             if (condition.type === "path") {
                 let type = match.unknown.type;
                 for (const role of condition.rolesLeft) {
-                    roles.push({ declaringType: type, name: role.name, targetType: role.targetType });
+                    roles.push({ definingFactType: type, name: role.name, targetType: role.targetType });
                     type = role.targetType;
                 }
                 type = getTypeOfLabel(specification, condition.labelRight);
                 for (const role of condition.rolesRight) {
-                    roles.push({ declaringType: type, name: role.name, targetType: role.targetType });
+                    roles.push({ definingFactType: type, name: role.name, targetType: role.targetType });
                     type = role.targetType;
                 }
             }
@@ -79,7 +79,7 @@ export function getAllRoles(specification: Specification): { declaringType: stri
     }
     const distinctRoles = roles.filter((value, index, array) => {
         return array.findIndex(r =>
-            r.declaringType === value.declaringType &&
+            r.definingFactType === value.definingFactType &&
             r.name === value.name) === index;
     });
     return distinctRoles;
