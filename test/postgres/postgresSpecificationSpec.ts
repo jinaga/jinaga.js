@@ -16,7 +16,7 @@ function sqlFor(descriptiveString: string) {
     let roleMap = allRoles(specification, 'Root').filter(r => r.role !== 'unknown').reduce(
         (r, role, i) => addRole(r, getFactTypeId(factTypes, role.type), role.role, i + 1),
         emptyRoleMap());
-    const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification([start], specification, factTypes, roleMap);
+    const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification([start], [], 100, specification, factTypes, roleMap);
     return { sqlQueries, factTypes, roleMap };
 }
 

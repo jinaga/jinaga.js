@@ -8,6 +8,22 @@ export type FactReference = {
 
 export type FactPath = FactReference[];
 
+export interface FactBookmark {
+    labels: string[];
+    bookmark: string;
+}
+
+export interface FactTuple {
+    facts: FactReference[];
+    bookmark: string;
+}
+
+export interface FactStream {
+    labels: string[];
+    tuples: FactTuple[];
+    bookmark: string;
+}
+
 export type PredecessorCollection = {
     [role: string]: FactReference[] | FactReference
 };

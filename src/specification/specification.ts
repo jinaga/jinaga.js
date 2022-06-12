@@ -39,3 +39,7 @@ export interface Specification {
     matches: Match[];
     projections: Projection[];
 }
+
+export function describeSpecification(specification: Specification): string {
+    throw new Error("Function not implemented.");
+}

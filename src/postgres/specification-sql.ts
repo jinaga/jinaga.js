@@ -1,11 +1,12 @@
 import { Match, PathCondition, Specification } from "../specification/specification";
-import { FactReference } from "../storage";
+import { FactBookmark, FactReference } from "../storage";
 import { getFactTypeId, getRoleId } from "./maps";
 
 export type SpecificationSqlQuery = {
     sql: string,
     parameters: (string | number)[],
-    labels: string[]
+    labels: string[],
+    bookmark: string
 };
 
 interface InputDescription {
@@ -160,7 +161,8 @@ class QueryDescription {
         return {
             sql,
             parameters: this.parameters,
-            labels: this.outputs.map(output => output.label)
+            labels: this.outputs.map(output => output.label),
+            bookmark: "[]"
         };
     }
 }
@@ -243,7 +245,7 @@ class DescriptionBuilder {
     }
 }
 
-export function sqlFromSpecification(start: FactReference[], specification: Specification, factTypes: Map<string, number>, roleMap: Map<number, Map<string, number>>): SpecificationSqlQuery[] {
+export function sqlFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification, factTypes: Map<string, number>, roleMap: Map<number, Map<string, number>>): SpecificationSqlQuery[] {
     const descriptionBuilder = new DescriptionBuilder(factTypes, roleMap);
     const descriptions = descriptionBuilder.buildDescriptions(start, specification);
     return descriptions.map(description => description.generateSqlQuery());

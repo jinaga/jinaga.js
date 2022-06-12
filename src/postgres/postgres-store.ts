@@ -2,11 +2,13 @@ import { PoolClient } from 'pg';
 import { canonicalPredecessors } from "../fact/hash";
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../query/steps";
-import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, PredecessorCollection, Storage } from '../storage';
+import { describeSpecification, Specification } from "../specification/specification";
+import { FactBookmark, FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, FactStream, FactTuple, PredecessorCollection, Storage } from '../storage';
 import { distinct, flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
 import { makeEdgeRecords } from './edge-record';
 import { addFact, addFactType, addRole, copyRoleMap, emptyFactMap, emptyFactTypeMap, emptyPublicKeyMap, emptyRoleMap, FactMap, FactTypeMap, getFactId, getFactTypeId, getPublicKeyId, getRoleId, hasFact, hasRole, mergeFactTypes, mergeRoleMaps, PublicKeyMap, RoleMap } from './maps';
+import { sqlFromSpecification } from "./specification-sql";
 import { sqlFromSteps } from './sql';
 
 interface FactTypeResult {
@@ -60,6 +62,10 @@ function loadFactReference(r: Row): FactReference {
         type: r.type,
         hash: r.hash
     };
+}
+
+function loadFactTuple(length: number, r: Row): FactTuple {
+    throw new Error("Not implemented");
 }
 
 function loadFactPath(pathLength: number, factTypeNames: string[], r: Row): FactPath {
@@ -169,6 +175,35 @@ export class PostgresStore implements Storage {
         }
     }
 
+    async queryFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification): Promise<FactStream[]> {
+        try {
+            const factTypes = await this.loadFactTypesFromSpecification(specification);
+            const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
+
+            const sqlQueries = sqlFromSpecification(start, bookmarks, limit, specification, factTypes, roleMap);
+            const streams = await this.connectionFactory.with(async (connection) => {
+                const streams: FactStream[] = [];
+                for (const sqlQuery of sqlQueries) {
+                    const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
+                    const tuples = rows.map(row => loadFactTuple(sqlQuery.labels.length, row));
+                    streams.push({
+                        labels: sqlQuery.labels,
+                        tuples,
+                        bookmark: tuples.length > 0 ? tuples[tuples.length - 1].bookmark : sqlQuery.bookmark
+                    });
+                }
+                return streams;
+            });
+            return streams;
+        }
+        catch (e) {
+            const description = describeSpecification(specification);
+            const startDescription = start.map(r => `${r.type}:${r.hash}`).join(', ');
+            throw new Error(`Could not generate SQL for specification "${description}" starting at "${startDescription}": ${e}`);
+        }
+        throw new Error('Not implemented');
+    }
+
     private async loadFactTypesFromSteps(steps: Step[], startType: string): Promise<FactTypeMap> {
         const factTypes = this.factTypeMap;
         const unknownFactTypes = [...allFactTypes(steps), startType]
@@ -198,6 +233,13 @@ export class PostgresStore implements Storage {
             return merged;
         }
         return roleMap;
+    }
+
+    loadRolesFromSpecification(specification: Specification, factTypes: FactTypeMap): RoleMap | PromiseLike<RoleMap> {
+        throw new Error("Method not implemented.");
+    }
+    loadFactTypesFromSpecification(specification: Specification): FactTypeMap | PromiseLike<FactTypeMap> {
+        throw new Error("Method not implemented.");
     }
 
     async whichExist(references: FactReference[]): Promise<FactReference[]> {
