@@ -160,7 +160,7 @@ class QueryDescription {
         return {
             sql,
             parameters: this.parameters,
-            labels: this.inputs.map(input => input.label)
+            labels: this.outputs.map(output => output.label)
         };
     }
 }
