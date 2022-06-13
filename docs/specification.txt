@@ -1,5 +1,5 @@
-(user: Jinaga.User) {
-    thing: MyApp.Thing [
-        thing->owner:Jinaga.User = user
+(domain: MyApplication.Domain) {
+    visit: MyApplication.Visit [
+        visit->domain:MyApplication.Domain = domain
     ]
 }

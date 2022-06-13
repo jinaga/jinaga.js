@@ -98,5 +98,7 @@ function getTypeOfLabel(specification: Specification, label: string): string {
 }
 
 export function describeSpecification(specification: Specification): string {
-    throw new Error("Function not implemented.");
+    return `Given: ${specification.given.map(l => `${l.name}: ${l.type}`).join(", ")}
+Matches: ${specification.matches.map(m => `${m.unknown.name}: ${m.unknown.type}`).join(", ")}
+Projections: ${specification.projections.map(p => `${p.name} (${p.matches.map(m => `${m.unknown.name} (${m.unknown.type})`).join(", ")})`).join(", ")}`;
 }
