@@ -2,10 +2,16 @@ import { Match, PathCondition, Specification } from "../specification/specificat
 import { FactBookmark, FactReference } from "../storage";
 import { getFactTypeId, getRoleId } from "./maps";
 
+export interface SpecificationLabel {
+    name: string;
+    type: string;
+    column: string;
+}
+
 export type SpecificationSqlQuery = {
     sql: string,
     parameters: (string | number)[],
-    labels: string[],
+    labels: SpecificationLabel[],
     bookmark: string
 };
 
@@ -18,6 +24,7 @@ interface InputDescription {
 
 interface OutputDescription {
     label: string;
+    type: string;
     factIndex: number;
 }
 
@@ -67,8 +74,8 @@ class QueryDescription {
         return { query, factIndex };
     }
 
-    public withOutput(label: string, factIndex: number): QueryDescription {
-        const output = { label, factIndex };
+    public withOutput(label: string, type: string, factIndex: number): QueryDescription {
+        const output = { label, type, factIndex };
         const query = new QueryDescription(
             this.inputs,
             this.parameters,
@@ -161,7 +168,11 @@ class QueryDescription {
         return {
             sql,
             parameters: this.parameters,
-            labels: this.outputs.map(output => output.label),
+            labels: this.outputs.map(output => ({
+                name: output.label,
+                type: output.type,
+                column: `hash${output.factIndex}`
+            })),
             bookmark: "[]"
         };
     }
@@ -236,7 +247,7 @@ class DescriptionBuilder {
                         factIndex = successorFactIndex;
                     });
 
-                    queryDescription = queryDescription.withOutput(match.unknown.name, factIndex);
+                    queryDescription = queryDescription.withOutput(match.unknown.name, match.unknown.type, factIndex);
                 }
             });
         });

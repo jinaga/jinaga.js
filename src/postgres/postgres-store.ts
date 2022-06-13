@@ -8,7 +8,7 @@ import { distinct, flatten } from '../util/fn';
 import { ConnectionFactory, Row } from './connection';
 import { makeEdgeRecords } from './edge-record';
 import { addFact, addFactType, addRole, copyRoleMap, emptyFactMap, emptyFactTypeMap, emptyPublicKeyMap, emptyRoleMap, FactMap, FactTypeMap, getFactId, getFactTypeId, getPublicKeyId, getRoleId, hasFact, hasRole, mergeFactTypes, mergeRoleMaps, PublicKeyMap, RoleMap } from './maps';
-import { sqlFromSpecification } from "./specification-sql";
+import { SpecificationLabel, sqlFromSpecification } from "./specification-sql";
 import { sqlFromSteps } from './sql';
 
 interface FactTypeResult {
@@ -64,8 +64,23 @@ function loadFactReference(r: Row): FactReference {
     };
 }
 
-function loadFactTuple(length: number, r: Row): FactTuple {
-    throw new Error("Not implemented");
+function loadFactTuple(labels: SpecificationLabel[], row: Row): FactTuple {
+    const facts = labels.map(label => {
+        const hash = row[label.column];
+        if (hash === null) {
+            const columns = Object.keys(row);
+            throw new Error(`Cannot find column '${label.column}'. Available columns: ${columns.join(', ')}`);
+        }
+        const fact: FactReference = {
+            type: label.type,
+            hash
+        }
+        return fact;
+    });
+    return {
+        facts,
+        bookmark: ""
+    };
 }
 
 function loadFactPath(pathLength: number, factTypeNames: string[], r: Row): FactPath {
@@ -185,9 +200,9 @@ export class PostgresStore implements Storage {
                 const streams: FactStream[] = [];
                 for (const sqlQuery of sqlQueries) {
                     const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
-                    const tuples = rows.map(row => loadFactTuple(sqlQuery.labels.length, row));
+                    const tuples = rows.map(row => loadFactTuple(sqlQuery.labels, row));
                     streams.push({
-                        labels: sqlQuery.labels,
+                        labels: sqlQuery.labels.map(l => l.name),
                         tuples,
                         bookmark: tuples.length > 0 ? tuples[tuples.length - 1].bookmark : sqlQuery.bookmark
                     });

@@ -40,6 +40,12 @@ describe("Postgres query generator", () => {
         expect(query.parameters[0]).toEqual(getFactTypeId(factTypes, 'Root'));
         expect(query.parameters[1]).toEqual(startHash);
         expect(query.parameters[2]).toEqual(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Successor'), 'predecessor'));
-        expect(query.labels).toEqual(['successor']);
+        expect(query.labels).toEqual([
+            {
+                name: 'successor',
+                type: 'IntegrationTest.Successor',
+                column: 'hash2'
+            }
+        ]);
     });
 });
