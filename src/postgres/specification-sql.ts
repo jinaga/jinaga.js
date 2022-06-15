@@ -122,6 +122,8 @@ class QueryDescription {
         const hashes = this.outputs
             .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
             .join(" ");
+        const factIds = this.outputs
+            .map((output, i) => `f${output.factIndex}.fact_id as bookmark${i+1}`)
         const tables = this.inputs
             .map(input => `public.fact f${input.factIndex}`)
             .join(", ");
@@ -164,7 +166,10 @@ class QueryDescription {
         const whereClauses = this.inputs
             .map(input => `f${input.factIndex}.fact_type_id = $${input.factTypeParameter} AND f${input.factIndex}.hash = $${input.factHashParameter}`)
             .join(" AND ");
-        const sql = `SELECT ${hashes} FROM ${tables}${joins.join("")} WHERE ${whereClauses}`;
+        const orderClauses = this.outputs
+            .map(output => `f${output.factIndex}.fact_id ASC`)
+            .join(", ");
+        const sql = `SELECT ${hashes}, ${factIds} FROM ${tables}${joins.join("")} WHERE ${whereClauses} ORDER BY ${orderClauses}`;
         return {
             sql,
             parameters: this.parameters,

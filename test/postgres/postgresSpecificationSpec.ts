@@ -31,11 +31,13 @@ describe("Postgres query generator", () => {
         expect(sqlQueries.length).toBe(1);
         const query = sqlQueries[0];
         expect(query.sql).toEqual(
-            'SELECT f2.hash as hash2 ' +
+            'SELECT f2.hash as hash2, ' +
+            'f2.fact_id as bookmark1 ' +
             'FROM public.fact f1 ' +
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
-            'WHERE f1.fact_type_id = $1 AND f1.hash = $2'
+            'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'ORDER BY f2.fact_id ASC'
         );
         expect(query.parameters[0]).toEqual(getFactTypeId(factTypes, 'Root'));
         expect(query.parameters[1]).toEqual(startHash);
