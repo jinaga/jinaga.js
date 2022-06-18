@@ -76,5 +76,23 @@ describe("Postgres query generator", () => {
                 'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
                 'ORDER BY f2.fact_id ASC, f3.fact_id ASC'
             );
+            expect(sqlQueries[0].parameters).toEqual([
+                getFactTypeId(factTypes, "Root"),
+                startHash,
+                getRoleId(roleMap, getFactTypeId(factTypes, "IntegrationTest.Successor"), "predecessor"),
+                getRoleId(roleMap, getFactTypeId(factTypes, "IntegrationTest.Successor"), "other")
+            ]);
+            expect(sqlQueries[0].labels).toEqual([
+                {
+                    name: "successor",
+                    type: "IntegrationTest.Successor",
+                    column: "hash2"
+                },
+                {
+                    name: "other",
+                    type: "IntegrationTest.OtherPredecessor",
+                    column: "hash3"
+                }
+            ]);
     });
 });
