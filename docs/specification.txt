@@ -2,4 +2,7 @@
     visit: MyApplication.Visit [
         visit->domain:MyApplication.Domain = domain
     ]
+    user: Jinaga.User [
+        user = visit->user:Jinaga.User
+    ]
 }

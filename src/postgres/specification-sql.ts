@@ -121,9 +121,10 @@ class QueryDescription {
     generateSqlQuery(): SpecificationSqlQuery {
         const hashes = this.outputs
             .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
-            .join(" ");
+            .join(", ");
         const factIds = this.outputs
             .map((output, i) => `f${output.factIndex}.fact_id as bookmark${i+1}`)
+            .join(", ");
         const tables = this.inputs
             .map(input => `public.fact f${input.factIndex}`)
             .join(", ");
