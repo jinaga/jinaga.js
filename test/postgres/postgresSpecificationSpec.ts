@@ -14,10 +14,28 @@ function sqlFor(descriptiveString: string) {
         (f, factType, i) => addFactType(f, factType, i + 1),
         emptyFactTypeMap());
     let roleMap = getAllRoles(specification).filter(r => r.name !== 'unknown').reduce(
-        (r, role, i) => addRole(r, getFactTypeId(factTypes, role.definingFactType), role.name, i + 1),
+        (r, role, i) => {
+            const factTypeId = getFactTypeId(factTypes, role.definingFactType);
+            if (!factTypeId) {
+                throw new Error(`Unknown fact type ${role.definingFactType}`);
+            }
+            return addRole(r, factTypeId, role.name, i + 1);
+        },
         emptyRoleMap());
     const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification([start], [], 100, specification, factTypes, roleMap);
     return { sqlQueries, factTypes, roleMap };
+}
+
+function roleParameter(roleMap: Map<number, Map<string, number>>, factTypes: Map<string, number>, factTypeName: string, roleName: string): number {
+    const factTypeId = getFactTypeId(factTypes, factTypeName);
+    if (!factTypeId) {
+        throw new Error(`Unknown fact type ${factTypeName}`);
+    }
+    const roleId = getRoleId(roleMap, factTypeId, roleName);
+    if (!roleId) {
+        throw new Error(`Unknown role ${roleName} in fact type ${factTypeName}`);
+    }
+    return roleId;
 }
 
 describe("Postgres query generator", () => {
@@ -41,7 +59,7 @@ describe("Postgres query generator", () => {
         );
         expect(query.parameters[0]).toEqual(getFactTypeId(factTypes, 'Root'));
         expect(query.parameters[1]).toEqual(startHash);
-        expect(query.parameters[2]).toEqual(getRoleId(roleMap, getFactTypeId(factTypes, 'IntegrationTest.Successor'), 'predecessor'));
+        expect(query.parameters[2]).toEqual(roleParameter(roleMap, factTypes, 'IntegrationTest.Successor', 'predecessor'));
         expect(query.labels).toEqual([
             {
                 name: 'successor',
@@ -79,8 +97,8 @@ describe("Postgres query generator", () => {
             expect(sqlQueries[0].parameters).toEqual([
                 getFactTypeId(factTypes, "Root"),
                 startHash,
-                getRoleId(roleMap, getFactTypeId(factTypes, "IntegrationTest.Successor"), "predecessor"),
-                getRoleId(roleMap, getFactTypeId(factTypes, "IntegrationTest.Successor"), "other")
+                roleParameter(roleMap, factTypes, "IntegrationTest.Successor", "predecessor"),
+                roleParameter(roleMap, factTypes, "IntegrationTest.Successor", "other")
             ]);
             expect(sqlQueries[0].labels).toEqual([
                 {
@@ -127,8 +145,8 @@ describe("Postgres query generator", () => {
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
             startHash,
-            getRoleId(roleMap, getFactTypeId(factTypes, "MyApplication.Project"), "root"),
-            getRoleId(roleMap, getFactTypeId(factTypes, "MyApplication.Assignment"), "project")
+            roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
+            roleParameter(roleMap, factTypes, "MyApplication.Assignment", "project")
         ]);
         expect(sqlQueries[0].labels).toEqual([
             {

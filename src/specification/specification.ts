@@ -45,7 +45,14 @@ export function getAllFactTypes(specification: Specification): string[] {
     for (const given of specification.given) {
         factTypes.push(given.type);
     }
-    for (const match of specification.matches) {
+    factTypes.push(...getAllFactTypesFromMatches(specification.matches));
+    const distinctFactTypes = Array.from(new Set(factTypes));
+    return distinctFactTypes;
+}
+
+function getAllFactTypesFromMatches(matches: Match[]): string[] {
+    const factTypes: string[] = [];
+    for (const match of matches) {
         factTypes.push(match.unknown.type);
         for (const condition of match.conditions) {
             if (condition.type === "path") {
@@ -53,15 +60,33 @@ export function getAllFactTypes(specification: Specification): string[] {
                     factTypes.push(role.targetType);
                 }
             }
+            else if (condition.type === "existential") {
+                factTypes.push(...getAllFactTypesFromMatches(condition.matches));
+            }
         }
     }
-    const distinctFactTypes = Array.from(new Set(factTypes));
-    return distinctFactTypes;
+    return factTypes;
 }
 
-export function getAllRoles(specification: Specification): { definingFactType: string, name: string, targetType: string }[] {
-    const roles: { definingFactType: string, name: string, targetType: string }[] = [];
-    for (const match of specification.matches) {
+interface RoleDescription {
+    definingFactType: string;
+    name: string;
+    targetType: string;
+}
+
+export function getAllRoles(specification: Specification): RoleDescription[] {
+    const roles: RoleDescription[] = getAllRolesFromMatches(specification, specification.matches);
+    const distinctRoles = roles.filter((value, index, array) => {
+        return array.findIndex(r =>
+            r.definingFactType === value.definingFactType &&
+            r.name === value.name) === index;
+    });
+    return distinctRoles;
+}
+
+function getAllRolesFromMatches(specification: Specification, matches: Match[]) {
+    const roles: RoleDescription[] = [];
+    for (const match of matches) {
         for (const condition of match.conditions) {
             if (condition.type === "path") {
                 let type = match.unknown.type;
@@ -75,14 +100,13 @@ export function getAllRoles(specification: Specification): { definingFactType: s
                     type = role.targetType;
                 }
             }
+            else if (condition.type === "existential") {
+                const newRoleDescriptions = getAllRolesFromMatches(specification, condition.matches);
+                roles.push(...newRoleDescriptions);
+            }
         }
     }
-    const distinctRoles = roles.filter((value, index, array) => {
-        return array.findIndex(r =>
-            r.definingFactType === value.definingFactType &&
-            r.name === value.name) === index;
-    });
-    return distinctRoles;
+    return roles;
 }
 
 function getTypeOfLabel(specification: Specification, label: string): string {
