@@ -95,4 +95,52 @@ describe("Postgres query generator", () => {
                 }
             ]);
     });
+
+    it("should generate positive existential conditions", () => {
+        const { sqlQueries, factTypes, roleMap } = sqlFor(`
+            (root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                    E {
+                        assignment: MyApplication.Assignment [
+                            assignment->project: MyApplication.Project = project
+                        ]
+                    }
+                ]
+            }
+        `);
+
+        expect(sqlQueries.length).toEqual(1);
+        expect(sqlQueries[0].sql).toEqual(
+            'SELECT f2.hash as hash2, ' +
+            'f3.hash as hash3, ' +
+            'f2.fact_id as bookmark1, ' +
+            'f3.fact_id as bookmark2 ' +
+            'FROM public.fact f1 ' +
+            'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+            'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+            'JOIN public.edge e2 ON e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
+            'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
+            'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'ORDER BY f2.fact_id ASC, f3.fact_id ASC'
+        );
+        expect(sqlQueries[0].parameters).toEqual([
+            getFactTypeId(factTypes, "Root"),
+            startHash,
+            getRoleId(roleMap, getFactTypeId(factTypes, "MyApplication.Project"), "root"),
+            getRoleId(roleMap, getFactTypeId(factTypes, "MyApplication.Assignment"), "project")
+        ]);
+        expect(sqlQueries[0].labels).toEqual([
+            {
+                name: "project",
+                type: "MyApplication.Project",
+                column: "hash2"
+            },
+            {
+                name: "assignment",
+                type: "MyApplication.Assignment",
+                column: "hash3"
+            }
+        ]);
+    });
 });

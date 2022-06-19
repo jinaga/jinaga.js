@@ -1,4 +1,4 @@
-import { Match, PathCondition, Specification } from "../specification/specification";
+import { Label, Match, PathCondition, Specification } from "../specification/specification";
 import { FactBookmark, FactReference } from "../storage";
 import { getFactTypeId, getRoleId } from "./maps";
 
@@ -219,46 +219,59 @@ class DescriptionBuilder {
         matches.forEach(match => {
             match.conditions.forEach(condition => {
                 if (condition.type === "path") {
-                    let fact = queryDescription.factByLabel(condition.labelRight);
-                    let type = fact.type;
-                    let factIndex = fact.factIndex;
-                    condition.rolesRight.forEach(role => {
-                        const typeId = getFactTypeId(this.factTypes, type);
-                        const roleId = getRoleId(this.roleMap, typeId, role.name);
-                        const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
-                        const { query, factIndex: predecessorFactIndex } = queryWithParameter.withFact(role.targetType);
-                        queryDescription = query.withEdge(predecessorFactIndex, factIndex, roleParameter);
-                        type = role.targetType;
-                        factIndex = predecessorFactIndex;
-                    });
-
-                    type = match.unknown.type;
-                    const newEdges: {
-                        roleId: number,
-                        declaringType: string,
-                    }[] = [];
-                    condition.rolesLeft.forEach(role => {
-                        const typeId = getFactTypeId(this.factTypes, type);
-                        const roleId = getRoleId(this.roleMap, typeId, role.name);
-                        newEdges.push({
-                            roleId,
-                            declaringType: type
-                        });
-                        type = role.targetType;
-                    });
-                    newEdges.reverse().forEach(({ roleId, declaringType }) => {
-                        const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
-                        const { query: queryWithFact, factIndex: successorFactIndex } = queryWithParameter.withFact(declaringType);
-                        queryDescription = queryWithFact.withEdge(factIndex, successorFactIndex, roleParameter);
-                        factIndex = successorFactIndex;
-                    });
-
-                    queryDescription = queryDescription.withOutput(match.unknown.name, match.unknown.type, factIndex);
+                    queryDescription = this.addPathCondition(queryDescription, match.unknown, condition);
+                }
+                else if (condition.type === "existential") {
+                    if (condition.exists) {
+                        const newQueryDescriptions = this.addEdges(queryDescription, condition.matches);
+                        const last = newQueryDescriptions.length - 1;
+                        queryDescriptions.push(...newQueryDescriptions.slice(0, last));
+                        queryDescription = newQueryDescriptions[last];
+                    }
                 }
             });
         });
         queryDescriptions.push(queryDescription);
         return queryDescriptions;
+    }
+
+    addPathCondition(queryDescription: QueryDescription, unknown: Label, condition: PathCondition): QueryDescription {
+        let fact = queryDescription.factByLabel(condition.labelRight);
+        let type = fact.type;
+        let factIndex = fact.factIndex;
+        condition.rolesRight.forEach(role => {
+            const typeId = getFactTypeId(this.factTypes, type);
+            const roleId = getRoleId(this.roleMap, typeId, role.name);
+            const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
+            const { query, factIndex: predecessorFactIndex } = queryWithParameter.withFact(role.targetType);
+            queryDescription = query.withEdge(predecessorFactIndex, factIndex, roleParameter);
+            type = role.targetType;
+            factIndex = predecessorFactIndex;
+        });
+
+        type = unknown.type;
+        const newEdges: {
+            roleId: number,
+            declaringType: string,
+        }[] = [];
+        condition.rolesLeft.forEach(role => {
+            const typeId = getFactTypeId(this.factTypes, type);
+            const roleId = getRoleId(this.roleMap, typeId, role.name);
+            newEdges.push({
+                roleId,
+                declaringType: type
+            });
+            type = role.targetType;
+        });
+        newEdges.reverse().forEach(({ roleId, declaringType }) => {
+            const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
+            const { query: queryWithFact, factIndex: successorFactIndex } = queryWithParameter.withFact(declaringType);
+            queryDescription = queryWithFact.withEdge(factIndex, successorFactIndex, roleParameter);
+            factIndex = successorFactIndex;
+        });
+
+        queryDescription = queryDescription.withOutput(unknown.name, unknown.type, factIndex);
+        return queryDescription;
     }
 }
 
