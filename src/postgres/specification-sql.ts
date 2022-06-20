@@ -95,6 +95,12 @@ function notExistsWithCondition(notExistsConditions: NotExistsConditionDescripti
     }
 }
 
+function countEdges(notExistsConditions: NotExistsConditionDescription[]): number {
+    return notExistsConditions.reduce((count, c) =>
+        count + c.edges.length + countEdges(c.notExistsConditions),
+        0);
+}
+
 class QueryDescription {
     constructor(
         private readonly inputs: InputDescription[],
@@ -147,7 +153,7 @@ class QueryDescription {
 
     public withEdge(predecessorFactIndex: number, successorFactIndex: number, roleParameter: number, path: number[]) {
         const edge = {
-            edgeIndex: this.edges.length + 1,
+            edgeIndex: this.edges.length + countEdges(this.notExistsConditions) + 1,
             predecessorFactIndex,
             successorFactIndex,
             roleParameter
