@@ -210,47 +210,13 @@ class QueryDescription {
         const tables = this.inputs
             .map(input => `public.fact f${input.factIndex}`)
             .join(", ");
-        const joins: string[] = [];
         const writtenFactIndexes = new Set<number>(this.inputs.map(input => input.factIndex));
-        this.edges.forEach(edge => {
-            if (writtenFactIndexes.has(edge.predecessorFactIndex)) {
-                if (writtenFactIndexes.has(edge.successorFactIndex)) {
-                    throw new Error("Not yet implemented");
-                }
-                else {
-                    joins.push(
-                        ` JOIN public.edge e${edge.edgeIndex}` +
-                        ` ON e${edge.edgeIndex}.predecessor_fact_id = f${edge.predecessorFactIndex}.fact_id` +
-                        ` AND e${edge.edgeIndex}.role_id = $${edge.roleParameter}`
-                    );
-                    joins.push(
-                        ` JOIN public.fact f${edge.successorFactIndex}` +
-                        ` ON f${edge.successorFactIndex}.fact_id = e${edge.edgeIndex}.successor_fact_id`
-                    );
-                    writtenFactIndexes.add(edge.successorFactIndex);
-                }
-            }
-            else if (writtenFactIndexes.has(edge.successorFactIndex)) {
-                joins.push(
-                    ` JOIN public.edge e${edge.edgeIndex}` +
-                    ` ON e${edge.edgeIndex}.successor_fact_id = f${edge.successorFactIndex}.fact_id` +
-                    ` AND e${edge.edgeIndex}.role_id = $${edge.roleParameter}`
-                );
-                joins.push(
-                    ` JOIN public.fact f${edge.predecessorFactIndex}` +
-                    ` ON f${edge.predecessorFactIndex}.fact_id = e${edge.edgeIndex}.predecessor_fact_id`
-                );
-                writtenFactIndexes.add(edge.predecessorFactIndex);
-            }
-            else {
-                throw new Error("Neither predecessor nor successor fact has been written");
-            }
-        });
+        const joins: string[] = generateJoins(this.edges, writtenFactIndexes);
         const inputWhereClauses = this.inputs
             .map(input => `f${input.factIndex}.fact_type_id = $${input.factTypeParameter} AND f${input.factIndex}.hash = $${input.factHashParameter}`)
             .join(" AND ");
         const notExistsWhereClauses = this.notExistsConditions
-            .map(notExistsWhereClause => ` AND NOT EXISTS (${generateNotExistsWhereClause(notExistsWhereClause)})`)
+            .map(notExistsWhereClause => ` AND NOT EXISTS (${generateNotExistsWhereClause(notExistsWhereClause, writtenFactIndexes)})`)
             .join();
         const orderClauses = this.outputs
             .map(output => `f${output.factIndex}.fact_id ASC`)
@@ -269,10 +235,83 @@ class QueryDescription {
     }
 }
 
-function generateNotExistsWhereClause(notExistsWhereClause: NotExistsConditionDescription) {
-    const firstEdgeIndex = notExistsWhereClause.edges[0].edgeIndex;
+function generateJoins(edges: EdgeDescription[], writtenFactIndexes: Set<number>) {
     const joins: string[] = [];
-    return `SELECT 1 FROM public.edge e${firstEdgeIndex}${joins.join("")}`;
+    edges.forEach(edge => {
+        if (writtenFactIndexes.has(edge.predecessorFactIndex)) {
+            if (writtenFactIndexes.has(edge.successorFactIndex)) {
+                throw new Error("Not yet implemented");
+            }
+            else {
+                joins.push(
+                    ` JOIN public.edge e${edge.edgeIndex}` +
+                    ` ON e${edge.edgeIndex}.predecessor_fact_id = f${edge.predecessorFactIndex}.fact_id` +
+                    ` AND e${edge.edgeIndex}.role_id = $${edge.roleParameter}`
+                );
+                joins.push(
+                    ` JOIN public.fact f${edge.successorFactIndex}` +
+                    ` ON f${edge.successorFactIndex}.fact_id = e${edge.edgeIndex}.successor_fact_id`
+                );
+                writtenFactIndexes.add(edge.successorFactIndex);
+            }
+        }
+        else if (writtenFactIndexes.has(edge.successorFactIndex)) {
+            joins.push(
+                ` JOIN public.edge e${edge.edgeIndex}` +
+                ` ON e${edge.edgeIndex}.successor_fact_id = f${edge.successorFactIndex}.fact_id` +
+                ` AND e${edge.edgeIndex}.role_id = $${edge.roleParameter}`
+            );
+            joins.push(
+                ` JOIN public.fact f${edge.predecessorFactIndex}` +
+                ` ON f${edge.predecessorFactIndex}.fact_id = e${edge.edgeIndex}.predecessor_fact_id`
+            );
+            writtenFactIndexes.add(edge.predecessorFactIndex);
+        }
+        else {
+            throw new Error("Neither predecessor nor successor fact has been written");
+        }
+    });
+    return joins;
+}
+
+function generateNotExistsWhereClause(notExistsWhereClause: NotExistsConditionDescription, outerFactIndexes: Set<number>): string {
+    const firstEdge = notExistsWhereClause.edges[0];
+    const writtenFactIndexes = new Set<number>(outerFactIndexes);
+    const firstJoin: string[] = [];
+    const whereClause: string[] = [];
+    if (writtenFactIndexes.has(firstEdge.predecessorFactIndex)) {
+        if (writtenFactIndexes.has(firstEdge.successorFactIndex)) {
+            throw new Error("Not yet implemented");
+        }
+        else {
+            whereClause.push(
+                `e${firstEdge.edgeIndex}.predecessor_fact_id = f${firstEdge.predecessorFactIndex}.fact_id` +
+                ` AND e${firstEdge.edgeIndex}.role_id = $${firstEdge.roleParameter}`
+            );
+            firstJoin.push(
+                ` JOIN public.fact f${firstEdge.successorFactIndex}` +
+                ` ON f${firstEdge.successorFactIndex}.fact_id = e${firstEdge.edgeIndex}.successor_fact_id`
+            );
+            writtenFactIndexes.add(firstEdge.successorFactIndex);
+        }
+    }
+    else if (writtenFactIndexes.has(firstEdge.successorFactIndex)) {
+        whereClause.push(
+            `e${firstEdge.edgeIndex}.successor_fact_id = f${firstEdge.successorFactIndex}.fact_id` +
+            ` AND e${firstEdge.edgeIndex}.role_id = $${firstEdge.roleParameter}`
+        );
+        firstJoin.push(
+            ` JOIN public.fact f${firstEdge.predecessorFactIndex}` +
+            ` ON f${firstEdge.predecessorFactIndex}.fact_id = e${firstEdge.edgeIndex}.predecessor_fact_id`
+        );
+        writtenFactIndexes.add(firstEdge.predecessorFactIndex);
+    }
+    else {
+        throw new Error("Neither predecessor nor successor fact has been written");
+    }
+    const tailJoins: string[] = generateJoins(notExistsWhereClause.edges.slice(1), writtenFactIndexes);
+    const joins = firstJoin.concat(tailJoins);
+    return `SELECT 1 FROM public.edge e${firstEdge.edgeIndex}${joins.join("")} WHERE ${whereClause.join(" AND ")}`;
 }
 
 class DescriptionBuilder {
@@ -370,7 +409,9 @@ class DescriptionBuilder {
             factIndex = successorFactIndex;
         });
 
-        queryDescription = queryDescription.withOutput(unknown.name, unknown.type, factIndex);
+        if (path.length === 0) {
+            queryDescription = queryDescription.withOutput(unknown.name, unknown.type, factIndex);
+        }
         return queryDescription;
     }
 }

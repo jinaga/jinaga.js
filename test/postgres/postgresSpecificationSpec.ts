@@ -224,13 +224,13 @@ describe("Postgres query generator", () => {
             ') ' +
             'ORDER BY f2.fact_id ASC'
         );
-        expect(sqlQueries[0].parameters).toEqual([
+        expect(sqlQueries[1].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
             startHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
             roleParameter(roleMap, factTypes, "MyApplication.Project.Deleted", "project")
         ]);
-        expect(sqlQueries[0].labels).toEqual([
+        expect(sqlQueries[1].labels).toEqual([
             {
                 name: "project",
                 type: "MyApplication.Project",
