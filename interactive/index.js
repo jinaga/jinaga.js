@@ -6,15 +6,33 @@ const { emptyFactTypeMap, emptyRoleMap, addFactType, addRole, getFactTypeId } = 
 const { PostgresStore } = require("../dist/postgres/postgres-store")
 const fs = require("fs");
 
+var user = {"publicKey":"-----BEGIN RSA PUBLIC KEY-----\nMIGJAoGBAIBsKomutukULWw2zoTW2ECMrM8VmD2xvfpl3R4qh1whzuXV+A4EfRKMb/UAjEfw\n5nBmWvcObGyYUgygKrlNeOhf3MnDj706rej6ln9cKGL++ZNsJgJsogaAtmkPihWVGi908fdP\nLQrWTF5be0b/ZP258Zs3CTpcRTpTvhzS5TC1AgMBAAE=\n-----END RSA PUBLIC KEY-----\n","type":"Jinaga.User"};
+var company = {"name":"Improving","type":"ImprovingU.Company","from":user};
+var semester = {"type":"ImprovingU.Semester","name":"Fall 2021","company":company};
+
 async function run() {
     try {
-        var postgresStore = new PostgresStore("postgresql://dev:devpw@localhost:5432/myapplication");
+        var postgresStore = new PostgresStore("postgresql://dev:devpw@localhost:5432/improvingu");
         try {
             var input = fs.readFileSync(0, 'utf-8');
             var specification = parseSpecification(input);
+
+            // Select starting facts that match the inputs
+            var facts = specification.given.map(input => {
+                if (input.type === "Jinaga.User") {
+                    return user;
+                }
+                if (input.type === "ImprovingU.Company") {
+                    return company;
+                }
+                if (input.type === "ImprovingU.Semester") {
+                    return semester;
+                }
+                throw new Error("Unknown input type: " + input.type);
+            });
         
-            const start = dehydrateReference({ type: 'MyApplication.Domain', identifier: 'myapplication' });
-            const results = await postgresStore.queryFromSpecification([start], "", 3, specification);
+            const start = facts.map(fact => dehydrateReference(fact));
+            const results = await postgresStore.queryFromSpecification(start, "", 3, specification);
             console.log(JSON.stringify(results, null, 2));
         }
         finally {

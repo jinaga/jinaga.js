@@ -1,8 +1,13 @@
-(domain: MyApplication.Domain) {
-    visit: MyApplication.Visit [
-        visit->domain:MyApplication.Domain = domain
+(semester: ImprovingU.Semester) {
+    catalog: ImprovingU.Catalog [
+        catalog->_in:ImprovingU.Semester = semester
     ]
-    user: Jinaga.User [
-        user = visit->user:Jinaga.User
+    course: ImprovingU.Course [
+        course->_in:ImprovingU.Catalog = catalog
+        !E {
+            delete: ImprovingU.Course.Delete [
+                delete->course:ImprovingU.Course = course
+            ]
+        }
     ]
 }
