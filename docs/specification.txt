@@ -1,4 +1,4 @@
-(semester: ImprovingU.Semester) {
+(semester: ImprovingU.Semester, user: Jinaga.User) {
     catalog: ImprovingU.Catalog [
         catalog->_in:ImprovingU.Semester = semester
     ]
@@ -7,6 +7,15 @@
         !E {
             delete: ImprovingU.Course.Delete [
                 delete->course:ImprovingU.Course = course
+            ]
+        }
+    ]
+    registration: ImprovingU.Course.Registration [
+        registration->course:ImprovingU.Course = course
+        registration->student:Jinaga.User = user
+        !E {
+            delete: ImprovingU.Course.Registration.Deletion [
+                delete->courseRegistration:ImprovingU.Course.Registration = registration
             ]
         }
     ]

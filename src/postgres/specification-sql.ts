@@ -191,6 +191,10 @@ class QueryDescription {
         return { query, path: newPath };
     }
 
+    hasOutput(label: string) {
+        return this.outputs.some(o => o.label === label);
+    }
+
     factByLabel(label: string): FactDescription {
         const input = this.inputs.find(input => input.label === label);
         if (input === undefined) {
@@ -246,7 +250,12 @@ function generateJoins(edges: EdgeDescription[], writtenFactIndexes: Set<number>
     edges.forEach(edge => {
         if (writtenFactIndexes.has(edge.predecessorFactIndex)) {
             if (writtenFactIndexes.has(edge.successorFactIndex)) {
-                throw new Error("Not yet implemented");
+                joins.push(
+                    ` JOIN public.edge e${edge.edgeIndex}` +
+                    ` ON e${edge.edgeIndex}.predecessor_fact_id = f${edge.predecessorFactIndex}.fact_id` +
+                    ` AND e${edge.edgeIndex}.successor_fact_id = f${edge.successorFactIndex}.fact_id` +
+                    ` AND e${edge.edgeIndex}.role_id = $${edge.roleParameter}`
+                )
             }
             else {
                 joins.push(
@@ -326,7 +335,17 @@ class DescriptionBuilder {
         private roleMap: Map<number, Map<string, number>>) { }
 
     public buildDescriptions(start: FactReference[], specification: Specification): QueryDescription[] {
-        // TODO: Verify that the number of start facts equals the number of inputs
+        // Verify that the number of start facts equals the number of inputs
+        if (start.length !== specification.given.length) {
+            throw new Error(`The number of start facts (${start.length}) does not equal the number of inputs (${specification.given.length})`);
+        }
+        // Verify that the input type matches the start fact type
+        for (let i = 0; i < start.length; i++) {
+            if (start[i].type !== specification.given[i].type) {
+                throw new Error(`The type of start fact ${i} (${start[i].type}) does not match the type of input ${i} (${specification.given[i].type})`);
+            }
+        }
+
         const inputs: InputDescription[] = specification.given
             .map((label, i) => ({
                 label: label.name,
@@ -336,7 +355,6 @@ class DescriptionBuilder {
             }));
         const parameters: (string | number)[] = specification.given
             .flatMap((label, i) => [
-                // TODO: Verify that the input type matches the start fact type
                 getFactTypeId(this.factTypes, label.type),
                 start[i].hash
             ]);
@@ -381,17 +399,26 @@ class DescriptionBuilder {
     }
 
     addPathCondition(queryDescription: QueryDescription, path: number[], unknown: Label, condition: PathCondition): QueryDescription {
+        const knownFact = queryDescription.hasOutput(unknown.name) ? queryDescription.factByLabel(unknown.name) : null;
+        const roleCount = condition.rolesLeft.length + condition.rolesRight.length;
+
         let fact = queryDescription.factByLabel(condition.labelRight);
         let type = fact.type;
         let factIndex = fact.factIndex;
-        condition.rolesRight.forEach(role => {
+        condition.rolesRight.forEach((role, i) => {
             const typeId = getFactTypeId(this.factTypes, type);
             const roleId = getRoleId(this.roleMap, typeId, role.name);
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
-            const { query, factIndex: predecessorFactIndex } = queryWithParameter.withFact(role.targetType);
-            queryDescription = query.withEdge(predecessorFactIndex, factIndex, roleParameter, path);
+            if (i === roleCount && knownFact) {
+                queryDescription = queryWithParameter.withEdge(knownFact.factIndex, factIndex, roleParameter, path);
+                factIndex = knownFact.factIndex;
+            }
+            else {
+                const { query, factIndex: predecessorFactIndex } = queryWithParameter.withFact(role.targetType);
+                queryDescription = query.withEdge(predecessorFactIndex, factIndex, roleParameter, path);
+                factIndex = predecessorFactIndex;
+            }
             type = role.targetType;
-            factIndex = predecessorFactIndex;
         });
 
         type = unknown.type;
@@ -408,14 +435,20 @@ class DescriptionBuilder {
             });
             type = role.targetType;
         });
-        newEdges.reverse().forEach(({ roleId, declaringType }) => {
+        newEdges.reverse().forEach(({ roleId, declaringType }, i) => {
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
-            const { query: queryWithFact, factIndex: successorFactIndex } = queryWithParameter.withFact(declaringType);
-            queryDescription = queryWithFact.withEdge(factIndex, successorFactIndex, roleParameter, path);
-            factIndex = successorFactIndex;
+            if (condition.rolesLeft.length + i === roleCount && knownFact) {
+                queryDescription = queryWithParameter.withEdge(factIndex, knownFact.factIndex, roleParameter, path);
+                factIndex = knownFact.factIndex;
+            }
+            else {
+                const { query: queryWithFact, factIndex: successorFactIndex } = queryWithParameter.withFact(declaringType);
+                queryDescription = queryWithFact.withEdge(factIndex, successorFactIndex, roleParameter, path);
+                factIndex = successorFactIndex;
+            }
         });
 
-        if (path.length === 0) {
+        if (path.length === 0 && !knownFact) {
             queryDescription = queryDescription.withOutput(unknown.name, unknown.type, factIndex);
         }
         return queryDescription;

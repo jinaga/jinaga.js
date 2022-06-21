@@ -4,8 +4,10 @@ import { getAllFactTypes, getAllRoles, Specification } from "../../src/specifica
 import { parseSpecification } from "../../src/specification/specification-parser";
 import { SpecificationSqlQuery, sqlFromSpecification } from "../../src/postgres/specification-sql";
 
-const start = dehydrateReference({ type: 'Root' });
-const startHash = 'fSS1hK7OGAeSX4ocN3acuFF87jvzCdPN3vLFUtcej0lOAsVV859UIYZLRcHUoMbyd/J31TdVn5QuE7094oqUPg==';
+const root = dehydrateReference({ type: 'Root' });
+const rootHash = root.hash;
+const user = dehydrateReference({ type: "Jinaga.User", publicKey: "PUBLIC KEY"});
+const userHash = user.hash;
 
 function sqlFor(descriptiveString: string) {
     const specification = parseSpecification(descriptiveString);
@@ -22,7 +24,16 @@ function sqlFor(descriptiveString: string) {
             return addRole(r, factTypeId, role.name, i + 1);
         },
         emptyRoleMap());
-    const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification([start], [], 100, specification, factTypes, roleMap);
+    const start = specification.given.map(input => {
+        if (input.type === 'Root') {
+            return root;
+        }
+        if (input.type === 'Jinaga.User') {
+            return user;
+        }
+        throw new Error(`Unknown input type ${input.type}`);
+    });
+    const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification(start, [], 100, specification, factTypes, roleMap);
     return { sqlQueries, factTypes, roleMap };
 }
 
@@ -58,7 +69,7 @@ describe("Postgres query generator", () => {
             'ORDER BY f2.fact_id ASC'
         );
         expect(query.parameters[0]).toEqual(getFactTypeId(factTypes, 'Root'));
-        expect(query.parameters[1]).toEqual(startHash);
+        expect(query.parameters[1]).toEqual(rootHash);
         expect(query.parameters[2]).toEqual(roleParameter(roleMap, factTypes, 'IntegrationTest.Successor', 'predecessor'));
         expect(query.labels).toEqual([
             {
@@ -96,7 +107,7 @@ describe("Postgres query generator", () => {
             );
             expect(sqlQueries[0].parameters).toEqual([
                 getFactTypeId(factTypes, "Root"),
-                startHash,
+                rootHash,
                 roleParameter(roleMap, factTypes, "IntegrationTest.Successor", "predecessor"),
                 roleParameter(roleMap, factTypes, "IntegrationTest.Successor", "other")
             ]);
@@ -144,7 +155,7 @@ describe("Postgres query generator", () => {
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
-            startHash,
+            rootHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
             roleParameter(roleMap, factTypes, "MyApplication.Assignment", "project")
         ]);
@@ -192,7 +203,7 @@ describe("Postgres query generator", () => {
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
-            startHash,
+            rootHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
             roleParameter(roleMap, factTypes, "MyApplication.Project.Deleted", "project")
         ]);
@@ -226,7 +237,7 @@ describe("Postgres query generator", () => {
         );
         expect(sqlQueries[1].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
-            startHash,
+            rootHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
             roleParameter(roleMap, factTypes, "MyApplication.Project.Deleted", "project")
         ]);
@@ -235,6 +246,58 @@ describe("Postgres query generator", () => {
                 name: "project",
                 type: "MyApplication.Project",
                 column: "hash2"
+            }
+        ]);
+    });
+
+    it("should accept multiple givens", () => {
+        const { sqlQueries, factTypes, roleMap } = sqlFor(`
+            (root: Root, user: Jinaga.User) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                ]
+                assignment: MyApplication.Assignment [
+                    assignment->project: MyApplication.Project = project
+                    assignment->user: Jinaga.User = user
+                ]
+            }
+        `);
+
+        expect(sqlQueries.length).toEqual(1);
+        expect(sqlQueries[0].sql).toEqual(
+            'SELECT f3.hash as hash3, ' +
+            'f4.hash as hash4, ' +
+            'f3.fact_id as bookmark1, ' +
+            'f4.fact_id as bookmark2 ' +
+            'FROM public.fact f1, public.fact f2 ' +
+            'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $5 ' +
+            'JOIN public.fact f3 ON f3.fact_id = e1.successor_fact_id ' +
+            'JOIN public.edge e2 ON e2.predecessor_fact_id = f3.fact_id AND e2.role_id = $6 ' +
+            'JOIN public.fact f4 ON f4.fact_id = e2.successor_fact_id ' +
+            'JOIN public.edge e3 ON e3.predecessor_fact_id = f2.fact_id AND e3.successor_fact_id = f4.fact_id AND e3.role_id = $7 ' +
+            'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND f2.fact_type_id = $3 AND f2.hash = $4 ' +
+            'ORDER BY f3.fact_id ASC, f4.fact_id ASC'
+        );
+        expect(sqlQueries[0].parameters).toEqual([
+            getFactTypeId(factTypes, "Root"),
+            rootHash,
+            getFactTypeId(factTypes, "Jinaga.User"),
+            userHash,
+            roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
+            roleParameter(roleMap, factTypes, "MyApplication.Assignment", "project"),
+            roleParameter(roleMap, factTypes, "MyApplication.Assignment", "user")
+        ]);
+        expect(sqlQueries[0].labels).toEqual([
+            {
+                name: "project",
+                type: "MyApplication.Project",
+                column: "hash3"
+            },
+            {
+                name: "assignment",
+                type: "MyApplication.Assignment",
+                column: "hash4"
             }
         ]);
     });
