@@ -217,10 +217,8 @@ class QueryDescription {
         const factIds = this.outputs
             .map((output, i) => `f${output.factIndex}.fact_id as bookmark${i+1}`)
             .join(", ");
-        const tables = this.inputs
-            .map(input => `public.fact f${input.factIndex}`)
-            .join(", ");
-        const writtenFactIndexes = new Set<number>(this.inputs.map(input => input.factIndex));
+        const firstFactId = this.inputs[0].factIndex;
+        const writtenFactIndexes = new Set<number>().add(firstFactId);
         const joins: string[] = generateJoins(this.edges, writtenFactIndexes);
         const inputWhereClauses = this.inputs
             .map(input => `f${input.factIndex}.fact_type_id = $${input.factTypeParameter} AND f${input.factIndex}.hash = $${input.factHashParameter}`)
@@ -231,7 +229,7 @@ class QueryDescription {
         const orderClauses = this.outputs
             .map(output => `f${output.factIndex}.fact_id ASC`)
             .join(", ");
-        const sql = `SELECT ${hashes}, ${factIds} FROM ${tables}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} ORDER BY ${orderClauses}`;
+        const sql = `SELECT ${hashes}, ${factIds} FROM public.fact f${firstFactId}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} ORDER BY ${orderClauses}`;
         return {
             sql,
             parameters: this.parameters,
