@@ -34,6 +34,8 @@ export type SpecificationSqlQuery = {
 interface InputDescription {
     label: string;
     factIndex: number;
+    factTypeId: number;
+    factHash: string;
     factTypeParameter: number;
     factHashParameter: number;
 }
@@ -140,6 +142,25 @@ class QueryDescription {
         return { query, parameterIndex };
     }
 
+    public withInputParameter(label: string): QueryDescription {
+        const factTypeParameter = this.parameters.length + 1;
+        const factHashParameter = factTypeParameter + 1;
+        const input = this.inputs.find(i => i.label === label);
+        const inputs = this.inputs.map(input =>
+            input.label === label
+                ? { ...input, factTypeParameter, factHashParameter }
+                : input
+        );
+        return new QueryDescription(
+            inputs,
+            this.parameters.concat(input.factTypeId, input.factHash),
+            this.outputs,
+            this.facts,
+            this.edges,
+            this.notExistsConditions
+        );
+    }
+
     public withFact(type: string): { query: QueryDescription, factIndex: number } {
         const factIndex = this.facts.length + 1;
         const fact = { factIndex, type };
@@ -209,6 +230,10 @@ class QueryDescription {
 
     hasOutput(label: string) {
         return this.outputs.some(o => o.label === label);
+    }
+
+    inputByLabel(label: string): InputDescription | undefined {
+        return this.inputs.find(i => i.label === label);
     }
 
     factByLabel(label: string): FactDescription {
@@ -364,20 +389,17 @@ class DescriptionBuilder {
             .map((label, i) => ({
                 label: label.name,
                 factIndex: i+1,
-                factTypeParameter: i*2 + 1,
-                factHashParameter: i*2 + 2
+                factTypeId: enforceGetFactTypeId(this.factTypes, label.type),
+                factHash: start[i].hash,
+                factTypeParameter: 0,
+                factHashParameter: 0
             }));
-        const parameters: (string | number)[] = specification.given
-            .flatMap((label, i) => [
-                enforceGetFactTypeId(this.factTypes, label.type),
-                start[i].hash
-            ]);
         const facts: FactDescription[] = specification.given
             .map((label, i) => ({
                 factIndex: i+1,
                 type: label.type
             }));
-        const initialQueryDescription = new QueryDescription(inputs, parameters, [], facts, [], []);
+        const initialQueryDescription = new QueryDescription(inputs, [], [], facts, [], []);
         const queryDescriptions = this.addEdges(initialQueryDescription, [], specification.matches);
         return queryDescriptions;
     }
@@ -413,6 +435,11 @@ class DescriptionBuilder {
     }
 
     addPathCondition(queryDescription: QueryDescription, path: number[], unknown: Label, condition: PathCondition): QueryDescription {
+        const input = queryDescription.inputByLabel(condition.labelRight);
+        if (input && input.factTypeParameter === 0) {
+            queryDescription = queryDescription.withInputParameter(input.label);
+        }
+
         const knownFact = queryDescription.hasOutput(unknown.name) ? queryDescription.factByLabel(unknown.name) : null;
         const roleCount = condition.rolesLeft.length + condition.rolesRight.length;
 
