@@ -1,6 +1,22 @@
 import { ExistentialCondition, Label, Match, PathCondition, Specification } from "../specification/specification";
 import { FactBookmark, FactReference } from "../storage";
-import { getFactTypeId, getRoleId } from "./maps";
+import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
+
+function enforceGetFactTypeId(factTypes: FactTypeMap, factType: string): number {
+    const factTypeId = getFactTypeId(factTypes, factType);
+    if (factTypeId === undefined) {
+        throw new Error(`Fact type ${factType} does not exist`);
+    }
+    return factTypeId;
+}
+
+function enforceGetRoleId(roleMap: RoleMap, factTypeId: number, role: string): number {
+    const roleId = getRoleId(roleMap, factTypeId, role);
+    if (roleId === undefined) {
+        throw new Error(`Role ${role} does not exist`);
+    }
+    return roleId;
+}
 
 export interface SpecificationLabel {
     name: string;
@@ -353,7 +369,7 @@ class DescriptionBuilder {
             }));
         const parameters: (string | number)[] = specification.given
             .flatMap((label, i) => [
-                getFactTypeId(this.factTypes, label.type),
+                enforceGetFactTypeId(this.factTypes, label.type),
                 start[i].hash
             ]);
         const facts: FactDescription[] = specification.given
@@ -404,8 +420,8 @@ class DescriptionBuilder {
         let type = fact.type;
         let factIndex = fact.factIndex;
         condition.rolesRight.forEach((role, i) => {
-            const typeId = getFactTypeId(this.factTypes, type);
-            const roleId = getRoleId(this.roleMap, typeId, role.name);
+            const typeId = enforceGetFactTypeId(this.factTypes, type);
+            const roleId = enforceGetRoleId(this.roleMap, typeId, role.name);
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
             if (i === roleCount && knownFact) {
                 queryDescription = queryWithParameter.withEdge(knownFact.factIndex, factIndex, roleParameter, path);
@@ -425,8 +441,8 @@ class DescriptionBuilder {
             declaringType: string,
         }[] = [];
         condition.rolesLeft.forEach(role => {
-            const typeId = getFactTypeId(this.factTypes, type);
-            const roleId = getRoleId(this.roleMap, typeId, role.name);
+            const typeId = enforceGetFactTypeId(this.factTypes, type);
+            const roleId = enforceGetRoleId(this.roleMap, typeId, role.name);
             newEdges.push({
                 roleId,
                 declaringType: type
