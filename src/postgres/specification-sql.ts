@@ -262,6 +262,7 @@ class QueryDescription {
         const writtenFactIndexes = new Set<number>().add(firstFactId);
         const joins: string[] = generateJoins(this.edges, writtenFactIndexes);
         const inputWhereClauses = this.inputs
+            .filter(input => input.factTypeParameter !== 0)
             .map(input => `f${input.factIndex}.fact_type_id = $${input.factTypeParameter} AND f${input.factIndex}.hash = $${input.factHashParameter}`)
             .join(" AND ");
         const notExistsWhereClauses = this.notExistsConditions
