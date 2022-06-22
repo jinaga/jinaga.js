@@ -207,13 +207,18 @@ export class PostgresStore implements Storage {
             const streams = await this.connectionFactory.with(async (connection) => {
                 const streams: FactStream[] = [];
                 for (const sqlQuery of sqlQueries) {
-                    const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
-                    const tuples = rows.map(row => loadFactTuple(sqlQuery.labels, row));
-                    streams.push({
-                        labels: sqlQuery.labels.map(l => l.name),
-                        tuples,
-                        bookmark: tuples.length > 0 ? tuples[tuples.length - 1].bookmark : sqlQuery.bookmark
-                    });
+                    try {
+                        const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
+                        const tuples = rows.map(row => loadFactTuple(sqlQuery.labels, row));
+                        streams.push({
+                            labels: sqlQuery.labels.map(l => l.name),
+                            tuples,
+                            bookmark: tuples.length > 0 ? tuples[tuples.length - 1].bookmark : sqlQuery.bookmark
+                        });
+                    }
+                    catch (error) {
+                        throw new Error(`Could not execute query "${sqlQuery.sql}", parameters ${sqlQuery.parameters}: ${error}`);
+                    }
                 }
                 return streams;
             });
@@ -221,8 +226,7 @@ export class PostgresStore implements Storage {
         }
         catch (e) {
             const description = describeSpecification(specification);
-            const startDescription = start.map(r => `${r.type}:${r.hash}`).join(', ');
-            throw new Error(`Could not generate SQL for specification "${description}" starting at "${startDescription}": ${e}`);
+            throw new Error(`Could not generate SQL for specification "${description}": ${e}`);
         }
     }
 
