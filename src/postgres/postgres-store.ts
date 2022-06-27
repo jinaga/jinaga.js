@@ -77,17 +77,10 @@ function loadFactTuple(labels: SpecificationLabel[], row: Row): FactTuple {
         }
         return fact;
     });
-    const bookmarkSegments = labels.map((_, i) => {
-        const segment = row[`bookmark${i + 1}`];
-        if (segment === null) {
-            const columns = Object.keys(row);
-            throw new Error(`Cannot find column 'bookmark${i + 1}'. Available columns: ${columns.join(', ')}`);
-        }
-        return segment;
-    })
+    const bookmark: number[] = row.bookmark;
     return {
         facts,
-        bookmark: bookmarkSegments.join('.')
+        bookmark: bookmark.join(".")
     };
 }
 
