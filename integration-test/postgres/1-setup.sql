@@ -25,6 +25,8 @@ DO
 $do$
 BEGIN
 
+CREATE EXTENSION IF NOT EXISTS intarray;
+
 --
 -- Fact Type
 --

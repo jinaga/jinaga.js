@@ -25,6 +25,8 @@ DO
 $do$
 BEGIN
 
+CREATE EXTENSION IF NOT EXISTS intarray;
+
 IF ((SELECT to_regclass('public.ancestor') IS NULL) AND
 	(SELECT to_regclass('public.fact') IS NOT NULL)) THEN
 	
