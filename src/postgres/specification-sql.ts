@@ -256,7 +256,7 @@ class QueryDescription {
             .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
             .join(", ");
         const factIds = this.outputs
-            .map((output, i) => `f${output.factIndex}.fact_id as bookmark${i+1}`)
+            .map(output => `f${output.factIndex}.fact_id`)
             .join(", ");
         const firstFactId = this.inputs[0].factIndex;
         const writtenFactIndexes = new Set<number>().add(firstFactId);
@@ -268,10 +268,7 @@ class QueryDescription {
         const notExistsWhereClauses = this.notExistsConditions
             .map(notExistsWhereClause => ` AND NOT EXISTS (${generateNotExistsWhereClause(notExistsWhereClause, writtenFactIndexes)})`)
             .join("");
-        const orderClauses = this.outputs
-            .map(output => `f${output.factIndex}.fact_id ASC`)
-            .join(", ");
-        const sql = `SELECT ${hashes}, ${factIds} FROM public.fact f${firstFactId}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} ORDER BY ${orderClauses}`;
+        const sql = `SELECT ${hashes}, sort(array[${factIds}], 'desc') as bookmark FROM public.fact f${firstFactId}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} ORDER BY bookmark ASC`;
         return {
             sql,
             parameters: this.parameters,

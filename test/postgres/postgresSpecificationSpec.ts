@@ -61,12 +61,12 @@ describe("Postgres query generator", () => {
         const query = sqlQueries[0];
         expect(query.sql).toEqual(
             'SELECT f2.hash as hash2, ' +
-            'f2.fact_id as bookmark1 ' +
+            'sort(array[f2.fact_id], \'desc\') as bookmark ' +
             'FROM public.fact f1 ' +
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
-            'ORDER BY f2.fact_id ASC'
+            'ORDER BY bookmark ASC'
         );
         expect(query.parameters[0]).toEqual(getFactTypeId(factTypes, 'Root'));
         expect(query.parameters[1]).toEqual(rootHash);
@@ -95,15 +95,14 @@ describe("Postgres query generator", () => {
             expect(sqlQueries[0].sql).toEqual(
                 'SELECT f2.hash as hash2, ' +
                 'f3.hash as hash3, ' +
-                'f2.fact_id as bookmark1, ' +
-                'f3.fact_id as bookmark2 ' +
+                'sort(array[f2.fact_id, f3.fact_id], \'desc\') as bookmark ' +
                 'FROM public.fact f1 ' +
                 'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
                 'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
                 'JOIN public.edge e2 ON e2.successor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
                 'JOIN public.fact f3 ON f3.fact_id = e2.predecessor_fact_id ' +
                 'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
-                'ORDER BY f2.fact_id ASC, f3.fact_id ASC'
+                'ORDER BY bookmark ASC'
             );
             expect(sqlQueries[0].parameters).toEqual([
                 getFactTypeId(factTypes, "Root"),
@@ -143,15 +142,14 @@ describe("Postgres query generator", () => {
         expect(sqlQueries[0].sql).toEqual(
             'SELECT f2.hash as hash2, ' +
             'f3.hash as hash3, ' +
-            'f2.fact_id as bookmark1, ' +
-            'f3.fact_id as bookmark2 ' +
+            'sort(array[f2.fact_id, f3.fact_id], \'desc\') as bookmark ' +
             'FROM public.fact f1 ' +
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
             'JOIN public.edge e2 ON e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
             'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
-            'ORDER BY f2.fact_id ASC, f3.fact_id ASC'
+            'ORDER BY bookmark ASC'
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
@@ -191,15 +189,14 @@ describe("Postgres query generator", () => {
         expect(sqlQueries[0].sql).toEqual(
             'SELECT f2.hash as hash2, ' +
             'f3.hash as hash3, ' +
-            'f2.fact_id as bookmark1, ' +
-            'f3.fact_id as bookmark2 ' +
+            'sort(array[f2.fact_id, f3.fact_id], \'desc\') as bookmark ' +
             'FROM public.fact f1 ' +
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
             'JOIN public.edge e2 ON e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
             'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
-            'ORDER BY f2.fact_id ASC, f3.fact_id ASC'
+            'ORDER BY bookmark ASC'
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
@@ -222,7 +219,7 @@ describe("Postgres query generator", () => {
 
         expect(sqlQueries[1].sql).toEqual(
             'SELECT f2.hash as hash2, ' +
-            'f2.fact_id as bookmark1 ' +
+            'sort(array[f2.fact_id], \'desc\') as bookmark ' +
             'FROM public.fact f1 ' +
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
@@ -233,7 +230,7 @@ describe("Postgres query generator", () => {
                 'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
                 'WHERE e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4' +
             ') ' +
-            'ORDER BY f2.fact_id ASC'
+            'ORDER BY bookmark ASC'
         );
         expect(sqlQueries[1].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
@@ -267,8 +264,7 @@ describe("Postgres query generator", () => {
         expect(sqlQueries[0].sql).toEqual(
             'SELECT f3.hash as hash3, ' +
             'f4.hash as hash4, ' +
-            'f3.fact_id as bookmark1, ' +
-            'f4.fact_id as bookmark2 ' +
+            'sort(array[f3.fact_id, f4.fact_id], \'desc\') as bookmark ' +
             'FROM public.fact f1 ' +
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f3 ON f3.fact_id = e1.successor_fact_id ' +
@@ -278,7 +274,7 @@ describe("Postgres query generator", () => {
             'JOIN public.fact f2 ON f2.fact_id = e3.predecessor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
             'AND f2.fact_type_id = $5 AND f2.hash = $6 ' +
-            'ORDER BY f3.fact_id ASC, f4.fact_id ASC'
+            'ORDER BY bookmark ASC'
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
