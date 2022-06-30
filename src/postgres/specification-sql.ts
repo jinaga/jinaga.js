@@ -251,7 +251,7 @@ class QueryDescription {
         return this.facts.find(fact => fact.factIndex === input.factIndex)!;
     }
     
-    generateSqlQuery(): SpecificationSqlQuery {
+    generateSqlQuery(limit: number): SpecificationSqlQuery {
         const hashes = this.outputs
             .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
             .join(", ");
@@ -268,10 +268,11 @@ class QueryDescription {
         const notExistsWhereClauses = this.notExistsConditions
             .map(notExistsWhereClause => ` AND NOT EXISTS (${generateNotExistsWhereClause(notExistsWhereClause, writtenFactIndexes)})`)
             .join("");
-        const sql = `SELECT ${hashes}, sort(array[${factIds}], 'desc') as bookmark FROM public.fact f${firstFactId}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} ORDER BY bookmark ASC`;
+        const limitParameter = this.parameters.length + 1;
+        const sql = `SELECT ${hashes}, sort(array[${factIds}], 'desc') as bookmark FROM public.fact f${firstFactId}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} ORDER BY bookmark ASC LIMIT $${limitParameter}`;
         return {
             sql,
-            parameters: this.parameters,
+            parameters: [ ...this.parameters, limit ],
             labels: this.outputs.map(output => ({
                 name: output.label,
                 type: output.type,
@@ -497,5 +498,5 @@ class DescriptionBuilder {
 export function sqlFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification, factTypes: Map<string, number>, roleMap: Map<number, Map<string, number>>): SpecificationSqlQuery[] {
     const descriptionBuilder = new DescriptionBuilder(factTypes, roleMap);
     const descriptions = descriptionBuilder.buildDescriptions(start, specification);
-    return descriptions.map(description => description.generateSqlQuery());
+    return descriptions.map(description => description.generateSqlQuery(limit));
 }
