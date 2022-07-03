@@ -1,4 +1,4 @@
-import { ExistentialCondition, Label, Match, PathCondition, Specification } from "../specification/specification";
+import { ExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "../specification/specification";
 import { FactBookmark, FactReference } from "../storage";
 import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
 
@@ -399,29 +399,31 @@ class DescriptionBuilder {
                 type: label.type
             }));
         const initialQueryDescription = new QueryDescription(inputs, [], [], facts, [], []);
-        const queryDescriptions = this.addEdges(initialQueryDescription, [], specification.matches);
-        return queryDescriptions;
+        const queryDescriptions = this.addEdges(initialQueryDescription, [], "", specification.matches);
+        const finalQueryDescription = queryDescriptions[queryDescriptions.length - 1];
+        const queryDescriptionsWithProjections = this.addProjections(finalQueryDescription, specification.projections);
+        return [ ...queryDescriptions, ...queryDescriptionsWithProjections ];
     }
 
-    private addEdges(queryDescription: QueryDescription, path: number[], matches: Match[]): QueryDescription[] {
+    private addEdges(queryDescription: QueryDescription, path: number[], prefix: string, matches: Match[]): QueryDescription[] {
         const queryDescriptions: QueryDescription[] = [];
         matches.forEach(match => {
             match.conditions.forEach(condition => {
                 if (condition.type === "path") {
-                    queryDescription = this.addPathCondition(queryDescription, path, match.unknown, condition);
+                    queryDescription = this.addPathCondition(queryDescription, path, match.unknown, prefix, condition);
                 }
                 else if (condition.type === "existential") {
                     if (condition.exists) {
-                        const newQueryDescriptions = this.addEdges(queryDescription, path, condition.matches);
+                        const newQueryDescriptions = this.addEdges(queryDescription, path, prefix, condition.matches);
                         const last = newQueryDescriptions.length - 1;
                         queryDescriptions.push(...newQueryDescriptions.slice(0, last));
                         queryDescription = newQueryDescriptions[last];
                     }
                     else {
-                        const newQueryDescriptions = this.addEdges(queryDescription, path, condition.matches);
+                        const newQueryDescriptions = this.addEdges(queryDescription, path, prefix, condition.matches);
                         queryDescriptions.push(...newQueryDescriptions);
                         const { query: queryDescriptionWithNotExist, path: conditionalPath } = queryDescription.withNotExistsCondition(path);
-                        const newQueryDescriptionsWithNotExists = this.addEdges(queryDescriptionWithNotExist, conditionalPath, condition.matches);
+                        const newQueryDescriptionsWithNotExists = this.addEdges(queryDescriptionWithNotExist, conditionalPath, prefix, condition.matches);
                         const last = newQueryDescriptionsWithNotExists.length - 1;
                         queryDescriptions.push(...newQueryDescriptionsWithNotExists.slice(0, last));
                         queryDescription = newQueryDescriptionsWithNotExists[last];
@@ -433,7 +435,7 @@ class DescriptionBuilder {
         return queryDescriptions;
     }
 
-    addPathCondition(queryDescription: QueryDescription, path: number[], unknown: Label, condition: PathCondition): QueryDescription {
+    addPathCondition(queryDescription: QueryDescription, path: number[], unknown: Label, prefix: string, condition: PathCondition): QueryDescription {
         const input = queryDescription.inputByLabel(condition.labelRight);
         if (input && input.factTypeParameter === 0) {
             queryDescription = queryDescription.withInputParameter(input.label);
@@ -489,9 +491,19 @@ class DescriptionBuilder {
         });
 
         if (path.length === 0 && !knownFact) {
-            queryDescription = queryDescription.withOutput(unknown.name, unknown.type, factIndex);
+            queryDescription = queryDescription.withOutput(prefix + unknown.name, unknown.type, factIndex);
         }
         return queryDescription;
+    }
+
+    addProjections(queryDescription: QueryDescription, projections: Projection[]): QueryDescription[] {
+        const queryDescriptions: QueryDescription[] = [];
+        projections.forEach(projection => {
+            const prefix = projection.name + ".";
+            const queryDescriptionsWithEdges = this.addEdges(queryDescription, [], prefix, projection.matches);
+            queryDescriptions.push(...queryDescriptionsWithEdges);
+        });
+        return queryDescriptions;
     }
 }
 

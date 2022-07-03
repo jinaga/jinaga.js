@@ -46,6 +46,7 @@ export function getAllFactTypes(specification: Specification): string[] {
         factTypes.push(given.type);
     }
     factTypes.push(...getAllFactTypesFromMatches(specification.matches));
+    factTypes.push(...getAllFactTypesFromProjections(specification.projections));
     const distinctFactTypes = Array.from(new Set(factTypes));
     return distinctFactTypes;
 }
@@ -68,6 +69,15 @@ function getAllFactTypesFromMatches(matches: Match[]): string[] {
     return factTypes;
 }
 
+function getAllFactTypesFromProjections(projections: Projection[]) {
+    const factTypes: string[] = [];
+    for (const projection of projections) {
+        factTypes.push(...getAllFactTypesFromMatches(projection.matches));
+        factTypes.push(...getAllFactTypesFromProjections(projection.projections));
+    }
+    return factTypes;
+}
+
 interface RoleDescription {
     definingFactType: string;
     name: string;
@@ -75,7 +85,10 @@ interface RoleDescription {
 }
 
 export function getAllRoles(specification: Specification): RoleDescription[] {
-    const roles: RoleDescription[] = getAllRolesFromMatches(specification, specification.matches);
+    const roles: RoleDescription[] = [
+        ...getAllRolesFromMatches(specification, specification.matches),
+        ...getAllRolesFromProjections(specification, specification.projections)
+    ];
     const distinctRoles = roles.filter((value, index, array) => {
         return array.findIndex(r =>
             r.definingFactType === value.definingFactType &&
@@ -105,6 +118,15 @@ function getAllRolesFromMatches(specification: Specification, matches: Match[]) 
                 roles.push(...newRoleDescriptions);
             }
         }
+    }
+    return roles;
+}
+
+function getAllRolesFromProjections(specification: Specification, projections: Projection[]) {
+    const roles: RoleDescription[] = [];
+    for (const projection of projections) {
+        roles.push(...getAllRolesFromMatches(specification, projection.matches));
+        roles.push(...getAllRolesFromProjections(specification, projection.projections));
     }
     return roles;
 }
