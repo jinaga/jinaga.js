@@ -84,11 +84,20 @@ interface RoleDescription {
     targetType: string;
 }
 
+type TypeByLabel = {
+    [label: string]: string;
+};
+
 export function getAllRoles(specification: Specification): RoleDescription[] {
-    const roles: RoleDescription[] = [
-        ...getAllRolesFromMatches(specification, specification.matches),
-        ...getAllRolesFromProjections(specification, specification.projections)
-    ];
+    const labels = specification.given
+        .reduce((labels, label) => ({
+            ...labels,
+            [label.name]: label.type
+        }),
+        {} as TypeByLabel);
+    const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, specification.matches);
+    const rolesFromProjections = getAllRolesFromProjections(labelsFromMatches, specification.projections);
+    const roles: RoleDescription[] = [ ...rolesFromMatches, ...rolesFromProjections ];
     const distinctRoles = roles.filter((value, index, array) => {
         return array.findIndex(r =>
             r.definingFactType === value.definingFactType &&
@@ -97,9 +106,13 @@ export function getAllRoles(specification: Specification): RoleDescription[] {
     return distinctRoles;
 }
 
-function getAllRolesFromMatches(specification: Specification, matches: Match[]) {
+function getAllRolesFromMatches(labels: TypeByLabel, matches: Match[]): { roles: RoleDescription[], labels: TypeByLabel } {
     const roles: RoleDescription[] = [];
     for (const match of matches) {
+        labels = {
+            ...labels,
+            [match.unknown.name]: match.unknown.type
+        };
         for (const condition of match.conditions) {
             if (condition.type === "path") {
                 let type = match.unknown.type;
@@ -107,40 +120,32 @@ function getAllRolesFromMatches(specification: Specification, matches: Match[]) 
                     roles.push({ definingFactType: type, name: role.name, targetType: role.targetType });
                     type = role.targetType;
                 }
-                type = getTypeOfLabel(specification, condition.labelRight);
+                type = labels[condition.labelRight];
+                if (!type) {
+                    throw new Error(`Label ${condition.labelRight} not found`);
+                }
                 for (const role of condition.rolesRight) {
                     roles.push({ definingFactType: type, name: role.name, targetType: role.targetType });
                     type = role.targetType;
                 }
             }
             else if (condition.type === "existential") {
-                const newRoleDescriptions = getAllRolesFromMatches(specification, condition.matches);
+                const { roles: newRoleDescriptions } = getAllRolesFromMatches(labels, condition.matches);
                 roles.push(...newRoleDescriptions);
             }
         }
     }
-    return roles;
+    return { roles, labels };
 }
 
-function getAllRolesFromProjections(specification: Specification, projections: Projection[]) {
+function getAllRolesFromProjections(labels: TypeByLabel, projections: Projection[]): RoleDescription[] {
     const roles: RoleDescription[] = [];
     for (const projection of projections) {
-        roles.push(...getAllRolesFromMatches(specification, projection.matches));
-        roles.push(...getAllRolesFromProjections(specification, projection.projections));
+        const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, projection.matches);
+        roles.push(...rolesFromMatches);
+        roles.push(...getAllRolesFromProjections(labelsFromMatches, projection.projections));
     }
     return roles;
-}
-
-function getTypeOfLabel(specification: Specification, label: string): string {
-    const given = specification.given.find(l => l.name === label);
-    if (given) {
-        return given.type;
-    }
-    const unknown = specification.matches.find(m => m.unknown.name === label);
-    if (unknown) {
-        return unknown.unknown.type;
-    }
-    throw new Error(`Label ${label} not found in specification`);
 }
 
 export function describeSpecification(specification: Specification): string {
