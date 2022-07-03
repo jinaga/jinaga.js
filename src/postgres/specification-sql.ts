@@ -384,6 +384,8 @@ class DescriptionBuilder {
             }
         }
 
+        // Allocate a fact table for each given.
+        // While the fact type and hash parameters are zero, the join will not be written.
         const inputs: InputDescription[] = specification.given
             .map((label, i) => ({
                 label: label.name,
@@ -398,8 +400,16 @@ class DescriptionBuilder {
                 factIndex: i+1,
                 type: label.type
             }));
+
+        // The QueryDescription is an immutable data type.
+        // Initialize it with the inputs and facts.
+        // The DescriptionBuilder will branch at various points, and
+        // build on the current query description along each branch.
         const initialQueryDescription = new QueryDescription(inputs, [], [], facts, [], []);
         const queryDescriptions = this.addEdges(initialQueryDescription, [], "", specification.matches);
+
+        // The final query description represents the complete tuple.
+        // Build projections onto that one.
         const finalQueryDescription = queryDescriptions[queryDescriptions.length - 1];
         const queryDescriptionsWithProjections = this.addProjections(finalQueryDescription, specification.projections);
         return [ ...queryDescriptions, ...queryDescriptionsWithProjections ];
@@ -436,14 +446,18 @@ class DescriptionBuilder {
     }
 
     addPathCondition(queryDescription: QueryDescription, path: number[], unknown: Label, prefix: string, condition: PathCondition): QueryDescription {
+        // If no input parameter has been allocated, allocate one now.
         const input = queryDescription.inputByLabel(condition.labelRight);
         if (input && input.factTypeParameter === 0) {
             queryDescription = queryDescription.withInputParameter(input.label);
         }
 
+        // Determine whether we have already written the output.
         const knownFact = queryDescription.hasOutput(unknown.name) ? queryDescription.factByLabel(unknown.name) : null;
         const roleCount = condition.rolesLeft.length + condition.rolesRight.length;
 
+        // Walk up the right-hand side.
+        // This generates predecessor joins from a given or prior label.
         let fact = queryDescription.factByLabel(condition.labelRight);
         let type = fact.type;
         let factIndex = fact.factIndex;
@@ -452,10 +466,12 @@ class DescriptionBuilder {
             const roleId = enforceGetRoleId(this.roleMap, typeId, role.name);
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
             if (i === roleCount && knownFact) {
+                // If we have already written the output, we can use the fact index.
                 queryDescription = queryWithParameter.withEdge(knownFact.factIndex, factIndex, roleParameter, path);
                 factIndex = knownFact.factIndex;
             }
             else {
+                // If we have not written the output, we need to write it now.
                 const { query, factIndex: predecessorFactIndex } = queryWithParameter.withFact(role.targetType);
                 queryDescription = query.withEdge(predecessorFactIndex, factIndex, roleParameter, path);
                 factIndex = predecessorFactIndex;
@@ -463,6 +479,8 @@ class DescriptionBuilder {
             type = role.targetType;
         });
 
+        // Walk up the left-hand side.
+        // We will need to reverse this walk to generate successor joins.
         type = unknown.type;
         const newEdges: {
             roleId: number,
