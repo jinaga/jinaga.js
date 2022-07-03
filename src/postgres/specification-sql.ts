@@ -76,14 +76,23 @@ class DescriptionBuilder {
                 }
                 else if (condition.type === "existential") {
                     if (condition.exists) {
+                        // Include the edges of the existential condition into the current
+                        // query description.
                         const newQueryDescriptions = this.addEdges(queryDescription, path, prefix, condition.matches);
                         const last = newQueryDescriptions.length - 1;
                         queryDescriptions.push(...newQueryDescriptions.slice(0, last));
                         queryDescription = newQueryDescriptions[last];
                     }
                     else {
+                        // Branch from the current query description and follow the
+                        // edges of the existential condition.
+                        // This will produce tuples that prove the condition false.
                         const newQueryDescriptions = this.addEdges(queryDescription, path, prefix, condition.matches);
                         queryDescriptions.push(...newQueryDescriptions);
+                        
+                        // Then apply the where clause and continue with the tuple where it is true.
+                        // The path describes which not-exists condition we are currently building on.
+                        // Because the path is not empty, labeled facts will be included in the output.
                         const { query: queryDescriptionWithNotExist, path: conditionalPath } = queryDescription.withNotExistsCondition(path);
                         const newQueryDescriptionsWithNotExists = this.addEdges(queryDescriptionWithNotExist, conditionalPath, prefix, condition.matches);
                         const last = newQueryDescriptionsWithNotExists.length - 1;
@@ -160,6 +169,9 @@ class DescriptionBuilder {
             }
         });
 
+        // If we have not written the output, write it now.
+        // Only write the output if we are not inside of an existential condition.
+        // Use the prefix, which will be set for projections.
         if (path.length === 0 && !knownFact) {
             queryDescription = queryDescription.withOutput(prefix + unknown.name, unknown.type, factIndex);
         }
@@ -169,6 +181,7 @@ class DescriptionBuilder {
     addProjections(queryDescription: QueryDescription, projections: Projection[]): QueryDescription[] {
         const queryDescriptions: QueryDescription[] = [];
         projections.forEach(projection => {
+            // Produce more facts in the tuple, and prefix the labels with the projection name.
             const prefix = projection.name + ".";
             const queryDescriptionsWithEdges = this.addEdges(queryDescription, [], prefix, projection.matches);
             queryDescriptions.push(...queryDescriptionsWithEdges);
