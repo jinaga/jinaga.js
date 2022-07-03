@@ -1,15 +1,49 @@
-import { PoolClient } from 'pg';
+import { PoolClient } from "pg";
+
 import { canonicalPredecessors } from "../fact/hash";
-import { Query } from '../query/query';
+import { Query } from "../query/query";
 import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../query/steps";
 import { describeSpecification, getAllFactTypes, getAllRoles, Specification } from "../specification/specification";
-import { FactBookmark, FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, FactStream, FactTuple, PredecessorCollection, Storage } from '../storage';
-import { distinct, flatten } from '../util/fn';
-import { ConnectionFactory, Row } from './connection';
-import { makeEdgeRecords } from './edge-record';
-import { addFact, addFactType, addRole, copyRoleMap, emptyFactMap, emptyFactTypeMap, emptyPublicKeyMap, emptyRoleMap, FactMap, FactTypeMap, getFactId, getFactTypeId, getPublicKeyId, getRoleId, hasFact, hasRole, mergeFactTypes, mergeRoleMaps, PublicKeyMap, RoleMap } from './maps';
-import { SpecificationLabel, sqlFromSpecification } from "./specification-sql";
-import { sqlFromSteps } from './sql';
+import {
+    FactBookmark,
+    FactEnvelope,
+    FactPath,
+    FactRecord,
+    FactReference,
+    factReferenceEquals,
+    FactStream,
+    FactTuple,
+    PredecessorCollection,
+    Storage,
+} from "../storage";
+import { distinct, flatten } from "../util/fn";
+import { ConnectionFactory, Row } from "./connection";
+import { makeEdgeRecords } from "./edge-record";
+import {
+    addFact,
+    addFactType,
+    addRole,
+    copyRoleMap,
+    emptyFactMap,
+    emptyFactTypeMap,
+    emptyPublicKeyMap,
+    emptyRoleMap,
+    FactMap,
+    FactTypeMap,
+    getFactId,
+    getFactTypeId,
+    getPublicKeyId,
+    getRoleId,
+    hasFact,
+    hasRole,
+    mergeFactTypes,
+    mergeRoleMaps,
+    PublicKeyMap,
+    RoleMap,
+} from "./maps";
+import { SpecificationLabel } from "./query-description";
+import { sqlFromSpecification } from "./specification-sql";
+import { sqlFromSteps } from "./sql";
 
 interface FactTypeResult {
     rows: {

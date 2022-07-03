@@ -1,8 +1,9 @@
 import { dehydrateReference } from "../../src/fact/hydrate";
 import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap, getFactTypeId, getRoleId } from "../../src/postgres/maps";
-import { getAllFactTypes, getAllRoles, Specification } from "../../src/specification/specification";
+import { SpecificationSqlQuery } from "../../src/postgres/query-description";
+import { sqlFromSpecification } from "../../src/postgres/specification-sql";
+import { getAllFactTypes, getAllRoles } from "../../src/specification/specification";
 import { parseSpecification } from "../../src/specification/specification-parser";
-import { SpecificationSqlQuery, sqlFromSpecification } from "../../src/postgres/specification-sql";
 
 const root = dehydrateReference({ type: 'Root' });
 const rootHash = root.hash;
