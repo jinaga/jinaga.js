@@ -1,3 +1,5 @@
+import { FactBookmark } from "../storage";
+
 export interface SpecificationLabel {
     name: string;
     type: string;
@@ -6,7 +8,7 @@ export interface SpecificationLabel {
 
 export type SpecificationSqlQuery = {
     sql: string;
-    parameters: (string | number)[];
+    parameters: (string | number | number[])[];
     labels: SpecificationLabel[];
     bookmark: string;
 };
@@ -205,7 +207,10 @@ export class QueryDescription {
     factByLabel(label: string): FactDescription {
         const input = this.inputs.find(input => input.label === label);
         if (input === undefined) {
-            const output = this.outputs.find(output => output.label === label);
+            const output = this.outputs.find(output =>
+                output.label === label ||
+                output.label.endsWith(`.${label}`)
+            );
             if (output === undefined) {
                 const inputLabels = this.inputs.map(input => input.label);
                 const outputLabels = this.outputs.map(output => output.label);
@@ -217,7 +222,7 @@ export class QueryDescription {
         return this.facts.find(fact => fact.factIndex === input.factIndex)!;
     }
 
-    generateSqlQuery(limit: number): SpecificationSqlQuery {
+    generateSqlQuery(bookmarks: FactBookmark[], limit: number): SpecificationSqlQuery {
         const hashes = this.outputs
             .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
             .join(", ");
@@ -234,11 +239,17 @@ export class QueryDescription {
         const notExistsWhereClauses = this.notExistsConditions
             .map(notExistsWhereClause => ` AND NOT EXISTS (${generateNotExistsWhereClause(notExistsWhereClause, writtenFactIndexes)})`)
             .join("");
-        const limitParameter = this.parameters.length + 1;
-        const sql = `SELECT ${hashes}, sort(array[${factIds}], 'desc') as bookmark FROM public.fact f${firstFactId}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} ORDER BY bookmark ASC LIMIT $${limitParameter}`;
+        const bookmarkParameter = this.parameters.length + 1;
+        const limitParameter = bookmarkParameter + 1;
+        const bookmark = bookmarks.find(bookmark =>
+            bookmark.labels.length === this.outputs.length &&
+            bookmark.labels.every((label, index) => label === this.outputs[index].label)
+        );
+        const sql = `SELECT ${hashes}, sort(array[${factIds}], 'desc') as bookmark FROM public.fact f${firstFactId}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} AND sort(array[${factIds}], 'desc') > $${bookmarkParameter} ORDER BY bookmark ASC LIMIT $${limitParameter}`;
+        const bookmarkValue: number[] = parseBookmark(bookmark);
         return {
             sql,
-            parameters: [...this.parameters, limit],
+            parameters: [...this.parameters, bookmarkValue, limit],
             labels: this.outputs.map(output => ({
                 name: output.label,
                 type: output.type,
@@ -248,6 +259,7 @@ export class QueryDescription {
         };
     }
 }
+
 function generateJoins(edges: EdgeDescription[], writtenFactIndexes: Set<number>) {
     const joins: string[] = [];
     edges.forEach(edge => {
@@ -291,6 +303,7 @@ function generateJoins(edges: EdgeDescription[], writtenFactIndexes: Set<number>
     });
     return joins;
 }
+
 function generateNotExistsWhereClause(notExistsWhereClause: NotExistsConditionDescription, outerFactIndexes: Set<number>): string {
     const firstEdge = notExistsWhereClause.edges[0];
     const writtenFactIndexes = new Set<number>(outerFactIndexes);
@@ -329,4 +342,13 @@ function generateNotExistsWhereClause(notExistsWhereClause: NotExistsConditionDe
     const tailJoins: string[] = generateJoins(notExistsWhereClause.edges.slice(1), writtenFactIndexes);
     const joins = firstJoin.concat(tailJoins);
     return `SELECT 1 FROM public.edge e${firstEdge.edgeIndex}${joins.join("")} WHERE ${whereClause.join(" AND ")}`;
+}
+
+function parseBookmark(bookmark: FactBookmark): number[] {
+    if (bookmark === undefined || bookmark === null || bookmark.bookmark === "") {
+        return [];
+    }
+    else {
+        return bookmark.bookmark.split(".").map(str => parseInt(str));
+    }
 }

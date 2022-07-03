@@ -4,13 +4,14 @@ import { SpecificationSqlQuery } from "../../src/postgres/query-description";
 import { sqlFromSpecification } from "../../src/postgres/specification-sql";
 import { getAllFactTypes, getAllRoles } from "../../src/specification/specification";
 import { parseSpecification } from "../../src/specification/specification-parser";
+import { FactBookmark } from "../../src/storage";
 
 const root = dehydrateReference({ type: 'Root' });
 const rootHash = root.hash;
 const user = dehydrateReference({ type: "Jinaga.User", publicKey: "PUBLIC KEY"});
 const userHash = user.hash;
 
-function sqlFor(descriptiveString: string) {
+function sqlFor(descriptiveString: string, bookmarks: FactBookmark[] = []) {
     const specification = parseSpecification(descriptiveString);
     const factTypeNames = getAllFactTypes(specification);
     const factTypes = factTypeNames.filter(t => t !== 'Unknown').reduce(
@@ -34,7 +35,7 @@ function sqlFor(descriptiveString: string) {
         }
         throw new Error(`Unknown input type ${input.type}`);
     });
-    const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification(start, [], 100, specification, factTypes, roleMap);
+    const sqlQueries: SpecificationSqlQuery[] = sqlFromSpecification(start, bookmarks, 100, specification, factTypes, roleMap);
     return { sqlQueries, factTypes, roleMap };
 }
 
@@ -67,13 +68,17 @@ describe("Postgres query generator", () => {
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND sort(array[f2.fact_id], \'desc\') > $4 ' +
             'ORDER BY bookmark ASC ' +
-            'LIMIT $4'
+            'LIMIT $5'
         );
-        expect(query.parameters[0]).toEqual(getFactTypeId(factTypes, 'Root'));
-        expect(query.parameters[1]).toEqual(rootHash);
-        expect(query.parameters[2]).toEqual(roleParameter(roleMap, factTypes, 'IntegrationTest.Successor', 'predecessor'));
-        expect(query.parameters[3]).toEqual(100);
+        expect(query.parameters).toEqual([
+            getFactTypeId(factTypes, 'Root'),
+            rootHash,
+            roleParameter(roleMap, factTypes, 'IntegrationTest.Successor', 'predecessor'),
+            [],
+            100
+        ]);
         expect(query.labels).toEqual([
             {
                 name: 'successor',
@@ -105,14 +110,16 @@ describe("Postgres query generator", () => {
                 'JOIN public.edge e2 ON e2.successor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
                 'JOIN public.fact f3 ON f3.fact_id = e2.predecessor_fact_id ' +
                 'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+                'AND sort(array[f2.fact_id, f3.fact_id], \'desc\') > $5 ' +
                 'ORDER BY bookmark ASC ' +
-                'LIMIT $5'
+                'LIMIT $6'
             );
             expect(sqlQueries[0].parameters).toEqual([
                 getFactTypeId(factTypes, "Root"),
                 rootHash,
                 roleParameter(roleMap, factTypes, "IntegrationTest.Successor", "predecessor"),
                 roleParameter(roleMap, factTypes, "IntegrationTest.Successor", "other"),
+                [],
                 100
             ]);
             expect(sqlQueries[0].labels).toEqual([
@@ -154,14 +161,16 @@ describe("Postgres query generator", () => {
             'JOIN public.edge e2 ON e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
             'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND sort(array[f2.fact_id, f3.fact_id], \'desc\') > $5 ' +
             'ORDER BY bookmark ASC ' +
-            'LIMIT $5'
+            'LIMIT $6'
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
             rootHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
             roleParameter(roleMap, factTypes, "MyApplication.Assignment", "project"),
+            [],
             100
         ]);
         expect(sqlQueries[0].labels).toEqual([
@@ -203,14 +212,16 @@ describe("Postgres query generator", () => {
             'JOIN public.edge e2 ON e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
             'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND sort(array[f2.fact_id, f3.fact_id], \'desc\') > $5 ' +
             'ORDER BY bookmark ASC ' +
-            'LIMIT $5'
+            'LIMIT $6'
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
             rootHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
             roleParameter(roleMap, factTypes, "MyApplication.Project.Deleted", "project"),
+            [],
             100
         ]);
         expect(sqlQueries[0].labels).toEqual([
@@ -239,14 +250,16 @@ describe("Postgres query generator", () => {
                 'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
                 'WHERE e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4' +
             ') ' +
+            'AND sort(array[f2.fact_id], \'desc\') > $5 ' +
             'ORDER BY bookmark ASC ' +
-            'LIMIT $5'
+            'LIMIT $6'
         );
         expect(sqlQueries[1].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
             rootHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
             roleParameter(roleMap, factTypes, "MyApplication.Project.Deleted", "project"),
+            [],
             100
         ]);
         expect(sqlQueries[1].labels).toEqual([
@@ -285,8 +298,9 @@ describe("Postgres query generator", () => {
             'JOIN public.fact f2 ON f2.fact_id = e3.predecessor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
             'AND f2.fact_type_id = $5 AND f2.hash = $6 ' +
+            'AND sort(array[f3.fact_id, f4.fact_id], \'desc\') > $8 ' +
             'ORDER BY bookmark ASC ' +
-            'LIMIT $8'
+            'LIMIT $9'
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
@@ -296,6 +310,7 @@ describe("Postgres query generator", () => {
             getFactTypeId(factTypes, "Jinaga.User"),
             userHash,
             roleParameter(roleMap, factTypes, "MyApplication.Assignment", "user"),
+            [],
             100
         ]);
         expect(sqlQueries[0].labels).toEqual([
@@ -334,13 +349,15 @@ describe("Postgres query generator", () => {
             'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
             'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND sort(array[f2.fact_id], \'desc\') > $4 ' +
             'ORDER BY bookmark ASC ' +
-            'LIMIT $4'
+            'LIMIT $5'
         );
         expect(sqlQueries[0].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
             rootHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
+            [],
             100
         ]);
         expect(sqlQueries[0].labels).toEqual([
@@ -359,14 +376,16 @@ describe("Postgres query generator", () => {
             'JOIN public.edge e2 ON e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
             'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
             'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND sort(array[f2.fact_id, f3.fact_id], \'desc\') > $5 ' +
             'ORDER BY bookmark ASC ' +
-            'LIMIT $5'
+            'LIMIT $6'
         );
         expect(sqlQueries[1].parameters).toEqual([
             getFactTypeId(factTypes, "Root"),
             rootHash,
             roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
             roleParameter(roleMap, factTypes, "MyApplication.Project.Name", "project"),
+            [],
             100
         ]);
         expect(sqlQueries[1].labels).toEqual([
@@ -379,6 +398,66 @@ describe("Postgres query generator", () => {
                 name: "names.name",
                 type: "MyApplication.Project.Name",
                 column: "hash3"
+            }
+        ]);
+    });
+
+    it("should apply the bookmark for each feed", () => {
+        const { sqlQueries, factTypes, roleMap } = sqlFor(`
+            (root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                ]
+            } => {
+                names {
+                    name: MyApplication.Project.Name [
+                        name->project: MyApplication.Project = project
+                        !E {
+                            next: MyApplication.Project.Name [
+                                next->prior: MyApplication.Project.Name = name
+                            ]
+                        }
+                    ]
+                }
+            }`, [
+                {
+                    labels: [ "project" ],
+                    bookmark: "123"
+                },
+                {
+                    labels: [ "project", "names.name", "names.next" ],
+                    bookmark: "456.345.234"
+                },
+                {
+                    labels: [ "project", "names.name" ],
+                    bookmark: "789.678"
+                }
+            ]);
+
+        expect(sqlQueries.length).toEqual(3);
+        expect(sqlQueries[0].sql).toEqual(
+            'SELECT f2.hash as hash2, ' +
+            'sort(array[f2.fact_id], \'desc\') as bookmark ' +
+            'FROM public.fact f1 ' +
+            'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+            'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+            'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND sort(array[f2.fact_id], \'desc\') > $4 ' +
+            'ORDER BY bookmark ASC ' +
+            'LIMIT $5'
+        );
+        expect(sqlQueries[0].parameters).toEqual([
+            getFactTypeId(factTypes, "Root"),
+            rootHash,
+            roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
+            [ 123 ],
+            100
+        ]);
+        expect(sqlQueries[0].labels).toEqual([
+            {
+                name: "project",
+                type: "MyApplication.Project",
+                column: "hash2"
             }
         ]);
     });

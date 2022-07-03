@@ -193,5 +193,5 @@ class DescriptionBuilder {
 export function sqlFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification, factTypes: Map<string, number>, roleMap: Map<number, Map<string, number>>): SpecificationSqlQuery[] {
     const descriptionBuilder = new DescriptionBuilder(factTypes, roleMap);
     const descriptions = descriptionBuilder.buildDescriptions(start, specification);
-    return descriptions.map(description => description.generateSqlQuery(limit));
+    return descriptions.map(description => description.generateSqlQuery(bookmarks, limit));
 }

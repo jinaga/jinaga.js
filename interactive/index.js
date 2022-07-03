@@ -32,7 +32,13 @@ async function run() {
             });
         
             const start = facts.map(fact => dehydrateReference(fact));
-            const results = await postgresStore.queryFromSpecification(start, "", 3, specification);
+            const bookmarks = [
+                {
+                    labels: [ "catalog", "course", "delete" ],
+                    bookmark: "56470.49093.48900"
+                }
+            ];
+            const results = await postgresStore.queryFromSpecification(start, bookmarks, 3, specification);
             console.log(JSON.stringify(results, null, 2));
         }
         finally {
