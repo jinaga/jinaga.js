@@ -204,24 +204,6 @@ export class QueryDescription {
         return this.inputs.find(i => i.label === label);
     }
 
-    factByLabel(label: string): FactDescription {
-        const input = this.inputs.find(input => input.label === label);
-        if (input === undefined) {
-            const output = this.outputs.find(output =>
-                output.label === label ||
-                output.label.endsWith(`.${label}`)
-            );
-            if (output === undefined) {
-                const inputLabels = this.inputs.map(input => input.label);
-                const outputLabels = this.outputs.map(output => output.label);
-                const knownLabels = inputLabels.concat(outputLabels).join(", ");
-                throw new Error(`Label ${label} not found. Known labels: ${knownLabels}`);
-            }
-            return this.facts.find(fact => fact.factIndex === output.factIndex)!;
-        }
-        return this.facts.find(fact => fact.factIndex === input.factIndex)!;
-    }
-
     generateSqlQuery(bookmarks: FactBookmark[], limit: number): SpecificationSqlQuery {
         const hashes = this.outputs
             .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)

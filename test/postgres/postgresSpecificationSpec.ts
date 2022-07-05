@@ -500,4 +500,56 @@ describe("Postgres query generator", () => {
             }
         ]);
     });
+
+    it("should accept overconstrained existential query", () => {
+        const { sqlQueries, factTypes, roleMap } = sqlFor(`
+            (root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                ]
+            } => {
+                names {
+                    name: MyApplication.Project.Name [
+                        name->project: MyApplication.Project = project
+                        !E {
+                            next: MyApplication.Project.Name [
+                                next->prior: MyApplication.Project.Name = name
+                                next->project: MyApplication.Project = project
+                            ]
+                        }
+                    ]
+                }
+            }`);
+        expect(sqlQueries.length).toEqual(3);
+        expect(sqlQueries[2].sql).toEqual(
+            'SELECT f2.hash as hash2, f3.hash as hash3, ' +
+            'sort(array[f2.fact_id, f3.fact_id], \'desc\') as bookmark ' +
+            'FROM public.fact f1 ' +
+            'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+            'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+            'JOIN public.edge e2 ON e2.predecessor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
+            'JOIN public.fact f3 ON f3.fact_id = e2.successor_fact_id ' +
+            'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND NOT EXISTS (' +
+                'SELECT 1 ' +
+                'FROM public.edge e3 ' +
+                'JOIN public.fact f4 ON f4.fact_id = e3.successor_fact_id ' +
+                'JOIN public.edge e4 ON e4.predecessor_fact_id = f2.fact_id AND e4.successor_fact_id = f4.fact_id AND e4.role_id = $6 ' +
+                'WHERE e3.predecessor_fact_id = f3.fact_id AND e3.role_id = $5' +
+            ') ' +
+            'AND sort(array[f2.fact_id, f3.fact_id], \'desc\') > $7 ' +
+            'ORDER BY bookmark ASC ' +
+            'LIMIT $8'
+        );
+        expect(sqlQueries[1].parameters).toEqual([
+            getFactTypeId(factTypes, "Root"),
+            rootHash,
+            roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
+            roleParameter(roleMap, factTypes, "MyApplication.Project.Name", "project"),
+            roleParameter(roleMap, factTypes, "MyApplication.Project.Name", "prior"),
+            roleParameter(roleMap, factTypes, "MyApplication.Project.Name", "project"),
+            [],
+            100
+        ]);
+    });
 });

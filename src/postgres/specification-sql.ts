@@ -19,6 +19,10 @@ function enforceGetRoleId(roleMap: RoleMap, factTypeId: number, role: string): n
     return roleId;
 }
 
+type FactByIdentifier = {
+    [identifier: string]: FactDescription;
+};
+
 class DescriptionBuilder {
     constructor(
         private factTypes: Map<string, number>,
@@ -52,33 +56,38 @@ class DescriptionBuilder {
                 factIndex: i+1,
                 type: label.type
             }));
+        const givenFacts = specification.given.reduce((knownFacts, label, i) => ({
+            ...knownFacts,
+            [label.name]: facts[i]
+        }), {} as FactByIdentifier);
+
 
         // The QueryDescription is an immutable data type.
         // Initialize it with the inputs and facts.
         // The DescriptionBuilder will branch at various points, and
         // build on the current query description along each branch.
         const initialQueryDescription = new QueryDescription(inputs, [], [], facts, [], []);
-        const queryDescriptions = this.addEdges(initialQueryDescription, [], "", specification.matches);
+        const { queryDescriptions, knownFacts } = this.addEdges(initialQueryDescription, givenFacts, [], "", specification.matches);
 
         // The final query description represents the complete tuple.
         // Build projections onto that one.
         const finalQueryDescription = queryDescriptions[queryDescriptions.length - 1];
-        const queryDescriptionsWithProjections = this.addProjections(finalQueryDescription, specification.projections);
+        const queryDescriptionsWithProjections = this.addProjections(finalQueryDescription, knownFacts, specification.projections);
         return [ ...queryDescriptions, ...queryDescriptionsWithProjections ];
     }
 
-    private addEdges(queryDescription: QueryDescription, path: number[], prefix: string, matches: Match[]): QueryDescription[] {
+    private addEdges(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { queryDescriptions: QueryDescription[], knownFacts: FactByIdentifier } {
         const queryDescriptions: QueryDescription[] = [];
         matches.forEach(match => {
             match.conditions.forEach(condition => {
                 if (condition.type === "path") {
-                    queryDescription = this.addPathCondition(queryDescription, path, match.unknown, prefix, condition);
+                    ({queryDescription, knownFacts} = this.addPathCondition(queryDescription, knownFacts, path, match.unknown, prefix, condition));
                 }
                 else if (condition.type === "existential") {
                     if (condition.exists) {
                         // Include the edges of the existential condition into the current
                         // query description.
-                        const newQueryDescriptions = this.addEdges(queryDescription, path, prefix, condition.matches);
+                        const { queryDescriptions: newQueryDescriptions } = this.addEdges(queryDescription, knownFacts, path, prefix, condition.matches);
                         const last = newQueryDescriptions.length - 1;
                         queryDescriptions.push(...newQueryDescriptions.slice(0, last));
                         queryDescription = newQueryDescriptions[last];
@@ -87,14 +96,14 @@ class DescriptionBuilder {
                         // Branch from the current query description and follow the
                         // edges of the existential condition.
                         // This will produce tuples that prove the condition false.
-                        const newQueryDescriptions = this.addEdges(queryDescription, path, prefix, condition.matches);
+                        const { queryDescriptions: newQueryDescriptions } = this.addEdges(queryDescription, knownFacts, path, prefix, condition.matches);
                         queryDescriptions.push(...newQueryDescriptions);
                         
                         // Then apply the where clause and continue with the tuple where it is true.
                         // The path describes which not-exists condition we are currently building on.
                         // Because the path is not empty, labeled facts will be included in the output.
                         const { query: queryDescriptionWithNotExist, path: conditionalPath } = queryDescription.withNotExistsCondition(path);
-                        const newQueryDescriptionsWithNotExists = this.addEdges(queryDescriptionWithNotExist, conditionalPath, prefix, condition.matches);
+                        const { queryDescriptions: newQueryDescriptionsWithNotExists } = this.addEdges(queryDescriptionWithNotExist, knownFacts, conditionalPath, prefix, condition.matches);
                         const last = newQueryDescriptionsWithNotExists.length - 1;
                         queryDescriptions.push(...newQueryDescriptionsWithNotExists.slice(0, last));
                         queryDescription = newQueryDescriptionsWithNotExists[last];
@@ -103,10 +112,10 @@ class DescriptionBuilder {
             });
         });
         queryDescriptions.push(queryDescription);
-        return queryDescriptions;
+        return { queryDescriptions, knownFacts };
     }
 
-    addPathCondition(queryDescription: QueryDescription, path: number[], unknown: Label, prefix: string, condition: PathCondition): QueryDescription {
+    addPathCondition(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], unknown: Label, prefix: string, condition: PathCondition): { queryDescription: QueryDescription, knownFacts: FactByIdentifier } {
         // If no input parameter has been allocated, allocate one now.
         const input = queryDescription.inputByLabel(condition.labelRight);
         if (input && input.factTypeParameter === 0) {
@@ -114,25 +123,25 @@ class DescriptionBuilder {
         }
 
         // Determine whether we have already written the output.
-        const knownFact = queryDescription.hasOutput(unknown.name) ? queryDescription.factByLabel(unknown.name) : null;
+        const knownFact = knownFacts[unknown.name];
         const roleCount = condition.rolesLeft.length + condition.rolesRight.length;
 
         // Walk up the right-hand side.
         // This generates predecessor joins from a given or prior label.
-        let fact = queryDescription.factByLabel(condition.labelRight);
+        let fact = knownFacts[condition.labelRight];
         let type = fact.type;
         let factIndex = fact.factIndex;
         condition.rolesRight.forEach((role, i) => {
             const typeId = enforceGetFactTypeId(this.factTypes, type);
             const roleId = enforceGetRoleId(this.roleMap, typeId, role.name);
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
-            if (i === roleCount && knownFact) {
+            if (i === roleCount - 1 && knownFact) {
                 // If we have already written the output, we can use the fact index.
                 queryDescription = queryWithParameter.withEdge(knownFact.factIndex, factIndex, roleParameter, path);
                 factIndex = knownFact.factIndex;
             }
             else {
-                // If we have not written the output, we need to write it now.
+                // If we have not written the fact, we need to write it now.
                 const { query, factIndex: predecessorFactIndex } = queryWithParameter.withFact(role.targetType);
                 queryDescription = query.withEdge(predecessorFactIndex, factIndex, roleParameter, path);
                 factIndex = predecessorFactIndex;
@@ -158,7 +167,7 @@ class DescriptionBuilder {
         });
         newEdges.reverse().forEach(({ roleId, declaringType }, i) => {
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
-            if (condition.rolesLeft.length + i === roleCount && knownFact) {
+            if (condition.rolesRight.length + i === roleCount - 1 && knownFact) {
                 queryDescription = queryWithParameter.withEdge(factIndex, knownFact.factIndex, roleParameter, path);
                 factIndex = knownFact.factIndex;
             }
@@ -169,21 +178,25 @@ class DescriptionBuilder {
             }
         });
 
-        // If we have not written the output, write it now.
-        // Only write the output if we are not inside of an existential condition.
-        // Use the prefix, which will be set for projections.
-        if (path.length === 0 && !knownFact) {
-            queryDescription = queryDescription.withOutput(prefix + unknown.name, unknown.type, factIndex);
+        // If we have not captured the known fact, add it now.
+        if (!knownFact) {
+            knownFacts = { ...knownFacts, [unknown.name]: { factIndex, type } };
+            // If we have not written the output, write it now.
+            // Only write the output if we are not inside of an existential condition.
+            // Use the prefix, which will be set for projections.
+            if (path.length === 0) {
+                queryDescription = queryDescription.withOutput(prefix + unknown.name, unknown.type, factIndex);
+            }
         }
-        return queryDescription;
+        return { queryDescription, knownFacts };
     }
 
-    addProjections(queryDescription: QueryDescription, projections: Projection[]): QueryDescription[] {
+    addProjections(queryDescription: QueryDescription, knownFacts: FactByIdentifier, projections: Projection[]): QueryDescription[] {
         const queryDescriptions: QueryDescription[] = [];
         projections.forEach(projection => {
             // Produce more facts in the tuple, and prefix the labels with the projection name.
             const prefix = projection.name + ".";
-            const queryDescriptionsWithEdges = this.addEdges(queryDescription, [], prefix, projection.matches);
+            const { queryDescriptions: queryDescriptionsWithEdges } = this.addEdges(queryDescription, knownFacts, [], prefix, projection.matches);
             queryDescriptions.push(...queryDescriptionsWithEdges);
         });
         return queryDescriptions;
