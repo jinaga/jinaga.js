@@ -461,4 +461,43 @@ describe("Postgres query generator", () => {
             }
         ]);
     });
+
+    it("should accept overconstrained specification", () => {
+        const { sqlQueries, factTypes, roleMap } = sqlFor(`
+            (root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                    project->root2: Root = root
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(1);
+        expect(sqlQueries[0].sql).toEqual(
+            'SELECT f2.hash as hash2, ' +
+            'sort(array[f2.fact_id], \'desc\') as bookmark ' +
+            'FROM public.fact f1 ' +
+            'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+            'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+            'JOIN public.edge e2 ON e2.predecessor_fact_id = f1.fact_id AND e2.successor_fact_id = f2.fact_id AND e2.role_id = $4 ' +
+            'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND sort(array[f2.fact_id], \'desc\') > $5 ' +
+            'ORDER BY bookmark ASC ' +
+            'LIMIT $6'
+        );
+        expect(sqlQueries[0].parameters).toEqual([
+            getFactTypeId(factTypes, "Root"),
+            rootHash,
+            roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
+            roleParameter(roleMap, factTypes, "MyApplication.Project", "root2"),
+            [],
+            100
+        ]);
+        expect(sqlQueries[0].labels).toEqual([
+            {
+                name: "project",
+                type: "MyApplication.Project",
+                column: "hash2"
+            }
+        ]);
+    });
 });
