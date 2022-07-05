@@ -180,7 +180,7 @@ class DescriptionBuilder {
 
         // If we have not captured the known fact, add it now.
         if (!knownFact) {
-            knownFacts = { ...knownFacts, [unknown.name]: { factIndex, type } };
+            knownFacts = { ...knownFacts, [unknown.name]: { factIndex, type: unknown.type } };
             // If we have not written the output, write it now.
             // Only write the output if we are not inside of an existential condition.
             // Use the prefix, which will be set for projections.
