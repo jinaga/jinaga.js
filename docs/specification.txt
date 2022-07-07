@@ -10,13 +10,21 @@
             ]
         }
     ]
-    registration: ImprovingU.Course.Registration [
-        registration->course:ImprovingU.Course = course
-        registration->student:Jinaga.User = user
-        !E {
-            delete: ImprovingU.Course.Registration.Deletion [
-                delete->courseRegistration:ImprovingU.Course.Registration = registration
-            ]
-        }
-    ]
+} => {
+    titles = {
+        title: ImprovingU.Course.Title [
+            title->course: ImprovingU.Course = course
+        ]
+    }
+    registrations = {
+        registration: ImprovingU.Course.Registration [
+            registration->course:ImprovingU.Course = course
+            registration->student:Jinaga.User = user
+            !E {
+                delete: ImprovingU.Course.Registration.Deletion [
+                    delete->courseRegistration:ImprovingU.Course.Registration = registration
+                ]
+            }
+        ]
+    }
 }
