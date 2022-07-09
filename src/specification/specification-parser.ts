@@ -14,13 +14,23 @@ class SpecificationParser {
         }
     }
 
-    expect(symbol: string) {
-        if (this.input.substring(this.offset, this.offset + symbol.length) === symbol) {
+    continues(symbol: string) {
+        return this.input.substring(this.offset, this.offset + symbol.length) === symbol;
+    }
+
+    consume(symbol: string) {
+        if (this.continues(symbol)) {
             this.offset += symbol.length;
             this.skipWhitespace();
             return true;
         }
         return false;
+    }
+
+    expect(symbol: string) {
+        if (!this.consume(symbol)) {
+            throw new Error(`Expected '${symbol}' but found '${this.input.substring(this.offset, this.offset + 100)}'`);
+        }
     }
 
     parseIdentifier(): string {
@@ -47,43 +57,35 @@ class SpecificationParser {
 
     parseLabel(): Label {
         const name = this.parseIdentifier();
-        if (!this.expect(":")) {
-            throw new Error("Expected ':' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
+        this.expect(":");
         const type = this.parseType();
         return { name, type };
     }
 
     parseRole(): Role {
         const name = this.parseIdentifier();
-        if (!this.expect(":")) {
-            throw new Error("Expected ':' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
+        this.expect(":");
         const targetType = this.parseType();
         return { name, targetType };
     }
 
     parseGiven(): Label[] {
-        if (!this.expect("(")) {
-            throw new Error("Expected '(' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
-        if (this.expect(")")) {
+        this.expect("(");
+        if (this.continues(")")) {
             throw new Error("The specification must contain at least one given label");
         }
         const labels = [];
         labels.push(this.parseLabel());
-        while (this.expect(",")) {
+        while (this.consume(",")) {
             labels.push(this.parseLabel());
         }
-        if (!this.expect(")")) {
-            throw new Error("Expected ')' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
+        this.expect(")");
         return labels;
     }
 
     parseRoles(): Role[] {
         const roles: Role[] = [];
-        while (this.expect("->")) {
+        while (this.consume("->")) {
             roles.push(this.parseRole());
         }
         return roles;
@@ -95,9 +97,7 @@ class SpecificationParser {
             throw new Error(`The unknown '${unknown.name}' must appear on the left side of the path`);
         }
         const rolesLeft = this.parseRoles();
-        if (!this.expect("=")) {
-            throw new Error("Expected '=' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
+        this.expect("=");
         const labelRight = this.parseIdentifier();
         if (!labels.some(label => label.name === labelRight)) {
             throw new Error(`The label '${labelRight}' has not been defined`);
@@ -129,13 +129,11 @@ class SpecificationParser {
     }
 
     parseCondition(unknown: Label, labels: Label[]): Condition {
-        if (this.expect("!")) {
-            if (!this.expect("E")) {
-                throw new Error("Expected 'E' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-            }
+        if (this.consume("!")) {
+            this.expect("E");
             return this.parseExistentialCondition(labels, unknown, false);
         }
-        else if (this.expect("E")) {
+        else if (this.consume("E")) {
             return this.parseExistentialCondition(labels, unknown, true);
         }
         else {
@@ -148,14 +146,12 @@ class SpecificationParser {
         if (labels.some(label => label.name === unknown.name)) {
             throw new Error(`The name '${unknown.name}' has already been used`);
         }
-        if (!this.expect("[")) {
-            throw new Error("Expected '[' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
-        if (this.expect("]")) {
+        this.expect("[");
+        if (this.continues("]")) {
             throw new Error(`The match for '${unknown.name}' has no conditions`);
         }
         const conditions: Condition[] = [];
-        while (!this.expect("]")) {
+        while (!this.consume("]")) {
             conditions.push(this.parseCondition(unknown, labels));
         }
         return { unknown, conditions };
@@ -163,13 +159,11 @@ class SpecificationParser {
 
     parseMatches(labels: Label[]): { matches: Match[], labels: Label[] } {
         const matches: Match[] = [];
-        if (!this.expect("{")) {
-            throw new Error("Expected '{' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
-        if (this.expect("}")) {
+        this.expect("{");
+        if (this.continues("}")) {
             throw new Error("The specification must contain at least one match");
         }
-        while (!this.expect("}")) {
+        while (!this.consume("}")) {
             const match = this.parseMatch(labels);
             labels = [ ...labels, match.unknown ];
             matches.push(match);
@@ -179,23 +173,19 @@ class SpecificationParser {
 
     parseProjection(labels: Label[]): Projection {
         const name = this.parseIdentifier();
-        if (!this.expect("=")) {
-            throw new Error("Expected '=' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
+        this.expect("=");
         const { matches, labels: allLabels } = this.parseMatches(labels);
         const projections = this.parseProjections(allLabels);
         return { type: "specification", name, matches, projections };
     }
 
     parseProjections(labels: Label[]): Projection[] {
-        if (!this.expect("=>")) {
+        if (!this.consume("=>")) {
             return [];
         }
-        if (!this.expect("{")) {
-            throw new Error("Expected '{' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
-        }
+        this.expect("{");
         const projections: Projection[] = [];
-        while (!this.expect("}")) {
+        while (!this.consume("}")) {
             const projection = this.parseProjection(labels);
             projections.push(projection);
         }
