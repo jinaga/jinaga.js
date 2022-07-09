@@ -211,8 +211,11 @@ export class QueryDescription {
         const factIds = this.outputs
             .map(output => `f${output.factIndex}.fact_id`)
             .join(", ");
-        const firstFactId = this.inputs[0].factIndex;
-        const writtenFactIndexes = new Set<number>().add(firstFactId);
+        const firstEdge = this.edges[0];
+        const predecessorFact = this.inputs.find(i => i.factIndex === firstEdge.predecessorFactIndex);
+        const successorFact = this.inputs.find(i => i.factIndex === firstEdge.successorFactIndex);
+        const firstFactIndex = predecessorFact ? predecessorFact.factIndex : successorFact.factIndex;
+        const writtenFactIndexes = new Set<number>().add(firstFactIndex);
         const joins: string[] = generateJoins(this.edges, writtenFactIndexes);
         const inputWhereClauses = this.inputs
             .filter(input => input.factTypeParameter !== 0)
@@ -227,7 +230,7 @@ export class QueryDescription {
             bookmark.labels.length === this.outputs.length &&
             bookmark.labels.every((label, index) => label === this.outputs[index].label)
         );
-        const sql = `SELECT ${hashes}, sort(array[${factIds}], 'desc') as bookmark FROM public.fact f${firstFactId}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} AND sort(array[${factIds}], 'desc') > $${bookmarkParameter} ORDER BY bookmark ASC LIMIT $${limitParameter}`;
+        const sql = `SELECT ${hashes}, sort(array[${factIds}], 'desc') as bookmark FROM public.fact f${firstFactIndex}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} AND sort(array[${factIds}], 'desc') > $${bookmarkParameter} ORDER BY bookmark ASC LIMIT $${limitParameter}`;
         const bookmarkValue: number[] = parseBookmark(bookmark);
         return {
             sql,
