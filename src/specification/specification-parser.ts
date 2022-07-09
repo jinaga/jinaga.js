@@ -174,9 +174,17 @@ class SpecificationParser {
     parseProjection(labels: Label[]): Projection {
         const name = this.parseIdentifier();
         this.expect("=");
-        const { matches, labels: allLabels } = this.parseMatches(labels);
-        const projections = this.parseProjections(allLabels);
-        return { type: "specification", name, matches, projections };
+        if (this.continues("{")) {
+            const { matches, labels: allLabels } = this.parseMatches(labels);
+            const projections = this.parseProjections(allLabels);
+            return { type: "specification", name, matches, projections };
+        }
+        else {
+            const label = this.parseIdentifier();
+            this.expect(".");
+            const field = this.parseIdentifier();
+            return { type: "field", name, label, field };
+        }
     }
 
     parseProjections(labels: Label[]): Projection[] {

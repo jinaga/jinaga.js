@@ -455,4 +455,53 @@ describe("Specification parser", () => {
         };
         expect(specification).toEqual(expected);
     });
+
+    it("accepts field accessors", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User) {
+                name: MyApp.User.Name [
+                    name->user:Jinaga.User = user
+                ]
+            } => {
+                value = name.value
+            }`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "user",
+                    type: "Jinaga.User"
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "name",
+                        type: "MyApp.User.Name"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    targetType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ],
+            projections: [
+                {
+                    type: "field",
+                    name: "value",
+                    label: "name",
+                    field: "value"
+                }
+            ]
+        };
+
+    });
 });
