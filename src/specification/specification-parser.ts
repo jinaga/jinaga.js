@@ -112,7 +112,7 @@ class SpecificationParser {
     }
 
     private parseExistentialCondition(labels: Label[], unknown: Label, exists: boolean): ExistentialCondition {
-        const matches = this.parseMatches([...labels, unknown]);
+        const { matches } = this.parseMatches([...labels, unknown]);
         if (!matches.some(match =>
             match.conditions.some(condition =>
                 condition.type === "path" &&
@@ -161,7 +161,7 @@ class SpecificationParser {
         return { unknown, conditions };
     }
 
-    parseMatches(labels: Label[]): Match[] {
+    parseMatches(labels: Label[]): { matches: Match[], labels: Label[] } {
         const matches: Match[] = [];
         if (!this.expect("{")) {
             throw new Error("Expected '{' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
@@ -174,13 +174,12 @@ class SpecificationParser {
             labels = [ ...labels, match.unknown ];
             matches.push(match);
         }
-        return matches;
+        return { matches, labels };
     }
 
     parseProjection(labels: Label[]): Projection {
         const name = this.parseIdentifier();
-        const matches = this.parseMatches(labels);
-        const allLabels = [ ...labels, ...matches.map(match => match.unknown) ];
+        const { matches, labels: allLabels } = this.parseMatches(labels);
         const projections = this.parseProjections(allLabels);
         return { name, matches, projections };
     }
@@ -202,14 +201,7 @@ class SpecificationParser {
 
     parseSpecification(): Specification {
         const given = this.parseGiven();
-        const matches = this.parseMatches(given);
-        const clusters = matches.reduce(
-            mergeClusters,
-            given.map(label => [ label ]));
-        if (clusters.length > 1) {
-            throw new Error("The graph is not connected");
-        }
-        const labels = clusters[0];
+        const { matches, labels } = this.parseMatches(given);
         const projections = this.parseProjections(labels);
         return { given, matches, projections };
     }
@@ -219,24 +211,4 @@ export function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
     parser.skipWhitespace();
     return parser.parseSpecification();
-}
-
-function mergeClusters(clusters: Label[][], match: Match): Label[][] {
-    const joinedLabels = match.conditions
-        .filter(condition => condition.type === "path")
-        .map((condition: PathCondition) => condition.labelRight);
-    const joinedClusters = clusters
-        .filter(cluster => cluster
-            .some(label => joinedLabels.includes(label.name))
-        );
-    const remainingClusters = clusters
-        .filter(cluster => !joinedClusters.includes(cluster));
-    const mergedCluster = [
-        ...joinedClusters.flat(),
-        match.unknown
-    ];
-    return [
-        ...remainingClusters,
-        mergedCluster
-    ];
 }

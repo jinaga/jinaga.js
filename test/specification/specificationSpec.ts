@@ -170,17 +170,6 @@ describe("Specification parser", () => {
         expect(specification).toEqual(expected);
     });
 
-    it("requires that the graph be connected", () => {
-        expect(() => parseSpecification(`
-            (user: Jinaga.User, company: MyApp.Company) {
-                assignment: MyApp.Assignment [
-                    assignment->user:Jinaga.User = user
-                ]
-            }`)).toThrowError(
-            /The graph is not connected/
-        );
-    });
-
     it("recognizes existential conditions", () => {
         const specification = parseSpecification(`
             (user: Jinaga.User, company: MyApp.Company) {
