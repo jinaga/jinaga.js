@@ -320,6 +320,7 @@ describe("Specification parser", () => {
             ],
             projections: [
                 {
+                    type: "specification",
                     name: "descriptions",
                     matches: [
                         {
@@ -398,6 +399,7 @@ describe("Specification parser", () => {
             ],
             projections: [
                 {
+                    type: "specification",
                     name: "projects",
                     matches: [
                         {
@@ -422,6 +424,7 @@ describe("Specification parser", () => {
                     ],
                     projections: [
                         {
+                            type: "specification",
                             name: "descriptions",
                             matches: [
                                 {

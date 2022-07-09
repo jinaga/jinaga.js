@@ -23,11 +23,21 @@ export interface ExistentialCondition {
 
 export type Condition = PathCondition | ExistentialCondition;
 
-export interface Projection {
+export interface SpecificationProjection {
+    type: "specification",
     name: string,
     matches: Match[],
     projections: Projection[]
 }
+
+export interface FieldProjection {
+    type: "field",
+    name: string,
+    label: string,
+    field: string
+}
+
+export type Projection = SpecificationProjection | FieldProjection;
 
 export interface Match {
     unknown: Label;
@@ -72,8 +82,10 @@ function getAllFactTypesFromMatches(matches: Match[]): string[] {
 function getAllFactTypesFromProjections(projections: Projection[]) {
     const factTypes: string[] = [];
     for (const projection of projections) {
-        factTypes.push(...getAllFactTypesFromMatches(projection.matches));
-        factTypes.push(...getAllFactTypesFromProjections(projection.projections));
+        if (projection.type === "specification") {
+            factTypes.push(...getAllFactTypesFromMatches(projection.matches));
+            factTypes.push(...getAllFactTypesFromProjections(projection.projections));
+        }
     }
     return factTypes;
 }
@@ -141,9 +153,11 @@ function getAllRolesFromMatches(labels: TypeByLabel, matches: Match[]): { roles:
 function getAllRolesFromProjections(labels: TypeByLabel, projections: Projection[]): RoleDescription[] {
     const roles: RoleDescription[] = [];
     for (const projection of projections) {
-        const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, projection.matches);
-        roles.push(...rolesFromMatches);
-        roles.push(...getAllRolesFromProjections(labelsFromMatches, projection.projections));
+        if (projection.type === "specification") {
+            const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, projection.matches);
+            roles.push(...rolesFromMatches);
+            roles.push(...getAllRolesFromProjections(labelsFromMatches, projection.projections));
+        }
     }
     return roles;
 }
@@ -151,5 +165,5 @@ function getAllRolesFromProjections(labels: TypeByLabel, projections: Projection
 export function describeSpecification(specification: Specification): string {
     return `Given: ${specification.given.map(l => `${l.name}: ${l.type}`).join(", ")}
 Matches: ${specification.matches.map(m => `${m.unknown.name}: ${m.unknown.type}`).join(", ")}
-Projections: ${specification.projections.map(p => `${p.name} (${p.matches.map(m => `${m.unknown.name} (${m.unknown.type})`).join(", ")})`).join(", ")}`;
+Projections: ${specification.projections.map(p => p.name).join(", ")}`;
 }

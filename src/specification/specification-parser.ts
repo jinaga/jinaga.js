@@ -181,7 +181,7 @@ class SpecificationParser {
         const name = this.parseIdentifier();
         const { matches, labels: allLabels } = this.parseMatches(labels);
         const projections = this.parseProjections(allLabels);
-        return { name, matches, projections };
+        return { type: "specification", name, matches, projections };
     }
 
     parseProjections(labels: Label[]): Projection[] {

@@ -194,10 +194,12 @@ class DescriptionBuilder {
     addProjections(queryDescription: QueryDescription, knownFacts: FactByIdentifier, projections: Projection[]): QueryDescription[] {
         const queryDescriptions: QueryDescription[] = [];
         projections.forEach(projection => {
-            // Produce more facts in the tuple, and prefix the labels with the projection name.
-            const prefix = projection.name + ".";
-            const { queryDescriptions: queryDescriptionsWithEdges } = this.addEdges(queryDescription, knownFacts, [], prefix, projection.matches);
-            queryDescriptions.push(...queryDescriptionsWithEdges);
+            if (projection.type === "specification") {
+                // Produce more facts in the tuple, and prefix the labels with the projection name.
+                const prefix = projection.name + ".";
+                const { queryDescriptions: queryDescriptionsWithEdges } = this.addEdges(queryDescription, knownFacts, [], prefix, projection.matches);
+                queryDescriptions.push(...queryDescriptionsWithEdges);
+            }
         });
         return queryDescriptions;
     }
