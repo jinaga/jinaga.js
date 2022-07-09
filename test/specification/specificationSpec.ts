@@ -284,7 +284,7 @@ describe("Specification parser", () => {
                     assignment->user:Jinaga.User = user
                 ]
             } => {
-                descriptions {
+                descriptions = {
                     description: MyApp.Assignment.Description [
                         description->assignment:MyApp.Assignment = assignment
                     ]
@@ -357,12 +357,12 @@ describe("Specification parser", () => {
                     assignment->user:Jinaga.User = user
                 ]
             } => {
-                projects {
+                projects = {
                     project: MyApp.Project [
                         project->assignment:MyApp.Assignment = assignment
                     ]
                 } => {
-                    descriptions {
+                    descriptions = {
                         description: MyApp.Project.Description [
                             description->project:MyApp.Project = project
                         ]

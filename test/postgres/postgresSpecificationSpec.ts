@@ -390,7 +390,7 @@ describe("Postgres query generator", () => {
                     project->root: Root = root
                 ]
             } => {
-                names {
+                names = {
                     name: MyApplication.Project.Name [
                         name->project: MyApplication.Project = project
                     ]
@@ -465,7 +465,7 @@ describe("Postgres query generator", () => {
                     project->root: Root = root
                 ]
             } => {
-                names {
+                names = {
                     name: MyApplication.Project.Name [
                         name->project: MyApplication.Project = project
                         !E {
@@ -564,7 +564,7 @@ describe("Postgres query generator", () => {
                     project->root: Root = root
                 ]
             } => {
-                names {
+                names = {
                     name: MyApplication.Project.Name [
                         name->project: MyApplication.Project = project
                         !E {

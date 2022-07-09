@@ -179,6 +179,9 @@ class SpecificationParser {
 
     parseProjection(labels: Label[]): Projection {
         const name = this.parseIdentifier();
+        if (!this.expect("=")) {
+            throw new Error("Expected '=' but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
+        }
         const { matches, labels: allLabels } = this.parseMatches(labels);
         const projections = this.parseProjections(allLabels);
         return { type: "specification", name, matches, projections };
