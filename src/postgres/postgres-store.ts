@@ -225,7 +225,7 @@ export class PostgresStore implements Storage {
         }
     }
 
-    async queryFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification): Promise<FactStream[]> {
+    async streamsFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification): Promise<FactStream[]> {
         try {
             const factTypes = await this.loadFactTypesFromSpecification(specification);
             const roleMap = await this.loadRolesFromSpecification(specification, factTypes);

@@ -38,8 +38,8 @@ async function run() {
                     bookmark: "56470.49093.48900"
                 }
             ];
-            const results = await postgresStore.queryFromSpecification(start, bookmarks, 3, specification);
-            console.log(JSON.stringify(results, null, 2));
+            const streams = await postgresStore.streamsFromSpecification(start, bookmarks, 3, specification);
+            console.log(JSON.stringify(streams, null, 2));
         }
         finally {
             postgresStore.close();
