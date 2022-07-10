@@ -252,6 +252,10 @@ export class QueryDescription {
             bookmark: "[]"
         };
     }
+
+    generateResultSqlQuery(): SpecificationSqlQuery {
+        throw new Error("Method not implemented.");
+    }
 }
 
 function generateJoins(edges: EdgeDescription[], writtenFactIndexes: Set<number>) {

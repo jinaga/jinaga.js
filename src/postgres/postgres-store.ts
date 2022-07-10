@@ -42,6 +42,7 @@ import {
     RoleMap,
 } from "./maps";
 import { SpecificationLabel } from "./query-description";
+import { resultSqlFromSpecification } from "./specification-result-sql";
 import { sqlFromSpecification } from "./specification-sql";
 import { sqlFromSteps } from "./sql";
 
@@ -226,35 +227,50 @@ export class PostgresStore implements Storage {
     }
 
     async streamsFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification): Promise<FactStream[]> {
-        try {
-            const factTypes = await this.loadFactTypesFromSpecification(specification);
-            const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
+        const factTypes = await this.loadFactTypesFromSpecification(specification);
+        const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
 
-            const sqlQueries = sqlFromSpecification(start, bookmarks, limit, specification, factTypes, roleMap);
-            const streams = await this.connectionFactory.with(async (connection) => {
-                const streams: FactStream[] = [];
-                for (const sqlQuery of sqlQueries) {
-                    try {
-                        const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
-                        const tuples = rows.map(row => loadFactTuple(sqlQuery.labels, row));
-                        streams.push({
-                            labels: sqlQuery.labels.map(l => l.name),
-                            tuples,
-                            bookmark: tuples.length > 0 ? tuples[tuples.length - 1].bookmark : sqlQuery.bookmark
-                        });
-                    }
-                    catch (error) {
-                        throw new Error(`Could not execute query "${sqlQuery.sql}", parameters ${sqlQuery.parameters}: ${error}`);
-                    }
+        const sqlQueries = sqlFromSpecification(start, bookmarks, limit, specification, factTypes, roleMap);
+        const streams = await this.connectionFactory.with(async (connection) => {
+            const streams: FactStream[] = [];
+            for (const sqlQuery of sqlQueries) {
+                try {
+                    const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
+                    const tuples = rows.map(row => loadFactTuple(sqlQuery.labels, row));
+                    streams.push({
+                        labels: sqlQuery.labels.map(l => l.name),
+                        tuples,
+                        bookmark: tuples.length > 0 ? tuples[tuples.length - 1].bookmark : sqlQuery.bookmark
+                    });
                 }
-                return streams;
-            });
+                catch (error) {
+                    throw new Error(`Could not execute query "${sqlQuery.sql}", parameters ${sqlQuery.parameters}:\n${error}`);
+                }
+            }
             return streams;
-        }
-        catch (e) {
-            const description = describeSpecification(specification);
-            throw new Error(`Could not generate SQL for specification "${description}": ${e}`);
-        }
+        });
+        return streams;
+    }
+
+    async resultsFromSpecification(start: FactReference[], specification: Specification): Promise<{}[]> {
+        const factTypes = await this.loadFactTypesFromSpecification(specification);
+        const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
+
+        const sqlQueries = resultSqlFromSpecification(start, specification, factTypes, roleMap);
+        const results = await this.connectionFactory.with(async (connection) => {
+            const results: {}[] = [];
+            for (const sqlQuery of sqlQueries) {
+                try {
+                    const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
+                    results.push(rows);
+                }
+                catch (error) {
+                    throw new Error(`Could not execute query "${sqlQuery.sql}", parameters ${sqlQuery.parameters}:\n${error}`);
+                }
+            }
+            return results;
+        });
+        return results;
     }
 
     private async loadFactTypesFromSteps(steps: Step[], startType: string): Promise<FactTypeMap> {
