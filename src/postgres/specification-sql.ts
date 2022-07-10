@@ -131,8 +131,11 @@ class DescriptionBuilder {
         let fact = knownFacts[condition.labelRight];
         let type = fact.type;
         let factIndex = fact.factIndex;
-        condition.rolesRight.forEach((role, i) => {
-            const typeId = enforceGetFactTypeId(this.factTypes, type);
+        for (const [i, role] of condition.rolesRight.entries()) {
+            const typeId = getFactTypeId(this.factTypes, type);
+            if (!typeId) {
+                return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
+            }
             const roleId = enforceGetRoleId(this.roleMap, typeId, role.name);
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
             if (i === roleCount - 1 && knownFact) {
@@ -147,7 +150,7 @@ class DescriptionBuilder {
                 factIndex = predecessorFactIndex;
             }
             type = role.targetType;
-        });
+        }
 
         // Walk up the left-hand side.
         // We will need to reverse this walk to generate successor joins.

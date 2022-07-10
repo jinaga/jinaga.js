@@ -609,11 +609,33 @@ describe("Postgres query generator", () => {
         ]);
     });
 
-    it("skips unknown types", () => {
+    it("skips unknown types in matches", () => {
         const { sqlQueries } = sqlFor(`
             (root: Root) {
                 successor: Unknown [
                     successor->root: Root = root
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(0);
+    });
+
+    it("skips unknown types on left in paths", () => {
+        const { sqlQueries } = sqlFor(`
+            (root: Root) {
+                successor: MyApplication.Project [
+                    successor->intermediate: Unknown->root: Root = root
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(0);
+    });
+
+    it("skips unknown types on right in paths", () => {
+        const { sqlQueries } = sqlFor(`
+            (root: Root) {
+                successor: MyApplication.Successor [
+                    successor = root->intermediate: Unknown->root: Root
                 ]
             }`);
 
