@@ -1,23 +1,7 @@
 import { Label, Match, PathCondition, Projection, Specification } from "../specification/specification";
 import { FactBookmark, FactReference } from "../storage";
-import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
+import { getFactTypeId, getRoleId } from "./maps";
 import { FactDescription, InputDescription, QueryDescription, SpecificationSqlQuery } from "./query-description";
-
-function enforceGetFactTypeId(factTypes: FactTypeMap, factType: string): number {
-    const factTypeId = getFactTypeId(factTypes, factType);
-    if (factTypeId === undefined) {
-        throw new Error(`Fact type ${factType} does not exist`);
-    }
-    return factTypeId;
-}
-
-function enforceGetRoleId(roleMap: RoleMap, factTypeId: number, role: string): number {
-    const roleId = getRoleId(roleMap, factTypeId, role);
-    if (roleId === undefined) {
-        throw new Error(`Role ${role} does not exist`);
-    }
-    return roleId;
-}
 
 type FactByIdentifier = {
     [identifier: string]: FactDescription;
@@ -46,7 +30,7 @@ class DescriptionBuilder {
             .map((label, i) => ({
                 label: label.name,
                 factIndex: i+1,
-                factTypeId: enforceGetFactTypeId(this.factTypes, label.type),
+                factTypeId: getFactTypeId(this.factTypes, label.type),
                 factHash: start[i].hash,
                 factTypeParameter: 0,
                 factHashParameter: 0
