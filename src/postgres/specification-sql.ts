@@ -156,15 +156,18 @@ class DescriptionBuilder {
             roleId: number,
             declaringType: string,
         }[] = [];
-        condition.rolesLeft.forEach(role => {
-            const typeId = enforceGetFactTypeId(this.factTypes, type);
+        for (const role of condition.rolesLeft) {
+            const typeId = getFactTypeId(this.factTypes, type);
+            if (!typeId) {
+                return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
+            }
             const roleId = enforceGetRoleId(this.roleMap, typeId, role.name);
             newEdges.push({
                 roleId,
                 declaringType: type
             });
             type = role.targetType;
-        });
+        }
         newEdges.reverse().forEach(({ roleId, declaringType }, i) => {
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
             if (condition.rolesRight.length + i === roleCount - 1 && knownFact) {
@@ -208,5 +211,7 @@ class DescriptionBuilder {
 export function sqlFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification, factTypes: Map<string, number>, roleMap: Map<number, Map<string, number>>): SpecificationSqlQuery[] {
     const descriptionBuilder = new DescriptionBuilder(factTypes, roleMap);
     const descriptions = descriptionBuilder.buildDescriptions(start, specification);
-    return descriptions.map(description => description.generateSqlQuery(bookmarks, limit));
+    return descriptions
+        .filter(description => description.isSatisfiable())
+        .map(description => description.generateSqlQuery(bookmarks, limit));
 }

@@ -89,6 +89,10 @@ function countEdges(notExistsConditions: NotExistsConditionDescription[]): numbe
         0);
 }
 export class QueryDescription {
+    static unsatisfiable: QueryDescription = new QueryDescription(
+        [], [], [], [], [], []
+    );
+
     constructor(
         private readonly inputs: InputDescription[],
         private readonly parameters: (string | number)[],
@@ -194,6 +198,10 @@ export class QueryDescription {
             newNotExistsConditions
         );
         return { query, path: newPath };
+    }
+
+    isSatisfiable() {
+        return this.inputs.length > 0;
     }
 
     hasOutput(label: string) {

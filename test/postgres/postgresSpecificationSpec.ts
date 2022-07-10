@@ -21,7 +21,7 @@ function sqlFor(descriptiveString: string, bookmarks: FactBookmark[] = []) {
         (r, role, i) => {
             const factTypeId = getFactTypeId(factTypes, role.definingFactType);
             if (!factTypeId) {
-                throw new Error(`Unknown fact type ${role.definingFactType}`);
+                return r;
             }
             return addRole(r, factTypeId, role.name, i + 1);
         },
@@ -607,5 +607,16 @@ describe("Postgres query generator", () => {
             [],
             100
         ]);
+    });
+
+    it("skips unknown types", () => {
+        const { sqlQueries } = sqlFor(`
+            (root: Root) {
+                successor: Unknown [
+                    successor->root: Root = root
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(0);
     });
 });
