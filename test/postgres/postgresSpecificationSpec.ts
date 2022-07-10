@@ -663,4 +663,70 @@ describe("Postgres query generator", () => {
 
         expect(sqlQueries.length).toEqual(0);
     });
+
+    it("skips entire query when second path contains unknown role", () => {
+        const { sqlQueries } = sqlFor(`
+            (root: Root) {
+                successor: MyApplication.Project [
+                    successor->root: Root = root
+                    successor->unknown: Root = root
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(0);
+    });
+
+    it("skips entire query when first path contains unknown role", () => {
+        const { sqlQueries } = sqlFor(`
+            (root: Root) {
+                successor: MyApplication.Project [
+                    successor->unknown: Root = root
+                    successor->root: Root = root
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(0);
+    });
+
+    it("skips existential conditions that are unsatisfiable", () => {
+        const { sqlQueries, factTypes, roleMap } = sqlFor(`
+            (root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                    !E {
+                        delete: Unknown [
+                            delete->project: MyApplication.Project = project
+                        ]
+                    }
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(1);
+
+        expect(sqlQueries[0].sql).toEqual(
+            'SELECT f2.hash as hash2, ' +
+            'sort(array[f2.fact_id], \'desc\') as bookmark ' +
+            'FROM public.fact f1 ' +
+            'JOIN public.edge e1 ON e1.predecessor_fact_id = f1.fact_id AND e1.role_id = $3 ' +
+            'JOIN public.fact f2 ON f2.fact_id = e1.successor_fact_id ' +
+            'WHERE f1.fact_type_id = $1 AND f1.hash = $2 ' +
+            'AND sort(array[f2.fact_id], \'desc\') > $4 ' +
+            'ORDER BY bookmark ASC ' +
+            'LIMIT $5'
+        );
+        expect(sqlQueries[0].parameters).toEqual([
+            getFactTypeId(factTypes, "Root"),
+            rootHash,
+            roleParameter(roleMap, factTypes, "MyApplication.Project", "root"),
+            [],
+            100
+        ]);
+        expect(sqlQueries[0].labels).toEqual([
+            {
+                name: "project",
+                type: "MyApplication.Project",
+                column: "hash2"
+            }
+        ])
+    });
 });

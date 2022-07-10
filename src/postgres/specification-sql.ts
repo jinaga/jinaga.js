@@ -97,7 +97,6 @@ class DescriptionBuilder {
                         // edges of the existential condition.
                         // This will produce tuples that prove the condition false.
                         const { queryDescriptions: newQueryDescriptions } = this.addEdges(queryDescription, knownFacts, path, prefix, condition.matches);
-                        queryDescriptions.push(...newQueryDescriptions);
                         
                         // Then apply the where clause and continue with the tuple where it is true.
                         // The path describes which not-exists condition we are currently building on.
@@ -105,8 +104,12 @@ class DescriptionBuilder {
                         const { query: queryDescriptionWithNotExist, path: conditionalPath } = queryDescription.withNotExistsCondition(path);
                         const { queryDescriptions: newQueryDescriptionsWithNotExists } = this.addEdges(queryDescriptionWithNotExist, knownFacts, conditionalPath, prefix, condition.matches);
                         const last = newQueryDescriptionsWithNotExists.length - 1;
-                        queryDescriptions.push(...newQueryDescriptionsWithNotExists.slice(0, last));
-                        queryDescription = newQueryDescriptionsWithNotExists[last];
+                        const queryDescriptionConditional = newQueryDescriptionsWithNotExists[last];
+                        if (queryDescriptionConditional.isSatisfiable()) {
+                            queryDescriptions.push(...newQueryDescriptions);
+                            queryDescriptions.push(...newQueryDescriptionsWithNotExists.slice(0, last));
+                            queryDescription = queryDescriptionConditional;
+                        }
                     }
                 }
             });
