@@ -14,9 +14,15 @@ const userHash = user.hash;
 function sqlFor(descriptiveString: string, bookmarks: FactBookmark[] = []) {
     const specification = parseSpecification(descriptiveString);
     const factTypeNames = getAllFactTypes(specification);
+
+    // Build a fact type map containing all fact types in the specification.
+    // Filter out fact types named "Unknown".
     const factTypes = factTypeNames.filter(t => t !== 'Unknown').reduce(
         (f, factType, i) => addFactType(f, factType, i + 1),
         emptyFactTypeMap());
+
+    // Build a role map containing all roles in the specification.
+    // Filter out the roles named "unknown", and those of unknown fact types.
     let roleMap = getAllRoles(specification).filter(r => r.name !== 'unknown').reduce(
         (r, role, i) => {
             const factTypeId = getFactTypeId(factTypes, role.definingFactType);

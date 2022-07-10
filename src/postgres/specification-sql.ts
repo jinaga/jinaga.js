@@ -105,6 +105,10 @@ class DescriptionBuilder {
                         const { queryDescriptions: newQueryDescriptionsWithNotExists } = this.addEdges(queryDescriptionWithNotExist, knownFacts, conditionalPath, prefix, condition.matches);
                         const last = newQueryDescriptionsWithNotExists.length - 1;
                         const queryDescriptionConditional = newQueryDescriptionsWithNotExists[last];
+
+                        // If the negative existential condition is not satisfiable, then
+                        // that means that the condition will always be true.
+                        // We can therefore skip the branch for the negative existential condition.
                         if (queryDescriptionConditional.isSatisfiable()) {
                             queryDescriptions.push(...newQueryDescriptions);
                             queryDescriptions.push(...newQueryDescriptionsWithNotExists.slice(0, last));
@@ -135,6 +139,8 @@ class DescriptionBuilder {
         let type = fact.type;
         let factIndex = fact.factIndex;
         for (const [i, role] of condition.rolesRight.entries()) {
+            // If the type or role is not known, then no facts matching the condition can
+            // exist. The query is unsatisfiable.
             const typeId = getFactTypeId(this.factTypes, type);
             if (!typeId) {
                 return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
@@ -143,6 +149,7 @@ class DescriptionBuilder {
             if (!roleId) {
                 return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
             }
+
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
             if (i === roleCount - 1 && knownFact) {
                 // If we have already written the output, we can use the fact index.
@@ -166,6 +173,8 @@ class DescriptionBuilder {
             declaringType: string,
         }[] = [];
         for (const role of condition.rolesLeft) {
+            // If the type or role is not known, then no facts matching the condition can
+            // exist. The query is unsatisfiable.
             const typeId = getFactTypeId(this.factTypes, type);
             if (!typeId) {
                 return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
@@ -174,6 +183,7 @@ class DescriptionBuilder {
             if (!roleId) {
                 return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
             }
+
             newEdges.push({
                 roleId,
                 declaringType: type
@@ -223,6 +233,8 @@ class DescriptionBuilder {
 export function sqlFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification, factTypes: Map<string, number>, roleMap: Map<number, Map<string, number>>): SpecificationSqlQuery[] {
     const descriptionBuilder = new DescriptionBuilder(factTypes, roleMap);
     const descriptions = descriptionBuilder.buildDescriptions(start, specification);
+
+    // Only generate SQL for satisfiable queries.
     return descriptions
         .filter(description => description.isSatisfiable())
         .map(description => description.generateSqlQuery(bookmarks, limit));

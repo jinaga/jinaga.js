@@ -89,6 +89,7 @@ function countEdges(notExistsConditions: NotExistsConditionDescription[]): numbe
         0);
 }
 export class QueryDescription {
+    // An unsatisfiable query description will produce no results.
     static unsatisfiable: QueryDescription = new QueryDescription(
         [], [], [], [], [], []
     );
