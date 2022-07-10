@@ -62,8 +62,8 @@ class DescriptionBuilder {
 
     private addEdges(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { queryDescriptions: QueryDescription[], knownFacts: FactByIdentifier } {
         const queryDescriptions: QueryDescription[] = [];
-        matches.forEach(match => {
-            match.conditions.forEach(condition => {
+        for (const match of matches) {
+            for (const condition of match.conditions) {
                 if (condition.type === "path") {
                     ({queryDescription, knownFacts} = this.addPathCondition(queryDescription, knownFacts, path, match.unknown, prefix, condition));
                 }
@@ -100,8 +100,8 @@ class DescriptionBuilder {
                         }
                     }
                 }
-            });
-        });
+            }
+        }
         queryDescriptions.push(queryDescription);
         return { queryDescriptions, knownFacts };
     }

@@ -254,7 +254,33 @@ export class QueryDescription {
     }
 
     generateResultSqlQuery(): SpecificationSqlQuery {
-        throw new Error("Method not implemented.");
+        const hashes = this.outputs
+            .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
+            .join(", ");
+        const firstEdge = this.edges[0];
+        const predecessorFact = this.inputs.find(i => i.factIndex === firstEdge.predecessorFactIndex);
+        const successorFact = this.inputs.find(i => i.factIndex === firstEdge.successorFactIndex);
+        const firstFactIndex = predecessorFact ? predecessorFact.factIndex : successorFact.factIndex;
+        const writtenFactIndexes = new Set<number>().add(firstFactIndex);
+        const joins: string[] = generateJoins(this.edges, writtenFactIndexes);
+        const inputWhereClauses = this.inputs
+            .filter(input => input.factTypeParameter !== 0)
+            .map(input => `f${input.factIndex}.fact_type_id = $${input.factTypeParameter} AND f${input.factIndex}.hash = $${input.factHashParameter}`)
+            .join(" AND ");
+        const notExistsWhereClauses = this.notExistsConditions
+            .map(notExistsWhereClause => ` AND NOT EXISTS (${generateNotExistsWhereClause(notExistsWhereClause, writtenFactIndexes)})`)
+            .join("");
+        const sql = `SELECT ${hashes} FROM public.fact f${firstFactIndex}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses}`;
+        return {
+            sql,
+            parameters: this.parameters,
+            labels: this.outputs.map(output => ({
+                name: output.label,
+                type: output.type,
+                column: `hash${output.factIndex}`
+            })),
+            bookmark: "[]"
+        };
     }
 }
 
