@@ -641,4 +641,26 @@ describe("Postgres query generator", () => {
 
         expect(sqlQueries.length).toEqual(0);
     });
+
+    it("skips unknown roles on left in paths", () => {
+        const { sqlQueries } = sqlFor(`
+            (root: Root) {
+                successor: MyApplication.Project [
+                    successor->unknown: Root = root
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(0);
+    });
+
+    it("skips unknown roles on right in paths", () => {
+        const { sqlQueries } = sqlFor(`
+            (root: Root) {
+                successor: MyApplication.Successor [
+                    successor = root->unknown: Intermediate->root: Root
+                ]
+            }`);
+
+        expect(sqlQueries.length).toEqual(0);
+    });
 });

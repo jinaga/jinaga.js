@@ -136,7 +136,10 @@ class DescriptionBuilder {
             if (!typeId) {
                 return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
             }
-            const roleId = enforceGetRoleId(this.roleMap, typeId, role.name);
+            const roleId = getRoleId(this.roleMap, typeId, role.name);
+            if (!roleId) {
+                return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
+            }
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
             if (i === roleCount - 1 && knownFact) {
                 // If we have already written the output, we can use the fact index.
@@ -164,7 +167,10 @@ class DescriptionBuilder {
             if (!typeId) {
                 return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
             }
-            const roleId = enforceGetRoleId(this.roleMap, typeId, role.name);
+            const roleId = getRoleId(this.roleMap, typeId, role.name);
+            if (!roleId) {
+                return { queryDescription: QueryDescription.unsatisfiable, knownFacts };
+            }
             newEdges.push({
                 roleId,
                 declaringType: type
