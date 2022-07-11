@@ -1,4 +1,4 @@
-import { Label, Match, PathCondition, Specification } from "../specification/specification";
+import { FieldProjection, Label, Match, PathCondition, Specification } from "../specification/specification";
 import { FactReference } from "../storage";
 import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
 import { FactDescription, InputDescription, QueryDescription, SpecificationSqlQuery } from "./query-description";
@@ -14,6 +14,40 @@ interface ResultDescription {
 
 interface NamedResultDescription extends ResultDescription {
     name: string;
+}
+
+export class ResultComposer {
+    constructor(
+        public readonly sqlQueries: SpecificationSqlQuery[],
+        private readonly fieldProjections: FieldProjection[]
+    ) { }
+
+    public compose(
+        resultSets: any[][]
+    ): {}[] {
+        const rows = resultSets[0];
+        const results = rows.map(row =>
+            this.fieldProjections.reduce((acc, fieldProjection) => ({
+                ...acc,
+                [fieldProjection.name]: this.fieldValue(fieldProjection, row)
+            })
+            , {})
+        );
+        return results;
+    }
+
+    private fieldValue(fieldProjection: FieldProjection, row: any): any {
+        const sqlQuery = this.sqlQueries[0];
+        const label = sqlQuery.labels.find(label => label.name === fieldProjection.label);
+        if (!label) {
+            throw new Error(`Label ${fieldProjection.label} not found. Known labels: ${sqlQuery.labels.map(label => label.name).join(", ")}`);
+        }
+        const dataColumn = `data${label.index}`;
+        const data = row[dataColumn];
+        const field = fieldProjection.field;
+        const value = data.fields[field];
+        return value;
+    }
 }
 
 class ResultDescriptionBuilder {
@@ -176,9 +210,12 @@ class ResultDescriptionBuilder {
     }
 }
 
-export function resultSqlFromSpecification(start: FactReference[], specification: Specification, factTypes: FactTypeMap, roleMap: RoleMap): SpecificationSqlQuery[] {
+export function resultSqlFromSpecification(start: FactReference[], specification: Specification, factTypes: FactTypeMap, roleMap: RoleMap): ResultComposer {
     const descriptionBuilder = new ResultDescriptionBuilder(factTypes, roleMap);
     const description = descriptionBuilder.buildDescription(start, specification);
 
-    return [ description.queryDescription.generateResultSqlQuery() ];
+    const sqlQueries = [description.queryDescription.generateResultSqlQuery()];
+    const fieldProjections = specification.projections
+        .filter(projection => projection.type === "field") as FieldProjection[];
+    return new ResultComposer(sqlQueries, fieldProjections);
 }

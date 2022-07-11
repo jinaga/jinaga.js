@@ -2,29 +2,6 @@
     catalog: ImprovingU.Catalog [
         catalog->_in:ImprovingU.Semester = semester
     ]
-    course: ImprovingU.Course [
-        course->_in:ImprovingU.Catalog = catalog
-        !E {
-            delete: ImprovingU.Course.Delete [
-                delete->course:ImprovingU.Course = course
-            ]
-        }
-    ]
 } => {
-    titles = {
-        title: ImprovingU.Course.Title [
-            title->course: ImprovingU.Course = course
-        ]
-    }
-    registrations = {
-        registration: ImprovingU.Course.Registration [
-            registration->course:ImprovingU.Course = course
-            registration->student:Jinaga.User = user
-            !E {
-                delete: ImprovingU.Course.Registration.Deletion [
-                    delete->courseRegistration:ImprovingU.Course.Registration = registration
-                ]
-            }
-        ]
-    }
+    office = catalog.office
 }

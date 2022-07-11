@@ -3,7 +3,7 @@ import { FactBookmark } from "../storage";
 export interface SpecificationLabel {
     name: string;
     type: string;
-    column: string;
+    index: number;
 }
 
 export type SpecificationSqlQuery = {
@@ -247,7 +247,7 @@ export class QueryDescription {
             labels: this.outputs.map(output => ({
                 name: output.label,
                 type: output.type,
-                column: `hash${output.factIndex}`
+                index: output.factIndex
             })),
             bookmark: "[]"
         };
@@ -255,7 +255,7 @@ export class QueryDescription {
 
     generateResultSqlQuery(): SpecificationSqlQuery {
         const hashes = this.outputs
-            .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
+            .map(output => `f${output.factIndex}.hash as hash${output.factIndex}, f${output.factIndex}.data as data${output.factIndex}`)
             .join(", ");
         const firstEdge = this.edges[0];
         const predecessorFact = this.inputs.find(i => i.factIndex === firstEdge.predecessorFactIndex);
@@ -277,7 +277,7 @@ export class QueryDescription {
             labels: this.outputs.map(output => ({
                 name: output.label,
                 type: output.type,
-                column: `hash${output.factIndex}`
+                index: output.factIndex
             })),
             bookmark: "[]"
         };

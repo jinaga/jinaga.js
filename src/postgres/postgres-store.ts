@@ -101,10 +101,11 @@ function loadFactReference(r: Row): FactReference {
 
 function loadFactTuple(labels: SpecificationLabel[], row: Row): FactTuple {
     const facts = labels.map(label => {
-        const hash = row[label.column];
+        const hashColumn = `hash${label.index}`;
+        const hash = row[hashColumn];
         if (hash === null) {
             const columns = Object.keys(row);
-            throw new Error(`Cannot find column '${label.column}'. Available columns: ${columns.join(', ')}`);
+            throw new Error(`Cannot find column '${hashColumn}'. Available columns: ${columns.join(', ')}`);
         }
         const fact: FactReference = {
             type: label.type,
@@ -256,21 +257,22 @@ export class PostgresStore implements Storage {
         const factTypes = await this.loadFactTypesFromSpecification(specification);
         const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
 
-        const sqlQueries = resultSqlFromSpecification(start, specification, factTypes, roleMap);
-        const results = await this.connectionFactory.with(async (connection) => {
-            const results: {}[] = [];
+        const composer = resultSqlFromSpecification(start, specification, factTypes, roleMap);
+        const sqlQueries = composer.sqlQueries;
+        const resultSets = await this.connectionFactory.with(async (connection) => {
+            const resultSets: any[][] = [];
             for (const sqlQuery of sqlQueries) {
                 try {
                     const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
-                    results.push(rows);
+                    resultSets.push(rows);
                 }
                 catch (error) {
                     throw new Error(`Could not execute query "${sqlQuery.sql}", parameters ${sqlQuery.parameters}:\n${error}`);
                 }
             }
-            return results;
+            return resultSets;
         });
-        return results;
+        return composer.compose(resultSets);
     }
 
     private async loadFactTypesFromSteps(steps: Step[], startType: string): Promise<FactTypeMap> {
