@@ -26,14 +26,24 @@ export class ResultComposer {
         resultSets: any[][]
     ): {}[] {
         const rows = resultSets[0];
-        const results = rows.map(row =>
-            this.fieldProjections.reduce((acc, fieldProjection) => ({
+        const results = rows.map(row => this.projectionOf(row));
+        return results;
+    }
+
+    private projectionOf(row: any): {} {
+        if (this.fieldProjections.length === 0) {
+            const sqlQuery = this.sqlQueries[0];
+            return sqlQuery.labels.reduce((acc, label) => ({
+                ...acc,
+                [label.name]: row[`data${label.index}`].fields
+            }), {})
+        }
+        else {
+            return this.fieldProjections.reduce((acc, fieldProjection) => ({
                 ...acc,
                 [fieldProjection.name]: this.fieldValue(fieldProjection, row)
-            })
-            , {})
-        );
-        return results;
+            }), {});
+        }
     }
 
     private fieldValue(fieldProjection: FieldProjection, row: any): any {
