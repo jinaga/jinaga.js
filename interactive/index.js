@@ -32,8 +32,17 @@ async function run() {
             });
         
             const start = facts.map(fact => dehydrateReference(fact));
-            const results = await postgresStore.resultsFromSpecification(start, specification);
-            console.log(JSON.stringify(results, null, 2));
+
+            const args = process.argv.slice(2);
+            const produceResults = args.includes("--results");
+            if (produceResults) {
+                const results = await postgresStore.resultsFromSpecification(start, specification);
+                console.log(JSON.stringify(results, null, 2));
+            }
+            else {
+                const streams = await postgresStore.streamsFromSpecification(start, [], 3, specification);
+                console.log(JSON.stringify(streams, null, 2));
+        }
         }
         finally {
             postgresStore.close();
