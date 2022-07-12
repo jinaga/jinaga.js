@@ -16,24 +16,73 @@ interface NamedResultDescription extends ResultDescription {
     name: string;
 }
 
+interface ChildResults {
+    parentFactIds: number[];
+    results: {}[];
+}
+
 export class ResultComposer {
     constructor(
-        public readonly sqlQueries: SpecificationSqlQuery[],
-        private readonly fieldProjections: FieldProjection[]
+        private readonly sqlQuery: SpecificationSqlQuery,
+        private readonly fieldProjections: FieldProjection[],
+        private readonly parentFactIdLength: number
     ) { }
+
+    public getSqlQueries() {
+        return [ this.sqlQuery ];
+    }
 
     public compose(
         resultSets: any[][]
     ): {}[] {
+        const childResults = this.composeInternal(resultSets);
+        if (childResults.length === 0) {
+            return [];
+        }
+        else {
+            return childResults[0].results;
+        }
+    }
+
+    private composeInternal(
+        resultSets: any[][]
+    ): ChildResults[] {
         const rows = resultSets[0];
-        const results = rows.map(row => this.projectionOf(row));
-        return results;
+        if (rows.length === 0) {
+            return [];
+        }
+        const childResults: ChildResults[] = [];
+        let parentFactIds: number[] = this.identifierOf(rows[0]).slice(0, this.parentFactIdLength);
+        let results: {}[] = [ this.projectionOf(rows[0]) ];
+        for (const row of rows.slice(1)) {
+            const childFactIds = this.identifierOf(row);
+            const nextParentFactIds = childFactIds.slice(0, this.parentFactIdLength);
+            if (nextParentFactIds.every((value, index) => value === parentFactIds[index])) {
+                results.push(this.projectionOf(row));
+            }
+            else {
+                childResults.push({
+                    parentFactIds,
+                    results
+                });
+                parentFactIds = childFactIds;
+                results = [ this.projectionOf(row) ];
+            }
+        }
+        childResults.push({
+            parentFactIds,
+            results
+        });
+        return childResults;
+    }
+
+    private identifierOf(row: any): number[] {
+        return this.sqlQuery.labels.map(label => row[`id${label.index}`]);
     }
 
     private projectionOf(row: any): {} {
         if (this.fieldProjections.length === 0) {
-            const sqlQuery = this.sqlQueries[0];
-            return sqlQuery.labels.reduce((acc, label) => ({
+            return this.sqlQuery.labels.reduce((acc, label) => ({
                 ...acc,
                 [label.name]: row[`data${label.index}`].fields
             }), {})
@@ -47,16 +96,11 @@ export class ResultComposer {
     }
 
     private fieldValue(fieldProjection: FieldProjection, row: any): any {
-        const sqlQuery = this.sqlQueries[0];
-        const label = sqlQuery.labels.find(label => label.name === fieldProjection.label);
+        const label = this.sqlQuery.labels.find(label => label.name === fieldProjection.label);
         if (!label) {
-            throw new Error(`Label ${fieldProjection.label} not found. Known labels: ${sqlQuery.labels.map(label => label.name).join(", ")}`);
+            throw new Error(`Label ${fieldProjection.label} not found. Known labels: ${this.sqlQuery.labels.map(label => label.name).join(", ")}`);
         }
-        const dataColumn = `data${label.index}`;
-        const data = row[dataColumn];
-        const field = fieldProjection.field;
-        const value = data.fields[field];
-        return value;
+        return row[`data${label.index}`].fields[fieldProjection.field];
     }
 }
 
@@ -224,8 +268,8 @@ export function resultSqlFromSpecification(start: FactReference[], specification
     const descriptionBuilder = new ResultDescriptionBuilder(factTypes, roleMap);
     const description = descriptionBuilder.buildDescription(start, specification);
 
-    const sqlQueries = [description.queryDescription.generateResultSqlQuery()];
+    const sqlQuery = description.queryDescription.generateResultSqlQuery();
     const fieldProjections = specification.projections
         .filter(projection => projection.type === "field") as FieldProjection[];
-    return new ResultComposer(sqlQueries, fieldProjections);
+    return new ResultComposer(sqlQuery, fieldProjections, 0);
 }

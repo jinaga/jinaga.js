@@ -254,8 +254,8 @@ export class QueryDescription {
     }
 
     generateResultSqlQuery(): SpecificationSqlQuery {
-        const hashes = this.outputs
-            .map(output => `f${output.factIndex}.hash as hash${output.factIndex}, f${output.factIndex}.data as data${output.factIndex}`)
+        const columns = this.outputs
+            .map(output => `f${output.factIndex}.fact_id as id${output.factIndex}, f${output.factIndex}.data as data${output.factIndex}`)
             .join(", ");
         const firstEdge = this.edges[0];
         const predecessorFact = this.inputs.find(i => i.factIndex === firstEdge.predecessorFactIndex);
@@ -270,7 +270,10 @@ export class QueryDescription {
         const notExistsWhereClauses = this.notExistsConditions
             .map(notExistsWhereClause => ` AND NOT EXISTS (${generateNotExistsWhereClause(notExistsWhereClause, writtenFactIndexes)})`)
             .join("");
-        const sql = `SELECT ${hashes} FROM public.fact f${firstFactIndex}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses}`;
+        const orderByClause = this.outputs
+            .map(output => `f${output.factIndex}.fact_id ASC`)
+            .join(", ");
+        const sql = `SELECT ${columns} FROM public.fact f${firstFactIndex}${joins.join("")} WHERE ${inputWhereClauses}${notExistsWhereClauses} ORDER BY ${orderByClause}`;
         return {
             sql,
             parameters: this.parameters,
