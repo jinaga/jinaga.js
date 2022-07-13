@@ -1,4 +1,4 @@
-import { FieldProjection, Label, Match, PathCondition, Specification } from "../specification/specification";
+import { FieldProjection, Label, Match, PathCondition, Projection, Specification, SpecificationProjection } from "../specification/specification";
 import { FactReference } from "../storage";
 import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
 import { FactDescription, InputDescription, QueryDescription, SpecificationSqlQuery } from "./query-description";
@@ -9,6 +9,7 @@ type FactByIdentifier = {
 
 interface ResultDescription {
     queryDescription: QueryDescription;
+    fieldProjections: FieldProjection[];
     childResultDescriptions: NamedResultDescription[];
 }
 
@@ -43,7 +44,8 @@ export class ResultComposer {
     constructor(
         private readonly sqlQuery: SpecificationSqlQuery,
         private readonly fieldProjections: FieldProjection[],
-        private readonly parentFactIdLength: number
+        private readonly parentFactIdLength: number,
+        private readonly childResultComposers: NamedResultComposer[]
     ) { }
 
     public getSqlQueries(): SqlQueryTree {
@@ -125,6 +127,11 @@ export class ResultComposer {
     }
 }
 
+interface NamedResultComposer {
+    name: string;
+    resultComposer: ResultComposer;
+}
+
 class ResultDescriptionBuilder {
     constructor(
         private factTypes: FactTypeMap,
@@ -169,11 +176,31 @@ class ResultDescriptionBuilder {
         // The DescriptionBuilder will branch at various points, and
         // build on the current query description along each branch.
         const initialQueryDescription = new QueryDescription(inputs, [], [], facts, [], []);
-        const { resultDescription, knownFacts } = this.addEdges(initialQueryDescription, givenFacts, [], "", specification.matches);
-        return resultDescription;
+        return this.createResultDescription(initialQueryDescription, specification.matches, specification.projections, givenFacts);
     }
 
-    private addEdges(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { resultDescription: ResultDescription, knownFacts: FactByIdentifier } {
+    private createResultDescription(queryDescription: QueryDescription, matches: Match[], projections: Projection[], knownFacts: FactByIdentifier): ResultDescription {
+        ({ queryDescription, knownFacts } = this.addEdges(queryDescription, knownFacts, [], "", matches));
+        const childResultDescriptions: NamedResultDescription[] = [];
+        const specificationProjections = projections
+            .filter(projection => projection.type === "specification") as SpecificationProjection[];
+        const fieldProjections = projections
+            .filter(projection => projection.type === "field") as FieldProjection[];
+        for (const child of specificationProjections) {
+            const childResultDescription = this.createResultDescription(queryDescription, child.matches, child.projections, knownFacts);
+            childResultDescriptions.push({
+                name: child.name,
+                ...childResultDescription
+            });
+        }
+        return {
+            queryDescription,
+            fieldProjections,
+            childResultDescriptions
+        };
+    }
+
+    private addEdges(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { queryDescription: QueryDescription, knownFacts: FactByIdentifier } {
         for (const match of matches) {
             for (const condition of match.conditions) {
                 if (condition.type === "path") {
@@ -182,10 +209,7 @@ class ResultDescriptionBuilder {
             }
         }
         return {
-            resultDescription: {
-                queryDescription,
-                childResultDescriptions: []
-            },
+            queryDescription,
             knownFacts
         };
     }
@@ -289,8 +313,15 @@ export function resultSqlFromSpecification(start: FactReference[], specification
     const descriptionBuilder = new ResultDescriptionBuilder(factTypes, roleMap);
     const description = descriptionBuilder.buildDescription(start, specification);
 
+    return createResultComposer(description);
+}
+
+function createResultComposer(description: ResultDescription): ResultComposer {
     const sqlQuery = description.queryDescription.generateResultSqlQuery();
-    const fieldProjections = specification.projections
-        .filter(projection => projection.type === "field") as FieldProjection[];
-    return new ResultComposer(sqlQuery, fieldProjections, 0);
+    const fieldProjections = description.fieldProjections;
+    const childResultComposers = description.childResultDescriptions.map(child => ({
+        name: child.name,
+        resultComposer: createResultComposer(child)
+    }));
+    return new ResultComposer(sqlQuery, fieldProjections, 0, childResultComposers);
 }
