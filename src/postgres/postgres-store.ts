@@ -42,7 +42,7 @@ import {
     RoleMap,
 } from "./maps";
 import { SpecificationLabel } from "./query-description";
-import { resultSqlFromSpecification } from "./specification-result-sql";
+import { ResultSetTree, resultSqlFromSpecification, SqlQueryTree } from "./specification-result-sql";
 import { sqlFromSpecification } from "./specification-sql";
 import { sqlFromSteps } from "./sql";
 
@@ -258,19 +258,9 @@ export class PostgresStore implements Storage {
         const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
 
         const composer = resultSqlFromSpecification(start, specification, factTypes, roleMap);
-        const sqlQueries = composer.getSqlQueries();
+        const sqlQueryTree = composer.getSqlQueries();
         const resultSets = await this.connectionFactory.with(async (connection) => {
-            const resultSets: any[][] = [];
-            for (const sqlQuery of sqlQueries) {
-                try {
-                    const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
-                    resultSets.push(rows);
-                }
-                catch (error) {
-                    throw new Error(`Could not execute query "${sqlQuery.sql}", parameters ${sqlQuery.parameters}:\n${error}`);
-                }
-            }
-            return resultSets;
+            return await executeQueryTree(sqlQueryTree, connection);
         });
         return composer.compose(resultSets);
     }
@@ -432,6 +422,23 @@ export class PostgresStore implements Storage {
         }
         return factTypes;
     }
+}
+
+async function executeQueryTree(sqlQueryTree: SqlQueryTree, connection: PoolClient): Promise<ResultSetTree> {
+    const sqlQuery = sqlQueryTree.sqlQuery;
+    const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
+    const resultSets: ResultSetTree = {
+        resultSet: rows,
+        childResultSets: []
+    };
+    for (const child of sqlQueryTree.childQueries) {
+        const childResultSet = await executeQueryTree(child, connection);
+        resultSets.childResultSets.push({
+            name: child.name,
+            ...childResultSet
+        });
+    }
+    return resultSets;
 }
 
 function predecessorTypes(predecessor: FactReference[] | FactReference): string[] {

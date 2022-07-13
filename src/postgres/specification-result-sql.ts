@@ -21,6 +21,24 @@ interface ChildResults {
     results: {}[];
 }
 
+export interface SqlQueryTree {
+    sqlQuery: SpecificationSqlQuery;
+    childQueries: NamedSqlQueryTree[];
+}
+
+interface NamedSqlQueryTree extends SqlQueryTree {
+    name: string;
+}
+
+export interface ResultSetTree {
+    resultSet: any[];
+    childResultSets: NamedResultSetTree[];
+}
+
+interface NamedResultSetTree extends ResultSetTree {
+    name: string;
+}
+
 export class ResultComposer {
     constructor(
         private readonly sqlQuery: SpecificationSqlQuery,
@@ -28,12 +46,15 @@ export class ResultComposer {
         private readonly parentFactIdLength: number
     ) { }
 
-    public getSqlQueries() {
-        return [ this.sqlQuery ];
+    public getSqlQueries(): SqlQueryTree {
+        return {
+            sqlQuery: this.sqlQuery,
+            childQueries: []
+        };
     }
 
     public compose(
-        resultSets: any[][]
+        resultSets: ResultSetTree
     ): {}[] {
         const childResults = this.composeInternal(resultSets);
         if (childResults.length === 0) {
@@ -45,9 +66,9 @@ export class ResultComposer {
     }
 
     private composeInternal(
-        resultSets: any[][]
+        resultSets: ResultSetTree
     ): ChildResults[] {
-        const rows = resultSets[0];
+        const rows = resultSets.resultSet;
         if (rows.length === 0) {
             return [];
         }
