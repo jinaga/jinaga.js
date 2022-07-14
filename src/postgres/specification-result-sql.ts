@@ -252,6 +252,27 @@ class ResultDescriptionBuilder {
                 if (condition.type === "path") {
                     ({queryDescription, knownFacts} = this.addPathCondition(queryDescription, knownFacts, path, match.unknown, condition));
                 }
+                else if (condition.type === "existential") {
+                    if (condition.exists) {
+                        // Include the edges of the existential condition into the current
+                        // query description.
+                        ({ queryDescription } = this.addEdges(queryDescription, knownFacts, path, condition.matches));
+                    }
+                    else {
+                        // Apply the where clause and continue with the tuple where it is true.
+                        // The path describes which not-exists condition we are currently building on.
+                        // Because the path is not empty, labeled facts will be included in the output.
+                        const { query: queryDescriptionWithNotExist, path: conditionalPath } = queryDescription.withNotExistsCondition(path);
+                        const { queryDescription: queryDescriptionConditional } = this.addEdges(queryDescriptionWithNotExist, knownFacts, conditionalPath, condition.matches);
+
+                        // If the negative existential condition is not satisfiable, then
+                        // that means that the condition will always be true.
+                        // We can therefore skip the branch for the negative existential condition.
+                        if (queryDescriptionConditional.isSatisfiable()) {
+                            queryDescription = queryDescriptionConditional;
+                        }
+                    }
+                }
             }
         }
         return {
