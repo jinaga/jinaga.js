@@ -54,9 +54,16 @@ export class ResultComposer {
     ) { }
 
     public getSqlQueries(): SqlQueryTree {
+        const childQueries: NamedSqlQueryTree[] = [];
+        for (const childResultComposer of this.childResultComposers) {
+            childQueries.push(({
+                name: childResultComposer.name,
+                ...childResultComposer.resultComposer.getSqlQueries()
+            }));
+        }
         return {
             sqlQuery: this.sqlQuery,
-            childQueries: []
+            childQueries
         };
     }
 
