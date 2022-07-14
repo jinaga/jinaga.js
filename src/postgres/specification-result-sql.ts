@@ -17,6 +17,11 @@ interface NamedResultDescription extends ResultDescription {
     name: string;
 }
 
+interface IdentifiedResults {
+    factIds: number[];
+    result: {};
+}
+
 interface ChildResults {
     parentFactIds: number[];
     results: {}[];
@@ -74,22 +79,54 @@ export class ResultComposer {
         if (rows.length === 0) {
             return [];
         }
+
+        // Project all rows and their identifiers
+        const identifiedResults: IdentifiedResults[] = rows.map(row => ({
+            factIds: this.identifierOf(row),
+            result: this.projectionOf(row)
+        }));
+
+        // Compose child results
+        for (const childResultComposer of this.childResultComposers) {
+            const childResultSet = resultSets.childResultSets.find(childResultSet =>
+                childResultSet.name === childResultComposer.name);
+            if (!childResultSet) {
+                const availableNames = resultSets.childResultSets.map(childResultSet => childResultSet.name);
+                throw new Error(`Child result set ${childResultComposer.name} not found in (${availableNames.join(", ")})`);
+            }
+            const composedResults = childResultComposer.resultComposer.composeInternal(childResultSet);
+
+            // Add the child results
+            let index = 0;
+            for (const identifiedResult of identifiedResults) {
+                let results: {}[] = [];
+                if (idsEqual(identifiedResult.factIds, composedResults[index].parentFactIds)) {
+                    results = composedResults[index].results;
+                    index++;
+                }
+                identifiedResult.result = {
+                    ...identifiedResult.result,
+                    [childResultComposer.name]: results
+                };
+            }
+        }
+
+        // Group the results by their parent identifiers
         const childResults: ChildResults[] = [];
-        let parentFactIds: number[] = this.identifierOf(rows[0]).slice(0, this.parentFactIdLength);
-        let results: {}[] = [ this.projectionOf(rows[0]) ];
-        for (const row of rows.slice(1)) {
-            const childFactIds = this.identifierOf(row);
-            const nextParentFactIds = childFactIds.slice(0, this.parentFactIdLength);
-            if (nextParentFactIds.every((value, index) => value === parentFactIds[index])) {
-                results.push(this.projectionOf(row));
+        let parentFactIds: number[] = identifiedResults[0].factIds.slice(0, this.parentFactIdLength);
+        let results: {}[] = [ identifiedResults[0].result ];
+        for (const identifiedResult of identifiedResults.slice(1)) {
+            const nextParentFactIds = identifiedResult.factIds.slice(0, this.parentFactIdLength);
+            if (idsEqual(nextParentFactIds, parentFactIds)) {
+                results.push(identifiedResult.result);
             }
             else {
                 childResults.push({
                     parentFactIds,
                     results
                 });
-                parentFactIds = childFactIds;
-                results = [ this.projectionOf(row) ];
+                parentFactIds = nextParentFactIds;
+                results = [ identifiedResult.result ];
             }
         }
         childResults.push({
@@ -307,6 +344,10 @@ class ResultDescriptionBuilder {
         }
         return { queryDescription, knownFacts };
     }
+}
+
+function idsEqual(a: number[], b: number[]) {
+    return a.every((value, index) => value === b[index]);
 }
 
 export function resultSqlFromSpecification(start: FactReference[], specification: Specification, factTypes: FactTypeMap, roleMap: RoleMap): ResultComposer {
