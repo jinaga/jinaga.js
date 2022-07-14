@@ -149,10 +149,12 @@ export class ResultComposer {
 
     private projectionOf(row: any): {} {
         if (this.fieldProjections.length === 0) {
-            return this.sqlQuery.labels.reduce((acc, label) => ({
-                ...acc,
-                [label.name]: row[`data${label.index}`].fields
-            }), {})
+            return this.sqlQuery.labels
+                .slice(this.parentFactIdLength)
+                .reduce((acc, label) => ({
+                    ...acc,
+                    [label.name]: row[`data${label.index}`].fields
+                }), {})
         }
         else {
             return this.fieldProjections.reduce((acc, fieldProjection) => ({
