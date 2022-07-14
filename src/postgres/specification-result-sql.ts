@@ -176,18 +176,18 @@ class ResultDescriptionBuilder {
         // The DescriptionBuilder will branch at various points, and
         // build on the current query description along each branch.
         const initialQueryDescription = new QueryDescription(inputs, [], [], facts, [], []);
-        return this.createResultDescription(initialQueryDescription, specification.matches, specification.projections, givenFacts);
+        return this.createResultDescription(initialQueryDescription, specification.matches, specification.projections, givenFacts, [], "");
     }
 
-    private createResultDescription(queryDescription: QueryDescription, matches: Match[], projections: Projection[], knownFacts: FactByIdentifier): ResultDescription {
-        ({ queryDescription, knownFacts } = this.addEdges(queryDescription, knownFacts, [], "", matches));
+    private createResultDescription(queryDescription: QueryDescription, matches: Match[], projections: Projection[], knownFacts: FactByIdentifier, path: number[], prefix: string): ResultDescription {
+        ({ queryDescription, knownFacts } = this.addEdges(queryDescription, knownFacts, path, prefix, matches));
         const childResultDescriptions: NamedResultDescription[] = [];
         const specificationProjections = projections
             .filter(projection => projection.type === "specification") as SpecificationProjection[];
         const fieldProjections = projections
             .filter(projection => projection.type === "field") as FieldProjection[];
         for (const child of specificationProjections) {
-            const childResultDescription = this.createResultDescription(queryDescription, child.matches, child.projections, knownFacts);
+            const childResultDescription = this.createResultDescription(queryDescription, child.matches, child.projections, knownFacts, [], prefix + child.name + ".");
             childResultDescriptions.push({
                 name: child.name,
                 ...childResultDescription
