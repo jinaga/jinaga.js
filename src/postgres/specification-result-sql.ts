@@ -148,7 +148,7 @@ export class ResultComposer {
     }
 
     private projectionOf(row: any): {} {
-        if (this.fieldProjections.length === 0) {
+        if (this.fieldProjections.length === 0 && this.childResultComposers.length === 0) {
             return this.sqlQuery.labels
                 .slice(this.parentFactIdLength)
                 .reduce((acc, label) => ({
