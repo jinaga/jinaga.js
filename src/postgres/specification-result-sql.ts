@@ -107,7 +107,7 @@ export class ResultComposer {
             let index = 0;
             for (const identifiedResult of identifiedResults) {
                 let results: {}[] = [];
-                if (idsEqual(identifiedResult.factIds, composedResults[index].parentFactIds)) {
+                if (index < composedResults.length && idsEqual(identifiedResult.factIds, composedResults[index].parentFactIds)) {
                     results = composedResults[index].results;
                     index++;
                 }
