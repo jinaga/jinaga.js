@@ -361,15 +361,15 @@ export function resultSqlFromSpecification(start: FactReference[], specification
     const descriptionBuilder = new ResultDescriptionBuilder(factTypes, roleMap);
     const description = descriptionBuilder.buildDescription(start, specification);
 
-    return createResultComposer(description);
+    return createResultComposer(description, 0);
 }
 
-function createResultComposer(description: ResultDescription): ResultComposer {
+function createResultComposer(description: ResultDescription, parentFactIdLength: number): ResultComposer {
     const sqlQuery = description.queryDescription.generateResultSqlQuery();
     const fieldProjections = description.fieldProjections;
     const childResultComposers = description.childResultDescriptions.map(child => ({
         name: child.name,
-        resultComposer: createResultComposer(child)
+        resultComposer: createResultComposer(child, description.queryDescription.outputLength())
     }));
-    return new ResultComposer(sqlQuery, fieldProjections, 0, childResultComposers);
+    return new ResultComposer(sqlQuery, fieldProjections, parentFactIdLength, childResultComposers);
 }

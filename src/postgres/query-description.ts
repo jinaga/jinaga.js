@@ -213,6 +213,10 @@ export class QueryDescription {
         return this.inputs.find(i => i.label === label);
     }
 
+    outputLength(): number {
+        return this.outputs.length;
+    }
+
     generateSqlQuery(bookmarks: FactBookmark[], limit: number): SpecificationSqlQuery {
         const hashes = this.outputs
             .map(output => `f${output.factIndex}.hash as hash${output.factIndex}`)
