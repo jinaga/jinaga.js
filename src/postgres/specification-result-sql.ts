@@ -220,18 +220,18 @@ class ResultDescriptionBuilder {
         // The DescriptionBuilder will branch at various points, and
         // build on the current query description along each branch.
         const initialQueryDescription = new QueryDescription(inputs, [], [], facts, [], []);
-        return this.createResultDescription(initialQueryDescription, specification.matches, specification.projections, givenFacts, [], "");
+        return this.createResultDescription(initialQueryDescription, specification.matches, specification.projections, givenFacts, []);
     }
 
-    private createResultDescription(queryDescription: QueryDescription, matches: Match[], projections: Projection[], knownFacts: FactByIdentifier, path: number[], prefix: string): ResultDescription {
-        ({ queryDescription, knownFacts } = this.addEdges(queryDescription, knownFacts, path, prefix, matches));
+    private createResultDescription(queryDescription: QueryDescription, matches: Match[], projections: Projection[], knownFacts: FactByIdentifier, path: number[]): ResultDescription {
+        ({ queryDescription, knownFacts } = this.addEdges(queryDescription, knownFacts, path, matches));
         const childResultDescriptions: NamedResultDescription[] = [];
         const specificationProjections = projections
             .filter(projection => projection.type === "specification") as SpecificationProjection[];
         const fieldProjections = projections
             .filter(projection => projection.type === "field") as FieldProjection[];
         for (const child of specificationProjections) {
-            const childResultDescription = this.createResultDescription(queryDescription, child.matches, child.projections, knownFacts, [], prefix + child.name + ".");
+            const childResultDescription = this.createResultDescription(queryDescription, child.matches, child.projections, knownFacts, []);
             childResultDescriptions.push({
                 name: child.name,
                 ...childResultDescription
@@ -244,11 +244,11 @@ class ResultDescriptionBuilder {
         };
     }
 
-    private addEdges(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { queryDescription: QueryDescription, knownFacts: FactByIdentifier } {
+    private addEdges(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], matches: Match[]): { queryDescription: QueryDescription, knownFacts: FactByIdentifier } {
         for (const match of matches) {
             for (const condition of match.conditions) {
                 if (condition.type === "path") {
-                    ({queryDescription, knownFacts} = this.addPathCondition(queryDescription, knownFacts, path, match.unknown, prefix, condition));
+                    ({queryDescription, knownFacts} = this.addPathCondition(queryDescription, knownFacts, path, match.unknown, condition));
                 }
             }
         }
@@ -258,7 +258,7 @@ class ResultDescriptionBuilder {
         };
     }
 
-    private addPathCondition(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], unknown: Label, prefix: string, condition: PathCondition): { queryDescription: QueryDescription, knownFacts: FactByIdentifier } {
+    private addPathCondition(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], unknown: Label, condition: PathCondition): { queryDescription: QueryDescription, knownFacts: FactByIdentifier } {
         // If no input parameter has been allocated, allocate one now.
         const input = queryDescription.inputByLabel(condition.labelRight);
         if (input && input.factTypeParameter === 0) {
@@ -344,9 +344,8 @@ class ResultDescriptionBuilder {
             knownFacts = { ...knownFacts, [unknown.name]: { factIndex, type: unknown.type } };
             // If we have not written the output, write it now.
             // Only write the output if we are not inside of an existential condition.
-            // Use the prefix, which will be set for projections.
             if (path.length === 0) {
-                queryDescription = queryDescription.withOutput(prefix + unknown.name, unknown.type, factIndex);
+                queryDescription = queryDescription.withOutput(unknown.name, unknown.type, factIndex);
             }
         }
         return { queryDescription, knownFacts };
