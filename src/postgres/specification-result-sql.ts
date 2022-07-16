@@ -227,6 +227,14 @@ class ResultDescriptionBuilder {
 
     private createResultDescription(queryDescription: QueryDescription, matches: Match[], projections: Projection[], knownFacts: FactByIdentifier, path: number[]): ResultDescription {
         ({ queryDescription, knownFacts } = this.addEdges(queryDescription, knownFacts, path, matches));
+        if (!queryDescription.isSatisfiable()) {
+            // Abort the branch if the query is not satisfiable
+            return {
+                queryDescription,
+                fieldProjections: [],
+                childResultDescriptions: []
+            }
+        }
         const childResultDescriptions: NamedResultDescription[] = [];
         const specificationProjections = projections
             .filter(projection => projection.type === "specification") as SpecificationProjection[];
@@ -273,6 +281,12 @@ class ResultDescriptionBuilder {
                         }
                     }
                 }
+                if (!queryDescription.isSatisfiable()) {
+                    break;
+                }
+            }
+            if (!queryDescription.isSatisfiable()) {
+                break;
             }
         }
         return {
@@ -295,6 +309,9 @@ class ResultDescriptionBuilder {
         // Walk up the right-hand side.
         // This generates predecessor joins from a given or prior label.
         let fact = knownFacts[condition.labelRight];
+        if (!fact) {
+            throw new Error(`Label ${condition.labelRight} not found. Known labels: ${Object.keys(knownFacts).join(", ")}`);
+        }
         let type = fact.type;
         let factIndex = fact.factIndex;
         for (const [i, role] of condition.rolesRight.entries()) {
@@ -383,15 +400,20 @@ export function resultSqlFromSpecification(start: FactReference[], specification
     const descriptionBuilder = new ResultDescriptionBuilder(factTypes, roleMap);
     const description = descriptionBuilder.buildDescription(start, specification);
 
+    if (!description.queryDescription.isSatisfiable()) {
+        return null;
+    }
     return createResultComposer(description, 0);
 }
 
 function createResultComposer(description: ResultDescription, parentFactIdLength: number): ResultComposer {
     const sqlQuery = description.queryDescription.generateResultSqlQuery();
     const fieldProjections = description.fieldProjections;
-    const childResultComposers = description.childResultDescriptions.map(child => ({
-        name: child.name,
-        resultComposer: createResultComposer(child, description.queryDescription.outputLength())
-    }));
+    const childResultComposers = description.childResultDescriptions
+        .filter(child => child.queryDescription.isSatisfiable())
+        .map(child => ({
+            name: child.name,
+            resultComposer: createResultComposer(child, description.queryDescription.outputLength())
+        }));
     return new ResultComposer(sqlQuery, fieldProjections, parentFactIdLength, childResultComposers);
 }

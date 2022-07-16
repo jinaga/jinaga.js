@@ -258,6 +258,10 @@ export class PostgresStore implements Storage {
         const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
 
         const composer = resultSqlFromSpecification(start, specification, factTypes, roleMap);
+        if (composer === null) {
+            return [];
+        }
+        
         const sqlQueryTree = composer.getSqlQueries();
         const resultSets = await this.connectionFactory.with(async (connection) => {
             return await executeQueryTree(sqlQueryTree, connection);
