@@ -3,7 +3,7 @@ import { PoolClient } from "pg";
 import { canonicalPredecessors } from "../fact/hash";
 import { Query } from "../query/query";
 import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../query/steps";
-import { describeSpecification, getAllFactTypes, getAllRoles, Specification } from "../specification/specification";
+import { getAllFactTypes, getAllRoles, Specification } from "../specification/specification";
 import {
     FactBookmark,
     FactEnvelope,
@@ -253,7 +253,7 @@ export class PostgresStore implements Storage {
         return streams;
     }
 
-    async resultsFromSpecification(start: FactReference[], specification: Specification): Promise<{}[]> {
+    async resultsFromSpecification(start: FactReference[], specification: Specification): Promise<any[]> {
         const factTypes = await this.loadFactTypesFromSpecification(specification);
         const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
 

@@ -1,4 +1,4 @@
-import { FieldProjection, Label, Match, PathCondition, Projection, Specification, SpecificationProjection } from "../specification/specification";
+import { FieldProjection, Label, Match, PathCondition, Projection, Specification, SpecificationProjection, ChildProjections, ResultProjection, SingularProjection } from "../specification/specification";
 import { FactReference } from "../storage";
 import { FactTypeMap, getFactTypeId, getRoleId, RoleMap } from "./maps";
 import { FactDescription, InputDescription, QueryDescription, SpecificationSqlQuery } from "./query-description";
@@ -9,7 +9,7 @@ type FactByIdentifier = {
 
 interface ResultDescription {
     queryDescription: QueryDescription;
-    fieldProjections: FieldProjection[];
+    resultProjection: ResultProjection;
     childResultDescriptions: NamedResultDescription[];
 }
 
@@ -19,12 +19,12 @@ interface NamedResultDescription extends ResultDescription {
 
 interface IdentifiedResults {
     factIds: number[];
-    result: {};
+    result: any;
 }
 
 interface ChildResults {
     parentFactIds: number[];
-    results: {}[];
+    results: any[];
 }
 
 export interface SqlQueryTree {
@@ -48,7 +48,7 @@ interface NamedResultSetTree extends ResultSetTree {
 export class ResultComposer {
     constructor(
         private readonly sqlQuery: SpecificationSqlQuery,
-        private readonly fieldProjections: FieldProjection[],
+        private readonly fieldProjections: ResultProjection,
         private readonly parentFactIdLength: number,
         private readonly childResultComposers: NamedResultComposer[]
     ) { }
@@ -69,7 +69,7 @@ export class ResultComposer {
 
     public compose(
         resultSets: ResultSetTree
-    ): {}[] {
+    ): any[] {
         const childResults = this.composeInternal(resultSets);
         if (childResults.length === 0) {
             return [];
@@ -106,7 +106,7 @@ export class ResultComposer {
             // Add the child results
             let index = 0;
             for (const identifiedResult of identifiedResults) {
-                let results: {}[] = [];
+                let results: any[] = [];
                 if (index < composedResults.length && idsEqual(identifiedResult.factIds, composedResults[index].parentFactIds)) {
                     results = composedResults[index].results;
                     index++;
@@ -121,7 +121,7 @@ export class ResultComposer {
         // Group the results by their parent identifiers
         const childResults: ChildResults[] = [];
         let parentFactIds: number[] = identifiedResults[0].factIds.slice(0, this.parentFactIdLength);
-        let results: {}[] = [ identifiedResults[0].result ];
+        let results: any[] = [ identifiedResults[0].result ];
         for (const identifiedResult of identifiedResults.slice(1)) {
             const nextParentFactIds = identifiedResult.factIds.slice(0, this.parentFactIdLength);
             if (idsEqual(nextParentFactIds, parentFactIds)) {
@@ -147,8 +147,11 @@ export class ResultComposer {
         return this.sqlQuery.labels.map(label => row[`id${label.index}`]);
     }
 
-    private projectionOf(row: any): {} {
-        if (this.fieldProjections.length === 0 && this.childResultComposers.length === 0) {
+    private projectionOf(row: any): any {
+        if (!Array.isArray(this.fieldProjections)) {
+            return this.fieldValue(this.fieldProjections, row);
+        }
+        else if (this.fieldProjections.length === 0 && this.childResultComposers.length === 0) {
             return this.sqlQuery.labels
                 .slice(this.parentFactIdLength)
                 .reduce((acc, label) => ({
@@ -164,12 +167,12 @@ export class ResultComposer {
         }
     }
 
-    private fieldValue(fieldProjection: FieldProjection, row: any): any {
-        const label = this.sqlQuery.labels.find(label => label.name === fieldProjection.label);
+    private fieldValue(projection: FieldProjection | SingularProjection, row: any): any {
+        const label = this.sqlQuery.labels.find(label => label.name === projection.label);
         if (!label) {
-            throw new Error(`Label ${fieldProjection.label} not found. Known labels: ${this.sqlQuery.labels.map(label => label.name).join(", ")}`);
+            throw new Error(`Label ${projection.label} not found. Known labels: ${this.sqlQuery.labels.map(label => label.name).join(", ")}`);
         }
-        return row[`data${label.index}`].fields[fieldProjection.field];
+        return row[`data${label.index}`].fields[projection.field];
     }
 }
 
@@ -222,36 +225,45 @@ class ResultDescriptionBuilder {
         // The DescriptionBuilder will branch at various points, and
         // build on the current query description along each branch.
         const initialQueryDescription = new QueryDescription(inputs, [], [], facts, [], []);
-        return this.createResultDescription(initialQueryDescription, specification.matches, specification.projections, givenFacts, []);
+        return this.createResultDescription(initialQueryDescription, specification.matches, specification.childProjections, givenFacts, []);
     }
 
-    private createResultDescription(queryDescription: QueryDescription, matches: Match[], projections: Projection[], knownFacts: FactByIdentifier, path: number[]): ResultDescription {
+    private createResultDescription(queryDescription: QueryDescription, matches: Match[], childProjections: ChildProjections, knownFacts: FactByIdentifier, path: number[]): ResultDescription {
         ({ queryDescription, knownFacts } = this.addEdges(queryDescription, knownFacts, path, matches));
         if (!queryDescription.isSatisfiable()) {
             // Abort the branch if the query is not satisfiable
             return {
                 queryDescription,
-                fieldProjections: [],
+                resultProjection: [],
                 childResultDescriptions: []
             }
         }
         const childResultDescriptions: NamedResultDescription[] = [];
-        const specificationProjections = projections
-            .filter(projection => projection.type === "specification") as SpecificationProjection[];
-        const fieldProjections = projections
-            .filter(projection => projection.type === "field") as FieldProjection[];
-        for (const child of specificationProjections) {
-            const childResultDescription = this.createResultDescription(queryDescription, child.matches, child.projections, knownFacts, []);
-            childResultDescriptions.push({
-                name: child.name,
-                ...childResultDescription
-            });
+        if (Array.isArray(childProjections)) {
+            const specificationProjections = childProjections
+                .filter(projection => projection.type === "specification") as SpecificationProjection[];
+            const fieldProjections = childProjections
+                .filter(projection => projection.type === "field") as FieldProjection[];
+            for (const child of specificationProjections) {
+                const childResultDescription = this.createResultDescription(queryDescription, child.matches, child.childProjections, knownFacts, []);
+                childResultDescriptions.push({
+                    name: child.name,
+                    ...childResultDescription
+                });
+            }
+            return {
+                queryDescription,
+                resultProjection: fieldProjections,
+                childResultDescriptions
+            };
         }
-        return {
-            queryDescription,
-            fieldProjections,
-            childResultDescriptions
-        };
+        else {
+            return {
+                queryDescription,
+                resultProjection: childProjections,
+                childResultDescriptions: []
+            }
+        }
     }
 
     private addEdges(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], matches: Match[]): { queryDescription: QueryDescription, knownFacts: FactByIdentifier } {
@@ -408,12 +420,12 @@ export function resultSqlFromSpecification(start: FactReference[], specification
 
 function createResultComposer(description: ResultDescription, parentFactIdLength: number): ResultComposer {
     const sqlQuery = description.queryDescription.generateResultSqlQuery();
-    const fieldProjections = description.fieldProjections;
+    const resultProjection = description.resultProjection;
     const childResultComposers = description.childResultDescriptions
         .filter(child => child.queryDescription.isSatisfiable())
         .map(child => ({
             name: child.name,
             resultComposer: createResultComposer(child, description.queryDescription.outputLength())
         }));
-    return new ResultComposer(sqlQuery, fieldProjections, parentFactIdLength, childResultComposers);
+    return new ResultComposer(sqlQuery, resultProjection, parentFactIdLength, childResultComposers);
 }

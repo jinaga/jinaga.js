@@ -1,4 +1,4 @@
-import { Condition, Label, Match, PathCondition, ExistentialCondition, Projection, Role, Specification } from "./specification";
+import { Condition, Label, Match, PathCondition, ExistentialCondition, Projection, Role, Specification, ChildProjections } from "./specification";
 
 class SpecificationParser {
     private offset: number = 0;
@@ -177,7 +177,7 @@ class SpecificationParser {
         if (this.continues("{")) {
             const { matches, labels: allLabels } = this.parseMatches(labels);
             const projections = this.parseProjections(allLabels);
-            return { type: "specification", name, matches, projections };
+            return { type: "specification", name, matches, childProjections: projections };
         }
         else {
             const label = this.parseIdentifier();
@@ -187,24 +187,32 @@ class SpecificationParser {
         }
     }
 
-    parseProjections(labels: Label[]): Projection[] {
+    parseProjections(labels: Label[]): ChildProjections {
         if (!this.consume("=>")) {
             return [];
         }
-        this.expect("{");
-        const projections: Projection[] = [];
-        while (!this.consume("}")) {
-            const projection = this.parseProjection(labels);
-            projections.push(projection);
+        if (this.continues("{")) {
+            this.consume("{");
+            const projections: Projection[] = [];
+            while (!this.consume("}")) {
+                const projection = this.parseProjection(labels);
+                projections.push(projection);
+            }
+            return projections;
         }
-        return projections;
+        else {
+            const label = this.parseIdentifier();
+            this.expect(".");
+            const field = this.parseIdentifier();
+            return { label, field };
+        }
     }
 
     parseSpecification(): Specification {
         const given = this.parseGiven();
         const { matches, labels } = this.parseMatches(given);
-        const projections = this.parseProjections(labels);
-        return { given, matches, projections };
+        const childProjections = this.parseProjections(labels);
+        return { given, matches, childProjections };
     }
 }
 

@@ -89,7 +89,7 @@ describe("Postgres query generator", () => {
             {
                 name: 'successor',
                 type: 'IntegrationTest.Successor',
-                column: 'hash2'
+                index: 2
             }
         ]);
     });
@@ -132,12 +132,12 @@ describe("Postgres query generator", () => {
                 {
                     name: "successor",
                     type: "IntegrationTest.Successor",
-                    column: "hash2"
+                    index: 2
                 },
                 {
                     name: "other",
                     type: "IntegrationTest.OtherPredecessor",
-                    column: "hash3"
+                    index: 3
                 }
             ]);
     });
@@ -183,12 +183,12 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash2"
+                index: 2
             },
             {
                 name: "assignment",
                 type: "MyApplication.Assignment",
-                column: "hash3"
+                index: 3
             }
         ]);
     });
@@ -234,12 +234,12 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash2"
+                index: 2
             },
             {
                 name: "deleted",
                 type: "MyApplication.Project.Deleted",
-                column: "hash3"
+                index: 3
             }
         ]);
 
@@ -272,7 +272,7 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash2"
+                index: 2
             }
         ]);
     });
@@ -323,12 +323,12 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash3"
+                index: 3
             },
             {
                 name: "assignment",
                 type: "MyApplication.Assignment",
-                column: "hash4"
+                index: 4
             }
         ]);
     });
@@ -379,12 +379,12 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash3"
+                index: 3
             },
             {
                 name: "assignment",
                 type: "MyApplication.Assignment",
-                column: "hash4"
+                index: 4
             }
         ]);
     });
@@ -426,7 +426,7 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash2"
+                index: 2
             }
         ]);
         expect(sqlQueries[1].sql).toEqual(
@@ -454,12 +454,12 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash2"
+                index: 2
             },
             {
                 name: "names.name",
                 type: "MyApplication.Project.Name",
-                column: "hash3"
+                index: 3
             }
         ]);
     });
@@ -519,7 +519,7 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash2"
+                index: 2
             }
         ]);
     });
@@ -558,7 +558,7 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash2"
+                index: 2
             }
         ]);
     });
@@ -731,7 +731,7 @@ describe("Postgres query generator", () => {
             {
                 name: "project",
                 type: "MyApplication.Project",
-                column: "hash2"
+                index: 2
             }
         ])
     });

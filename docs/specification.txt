@@ -23,9 +23,7 @@
                     ]
                 }
             ]
-        } => {
-            title = title.value
-        }
+        } => title.value
         instructors = {
             instructor: ImprovingU.Course.Instructor [
                 instructor->course: ImprovingU.Course = course
@@ -35,8 +33,6 @@
                     ]
                 }
             ]
-        } => {
-            instructor = instructor.value
-        }
+        } => instructor.value
     }
 }

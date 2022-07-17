@@ -27,7 +27,7 @@ export interface SpecificationProjection {
     type: "specification",
     name: string,
     matches: Match[],
-    projections: Projection[]
+    childProjections: ChildProjections
 }
 
 export interface FieldProjection {
@@ -39,6 +39,15 @@ export interface FieldProjection {
 
 export type Projection = SpecificationProjection | FieldProjection;
 
+export interface SingularProjection {
+    label: string;
+    field: string;
+}
+
+export type ChildProjections = Projection[] | SingularProjection;
+
+export type ResultProjection = FieldProjection[] | SingularProjection;
+
 export interface Match {
     unknown: Label;
     conditions: Condition[];
@@ -47,7 +56,7 @@ export interface Match {
 export interface Specification {
     given: Label[];
     matches: Match[];
-    projections: Projection[];
+    childProjections: ChildProjections;
 }
 
 export function getAllFactTypes(specification: Specification): string[] {
@@ -56,7 +65,9 @@ export function getAllFactTypes(specification: Specification): string[] {
         factTypes.push(given.type);
     }
     factTypes.push(...getAllFactTypesFromMatches(specification.matches));
-    factTypes.push(...getAllFactTypesFromProjections(specification.projections));
+    if (Array.isArray(specification.childProjections)) {
+        factTypes.push(...getAllFactTypesFromProjections(specification.childProjections));
+    }
     const distinctFactTypes = Array.from(new Set(factTypes));
     return distinctFactTypes;
 }
@@ -84,7 +95,9 @@ function getAllFactTypesFromProjections(projections: Projection[]) {
     for (const projection of projections) {
         if (projection.type === "specification") {
             factTypes.push(...getAllFactTypesFromMatches(projection.matches));
-            factTypes.push(...getAllFactTypesFromProjections(projection.projections));
+            if (Array.isArray(projection.childProjections)) {
+                factTypes.push(...getAllFactTypesFromProjections(projection.childProjections));
+            }
         }
     }
     return factTypes;
@@ -108,7 +121,8 @@ export function getAllRoles(specification: Specification): RoleDescription[] {
         }),
         {} as TypeByLabel);
     const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, specification.matches);
-    const rolesFromProjections = getAllRolesFromProjections(labelsFromMatches, specification.projections);
+    const projections = Array.isArray(specification.childProjections) ? specification.childProjections : [];
+    const rolesFromProjections = getAllRolesFromProjections(labelsFromMatches, projections);
     const roles: RoleDescription[] = [ ...rolesFromMatches, ...rolesFromProjections ];
     const distinctRoles = roles.filter((value, index, array) => {
         return array.findIndex(r =>
@@ -156,14 +170,10 @@ function getAllRolesFromProjections(labels: TypeByLabel, projections: Projection
         if (projection.type === "specification") {
             const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, projection.matches);
             roles.push(...rolesFromMatches);
-            roles.push(...getAllRolesFromProjections(labelsFromMatches, projection.projections));
+            if (Array.isArray(projection.childProjections)) {
+                roles.push(...getAllRolesFromProjections(labelsFromMatches, projection.childProjections));
+            }
         }
     }
     return roles;
-}
-
-export function describeSpecification(specification: Specification): string {
-    return `Given: ${specification.given.map(l => `${l.name}: ${l.type}`).join(", ")}
-Matches: ${specification.matches.map(m => `${m.unknown.name}: ${m.unknown.type}`).join(", ")}
-Projections: ${specification.projections.map(p => p.name).join(", ")}`;
 }

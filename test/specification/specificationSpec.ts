@@ -37,7 +37,7 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            projections: []
+            childProjections: []
         };
         expect(specification).toEqual(expected);
     });
@@ -165,7 +165,7 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            projections: []
+            childProjections: []
         };
         expect(specification).toEqual(expected);
     });
@@ -255,7 +255,7 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            projections: []
+            childProjections: []
         };
         expect(specification).toEqual(expected);
     });
@@ -318,7 +318,7 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            projections: [
+            childProjections: [
                 {
                     type: "specification",
                     name: "descriptions",
@@ -343,7 +343,7 @@ describe("Specification parser", () => {
                             ]
                         }
                     ],
-                    projections: []
+                    childProjections: []
                 }
             ]
         };
@@ -397,7 +397,7 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            projections: [
+            childProjections: [
                 {
                     type: "specification",
                     name: "projects",
@@ -422,7 +422,7 @@ describe("Specification parser", () => {
                             ]
                         }
                     ],
-                    projections: [
+                    childProjections: [
                         {
                             type: "specification",
                             name: "descriptions",
@@ -447,7 +447,7 @@ describe("Specification parser", () => {
                                     ]
                                 }
                             ],
-                            projections: []
+                            childProjections: []
                         }
                     ]
                 }
@@ -493,7 +493,7 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            projections: [
+            childProjections: [
                 {
                     type: "field",
                     name: "value",

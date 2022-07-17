@@ -56,8 +56,13 @@ class DescriptionBuilder {
         // The final query description represents the complete tuple.
         // Build projections onto that one.
         const finalQueryDescription = queryDescriptions[queryDescriptions.length - 1];
-        const queryDescriptionsWithProjections = this.addProjections(finalQueryDescription, knownFacts, specification.projections);
-        return [ ...queryDescriptions, ...queryDescriptionsWithProjections ];
+        if (Array.isArray(specification.childProjections)) {
+            const queryDescriptionsWithProjections = this.addProjections(finalQueryDescription, knownFacts, specification.childProjections);
+            return [ ...queryDescriptions, ...queryDescriptionsWithProjections ];
+        }
+        else {
+            return queryDescriptions;
+        }
     }
 
     private addEdges(queryDescription: QueryDescription, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { queryDescriptions: QueryDescription[], knownFacts: FactByIdentifier } {
