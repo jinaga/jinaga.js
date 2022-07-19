@@ -1,6 +1,8 @@
+import { HashMap } from "../fact/hydrate";
+import { Declaration } from "./declaration";
 import { Condition, Label, Match, PathCondition, ExistentialCondition, Projection, Role, Specification, ChildProjections } from "./specification";
 
-class SpecificationParser {
+export class SpecificationParser {
     private offset: number = 0;
 
     constructor(
@@ -12,6 +14,10 @@ class SpecificationParser {
         while (whitespace.test(this.input[this.offset])) {
             this.offset++;
         }
+    }
+
+    atEnd(): boolean {
+        return this.offset >= this.input.length;
     }
 
     continues(symbol: string) {
@@ -33,24 +39,31 @@ class SpecificationParser {
         }
     }
 
-    parseIdentifier(): string {
-        const identifier = /[a-zA-Z_][a-zA-Z0-9_]*/;
-        const match = identifier.exec(this.input.substring(this.offset));
+    match(expression: RegExp): string | null {
+        const match = expression.exec(this.input.substring(this.offset));
         if (match) {
             this.offset += match[0].length;
             this.skipWhitespace();
             return match[0];
         }
+        else {
+            return null;
+        }
+    }
+
+    parseIdentifier(): string {
+        const result = this.match(/^[a-zA-Z_][a-zA-Z0-9_]*/);
+        if (result !== null) {
+            return result;
+        }
         throw new Error("Expected identifier but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
     }
 
     parseType(): string {
-        const type = /[a-zA-Z_][a-zA-Z0-9_.]*/;
-        const match = type.exec(this.input.substring(this.offset));
-        if (match) {
-            this.offset += match[0].length;
-            this.skipWhitespace();
-            return match[0];
+        const type = /^[a-zA-Z_][a-zA-Z0-9_.]*/;
+        const result = this.match(type);
+        if (result !== null) {
+            return result;
         }
         throw new Error("Expected type but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
     }
@@ -208,16 +221,82 @@ class SpecificationParser {
         }
     }
 
+    private parseValue(knownFacts: Declaration): any {
+        const jsonValue = /^true|^false|^null|^"(?:[^"\\]|\\.)*"|^[+-]?\d+(\.\d+)?/;
+        const value = this.match(jsonValue);
+        if (value) {
+            return JSON.parse(value);
+        }
+        else {
+            const reference = this.parseIdentifier();
+            if (!knownFacts[reference]) {
+                throw new Error(`The fact '${reference}' has not been defined`);
+            }
+            return knownFacts[reference];
+        }
+    }
+
+    private parseField(fact: HashMap, knownFacts: Declaration) {
+        const name = this.parseIdentifier();
+        if (!this.continues(":")) {
+            if (!knownFacts[name]) {
+                throw new Error(`The fact '${name}' has not been defined`);
+            }
+            fact[name] = knownFacts[name];
+        }
+        else {
+            this.consume(":");
+            const value = this.parseValue(knownFacts);
+            fact[name] = value;
+        }
+    }
+
+    private parseFact(knownFacts: Declaration): HashMap {
+        if (this.consume("{")) {
+            const fact: HashMap = {};
+            if (!this.continues("}")) {
+                this.parseField(fact, knownFacts);
+                while (this.consume(",")) {
+                    this.parseField(fact, knownFacts);
+                }
+            }
+            this.expect("}");
+            return fact;
+        }
+        else {
+            const reference = this.parseIdentifier();
+            if (!knownFacts[reference]) {
+                throw new Error(`The fact '${reference}' has not been defined`);
+            }
+            return knownFacts[reference];
+        }
+    }
+
     parseSpecification(): Specification {
         const given = this.parseGiven();
         const { matches, labels } = this.parseMatches(given);
         const childProjections = this.parseProjections(labels);
         return { given, matches, childProjections };
     }
-}
 
-export function parseSpecification(input: string): Specification {
-    const parser = new SpecificationParser(input);
-    parser.skipWhitespace();
-    return parser.parseSpecification();
+    parseDeclaration(knownFacts: Declaration): Declaration {
+        let result: Declaration = {};
+        while (this.consume("let")) {
+            const name = this.parseIdentifier();
+            if (result[name] || knownFacts[name]) {
+                throw new Error(`The name '${name}' has already been used`);
+            }
+            this.expect(":");
+            const type = this.parseType();
+            this.expect("=");
+            const value = this.parseFact({ ...knownFacts, ...result });
+            if (value.hasOwnProperty("type")) {
+                if (value.type !== type) {
+                    throw new Error(`Cannot assign ${value.type} to ${type}`);
+                }
+            }
+            result[name] = { ...value, type };
+        }
+        return result;
+    }
 }

@@ -1,8 +1,5 @@
-const { parseSpecification } = require("../dist/specification/specification-parser");
-const { sqlFromSpecification } = require("../dist/postgres/specification-sql");
+const { SpecificationParser } = require("../dist/specification/specification-parser");
 const { dehydrateReference } = require("../dist/fact/hydrate");
-const { getAllFactTypes, getAllRoles } = require("../dist/specification/specification");
-const { emptyFactTypeMap, emptyRoleMap, addFactType, addRole, getFactTypeId } = require("../dist/postgres/maps");
 const { PostgresStore } = require("../dist/postgres/postgres-store")
 const fs = require("fs");
 
@@ -15,7 +12,11 @@ async function run() {
         var postgresStore = new PostgresStore("postgresql://dev:devpw@localhost:5432/improvingu");
         try {
             var input = fs.readFileSync(0, 'utf-8');
-            var specification = parseSpecification(input);
+            const parser = new SpecificationParser(input);
+            parser.skipWhitespace();
+            var declaration = parser.parseDeclaration({ me: user });
+            console.log(JSON.stringify(declaration, null, 2));
+            var specification = parser.parseSpecification(input);
 
             // Select starting facts that match the inputs
             var facts = specification.given.map(input => {

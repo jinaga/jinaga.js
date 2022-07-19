@@ -3,13 +3,19 @@ import { addFactType, addRole, emptyFactTypeMap, emptyRoleMap, getFactTypeId, ge
 import { SpecificationSqlQuery } from "../../src/postgres/query-description";
 import { sqlFromSpecification } from "../../src/postgres/specification-sql";
 import { getAllFactTypes, getAllRoles } from "../../src/specification/specification";
-import { parseSpecification } from "../../src/specification/specification-parser";
+import { SpecificationParser } from "../../src/specification/specification-parser";
 import { FactBookmark } from "../../src/storage";
 
 const root = dehydrateReference({ type: 'Root' });
 const rootHash = root.hash;
 const user = dehydrateReference({ type: "Jinaga.User", publicKey: "PUBLIC KEY"});
 const userHash = user.hash;
+
+function parseSpecification(input: string) {
+    const parser = new SpecificationParser(input);
+    parser.skipWhitespace();
+    return parser.parseSpecification();
+}
 
 function sqlFor(descriptiveString: string, bookmarks: FactBookmark[] = []) {
     const specification = parseSpecification(descriptiveString);

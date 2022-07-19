@@ -1,5 +1,11 @@
 import { Specification } from "../../src/specification/specification"
-import { parseSpecification } from "../../src/specification/specification-parser"
+import { SpecificationParser } from "../../src/specification/specification-parser"
+
+function parseSpecification(input: string): Specification {
+    const parser = new SpecificationParser(input);
+    parser.skipWhitespace();
+    return parser.parseSpecification();
+}
 
 describe("Specification parser", () => {
     it("parses a simple specification", () => {
