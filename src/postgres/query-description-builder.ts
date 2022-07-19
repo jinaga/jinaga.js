@@ -55,6 +55,8 @@ export class QueryDescriptionBuilder {
             type = role.targetType;
         }
 
+        const rightType = type;
+
         // Walk up the left-hand side.
         // We will need to reverse this walk to generate successor joins.
         type = unknown.type;
@@ -80,6 +82,11 @@ export class QueryDescriptionBuilder {
             });
             type = role.targetType;
         }
+
+        if (type !== rightType) {
+            throw new Error(`Type mismatch: ${type} is compared to ${rightType}`);
+        }
+
         newEdges.reverse().forEach(({ roleId, declaringType }, i) => {
             const { query: queryWithParameter, parameterIndex: roleParameter } = queryDescription.withParameter(roleId);
             if (condition.rolesRight.length + i === roleCount - 1 && knownFact) {
