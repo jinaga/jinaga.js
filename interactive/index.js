@@ -4,8 +4,6 @@ const { PostgresStore } = require("../dist/postgres/postgres-store")
 const fs = require("fs");
 
 var user = {"publicKey":"-----BEGIN RSA PUBLIC KEY-----\nMIGJAoGBAIBsKomutukULWw2zoTW2ECMrM8VmD2xvfpl3R4qh1whzuXV+A4EfRKMb/UAjEfw\n5nBmWvcObGyYUgygKrlNeOhf3MnDj706rej6ln9cKGL++ZNsJgJsogaAtmkPihWVGi908fdP\nLQrWTF5be0b/ZP258Zs3CTpcRTpTvhzS5TC1AgMBAAE=\n-----END RSA PUBLIC KEY-----\n","type":"Jinaga.User"};
-var company = {"name":"Improving","type":"ImprovingU.Company","from":user};
-var semester = {"type":"ImprovingU.Semester","name":"Fall 2021","company":company};
 
 async function run() {
     try {
@@ -15,21 +13,15 @@ async function run() {
             const parser = new SpecificationParser(input);
             parser.skipWhitespace();
             var declaration = parser.parseDeclaration({ me: user });
-            console.log(JSON.stringify(declaration, null, 2));
             var specification = parser.parseSpecification(input);
 
             // Select starting facts that match the inputs
             var facts = specification.given.map(input => {
-                if (input.type === "Jinaga.User") {
-                    return user;
+                const fact = declaration[input.name];
+                if (!fact) {
+                    throw new Error(`No fact named ${input.name} was declared`);
                 }
-                if (input.type === "ImprovingU.Company") {
-                    return company;
-                }
-                if (input.type === "ImprovingU.Semester") {
-                    return semester;
-                }
-                throw new Error("Unknown input type: " + input.type);
+                return fact;
             });
         
             const start = facts.map(fact => dehydrateReference(fact));
