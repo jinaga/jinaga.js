@@ -1,7 +1,5 @@
 let user: Jinaga.User = me
-let creator: Jinaga.User = {publicKey:"-----BEGIN RSA PUBLIC KEY-----\nMIGJAoGBAIBsKomutukULWw2zoTW2ECMrM8VmD2xvfpl3R4qh1whzuXV+A4EfRKMb/UAjEfw\n5nBmWvcObGyYUgygKrlNeOhf3MnDj706rej6ln9cKGL++ZNsJgJsogaAtmkPihWVGi908fdP\nLQrWTF5be0b/ZP258Zs3CTpcRTpTvhzS5TC1AgMBAAE=\n-----END RSA PUBLIC KEY-----\n"}
-let company: ImprovingU.Company = {name:"Improving",from:creator}
-let semester: ImprovingU.Semester = {name:"Fall 2021",company}
+let semester: ImprovingU.Semester = #Ws6RWV8bWmP7ibBlzwL2UoKKwg6E1iItQPFpX/mvU5u6FLwHJAbRd0SbH+P1hoMn4QndhArLqJqVReRqJdoyBg==
 
 (semester: ImprovingU.Semester, user: Jinaga.User) {
     catalog: ImprovingU.Catalog [

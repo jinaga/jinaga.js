@@ -1,5 +1,5 @@
 const { SpecificationParser } = require("../dist/specification/specification-parser");
-const { dehydrateReference } = require("../dist/fact/hydrate");
+const { dehydrateFact } = require("../dist/fact/hydrate");
 const { PostgresStore } = require("../dist/postgres/postgres-store")
 const fs = require("fs");
 
@@ -12,19 +12,27 @@ async function run() {
             var input = fs.readFileSync(0, 'utf-8');
             const parser = new SpecificationParser(input);
             parser.skipWhitespace();
-            var declaration = parser.parseDeclaration({ me: user });
+            const userRecord = dehydrateFact(user)[0];
+            const knownFacts = {
+                me: {
+                    fact: userRecord,
+                    reference: {
+                        type: userRecord.type,
+                        hash: userRecord.hash
+                    }
+                }
+            };
+            var declaration = parser.parseDeclaration(knownFacts);
             var specification = parser.parseSpecification(input);
 
             // Select starting facts that match the inputs
-            var facts = specification.given.map(input => {
+            const start = specification.given.map(input => {
                 const fact = declaration[input.name];
                 if (!fact) {
                     throw new Error(`No fact named ${input.name} was declared`);
                 }
-                return fact;
+                return fact.reference;
             });
-        
-            const start = facts.map(fact => dehydrateReference(fact));
 
             const args = process.argv.slice(2);
             const produceResults = args.includes("--results");

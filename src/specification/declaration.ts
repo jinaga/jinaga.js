@@ -1,5 +1,10 @@
-import { HashMap } from "../fact/hydrate";
+import { FactRecord, FactReference } from "../storage";
+
+export interface DeclaredFact {
+    reference: FactReference;
+    fact: FactRecord | null;
+}
 
 export interface Declaration {
-    [name: string]: HashMap;
+    [name: string]: DeclaredFact;
 }

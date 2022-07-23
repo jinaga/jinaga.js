@@ -1,6 +1,11 @@
+import { computeHash } from "../fact/hash";
 import { HashMap } from "../fact/hydrate";
-import { Declaration } from "./declaration";
+import { Declaration, DeclaredFact } from "./declaration";
 import { Condition, Label, Match, PathCondition, ExistentialCondition, Projection, Role, Specification, ChildProjections } from "./specification";
+import { FactRecord, PredecessorCollection } from "../storage";
+import e from "express";
+
+type FieldValue = string | number | boolean;
 
 export class SpecificationParser {
     private offset: number = 0;
@@ -221,13 +226,15 @@ export class SpecificationParser {
         }
     }
 
-    private parseValue(knownFacts: Declaration): any {
+    private parseValue(knownFacts: Declaration): FieldValue | DeclaredFact {
         const jsonValue = /^true|^false|^null|^"(?:[^"\\]|\\.)*"|^[+-]?\d+(\.\d+)?/;
         const value = this.match(jsonValue);
         if (value) {
-            return JSON.parse(value);
+            // The string matches a JSON literal value, so this is a field.
+            return JSON.parse(value) as FieldValue;
         }
         else {
+            // The string does not match a JSON literal value, so this is a declared fact.
             const reference = this.parseIdentifier();
             if (!knownFacts[reference]) {
                 throw new Error(`The fact '${reference}' has not been defined`);
@@ -236,39 +243,96 @@ export class SpecificationParser {
         }
     }
 
-    private parseField(fact: HashMap, knownFacts: Declaration) {
+    private parseField(fields: {}, predecessors: PredecessorCollection, knownFacts: Declaration) : {
+        fields: {},
+        predecessors: PredecessorCollection
+    } {
         const name = this.parseIdentifier();
         if (!this.continues(":")) {
+            // This is an auto-named element, which must be a predecessor
             if (!knownFacts[name]) {
                 throw new Error(`The fact '${name}' has not been defined`);
             }
-            fact[name] = knownFacts[name];
+            return {
+                fields,
+                predecessors: {
+                    ...predecessors,
+                    [name]: knownFacts[name].reference
+                }
+            }
         }
         else {
+            // This is a named element, which could be a field or a predecessor
             this.consume(":");
             const value = this.parseValue(knownFacts);
-            fact[name] = value;
+            if (typeof value === "object") {
+                // The value is a predecessor
+                return {
+                    fields,
+                    predecessors: {
+                        ...predecessors,
+                        [name]: value.reference
+                    }
+                };
+            }
+            else {
+                // The value is a field
+                return {
+                    fields: {
+                        ...fields,
+                        [name]: value
+                    },
+                    predecessors
+                };
+            }
         }
     }
 
-    private parseFact(knownFacts: Declaration): HashMap {
+    private parseFact(type: string, knownFacts: Declaration): DeclaredFact {
         if (this.consume("{")) {
-            const fact: HashMap = {};
+            let fields: {} = {};
+            let predecessors: PredecessorCollection = {};
             if (!this.continues("}")) {
-                this.parseField(fact, knownFacts);
+                ({fields, predecessors} = this.parseField(fields, predecessors, knownFacts));
                 while (this.consume(",")) {
-                    this.parseField(fact, knownFacts);
+                    ({fields, predecessors} = this.parseField(fields, predecessors, knownFacts));
                 }
             }
             this.expect("}");
-            return fact;
+            const hash = computeHash(fields, predecessors);
+            return {
+                fact: {
+                    type,
+                    hash,
+                    fields,
+                    predecessors
+                },
+                reference: {
+                    type,
+                    hash,
+                }
+            };
+        }
+        else if (this.consume("#")) {
+            const hash = this.match(/[A-Za-z0-9+/]+={0,2}/);
+            return {
+                fact: null,
+                reference: {
+                    type,
+                    hash,
+                }
+            };
         }
         else {
             const reference = this.parseIdentifier();
             if (!knownFacts[reference]) {
                 throw new Error(`The fact '${reference}' has not been defined`);
             }
-            return knownFacts[reference];
+            const knownFact = knownFacts[reference];
+            if (knownFact.reference.type !== type) {
+                throw new Error(`Cannot assign a '${knownFact.reference.type}' to a '${type}'`);
+            }
+            return knownFact;
         }
     }
 
@@ -289,13 +353,8 @@ export class SpecificationParser {
             this.expect(":");
             const type = this.parseType();
             this.expect("=");
-            const value = this.parseFact({ ...knownFacts, ...result });
-            if (value.hasOwnProperty("type")) {
-                if (value.type !== type) {
-                    throw new Error(`Cannot assign ${value.type} to ${type}`);
-                }
-            }
-            result[name] = { ...value, type };
+            const value = this.parseFact(type, { ...knownFacts, ...result });
+            result[name] = value;
         }
         return result;
     }
