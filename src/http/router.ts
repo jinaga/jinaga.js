@@ -6,6 +6,7 @@ import { UserIdentity } from '../keystore';
 import { fromDescriptiveString } from '../query/descriptive-string';
 import { Declaration } from "../specification/declaration";
 import { SpecificationParser } from "../specification/specification-parser";
+import { FactRecord } from "../storage";
 import { Trace } from '../util/trace';
 import {
     LoadMessage,
@@ -44,7 +45,7 @@ function post<T, U>(method: (user: RequestUser, message: T) => Promise<U>): Hand
         const user = <RequestUser>req.user;
         const message = <T>req.body;
         if (!message) {
-            throw new Error('Ensure that you have installed body-parser and called app.use(express.json()).');
+            throw new Error('Ensure that you have called app.use(express.json()).');
         }
         method(user, message)
             .then(response => {
@@ -55,30 +56,32 @@ function post<T, U>(method: (user: RequestUser, message: T) => Promise<U>): Hand
             .catch(error => {
                 if (error instanceof Forbidden) {
                     Trace.warn(error.message);
+                    res.setHeader('Content-Type', 'text/plain');
                     res.status(403).send(error.message);
                 }
                 else {
                     Trace.error(error);
-                    res.sendStatus(500);
+                    res.setHeader('Content-Type', 'text/plain');
+                    res.sendStatus(500).send(error.message);
                 }
                 next();
             });
     };
 }
 
-function postString(method: (user: RequestUser, message: string) => Promise<string>): Handler {
+function postString<U>(method: (user: RequestUser, message: string) => Promise<U>): Handler {
     return (req, res, next) => {
         const user = <RequestUser>req.user;
         const input = <string>req.body;
         if (!input || typeof(input) !== 'string') {
             res.setHeader('Content-Type', 'text/plain');
-            res.status(500).send('Ensure that you have installed body-parser and called app.use(express.text()).');
+            res.status(500).send('Expected Content-Type text/plain. Ensure that you have called app.use(express.text()).');
         }
         else {
             method(user, input)
                 .then(response => {
                     res.setHeader('Content-Type', 'application/json');
-                    res.send(response);
+                    res.send(JSON.stringify(response, null, 2));
                     next();
                 })
                 .catch(error => {
@@ -165,23 +168,8 @@ export class HttpRouter {
         return {};
     }
 
-    private async read(user: RequestUser, input: string): Promise<string> {
-        let knownFacts: Declaration = {};
-        if (user) {
-            const userFact = await this.authorization.getOrCreateUserFact({
-                provider: user.provider,
-                id: user.id
-            });
-            knownFacts = {
-                me: {
-                    fact: userFact,
-                    reference: {
-                        type: userFact.type,
-                        hash: userFact.hash
-                    }
-                }
-            };
-        }
+    private async read(user: RequestUser, input: string): Promise<any[]> {
+        const knownFacts = await this.getKnownFacts(user);
         const parser = new SpecificationParser(input);
         parser.skipWhitespace();
         var declaration = parser.parseDeclaration(knownFacts);
@@ -198,14 +186,52 @@ export class HttpRouter {
 
         const userIdentity = serializeUserIdentity(user);
         const results = await this.authorization.read(userIdentity, start, specification);
-        return JSON.stringify(results, null, 2);
+        return results;
     }
 
-    private write(user: RequestUser, input: string): Promise<string> {
-        throw new Error("Method not implemented.");
+    private async write(user: RequestUser, input: string): Promise<SaveResponse> {
+        const knownFacts = await this.getKnownFacts(user);
+        const parser = new SpecificationParser(input);
+        parser.skipWhitespace();
+        var declaration = parser.parseDeclaration(knownFacts);
+
+        const factRecords: FactRecord[] = [];
+        for (const variable in declaration) {
+            if (Object.prototype.hasOwnProperty.call(declaration, variable)) {
+                const value = declaration[variable];
+                if (value.fact) {
+                    factRecords.push(value.fact);
+                }
+            }
+        }
+
+        const userIdentity = serializeUserIdentity(user);
+        await this.authorization.save(userIdentity, factRecords);
+        return {};
     }
 
     private feed(user: RequestUser, input: string): Promise<string> {
         throw new Error("Method not implemented.");
+    }
+
+    private async getKnownFacts(user: RequestUser): Promise<Declaration> {
+        if (user) {
+            const userFact = await this.authorization.getOrCreateUserFact({
+                provider: user.provider,
+                id: user.id
+            });
+            return {
+                me: {
+                    fact: userFact,
+                    reference: {
+                        type: userFact.type,
+                        hash: userFact.hash
+                    }
+                }
+            };
+        }
+        else {
+            return {};
+        }
     }
 }
