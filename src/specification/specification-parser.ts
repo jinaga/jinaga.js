@@ -236,10 +236,11 @@ export class SpecificationParser {
         else {
             // The string does not match a JSON literal value, so this is a declared fact.
             const reference = this.parseIdentifier();
-            if (!knownFacts[reference]) {
+            const fact = knownFacts.find(fact => fact.name === reference);
+            if (!fact) {
                 throw new Error(`The fact '${reference}' has not been defined`);
             }
-            return knownFacts[reference];
+            return fact.declared;
         }
     }
 
@@ -250,14 +251,15 @@ export class SpecificationParser {
         const name = this.parseIdentifier();
         if (!this.continues(":")) {
             // This is an auto-named element, which must be a predecessor
-            if (!knownFacts[name]) {
+            const fact = knownFacts.find(fact => fact.name === name);
+            if (!fact) {
                 throw new Error(`The fact '${name}' has not been defined`);
             }
             return {
                 fields,
                 predecessors: {
                     ...predecessors,
-                    [name]: knownFacts[name].reference
+                    [name]: fact.declared.reference
                 }
             }
         }
@@ -325,10 +327,11 @@ export class SpecificationParser {
         }
         else {
             const reference = this.parseIdentifier();
-            if (!knownFacts[reference]) {
+            const fact = knownFacts.find(fact => fact.name === reference);
+            if (!fact) {
                 throw new Error(`The fact '${reference}' has not been defined`);
             }
-            const knownFact = knownFacts[reference];
+            const knownFact = fact.declared;
             if (knownFact.reference.type !== type) {
                 throw new Error(`Cannot assign a '${knownFact.reference.type}' to a '${type}'`);
             }
@@ -344,17 +347,17 @@ export class SpecificationParser {
     }
 
     parseDeclaration(knownFacts: Declaration): Declaration {
-        let result: Declaration = {};
+        let result: Declaration = [];
         while (this.consume("let")) {
             const name = this.parseIdentifier();
-            if (result[name] || knownFacts[name]) {
+            if (result.some(r => r.name === name) || knownFacts.some(r => r.name === name)) {
                 throw new Error(`The name '${name}' has already been used`);
             }
             this.expect(":");
             const type = this.parseType();
             this.expect("=");
-            const value = this.parseFact(type, { ...knownFacts, ...result });
-            result[name] = value;
+            const value = this.parseFact(type, [ ...knownFacts, ...result ]);
+            result = [ ...result, { name, declared: value } ];
         }
         return result;
     }

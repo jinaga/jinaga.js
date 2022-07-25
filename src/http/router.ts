@@ -177,11 +177,11 @@ export class HttpRouter {
 
         // Select starting facts that match the inputs
         const start = specification.given.map(input => {
-            const fact = declaration[input.name];
-            if (!fact) {
+            const declaredFact = declaration.find(d => d.name === input.name);
+            if (!declaredFact) {
                 throw new Error(`No fact named ${input.name} was declared`);
             }
-            return fact.reference;
+            return declaredFact.declared.reference;
         });
 
         const userIdentity = serializeUserIdentity(user);
@@ -196,13 +196,11 @@ export class HttpRouter {
         var declaration = parser.parseDeclaration(knownFacts);
 
         const factRecords: FactRecord[] = [];
-        for (const variable in declaration) {
-            if (Object.prototype.hasOwnProperty.call(declaration, variable)) {
-                const value = declaration[variable];
-                if (value.fact) {
-                    factRecords.push(value.fact);
-                }
+        for (const value of declaration) {
+            if (!value.declared.fact) {
+                throw new Error("References are not allowed while saving.");
             }
+            factRecords.push(value.declared.fact);
         }
 
         const userIdentity = serializeUserIdentity(user);
@@ -220,18 +218,21 @@ export class HttpRouter {
                 provider: user.provider,
                 id: user.id
             });
-            return {
-                me: {
-                    fact: userFact,
-                    reference: {
-                        type: userFact.type,
-                        hash: userFact.hash
+            return [
+                {
+                    name: "me",
+                    declared: {
+                        fact: userFact,
+                        reference: {
+                            type: userFact.type,
+                            hash: userFact.hash
+                        }
                     }
                 }
-            };
+            ];
         }
         else {
-            return {};
+            return [];
         }
     }
 }

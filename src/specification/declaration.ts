@@ -5,6 +5,7 @@ export interface DeclaredFact {
     fact: FactRecord | null;
 }
 
-export interface Declaration {
-    [name: string]: DeclaredFact;
-}
+export type Declaration = {
+    name: string;
+    declared: DeclaredFact;
+}[];
