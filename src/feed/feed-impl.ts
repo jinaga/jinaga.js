@@ -1,5 +1,6 @@
 import { Inverse, invertQuery } from '../query/inverter';
 import { Query } from '../query/query';
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactPath, FactRecord, FactReference, Storage } from '../storage';
 import { mapAsync } from '../util/fn';
 import { Feed, Handler, Observable, ObservableSubscription } from './feed';
@@ -99,6 +100,10 @@ export class FeedImpl implements Feed {
     
     query(start: FactReference, query: Query) {
         return this.inner.query(start, query);
+    }
+
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        return this.inner.read(start, specification);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

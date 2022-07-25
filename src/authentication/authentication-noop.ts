@@ -2,6 +2,7 @@ import { Feed } from "../feed/feed";
 import { Channel } from "../fork/channel";
 import { LoginResponse } from "../http/messages";
 import { Query } from "../query/query";
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference } from "../storage";
 import { Authentication } from "./authentication";
 
@@ -28,6 +29,9 @@ export class AuthenticationNoOp implements Authentication {
     }
     query(start: FactReference, query: Query) {
         return this.inner.query(start, query);
+    }
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        return this.inner.read(start, specification);
     }
     whichExist(references: FactReference[]): Promise<FactReference[]> {
         return this.inner.whichExist(references);

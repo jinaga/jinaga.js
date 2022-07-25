@@ -1,4 +1,5 @@
 import { Query } from './query/query';
+import { Specification } from "./specification/specification";
 import { findIndex } from './util/fn';
 
 export type FactReference = {
@@ -49,6 +50,7 @@ export interface Storage {
     close(): Promise<void>;
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     query(start: FactReference, query: Query): Promise<FactPath[]>;
+    read(start: FactReference[], specification: Specification): Promise<any[]>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;
 }

@@ -3,6 +3,7 @@ import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference } from '../storage';
 import { Authentication } from './authentication';
 
@@ -35,6 +36,10 @@ export class AuthenticationImpl implements Authentication {
 
     query(start: FactReference, query: Query) {
         return this.inner.query(start, query);
+    }
+
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        return this.inner.read(start, specification);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

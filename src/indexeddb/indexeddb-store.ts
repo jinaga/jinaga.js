@@ -1,6 +1,7 @@
 import { TopologicalSorter } from '../fact/sorter';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactPath, FactRecord, FactReference, Storage } from '../storage';
 import { distinct, filterAsync, flatten, flattenAsync } from '../util/fn';
 import { execRequest, factKey, keyToReference, withDatabase, withTransaction } from './driver';
@@ -158,6 +159,10 @@ export class IndexedDBStore implements Storage {
         return results;
       });
     });
+  }
+
+  read(start: FactReference[], specification: Specification): Promise<any[]> {
+    throw new Error('Method not implemented.');
   }
 
   whichExist(references: FactReference[]): Promise<FactReference[]> {

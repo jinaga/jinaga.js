@@ -1,6 +1,7 @@
 import { Feed } from '../feed/feed';
 import { UserIdentity } from '../keystore';
 import { Query } from '../query/query';
+import { Specification } from "../specification/specification";
 import { FactRecord, FactReference } from '../storage';
 import { Authorization } from './authorization';
 import { Forbidden } from './authorization-engine';
@@ -16,6 +17,10 @@ export class AuthorizationNoOp implements Authorization {
 
     query(userIdentity: UserIdentity, start: FactReference, query: Query): Promise<any[]> {
         return this.feed.query(start, query);
+    }
+
+    read(userIdentity: UserIdentity, start: FactReference[], specification: Specification): Promise<any[]> {
+        return this.feed.read(start, specification);
     }
 
     load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactRecord[]> {

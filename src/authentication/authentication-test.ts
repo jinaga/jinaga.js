@@ -6,6 +6,7 @@ import { Query } from '../query/query';
 import { FactEnvelope, FactRecord, FactReference } from '../storage';
 import { AuthorizationRules } from '../authorization/authorizationRules';
 import { Channel } from "../fork/channel";
+import { Specification } from "../specification/specification";
 
 export class AuthenticationTest implements Authentication {
   private authorizationEngine: AuthorizationEngine | null;
@@ -56,6 +57,10 @@ export class AuthenticationTest implements Authentication {
 
   query(start: FactReference, query: Query) {
     return this.inner.query(start, query);
+  }
+
+  read(start: FactReference[], specification: Specification): Promise<any[]> {
+    return this.inner.read(start, specification);
   }
 
   whichExist(references: FactReference[]): Promise<FactReference[]> {

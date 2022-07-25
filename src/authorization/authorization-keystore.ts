@@ -1,6 +1,7 @@
 import { Feed } from '../feed/feed';
 import { Keystore, UserIdentity } from '../keystore';
 import { Query } from '../query/query';
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference } from '../storage';
 import { mapAsync } from '../util/fn';
 import { Authorization } from './authorization';
@@ -33,6 +34,10 @@ export class AuthorizationKeystore implements Authorization {
 
     query(userIdentity: UserIdentity, start: FactReference, query: Query) {
         return this.feed.query(start, query);
+    }
+
+    read(userIdentity: UserIdentity, start: FactReference[], specification: Specification) {
+        return this.feed.read(start, specification);
     }
 
     load(userIdentity: UserIdentity, references: FactReference[]) {

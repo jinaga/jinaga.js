@@ -227,6 +227,22 @@ export class PostgresStore implements Storage {
         }
     }
 
+    async read(start: FactReference[], specification: Specification): Promise<any[]> {
+        const factTypes = await this.loadFactTypesFromSpecification(specification);
+        const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
+
+        const composer = resultSqlFromSpecification(start, specification, factTypes, roleMap);
+        if (composer === null) {
+            return [];
+        }
+        
+        const sqlQueryTree = composer.getSqlQueries();
+        const resultSets = await this.connectionFactory.with(async (connection) => {
+            return await executeQueryTree(sqlQueryTree, connection);
+        });
+        return composer.compose(resultSets);
+    }
+
     async streamsFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification): Promise<FactStream[]> {
         const factTypes = await this.loadFactTypesFromSpecification(specification);
         const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
@@ -251,22 +267,6 @@ export class PostgresStore implements Storage {
             return streams;
         });
         return streams;
-    }
-
-    async resultsFromSpecification(start: FactReference[], specification: Specification): Promise<any[]> {
-        const factTypes = await this.loadFactTypesFromSpecification(specification);
-        const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
-
-        const composer = resultSqlFromSpecification(start, specification, factTypes, roleMap);
-        if (composer === null) {
-            return [];
-        }
-        
-        const sqlQueryTree = composer.getSqlQueries();
-        const resultSets = await this.connectionFactory.with(async (connection) => {
-            return await executeQueryTree(sqlQueryTree, connection);
-        });
-        return composer.compose(resultSets);
     }
 
     private async loadFactTypesFromSteps(steps: Step[], startType: string): Promise<FactTypeMap> {

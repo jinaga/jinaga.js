@@ -23,7 +23,7 @@ async function run() {
                 }
             };
             var declaration = parser.parseDeclaration(knownFacts);
-            var specification = parser.parseSpecification(input);
+            var specification = parser.parseSpecification();
 
             // Select starting facts that match the inputs
             const start = specification.given.map(input => {
@@ -43,7 +43,7 @@ async function run() {
             else {
                 const streams = await postgresStore.streamsFromSpecification(start, [], 3, specification);
                 console.log(JSON.stringify(streams, null, 2));
-        }
+            }
         }
         finally {
             postgresStore.close();

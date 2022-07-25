@@ -2,6 +2,7 @@ import { TopologicalSorter } from '../fact/sorter';
 import { Feed, Handler, Observable, ObservableSubscription } from '../feed/feed';
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference, factReferenceEquals } from '../storage';
 import { flatten } from '../util/fn';
 import { Channel } from "./channel";
@@ -69,6 +70,10 @@ export class TransientFork implements Fork {
             const response = await this.client.query(serializeQuery(start, query));
             return response.results;
         }
+    }
+
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        throw new Error('Method not implemented.');
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

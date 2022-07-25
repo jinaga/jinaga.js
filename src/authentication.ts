@@ -1,6 +1,7 @@
 import { Feed, Observable } from './feed/feed';
 import { WebClient } from './http/web-client';
 import { Query } from './query/query';
+import { Specification } from "./specification/specification";
 import { FactEnvelope, FactRecord, FactReference } from './storage';
 
 export class Principal {
@@ -28,6 +29,10 @@ export class Authentication implements Feed {
 
     query(start: FactReference, query: Query) {
         return this.inner.query(start, query);
+    }
+
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        return this.inner.read(start, specification);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
