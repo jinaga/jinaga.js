@@ -226,22 +226,39 @@ export class SpecificationParser {
         }
     }
 
-    private parseValue(knownFacts: Declaration): FieldValue | DeclaredFact {
+    private parseValue(knownFacts: Declaration): FieldValue | DeclaredFact | DeclaredFact[] {
         const jsonValue = /^true|^false|^null|^"(?:[^"\\]|\\.)*"|^[+-]?\d+(\.\d+)?/;
         const value = this.match(jsonValue);
         if (value) {
             // The string matches a JSON literal value, so this is a field.
             return JSON.parse(value) as FieldValue;
         }
-        else {
-            // The string does not match a JSON literal value, so this is a declared fact.
-            const reference = this.parseIdentifier();
-            const fact = knownFacts.find(fact => fact.name === reference);
-            if (!fact) {
-                throw new Error(`The fact '${reference}' has not been defined`);
+        else if (this.continues("[")) {
+            // This is an array of facts.
+            const facts: DeclaredFact[] = [];
+            this.consume("[");
+            if (!this.continues("]")) {
+                facts.push(this.parseFactReference(knownFacts));
+                while (this.consume(",")) {
+                    facts.push(this.parseFactReference(knownFacts));
+                }
             }
-            return fact.declared;
+            this.expect("]");
+            return facts;
         }
+        else {
+            // The string does not match a JSON literal value, so this is a fact reference.
+            return this.parseFactReference(knownFacts);
+        }
+    }
+
+    private parseFactReference(knownFacts: Declaration): DeclaredFact {
+        const reference = this.parseIdentifier();
+        const fact = knownFacts.find(fact => fact.name === reference);
+        if (!fact) {
+            throw new Error(`The fact '${reference}' has not been defined`);
+        }
+        return fact.declared;
     }
 
     private parseField(fields: {}, predecessors: PredecessorCollection, knownFacts: Declaration) : {
@@ -268,14 +285,26 @@ export class SpecificationParser {
             this.consume(":");
             const value = this.parseValue(knownFacts);
             if (typeof value === "object") {
-                // The value is a predecessor
-                return {
-                    fields,
-                    predecessors: {
-                        ...predecessors,
-                        [name]: value.reference
-                    }
-                };
+                if (Array.isArray(value)) {
+                    // The value is an array of predecessors
+                    return {
+                        fields,
+                        predecessors: {
+                            ...predecessors,
+                            [name]: value.map(predecessor => predecessor.reference)
+                        }
+                    };
+                }
+                else {
+                    // The value is a single predecessor
+                    return {
+                        fields,
+                        predecessors: {
+                            ...predecessors,
+                            [name]: value.reference
+                        }
+                    };
+                }
             }
             else {
                 // The value is a field
