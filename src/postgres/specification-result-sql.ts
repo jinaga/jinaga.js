@@ -1,4 +1,4 @@
-import { FieldProjection, Match, Projection, Specification, SpecificationProjection, ChildProjections, ResultProjection, SingularProjection } from "../specification/specification";
+import { Match, Specification, SpecificationProjection, ChildProjections, ResultProjection, SingularProjection, ElementProjection } from "../specification/specification";
 import { FactReference } from "../storage";
 import { FactTypeMap, getFactTypeId, RoleMap } from "./maps";
 import { FactDescription, InputDescription, QueryDescription, SpecificationSqlQuery } from "./query-description";
@@ -49,7 +49,7 @@ interface NamedResultSetTree extends ResultSetTree {
 export class ResultComposer {
     constructor(
         private readonly sqlQuery: SpecificationSqlQuery,
-        private readonly fieldProjections: ResultProjection,
+        private readonly resultProjection: ResultProjection,
         private readonly parentFactIdLength: number,
         private readonly childResultComposers: NamedResultComposer[]
     ) { }
@@ -149,10 +149,10 @@ export class ResultComposer {
     }
 
     private projectionOf(row: any): any {
-        if (!Array.isArray(this.fieldProjections)) {
-            return this.fieldValue(this.fieldProjections, row);
+        if (!Array.isArray(this.resultProjection)) {
+            return this.singularValue(this.resultProjection, row);
         }
-        else if (this.fieldProjections.length === 0 && this.childResultComposers.length === 0) {
+        else if (this.resultProjection.length === 0 && this.childResultComposers.length === 0) {
             return this.sqlQuery.labels
                 .slice(this.parentFactIdLength)
                 .reduce((acc, label) => ({
@@ -161,19 +161,34 @@ export class ResultComposer {
                 }), {})
         }
         else {
-            return this.fieldProjections.reduce((acc, fieldProjection) => ({
+            return this.resultProjection.reduce((acc, elementProjection) => ({
                 ...acc,
-                [fieldProjection.name]: this.fieldValue(fieldProjection, row)
+                [elementProjection.name]: this.elementValue(elementProjection, row)
             }), {});
         }
     }
 
-    private fieldValue(projection: FieldProjection | SingularProjection, row: any): any {
-        const label = this.sqlQuery.labels.find(label => label.name === projection.label);
-        if (!label) {
-            throw new Error(`Label ${projection.label} not found. Known labels: ${this.sqlQuery.labels.map(label => label.name).join(", ")}`);
+    private elementValue(projection: ElementProjection, row: any): any {
+        const label = this.getLabel(projection.label);
+        if (projection.type === "field") {
+            return row[`data${label.index}`].fields[projection.field];
         }
+        else if (projection.type === "hash") {
+            return row[`hash${label.index}`];
+        }
+    }
+
+    private singularValue(projection: SingularProjection, row: any): any {
+        const label = this.getLabel(projection.label);
         return row[`data${label.index}`].fields[projection.field];
+    }
+
+    private getLabel(name: string) {
+        const label = this.sqlQuery.labels.find(label => label.name === name);
+        if (!label) {
+            throw new Error(`Label ${name} not found. Known labels: ${this.sqlQuery.labels.map(label => label.name).join(", ")}`);
+        }
+        return label;
     }
 }
 
@@ -245,8 +260,8 @@ class ResultDescriptionBuilder extends QueryDescriptionBuilder {
         if (Array.isArray(childProjections)) {
             const specificationProjections = childProjections
                 .filter(projection => projection.type === "specification") as SpecificationProjection[];
-            const fieldProjections = childProjections
-                .filter(projection => projection.type === "field") as FieldProjection[];
+            const elementProjections = childProjections
+                .filter(projection => projection.type === "field" || projection.type === "hash") as ElementProjection[];
             for (const child of specificationProjections) {
                 const childResultDescription = this.createResultDescription(queryDescription, child.matches, child.childProjections, knownFacts, []);
                 childResultDescriptions.push({
@@ -256,7 +271,7 @@ class ResultDescriptionBuilder extends QueryDescriptionBuilder {
             }
             return {
                 queryDescription,
-                resultProjection: fieldProjections,
+                resultProjection: elementProjections,
                 childResultDescriptions
             };
         }

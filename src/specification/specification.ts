@@ -37,7 +37,14 @@ export interface FieldProjection {
     field: string
 }
 
-export type Projection = SpecificationProjection | FieldProjection;
+export interface HashProjection {
+    type: "hash",
+    name: string,
+    label: string
+}
+
+export type ElementProjection = FieldProjection | HashProjection;
+export type Projection = SpecificationProjection | ElementProjection;
 
 export interface SingularProjection {
     label: string;
@@ -46,7 +53,7 @@ export interface SingularProjection {
 
 export type ChildProjections = Projection[] | SingularProjection;
 
-export type ResultProjection = FieldProjection[] | SingularProjection;
+export type ResultProjection = ElementProjection[] | SingularProjection;
 
 export interface Match {
     unknown: Label;

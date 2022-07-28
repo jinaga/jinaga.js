@@ -259,7 +259,7 @@ export class QueryDescription {
 
     generateResultSqlQuery(): SpecificationSqlQuery {
         const columns = this.outputs
-            .map(output => `f${output.factIndex}.fact_id as id${output.factIndex}, f${output.factIndex}.data as data${output.factIndex}`)
+            .map(output => `f${output.factIndex}.hash as hash${output.factIndex}, f${output.factIndex}.fact_id as id${output.factIndex}, f${output.factIndex}.data as data${output.factIndex}`)
             .join(", ");
         const firstEdge = this.edges[0];
         const predecessorFact = this.inputs.find(i => i.factIndex === firstEdge.predecessorFactIndex);

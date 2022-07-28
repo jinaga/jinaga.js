@@ -1,9 +1,7 @@
 import { computeHash } from "../fact/hash";
-import { HashMap } from "../fact/hydrate";
 import { Declaration, DeclaredFact } from "./declaration";
 import { Condition, Label, Match, PathCondition, ExistentialCondition, Projection, Role, Specification, ChildProjections } from "./specification";
-import { FactRecord, PredecessorCollection } from "../storage";
-import e from "express";
+import { PredecessorCollection } from "../storage";
 
 type FieldValue = string | number | boolean;
 
@@ -196,6 +194,10 @@ export class SpecificationParser {
             const { matches, labels: allLabels } = this.parseMatches(labels);
             const projections = this.parseProjections(allLabels);
             return { type: "specification", name, matches, childProjections: projections };
+        }
+        else if (this.consume("#")) {
+            const label = this.parseIdentifier();
+            return { type: "hash", name, label };
         }
         else {
             const label = this.parseIdentifier();
