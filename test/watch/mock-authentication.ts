@@ -4,6 +4,7 @@ import { FeedImpl } from "../../src/feed/feed-impl";
 import { Channel } from "../../src/fork/channel";
 import { LoginResponse } from "../../src/http/messages";
 import { Query } from "../../src/query/query";
+import { Specification } from "../../src/specification/specification";
 import { FactEnvelope, FactRecord, FactReference, Storage } from "../../src/storage";
 
 export class MockAuthentication implements Authentication {
@@ -32,6 +33,9 @@ export class MockAuthentication implements Authentication {
   }
   query(start: FactReference, query: Query): Promise<FactReference[][]> {
       return this.inner.query(start, query);
+  }
+  read(start: FactReference[], specification: Specification): Promise<any[]> {
+      return this.inner.read(start, specification);
   }
   whichExist(references: FactReference[]): Promise<FactReference[]> {
     throw new Error("WhichExist method not implemented on MockAuthentication.");
