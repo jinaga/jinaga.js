@@ -1,0 +1,41 @@
+let user: Jinaga.User = me
+let semester: ImprovingU.Semester = #Ws6RWV8bWmP7ibBlzwL2UoKKwg6E1iItQPFpX/mvU5u6FLwHJAbRd0SbH+P1hoMn4QndhArLqJqVReRqJdoyBg==
+
+(semester: ImprovingU.Semester, user: Jinaga.User) {
+    catalog: ImprovingU.Catalog [
+        catalog->_in:ImprovingU.Semester = semester
+    ]
+} => {
+    office = catalog.office
+    courses = {
+        course: ImprovingU.Course [
+            course->_in:ImprovingU.Catalog = catalog
+            !E {
+                delete: ImprovingU.Course.Delete [
+                    delete->course:ImprovingU.Course = course
+                ]
+            }
+        ]
+    } => {
+        titles = {
+            title: ImprovingU.Course.Title [
+                title->course: ImprovingU.Course = course
+                !E {
+                    next: ImprovingU.Course.Title [
+                        next->prior: ImprovingU.Course.Title = title
+                    ]
+                }
+            ]
+        } => title.value
+        instructors = {
+            instructor: ImprovingU.Course.Instructor [
+                instructor->course: ImprovingU.Course = course
+                !E {
+                    next: ImprovingU.Course.Instructor [
+                        next->prior: ImprovingU.Course.Instructor = instructor
+                    ]
+                }
+            ]
+        } => instructor.value
+    }
+}

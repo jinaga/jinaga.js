@@ -2,6 +2,7 @@ import { TopologicalSorter } from '../fact/sorter';
 import { Feed, Handler, Observable, ObservableSubscription } from '../feed/feed';
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference, factReferenceEquals, Queue } from '../storage';
 import { flatten } from '../util/fn';
 import { Trace } from '../util/trace';
@@ -89,6 +90,10 @@ export class PersistentFork implements Fork {
                 }
             }
         }
+    }
+
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        throw new Error('Method not implemented.');
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

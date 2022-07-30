@@ -29,7 +29,7 @@ module.exports = {
         library: 'jinaga',
         libraryTarget: 'amd',
         path: path.resolve(__dirname, './dist'),
-        filename: 'jinaga.js',
+        filename: 'jinaga-client.js',
     },
     devtool: "source-map",
 };

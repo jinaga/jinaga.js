@@ -1,5 +1,6 @@
 import { Feed, Observable } from "../feed/feed";
 import { Query } from "../query/query";
+import { Specification } from "../specification/specification";
 import { FactReference, FactEnvelope, FactPath, FactRecord } from "../storage";
 import { Channel } from "./channel";
 import { Fork } from "./fork";
@@ -23,6 +24,10 @@ export class PassThroughFork implements Fork {
 
     query(start: FactReference, query: Query): Promise<FactPath[]> {
         return this.inner.query(start, query);
+    }
+
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        return this.inner.read(start, specification);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

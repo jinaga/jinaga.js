@@ -1,4 +1,5 @@
 import { Query } from './query/query';
+import { Specification } from "./specification/specification";
 import { findIndex } from './util/fn';
 
 export type FactReference = {
@@ -7,6 +8,22 @@ export type FactReference = {
 };
 
 export type FactPath = FactReference[];
+
+export interface FactBookmark {
+    labels: string[];
+    bookmark: string;
+}
+
+export interface FactTuple {
+    facts: FactReference[];
+    bookmark: string;
+}
+
+export interface FactStream {
+    labels: string[];
+    tuples: FactTuple[];
+    bookmark: string;
+}
 
 export type PredecessorCollection = {
     [role: string]: FactReference[] | FactReference
@@ -33,6 +50,7 @@ export interface Storage {
     close(): Promise<void>;
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     query(start: FactReference, query: Query): Promise<FactPath[]>;
+    read(start: FactReference[], specification: Specification): Promise<any[]>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;
 }

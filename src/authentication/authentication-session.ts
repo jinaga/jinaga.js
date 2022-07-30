@@ -5,6 +5,7 @@ import { Channel } from "../fork/channel";
 import { LoginResponse } from '../http/messages';
 import { Keystore, UserIdentity } from '../keystore';
 import { Query } from '../query/query';
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference } from '../storage';
 import { mapAsync } from "../util/fn";
 import { Authentication } from './authentication';
@@ -65,6 +66,10 @@ export class AuthenticationSession implements Authentication {
 
     query(start: FactReference, query: Query): Promise<FactReference[][]> {
         return this.inner.query(start, query);
+    }
+
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        return this.inner.read(start, specification);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

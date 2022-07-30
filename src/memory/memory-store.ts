@@ -1,5 +1,6 @@
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
+import { Specification } from "../specification/specification";
 import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 import { formatDot } from './debug';
@@ -61,6 +62,10 @@ export class MemoryStore implements Storage {
     query(start: FactReference, query: Query): Promise<FactPath[]> {
         const results = this.executeQuery(start, query.steps).map(path => path.slice(1));
         return Promise.resolve(results);
+    }
+
+    read(start: FactReference[], specification: Specification): Promise<any[]> {
+        throw new Error('Method not implemented.');
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

@@ -1,13 +1,50 @@
-import { PoolClient } from 'pg';
+import { PoolClient } from "pg";
+
 import { canonicalPredecessors } from "../fact/hash";
-import { Query } from '../query/query';
+import { Query } from "../query/query";
 import { Direction, ExistentialCondition, Join, PropertyCondition, Step } from "../query/steps";
-import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, PredecessorCollection, Storage } from '../storage';
-import { distinct, flatten } from '../util/fn';
-import { ConnectionFactory, Row } from './connection';
-import { makeEdgeRecords } from './edge-record';
-import { addFact, addFactType, addRole, copyRoleMap, emptyFactMap, emptyFactTypeMap, emptyPublicKeyMap, emptyRoleMap, FactMap, FactTypeMap, getFactId, getFactTypeId, getPublicKeyId, getRoleId, hasFact, hasRole, mergeFactTypes, mergeRoleMaps, PublicKeyMap, RoleMap } from './maps';
-import { sqlFromSteps } from './sql';
+import { getAllFactTypes, getAllRoles, Specification } from "../specification/specification";
+import {
+    FactBookmark,
+    FactEnvelope,
+    FactPath,
+    FactRecord,
+    FactReference,
+    factReferenceEquals,
+    FactStream,
+    FactTuple,
+    PredecessorCollection,
+    Storage,
+} from "../storage";
+import { distinct, flatten } from "../util/fn";
+import { ConnectionFactory, Row } from "./connection";
+import { makeEdgeRecords } from "./edge-record";
+import {
+    addFact,
+    addFactType,
+    addRole,
+    copyRoleMap,
+    emptyFactMap,
+    emptyFactTypeMap,
+    emptyPublicKeyMap,
+    emptyRoleMap,
+    FactMap,
+    FactTypeMap,
+    getFactId,
+    getFactTypeId,
+    getPublicKeyId,
+    getRoleId,
+    hasFact,
+    hasRole,
+    mergeFactTypes,
+    mergeRoleMaps,
+    PublicKeyMap,
+    RoleMap,
+} from "./maps";
+import { SpecificationLabel } from "./query-description";
+import { ResultSetTree, resultSqlFromSpecification, SqlQueryTree } from "./specification-result-sql";
+import { sqlFromSpecification } from "./specification-sql";
+import { sqlFromSteps } from "./sql";
 
 interface FactTypeResult {
     rows: {
@@ -59,6 +96,27 @@ function loadFactReference(r: Row): FactReference {
     return {
         type: r.type,
         hash: r.hash
+    };
+}
+
+function loadFactTuple(labels: SpecificationLabel[], row: Row): FactTuple {
+    const facts = labels.map(label => {
+        const hashColumn = `hash${label.index}`;
+        const hash = row[hashColumn];
+        if (hash === null) {
+            const columns = Object.keys(row);
+            throw new Error(`Cannot find column '${hashColumn}'. Available columns: ${columns.join(', ')}`);
+        }
+        const fact: FactReference = {
+            type: label.type,
+            hash
+        }
+        return fact;
+    });
+    const bookmark: number[] = row.bookmark;
+    return {
+        facts,
+        bookmark: bookmark.join(".")
     };
 }
 
@@ -169,6 +227,48 @@ export class PostgresStore implements Storage {
         }
     }
 
+    async read(start: FactReference[], specification: Specification): Promise<any[]> {
+        const factTypes = await this.loadFactTypesFromSpecification(specification);
+        const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
+
+        const composer = resultSqlFromSpecification(start, specification, factTypes, roleMap);
+        if (composer === null) {
+            return [];
+        }
+        
+        const sqlQueryTree = composer.getSqlQueries();
+        const resultSets = await this.connectionFactory.with(async (connection) => {
+            return await executeQueryTree(sqlQueryTree, connection);
+        });
+        return composer.compose(resultSets);
+    }
+
+    async streamsFromSpecification(start: FactReference[], bookmarks: FactBookmark[], limit: number, specification: Specification): Promise<FactStream[]> {
+        const factTypes = await this.loadFactTypesFromSpecification(specification);
+        const roleMap = await this.loadRolesFromSpecification(specification, factTypes);
+
+        const sqlQueries = sqlFromSpecification(start, bookmarks, limit, specification, factTypes, roleMap);
+        const streams = await this.connectionFactory.with(async (connection) => {
+            const streams: FactStream[] = [];
+            for (const sqlQuery of sqlQueries) {
+                try {
+                    const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
+                    const tuples = rows.map(row => loadFactTuple(sqlQuery.labels, row));
+                    streams.push({
+                        labels: sqlQuery.labels.map(l => l.name),
+                        tuples,
+                        bookmark: tuples.length > 0 ? tuples[tuples.length - 1].bookmark : sqlQuery.bookmark
+                    });
+                }
+                catch (error) {
+                    throw new Error(`Could not execute query "${sqlQuery.sql}", parameters ${sqlQuery.parameters}:\n${error}`);
+                }
+            }
+            return streams;
+        });
+        return streams;
+    }
+
     private async loadFactTypesFromSteps(steps: Step[], startType: string): Promise<FactTypeMap> {
         const factTypes = this.factTypeMap;
         const unknownFactTypes = [...allFactTypes(steps), startType]
@@ -185,9 +285,43 @@ export class PostgresStore implements Storage {
         return factTypes;
     }
 
+    async loadFactTypesFromSpecification(specification: Specification): Promise<FactTypeMap> {
+        const factTypes = this.factTypeMap;
+        const unknownFactTypes = getAllFactTypes(specification)
+            .filter(factType => !factTypes.has(factType));
+        if (unknownFactTypes.length > 0) {
+            const loadedFactTypes = await this.connectionFactory.with(async (connection) => {
+                return await loadFactTypes(unknownFactTypes, connection);
+            });
+            const merged = mergeFactTypes(this.factTypeMap, loadedFactTypes);
+            this.factTypeMap = merged;
+            return merged;
+        }
+        return factTypes;
+    }
+
     private async loadRolesFromSteps(steps: Step[], factTypes: FactTypeMap, initialType: string) {
         const roleMap = this.roleMap;
         const unknownRoles = allRoles(steps, factTypes, getFactTypeId(factTypes, initialType))
+            .filter(r => !hasRole(roleMap, r.defining_fact_type_id, r.role));
+        if (unknownRoles.length > 0) {
+            const loadedRoles = await this.connectionFactory.with(async (connection) => {
+                return await loadRoles(unknownRoles, roleMap, connection);
+            });
+            const merged = mergeRoleMaps(this.roleMap, loadedRoles);
+            this.roleMap = merged;
+            return merged;
+        }
+        return roleMap;
+    }
+
+    async loadRolesFromSpecification(specification: Specification, factTypes: FactTypeMap): Promise<RoleMap> {
+        const roleMap = this.roleMap;
+        const unknownRoles = getAllRoles(specification)
+            .map(r => ({
+                defining_fact_type_id: getFactTypeId(factTypes, r.definingFactType),
+                role: r.name
+            }))
             .filter(r => !hasRole(roleMap, r.defining_fact_type_id, r.role));
         if (unknownRoles.length > 0) {
             const loadedRoles = await this.connectionFactory.with(async (connection) => {
@@ -292,6 +426,23 @@ export class PostgresStore implements Storage {
         }
         return factTypes;
     }
+}
+
+async function executeQueryTree(sqlQueryTree: SqlQueryTree, connection: PoolClient): Promise<ResultSetTree> {
+    const sqlQuery = sqlQueryTree.sqlQuery;
+    const { rows } = await connection.query(sqlQuery.sql, sqlQuery.parameters);
+    const resultSets: ResultSetTree = {
+        resultSet: rows,
+        childResultSets: []
+    };
+    for (const child of sqlQueryTree.childQueries) {
+        const childResultSet = await executeQueryTree(child, connection);
+        resultSets.childResultSets.push({
+            name: child.name,
+            ...childResultSet
+        });
+    }
+    return resultSets;
 }
 
 function predecessorTypes(predecessor: FactReference[] | FactReference): string[] {

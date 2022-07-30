@@ -1,9 +1,6 @@
 node_modules/
 .idea/
 dist/
-src/*.js
-src/*.js.map
-*.tgz
 .vscode
 npm-debug.log
 integration-test/jinaga-test/jinaga
