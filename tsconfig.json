@@ -3,6 +3,7 @@
         "target": "es6",
         "module": "commonjs",
         "sourceMap": true,
+        "declaration": true,
         "noImplicitAny": true,
         "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,

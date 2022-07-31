@@ -3,7 +3,7 @@
   "version": "3.1.0",
   "description": "Application-agnostic back end for web applications",
   "main": "dist/index.js",
-  "types": "dist/types/index.d.ts",
+  "types": "dist/index.d.ts",
   "scripts": {
     "clean": "rimraf dist/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
     "build": "webpack && tsc",
