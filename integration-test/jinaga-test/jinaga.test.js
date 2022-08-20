@@ -1,5 +1,6 @@
-const { Jinaga, JinagaServer, ensure } = require("./jinaga");
-const forge = require("node-forge");
+import { encode } from "@stablelib/base64";
+
+import { ensure, Jinaga, JinagaServer } from "./jinaga";
 
 const host = "db";
 // const host = "localhost";
@@ -285,8 +286,8 @@ describe("Jinaga as a user", () => {
 })
 
 function randomRoot() {
-    const num = forge.random.getBytesSync(16);
-    const identifier = forge.util.encode64(num);
+    const num = Math.random();
+    const identifier = encode(num);
 
     return {
         type: "IntegrationTest.Root",
