@@ -4,3 +4,4 @@ dist/
 .vscode
 npm-debug.log
 integration-test/jinaga-test/jinaga
+.DS_Store
