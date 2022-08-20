@@ -1,4 +1,3 @@
-import { AuthorizationRules } from "..";
 import { AuthorizationEngine } from "../authorization/authorization-engine";
 import { Feed, Observable } from "../feed/feed";
 import { Channel } from "../fork/channel";
