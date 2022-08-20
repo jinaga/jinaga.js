@@ -1,10 +1,9 @@
-import { hash } from 'tweetnacl';
-import { decodeUTF8, encodeBase64 } from 'tweetnacl-util';
-
 import { HashMap } from '../fact/hydrate';
 import { FactRecord } from '../storage';
+import { computeStringHash } from '../util/encoding';
 import { flatten } from '../util/fn';
 import { getPredecessors } from './memory-store';
+
 
 export function formatDot(records: FactRecord[]): string[] {
     const prefix = [
@@ -47,9 +46,7 @@ function fieldRow(name: string, value: any) {
 
 function shorten(value: string) {
     if (value.startsWith('"-----BEGIN RSA PUBLIC KEY-----')) {
-        const bytes = decodeUTF8(value);
-        const result = hash(bytes);
-        const b64 = encodeBase64(result);
+        const b64 = computeStringHash(value);
         return b64.substr(0, 16);
     }
     else if (value.length > 100) {

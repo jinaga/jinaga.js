@@ -1,6 +1,5 @@
-import { hash } from 'tweetnacl';
-import { decodeUTF8, encodeBase64 } from 'tweetnacl-util';
 import { FactRecord, FactReference, PredecessorCollection } from '../storage';
+import { computeStringHash } from '../util/encoding';
 import { HashMap } from './hydrate';
 
 export function computeHash(fields: {}, predecessors: PredecessorCollection) {
@@ -56,10 +55,7 @@ function computeObjectHash(obj: {}) {
         return '';
 
     const str = canonicalize(obj);
-    const bytes = decodeUTF8(str);
-    const result = hash(bytes);
-    const b64 = encodeBase64(result);
-    return b64;
+    return computeStringHash(str);
 }
 
 type Pair = { key: string, value: any };
