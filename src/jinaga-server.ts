@@ -15,11 +15,12 @@ import { NodeHttpConnection } from './http/node-http';
 import { HttpRouter, RequestUser } from './http/router';
 import { SyncStatusNotifier, WebClient } from './http/web-client';
 import { Jinaga } from './jinaga';
-import { Keystore, UserIdentity } from './keystore';
+import { Keystore } from './keystore';
 import { MemoryStore } from './memory/memory-store';
 import { PostgresKeystore } from './postgres/postgres-keystore';
 import { PostgresStore } from './postgres/postgres-store';
 import { Storage } from './storage';
+import { UserIdentity } from "./user-identity";
 
 
 export type JinagaServerConfig = {

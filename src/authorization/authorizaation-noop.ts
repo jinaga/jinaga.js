@@ -1,5 +1,5 @@
 import { Feed } from '../feed/feed';
-import { UserIdentity } from '../keystore';
+import { UserIdentity } from "../user-identity";
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
 import { FactRecord, FactReference } from '../storage';

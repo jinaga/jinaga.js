@@ -1,13 +1,13 @@
-import { Handler, Router } from 'express';
+import { Handler, Router } from "express";
 
-import { Authorization } from '../authorization/authorization';
-import { Forbidden } from '../authorization/authorization-engine';
-import { UserIdentity } from '../keystore';
-import { fromDescriptiveString } from '../query/descriptive-string';
+import { Authorization } from "../authorization/authorization";
+import { Forbidden } from "../authorization/authorization-engine";
+import { fromDescriptiveString } from "../query/descriptive-string";
 import { Declaration } from "../specification/declaration";
 import { SpecificationParser } from "../specification/specification-parser";
 import { FactRecord } from "../storage";
-import { Trace } from '../util/trace';
+import { UserIdentity } from "../user-identity";
+import { Trace } from "../util/trace";
 import {
     LoadMessage,
     LoadResponse,
@@ -16,7 +16,7 @@ import {
     QueryResponse,
     SaveMessage,
     SaveResponse,
-} from './messages';
+} from "./messages";
 
 function get<U>(method: ((req: RequestUser) => Promise<U>)): Handler {
     return (req, res, next) => {

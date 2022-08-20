@@ -1,10 +1,12 @@
 import { md, pki, util } from "node-forge";
-import { PoolClient } from 'pg';
-import { canonicalizeFact, computeHash } from '../fact/hash';
-import { Keystore, UserIdentity } from '../keystore';
-import { FactEnvelope, FactRecord, FactSignature, PredecessorCollection } from '../storage';
+import { PoolClient } from "pg";
+
+import { canonicalizeFact, computeHash } from "../fact/hash";
+import { Keystore } from "../keystore";
+import { FactEnvelope, FactRecord, PredecessorCollection } from "../storage";
+import { UserIdentity } from "../user-identity";
 import { Trace } from "../util/trace";
-import { ConnectionFactory } from './connection';
+import { ConnectionFactory } from "./connection";
 
 interface KeyPair {
     publicPem: string;

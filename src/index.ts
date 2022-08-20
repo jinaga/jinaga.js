@@ -4,6 +4,9 @@ export { ensure, FactDescription, Jinaga, Preposition, Profile, Template, Trace,
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaServer, JinagaServerConfig, JinagaServerInstance } from "./jinaga-server";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
+export { Keystore } from './keystore';
+export { UserIdentity } from './user-identity';
+export { MemoryStore } from './memory/memory-store';
 export { User, UserName } from "./model/user";
 export { Watch } from "./watch/watch";
 export { Specification } from "./query/query-parser";

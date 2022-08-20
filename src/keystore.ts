@@ -1,9 +1,5 @@
 import { FactEnvelope, FactRecord, FactSignature } from "./storage";
-
-export interface UserIdentity {
-    provider: string;
-    id: string;
-}
+import { UserIdentity } from "./user-identity";
 
 export interface Keystore {
     close(): Promise<void>;

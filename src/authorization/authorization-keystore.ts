@@ -1,12 +1,12 @@
-import { Feed } from '../feed/feed';
-import { Keystore, UserIdentity } from '../keystore';
-import { Query } from '../query/query';
+import { Feed } from "../feed/feed";
+import { Keystore } from "../keystore";
+import { Query } from "../query/query";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference } from '../storage';
-import { mapAsync } from '../util/fn';
-import { Authorization } from './authorization';
-import { AuthorizationEngine } from './authorization-engine';
-import { AuthorizationRules } from './authorizationRules';
+import { FactEnvelope, FactRecord, FactReference } from "../storage";
+import { UserIdentity } from "../user-identity";
+import { Authorization } from "./authorization";
+import { AuthorizationEngine } from "./authorization-engine";
+import { AuthorizationRules } from "./authorizationRules";
 
 export class AuthorizationKeystore implements Authorization {
     private authorizationEngine: AuthorizationEngine | null;

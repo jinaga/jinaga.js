@@ -2,10 +2,11 @@ import { Observable } from '../feed/feed';
 import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
 import { LoginResponse } from '../http/messages';
-import { Keystore, UserIdentity } from '../keystore';
+import { Keystore } from '../keystore';
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference } from '../storage';
+import { UserIdentity } from "../user-identity";
 import { Authentication } from './authentication';
 
 export class AuthenticationDevice implements Authentication {

@@ -1,14 +1,14 @@
 import { AuthorizationRules } from "..";
 import { AuthorizationEngine } from "../authorization/authorization-engine";
-import { Feed, Observable } from '../feed/feed';
+import { Feed, Observable } from "../feed/feed";
 import { Channel } from "../fork/channel";
-import { LoginResponse } from '../http/messages';
-import { Keystore, UserIdentity } from '../keystore';
-import { Query } from '../query/query';
+import { LoginResponse } from "../http/messages";
+import { Keystore } from "../keystore";
+import { Query } from "../query/query";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference } from '../storage';
-import { mapAsync } from "../util/fn";
-import { Authentication } from './authentication';
+import { FactEnvelope, FactRecord, FactReference } from "../storage";
+import { UserIdentity } from "../user-identity";
+import { Authentication } from "./authentication";
 
 export class AuthenticationSession implements Authentication {
     private authorizationEngine: AuthorizationEngine | null;
