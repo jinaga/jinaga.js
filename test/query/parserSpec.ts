@@ -32,7 +32,7 @@ describe('Query parser', () => {
 
     function listOfCompletion(c: Completion): SpecificationOf<List> {
         ensure(c).has("task", "Task").has("list", "List");
-        return j.match(c.task.list);
+        return j.match(c.task?.list);
     }
 
     function taskIsNotCompleted(t: Task): ConditionOf<Completion> {
