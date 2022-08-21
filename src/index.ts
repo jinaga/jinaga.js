@@ -28,6 +28,7 @@ export { User, UserName } from "./model/user";
 export { fromDescriptiveString } from './query/descriptive-string';
 export { Query } from './query/query';
 export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from './query/steps';
+export { Specification } from './specification/specification';
 export { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, FactSignature, PredecessorCollection, Storage } from './storage';
 export { Watch } from "./watch/watch";
 export { SpecificationOf } from "./query/query-parser";
