@@ -30,4 +30,4 @@ export { Query } from './query/query';
 export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from './query/steps';
 export { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, FactSignature, PredecessorCollection, Storage } from './storage';
 export { Watch } from "./watch/watch";
-export { Specification } from "./query/query-parser";
+export { SpecificationOf } from "./query/query-parser";

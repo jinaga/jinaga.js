@@ -2,20 +2,20 @@ import 'source-map-support/register';
 
 import { Jinaga } from '../../src/jinaga';
 import { Query } from '../../src/query/query';
-import { Condition, Preposition, Specification, ensure } from '../../src/query/query-parser';
+import { ConditionOf, Preposition, SpecificationOf, ensure } from '../../src/query/query-parser';
 
 describe('Query parser', () => {
 
     const j = new Jinaga(null, null, null);
 
-    function tasksInList(l: List): Specification<Task> {
+    function tasksInList(l: List): SpecificationOf<Task> {
         return j.match({
             type: 'Task',
             list: l
         });
     }
 
-    function completionsInList(l: List): Specification<Completion> {
+    function completionsInList(l: List): SpecificationOf<Completion> {
         return j.match({
             type: 'Completion',
             task: {
@@ -25,17 +25,17 @@ describe('Query parser', () => {
         });
     }
 
-    function listOfTask(t: Task): Specification<List> {
+    function listOfTask(t: Task): SpecificationOf<List> {
         ensure(t).has("list", "List");
         return j.match(t.list);
     }
 
-    function listOfCompletion(c: Completion): Specification<List> {
+    function listOfCompletion(c: Completion): SpecificationOf<List> {
         ensure(c).has("task", "Task").has("list", "List");
         return j.match(c.task.list);
     }
 
-    function taskIsNotCompleted(t: Task): Condition<Completion> {
+    function taskIsNotCompleted(t: Task): ConditionOf<Completion> {
         return j.notExists({
             type: 'Completion',
             task: t
@@ -63,42 +63,42 @@ describe('Query parser', () => {
         });
     }
 
-    function taskIsCompleted(t: Task): Condition<Completion> {
+    function taskIsCompleted(t: Task): ConditionOf<Completion> {
         return j.exists({
             type: 'Completion',
             task: t
         });
     }
 
-    function uncompletedTasksInList(l: List): Specification<Completion> {
+    function uncompletedTasksInList(l: List): SpecificationOf<Completion> {
         return j.match({
             type: 'Task',
             list: l
         }).suchThat(taskIsNotCompleted);
     }
 
-    function completedTasksInList(l: List): Specification<Completion> {
+    function completedTasksInList(l: List): SpecificationOf<Completion> {
         return j.match({
             type: 'Task',
             list: l
         }).suchThat(taskIsCompleted);
     }
 
-    function completedTasksInListWithArray(l: List): Specification<Task> {
+    function completedTasksInListWithArray(l: List): SpecificationOf<Task> {
         return j.match({
             type: 'Task',
             list: <any>[l]
         }).suchThat(taskIsCompleted);
     }
 
-    function uncompletedTasksInListAlt(l: List): Specification<Task> {
+    function uncompletedTasksInListAlt(l: List): SpecificationOf<Task> {
         return j.match({
             type: 'Task',
             list: l
         }).suchThat(j.not(taskIsCompleted));
     }
 
-    function completedTasksInListAlt(l: List): Specification<Task> {
+    function completedTasksInListAlt(l: List): SpecificationOf<Task> {
         return j.match({
             type: 'Task',
             list: l
