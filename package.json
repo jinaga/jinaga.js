@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "clean": "rimraf dist/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
-    "build": "webpack && tsc",
+    "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
     "prepublishOnly": "npm run clean && npm run build && npm run test"
@@ -30,10 +30,7 @@
     "rimraf": "^3.0.2",
     "source-map-support": "^0.5.21",
     "ts-jest": "^28.0.3",
-    "ts-loader": "^9.3.0",
-    "typescript": "^4.7.2",
-    "webpack": "^5.72.1",
-    "webpack-cli": "^4.9.2"
+    "typescript": "^4.7.2"
   },
   "dependencies": {
     "@stablelib/base64": "^1.0.1",
