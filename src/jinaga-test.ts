@@ -5,7 +5,7 @@ import { dehydrateFact, Dehydration } from './fact/hydrate';
 import { Feed } from './feed/feed';
 import { FeedImpl } from './feed/feed-impl';
 import { SyncStatusNotifier } from './http/web-client';
-import { Jinaga } from './jinaga-browser';
+import { Jinaga } from './jinaga';
 import { MemoryStore } from './memory/memory-store';
 import { FactEnvelope } from './storage';
 

@@ -4,7 +4,7 @@ import { runService } from './feed/service';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { MemoryStore } from './memory/memory-store';
 import { Query } from './query/query';
-import { Condition, ensure, FactDescription, Preposition, Specification } from './query/query-parser';
+import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf } from './query/query-parser';
 import { FactEnvelope, FactPath, uniqueFactReferences } from './storage';
 import { Subscription } from "./subscription/subscription";
 import { SubscriptionImpl } from "./subscription/subscription-impl";
@@ -255,7 +255,7 @@ export class Jinaga {
      * @param specification A template function, which returns j.match
      * @returns A preposition that can be passed to query or watch, or used to construct a preposition chain
      */
-    static for<T, U>(specification: (target : T) => Specification<U>) : Preposition<T, U> {
+    static for<T, U>(specification: (target : T) => SpecificationOf<U>) : Preposition<T, U> {
         return Preposition.for(specification);
     }
 
@@ -265,7 +265,7 @@ export class Jinaga {
      * @param specification A template function, which returns j.match
      * @returns A preposition that can be passed to query or watch, or used to construct a preposition chain
      */
-    for<T, U>(specification: (target : T) => Specification<U>) : Preposition<T, U> {
+    for<T, U>(specification: (target : T) => SpecificationOf<U>) : Preposition<T, U> {
         return Jinaga.for(specification);
     }
 
@@ -275,8 +275,8 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A specification that can be used by query or watch
      */
-    static match<T>(template: Template<T>): Specification<T> {
-        return new Specification<T>(template,[]);
+    static match<T>(template: Template<T>): SpecificationOf<T> {
+        return new SpecificationOf<T>(template,[]);
     }
 
     /**
@@ -285,7 +285,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A specification that can be used by query or watch
      */
-    match<T>(template: Template<T>): Specification<T> {
+    match<T>(template: Template<T>): SpecificationOf<T> {
         return Jinaga.match(template);
     }
 
@@ -295,8 +295,8 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    static exists<T>(template: Template<T>): Condition<T> {
-        return new Condition<T>(template, [], false);
+    static exists<T>(template: Template<T>): ConditionOf<T> {
+        return new ConditionOf<T>(template, [], false);
     }
 
     /**
@@ -305,7 +305,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    exists<T>(template: Template<T>): Condition<T> {
+    exists<T>(template: Template<T>): ConditionOf<T> {
         return Jinaga.exists(template);
     }
 
@@ -315,8 +315,8 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    static notExists<T>(template: Template<T>): Condition<T> {
-        return new Condition<T>(template, [], true);
+    static notExists<T>(template: Template<T>): ConditionOf<T> {
+        return new ConditionOf<T>(template, [], true);
     }
 
     /**
@@ -325,7 +325,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A condition that can be used in suchThat or not
      */
-    notExists<T>(template: Template<T>): Condition<T> {
+    notExists<T>(template: Template<T>): ConditionOf<T> {
         return Jinaga.notExists(template);
     }
 
@@ -335,10 +335,10 @@ export class Jinaga {
      * @param condition A template function using exists or notExists to invert
      * @returns The opposite condition
      */
-    static not<T, U>(condition: (target: T) => Condition<U>) : (target: T) => Condition<U> {
+    static not<T, U>(condition: (target: T) => ConditionOf<U>) : (target: T) => ConditionOf<U> {
         return target => {
             const original = condition(target);
-            return new Condition<U>(original.template, original.conditions, !original.negative);
+            return new ConditionOf<U>(original.template, original.conditions, !original.negative);
         };
     }
 
@@ -348,7 +348,7 @@ export class Jinaga {
      * @param condition A template function using exists or notExists to invert
      * @returns The opposite condition
      */
-    not<T, U>(condition: (target: T) => Condition<U>) : (target: T) => Condition<U> {
+    not<T, U>(condition: (target: T) => ConditionOf<U>) : (target: T) => ConditionOf<U> {
         return Jinaga.not(condition);
     }
 
