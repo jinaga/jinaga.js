@@ -5,6 +5,7 @@ export { AuthorizationNoOp } from "./authorization/authorization-noop";
 export { AuthorizationRules } from "./authorization/authorizationRules";
 export { Cache } from './cache';
 export { canonicalizeFact, canonicalPredecessors, computeHash } from './fact/hash';
+export { dehydrateFact, dehydrateReference, hydrate, hydrateFromTree } from "./fact/hydrate";
 export { Feed, Observable } from './feed/feed';
 export { FeedImpl } from './feed/feed-impl';
 export { Channel } from "./fork/channel";
