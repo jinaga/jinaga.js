@@ -1,6 +1,6 @@
 import { Authentication } from '../authentication/authentication';
 import { AuthorizationEngine } from '../authorization/authorization-engine';
-import { Feed } from '../feed/feed';
+import { ObservableSource } from '../observable/observable';
 import { LoginResponse } from '../http/messages';
 import { Query } from '../query/query';
 import { FactEnvelope, FactRecord, FactReference } from '../storage';
@@ -12,7 +12,7 @@ export class AuthenticationTest implements Authentication {
   private authorizationEngine: AuthorizationEngine | null;
 
   constructor (
-    private inner: Feed,
+    private inner: ObservableSource,
     authorizationRules: AuthorizationRules | null,
     private userFact: FactRecord | null,
     private deviceFact: FactRecord | null

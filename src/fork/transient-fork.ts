@@ -1,5 +1,5 @@
 import { TopologicalSorter } from '../fact/sorter';
-import { Feed, Handler, Observable, ObservableSubscription } from '../feed/feed';
+import { ObservableSource, Handler, Observable, ObservableSubscription } from '../observable/observable';
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
@@ -42,7 +42,7 @@ export class TransientFork implements Fork {
     private channelProcessor: ChannelProcessor;
 
     constructor(
-        private feed: Feed,
+        private feed: ObservableSource,
         private client: WebClient
     ) {
         

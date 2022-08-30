@@ -1,4 +1,4 @@
-import { Feed } from "../feed/feed";
+import { ObservableSource } from "../observable/observable";
 import { Channel } from "../fork/channel";
 import { LoginResponse } from "../http/messages";
 import { Query } from "../query/query";
@@ -8,7 +8,7 @@ import { Authentication } from "./authentication";
 
 export class AuthenticationNoOp implements Authentication {
     constructor(
-        private inner: Feed
+        private inner: ObservableSource
     ) { }
 
     async close(): Promise<void> {

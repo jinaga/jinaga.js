@@ -3,7 +3,7 @@ import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactPath, FactRecord, FactReference, Storage } from '../storage';
 import { mapAsync } from '../util/fn';
-import { Feed, Handler, Observable, ObservableSubscription } from './feed';
+import { ObservableSource, Handler, Observable, ObservableSubscription } from './observable';
 
 type Listener = {
     inverse: Inverse,
@@ -74,7 +74,7 @@ class ObservableImpl implements Observable {
     }
 }
 
-export class FeedImpl implements Feed {
+export class ObservableSourceImpl implements ObservableSource {
     private listenersByTypeAndQuery: {
         [appliedToType: string]: {
             [queryKey: string]: Listener[]

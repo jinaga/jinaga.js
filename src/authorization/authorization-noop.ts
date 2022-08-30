@@ -1,4 +1,4 @@
-import { Feed } from '../feed/feed';
+import { ObservableSource } from '../observable/observable';
 import { UserIdentity } from "../user-identity";
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
@@ -8,7 +8,7 @@ import { Forbidden } from './authorization-engine';
 
 export class AuthorizationNoOp implements Authorization {
     constructor(
-        private feed: Feed
+        private feed: ObservableSource
     ) { }
 
     getOrCreateUserFact(userIdentity: UserIdentity): Promise<FactRecord> {

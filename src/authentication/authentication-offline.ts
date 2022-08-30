@@ -1,4 +1,4 @@
-import { Feed, Observable } from '../feed/feed';
+import { ObservableSource, Observable } from '../observable/observable';
 import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
 import { LoginResponse } from '../http/messages';

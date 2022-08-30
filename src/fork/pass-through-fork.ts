@@ -1,4 +1,4 @@
-import { Feed, Observable } from "../feed/feed";
+import { ObservableSource, Observable } from "../observable/observable";
 import { Query } from "../query/query";
 import { Specification } from "../specification/specification";
 import { FactReference, FactEnvelope, FactPath, FactRecord } from "../storage";
@@ -7,7 +7,7 @@ import { Fork } from "./fork";
 
 export class PassThroughFork implements Fork {
     constructor(
-        private inner: Feed
+        private inner: ObservableSource
     ) { }
 
     async close(): Promise<void> {

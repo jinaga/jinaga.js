@@ -1,6 +1,6 @@
 import { Authentication } from "../../src/authentication/authentication";
-import { Feed, Observable } from "../../src/feed/feed";
-import { FeedImpl } from "../../src/feed/feed-impl";
+import { ObservableSource, Observable } from "../../src/observable/observable";
+import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
 import { Channel } from "../../src/fork/channel";
 import { LoginResponse } from "../../src/http/messages";
 import { Query } from "../../src/query/query";
@@ -8,12 +8,12 @@ import { Specification } from "../../src/specification/specification";
 import { FactEnvelope, FactRecord, FactReference, Storage } from "../../src/storage";
 
 export class MockAuthentication implements Authentication {
-  private inner: Feed;
+  private inner: ObservableSource;
 
   constructor(
       storage: Storage
   ) {
-      this.inner = new FeedImpl(storage);
+      this.inner = new ObservableSourceImpl(storage);
   }
 
   async close(): Promise<void> {

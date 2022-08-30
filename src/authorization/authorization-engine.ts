@@ -1,6 +1,6 @@
 import { computeHash, verifyHash } from '../fact/hash';
 import { TopologicalSorter } from '../fact/sorter';
-import { Feed } from '../feed/feed';
+import { ObservableSource } from '../observable/observable';
 import { FactRecord, FactReference } from '../storage';
 import { distinct, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
@@ -26,7 +26,7 @@ type AuthorizationResult = {
 export class AuthorizationEngine {
     constructor(
         private authorizationRules: AuthorizationRules,
-        private feed: Feed
+        private feed: ObservableSource
     ) { }
 
     async authorizeFacts(facts: FactRecord[], userFact: FactRecord) {

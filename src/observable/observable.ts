@@ -12,6 +12,6 @@ export interface Observable {
     subscribe(added: Handler, removed: Handler): ObservableSubscription;
 }
 
-export interface Feed extends Storage {
+export interface ObservableSource extends Storage {
     from(fact: FactReference, query: Query): Observable;
 }
