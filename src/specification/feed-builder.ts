@@ -1,9 +1,13 @@
 import { FactReference } from "../storage";
-import { FactDescription, Feed, InputDescription, newFeed } from "./feed";
-import { Match, Specification } from "./specification";
+import { emptyFeed, FactDescription, Feed, InputDescription, withInput } from "./feed";
+import { Label, Match, PathCondition, Specification } from "./specification";
 
 type FactByIdentifier = {
     [identifier: string]: FactDescription;
+};
+
+type FactReferenceByIdentifier = {
+    [identifier: string]: FactReference;
 };
 
 export class FeedBuilder {
@@ -19,40 +23,53 @@ export class FeedBuilder {
             }
         }
 
-        // Allocate a fact table for each given.
-        // While the fact type and hash parameters are zero, the join will not be written.
-        const inputs: InputDescription[] = specification.given
-            .map((label, i) => ({
-                label: label.name,
-                factIndex: i+1,
-                factType: label.type,
-                factHash: start[i].hash,
-                factTypeParameter: 0,
-                factHashParameter: 0
-            }));
-        const facts: FactDescription[] = specification.given
-            .map((label, i) => ({
-                factIndex: i+1,
-                type: label.type
-            }));
-        const givenFacts = specification.given.reduce((knownFacts, label, i) => ({
-                ...knownFacts,
-                [label.name]: facts[i]
-            }), {} as FactByIdentifier);
-    
+        const givenFacts: FactReferenceByIdentifier = specification.given.reduce((acc, label, i) => ({
+            ...acc,
+            [label.name]: {
+                type: label.type,
+                hash: start[i].hash
+            }
+        }), {} as FactReferenceByIdentifier);
+
         // The Feed is an immutable data type.
-        // Initialize it with the inputs and facts.
         // The FeedBuilder will branch at various points, and
         // build on the current feed along each branch.
-        const initialFeed = newFeed(inputs, facts);
-        const { feeds, knownFacts } = this.addEdges(initialFeed, givenFacts, [], "", specification.matches);
+        const initialFeed = emptyFeed;
+        const { feeds, knownFacts } = this.addEdges(initialFeed, givenFacts, {}, [], "", specification.matches);
 
         return feeds;
     }
 
-    addEdges(feed: Feed, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
+    addEdges(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
         const feeds: Feed[] = [];
+        for (const match of matches) {
+            for (const condition of match.conditions) {
+                if (condition.type === "path") {
+                    ({feed, knownFacts} = this.addPathCondition(feed, givenFacts, knownFacts, path, match.unknown, prefix, condition));
+                }
+            }
+        }
         feeds.push(feed);
         return { feeds, knownFacts };
+    }
+
+    addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], unknown: Label, prefix: string, condition: PathCondition): { feed: Feed; knownFacts: FactByIdentifier; } {
+        const given = givenFacts[condition.labelRight];
+        if (given) {
+            // If the right-hand side is a given, and not yet a known fact,
+            // then add it to the feed.
+            if (!knownFacts[condition.labelRight]) {
+                feed = withInput(feed, given.type, given.hash);
+                knownFacts = {
+                    ...knownFacts,
+                    [condition.labelRight]: {
+                        factIndex: feed.facts.length,
+                        factType: given.type
+                    }
+                };
+            }
+        }
+
+        return { feed, knownFacts };
     }
 }

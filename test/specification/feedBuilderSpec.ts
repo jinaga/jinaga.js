@@ -12,7 +12,28 @@ describe("feed generator", () => {
                 ]
             }`);
 
-        expect(feeds.length).toEqual(1);
+        const expectedFeeds: Feed[] = [
+            {
+                facts: [
+                    {
+                        factIndex: 1,
+                        factType: root.type
+                    },
+                    {
+                        factIndex: 2,
+                        factType: "Child"
+                    }
+                ],
+                inputs: [
+                    {
+                        factIndex: 1,
+                        factHash: root.hash
+                    }
+                ]
+            }
+        ];
+
+        expect(feeds).toEqual(expectedFeeds);
     });
 });
 

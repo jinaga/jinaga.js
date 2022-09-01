@@ -1,24 +1,34 @@
-export interface InputDescription {
-    label: string;
-    factIndex: number;
-    factType: string;
-    factHash: string;
-    factTypeParameter: number;
-    factHashParameter: number;
-}
 export interface FactDescription {
-    type: string;
+    factType: string;
     factIndex: number;
+}
+export interface InputDescription {
+    factIndex: number;
+    factHash: string;
 }
 
 export interface Feed {
-    inputs: InputDescription[];
     facts: FactDescription[];
+    inputs: InputDescription[];
 }
 
-export function newFeed(inputs: InputDescription[], facts: FactDescription[]): Feed {
+export const emptyFeed: Feed = {
+    facts: [],
+    inputs: []
+};
+
+export function withInput(feed: Feed, factType: string, factHash: string): Feed {
+    const factIndex = feed.facts.length + 1;
+    const fact: FactDescription = {
+        factIndex,
+        factType
+    };
+    const input: InputDescription = {
+        factIndex,
+        factHash
+    };
     return {
-        inputs,
-        facts
+        facts: [...feed.facts, fact],
+        inputs: [...feed.inputs, input]
     };
 }
