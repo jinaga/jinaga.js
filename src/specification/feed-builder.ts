@@ -1,5 +1,5 @@
 import { FactReference } from "../storage";
-import { emptyFeed, FactDescription, Feed, InputDescription, withInput } from "./feed";
+import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput } from "./feed";
 import { Label, Match, PathCondition, Specification } from "./specification";
 
 type FactByIdentifier = {
@@ -69,6 +69,66 @@ export class FeedBuilder {
                 };
             }
         }
+
+        // Determine whether we have already written the output.
+        const knownFact = knownFacts[unknown.name];
+        const roleCount = condition.rolesLeft.length + condition.rolesRight.length;
+
+        // Walk up the right-hand side.
+        // This generates predecessor joins from a given or prior label.
+        let fact = knownFacts[condition.labelRight];
+        if (!fact) {
+            throw new Error(`Label ${condition.labelRight} not found. Known labels: ${Object.keys(knownFacts).join(", ")}`);
+        }
+        let factType = fact.factType;
+        let factIndex = fact.factIndex;
+        for (const [i, role] of condition.rolesRight.entries()) {
+            if (i === roleCount - 1 && knownFact) {
+                // If we have already written the output, we can use the fact index.
+                feed = withEdge(feed, knownFact.factIndex, factIndex, role.name, path);
+                factIndex = knownFact.factIndex;
+            }
+            else {
+                // If we have not written the fact, we need to write it now.
+                const { feed: feedWithFact, factIndex: predecessorFactIndex } = withFact(feed, role.targetType);
+                feed = withEdge(feedWithFact, predecessorFactIndex, factIndex, role.name, path);
+                factIndex = predecessorFactIndex;
+            }
+            factType = role.targetType;
+        }
+
+        const rightType = factType;
+
+        // Walk up the left-hand side.
+        // We will need to reverse this walk to generate successor joins.
+        factType = unknown.type;
+        const newEdges: {
+            roleName: string;
+            declaringType: string;
+        }[] = [];
+        for (const role of condition.rolesLeft) {
+            newEdges.push({
+                roleName: role.name,
+                declaringType: factType
+            });
+            factType = role.targetType;
+        }
+
+        if (factType !== rightType) {
+            throw new Error(`Type mismatch: ${factType} is compared to ${rightType}`);
+        }
+
+        newEdges.reverse().forEach(({ roleName, declaringType }, i) => {
+            if (condition.rolesRight.length + i === roleCount - 1 && knownFact) {
+                feed = withEdge(feed, factIndex, knownFact.factIndex, roleName, path);
+                factIndex = knownFact.factIndex;
+            }
+            else {
+                const { feed: feedWithFact, factIndex: successorFactIndex } = withFact(feed, declaringType);
+                feed = withEdge(feedWithFact, factIndex, successorFactIndex, roleName, path);
+                factIndex = successorFactIndex;
+            }
+        });
 
         return { feed, knownFacts };
     }

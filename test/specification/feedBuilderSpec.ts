@@ -29,6 +29,14 @@ describe("feed generator", () => {
                         factIndex: 1,
                         factHash: root.hash
                     }
+                ],
+                edges: [
+                    {
+                        edgeIndex: 1,
+                        predecessorFactIndex: 1,
+                        successorFactIndex: 2,
+                        roleName: "root"
+                    }
                 ]
             }
         ];
