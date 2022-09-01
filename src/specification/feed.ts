@@ -12,17 +12,22 @@ export interface EdgeDescription {
     successorFactIndex: number;
     roleName: string;
 }
+export interface OutputDescription {
+    factIndex: number;
+}
 
 export interface Feed {
     facts: FactDescription[];
     inputs: InputDescription[];
     edges: EdgeDescription[];
+    outputs: OutputDescription[];
 }
 
 export const emptyFeed: Feed = {
     facts: [],
     inputs: [],
-    edges: []
+    edges: [],
+    outputs: []
 };
 
 export function withFact(feed: Feed, factType: string): { feed: Feed, factIndex: number } {
@@ -62,5 +67,15 @@ export function withEdge(feed: Feed, predecessorFactIndex: number, successorFact
     return {
         ...feed,
         edges: [...feed.edges, edge]
+    };
+}
+
+export function withOutput(feed: Feed, factIndex: number): Feed {
+    const output: OutputDescription = {
+        factIndex
+    };
+    return {
+        ...feed,
+        outputs: [...feed.outputs, output]
     };
 }

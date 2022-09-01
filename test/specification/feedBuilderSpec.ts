@@ -17,7 +17,7 @@ describe("feed generator", () => {
                 facts: [
                     {
                         factIndex: 1,
-                        factType: root.type
+                        factType: "Root"
                     },
                     {
                         factIndex: 2,
@@ -36,6 +36,11 @@ describe("feed generator", () => {
                         predecessorFactIndex: 1,
                         successorFactIndex: 2,
                         roleName: "root"
+                    }
+                ],
+                outputs: [
+                    {
+                        factIndex: 2
                     }
                 ]
             }

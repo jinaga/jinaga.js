@@ -1,5 +1,5 @@
 import { FactReference } from "../storage";
-import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput } from "./feed";
+import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput, withOutput } from "./feed";
 import { Label, Match, PathCondition, Specification } from "./specification";
 
 type FactByIdentifier = {
@@ -129,6 +129,16 @@ export class FeedBuilder {
                 factIndex = successorFactIndex;
             }
         });
+
+        // If we have not captured the known fact, add it now.
+        if (!knownFact) {
+            knownFacts = { ...knownFacts, [unknown.name]: { factIndex, factType: unknown.type } };
+            // If we have not written the output, write it now.
+            // Only write the output if we are not inside of an existential condition.
+            if (path.length === 0) {
+                feed = withOutput(feed, factIndex);
+            }
+        }
 
         return { feed, knownFacts };
     }
