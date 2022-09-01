@@ -48,6 +48,77 @@ describe("feed generator", () => {
 
         expect(feeds).toEqual(expectedFeeds);
     });
+
+    it("should accept multiple givens", () => {
+        const feeds = getFeeds(`
+            (user: Jinaga.User, root: Root) {
+                assignment: MyApp.Assignment [
+                    assignment->user:Jinaga.User = user
+                    assignment->project:MyApp.Project->root:Root = root
+                ]
+            }
+        `);
+
+        const expectedFeeds: Feed[] = [
+            {
+                facts: [
+                    {
+                        factIndex: 1,
+                        factType: "Jinaga.User"
+                    },
+                    {
+                        factIndex: 2,
+                        factType: "MyApp.Assignment"
+                    },
+                    {
+                        factIndex: 3,
+                        factType: "Root"
+                    },
+                    {
+                        factIndex: 4,
+                        factType: "MyApp.Project"
+                    }
+                ],
+                inputs: [
+                    {
+                        factIndex: 1,
+                        factHash: user.hash
+                    },
+                    {
+                        factIndex: 3,
+                        factHash: root.hash
+                    }
+                ],
+                edges: [
+                    {
+                        edgeIndex: 1,
+                        predecessorFactIndex: 1,
+                        successorFactIndex: 2,
+                        roleName: "user"
+                    },
+                    {
+                        edgeIndex: 2,
+                        predecessorFactIndex: 3,
+                        successorFactIndex: 4,
+                        roleName: "root"
+                    },
+                    {
+                        edgeIndex: 3,
+                        predecessorFactIndex: 4,
+                        successorFactIndex: 2,
+                        roleName: "project"
+                    }
+                ],
+                outputs: [
+                    {
+                        factIndex: 2
+                    }
+                ]
+            }
+        ];
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
 });
 
 const root = dehydrateReference({ type: 'Root' });
