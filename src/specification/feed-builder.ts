@@ -35,7 +35,7 @@ export class FeedBuilder {
         // The FeedBuilder will branch at various points, and
         // build on the current feed along each branch.
         const initialFeed = emptyFeed;
-        const { feeds, knownFacts } = this.addEdges(initialFeed, givenFacts, {}, [], "", specification.matches);
+        const { feeds, knownFacts } = this.addEdges(initialFeed, givenFacts, {}, [], specification.matches);
 
         // The final feed represents the complete tuple.
         // Build projections onto that one.
@@ -49,18 +49,18 @@ export class FeedBuilder {
         }
     }
 
-    private addEdges(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
+    private addEdges(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
         const feeds: Feed[] = [];
         for (const match of matches) {
             for (const condition of match.conditions) {
                 if (condition.type === "path") {
-                    ({feed, knownFacts} = this.addPathCondition(feed, givenFacts, knownFacts, path, match.unknown, prefix, condition));
+                    ({feed, knownFacts} = this.addPathCondition(feed, givenFacts, knownFacts, path, match.unknown, condition));
                 }
                 else if (condition.type === "existential") {
                     if (condition.exists) {
                         // Include the edges of the existential condition into the current
                         // query description.
-                        const { feeds: newFeeds } = this.addEdges(feed, givenFacts, knownFacts, path, prefix, condition.matches);
+                        const { feeds: newFeeds } = this.addEdges(feed, givenFacts, knownFacts, path, condition.matches);
                         const last = newFeeds.length - 1;
                         feeds.push(...newFeeds.slice(0, last));
                         feed = newFeeds[last];
@@ -69,13 +69,13 @@ export class FeedBuilder {
                         // Branch from the current query description and follow the
                         // edges of the existential condition.
                         // This will produce tuples that prove the condition false.
-                        const { feeds: newQueryDescriptions } = this.addEdges(feed, givenFacts, knownFacts, path, prefix, condition.matches);
+                        const { feeds: newQueryDescriptions } = this.addEdges(feed, givenFacts, knownFacts, path, condition.matches);
                         
                         // Then apply the where clause and continue with the tuple where it is true.
                         // The path describes which not-exists condition we are currently building on.
                         // Because the path is not empty, labeled facts will be included in the output.
                         const { feed: feedWithNotExist, path: conditionalPath } = withNotExistsCondition(feed, path);
-                        const { feeds: newFeedsWithNotExists } = this.addEdges(feedWithNotExist, givenFacts, knownFacts, conditionalPath, prefix, condition.matches);
+                        const { feeds: newFeedsWithNotExists } = this.addEdges(feedWithNotExist, givenFacts, knownFacts, conditionalPath, condition.matches);
                         const last = newFeedsWithNotExists.length - 1;
                         const feedConditional = newFeedsWithNotExists[last];
 
@@ -90,7 +90,7 @@ export class FeedBuilder {
         return { feeds, knownFacts };
     }
 
-    private addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], unknown: Label, prefix: string, condition: PathCondition): { feed: Feed; knownFacts: FactByIdentifier; } {
+    private addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], unknown: Label, condition: PathCondition): { feed: Feed; knownFacts: FactByIdentifier; } {
         const given = givenFacts[condition.labelRight];
         if (given) {
             // If the right-hand side is a given, and not yet a known fact,
@@ -184,9 +184,8 @@ export class FeedBuilder {
         const feeds: Feed[] = [];
         projections.forEach(projection => {
             if (projection.type === "specification") {
-                // Produce more facts in the tuple, and prefix the labels with the projection name.
-                const prefix = projection.name + ".";
-                const { feeds: feedsWithEdges } = this.addEdges(feed, givenFacts, knownFacts, [], prefix, projection.matches);
+                // Produce more facts in the tuple.
+                const { feeds: feedsWithEdges } = this.addEdges(feed, givenFacts, knownFacts, [], projection.matches);
                 feeds.push(...feedsWithEdges);
 
                 // Recursively build child projections.
