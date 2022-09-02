@@ -188,6 +188,13 @@ export class FeedBuilder {
                 const prefix = projection.name + ".";
                 const { feeds: feedsWithEdges } = this.addEdges(feed, givenFacts, knownFacts, [], prefix, projection.matches);
                 feeds.push(...feedsWithEdges);
+
+                // Recursively build child projections.
+                const finalFeed = feedsWithEdges[feedsWithEdges.length - 1];
+                if (Array.isArray(projection.childProjections)) {
+                    const feedsWithProjections = this.addProjections(finalFeed, givenFacts, knownFacts, projection.childProjections);
+                    feeds.push(...feedsWithProjections);
+                }
             }
         });
         return feeds;
