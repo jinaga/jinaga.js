@@ -1,6 +1,6 @@
 import { dehydrateReference } from "../../src/fact/hydrate";
 import { Feed } from "../../src/specification/feed";
-import { FeedBuilder } from "../../src/specification/feed-builder";
+import { buildFeeds } from "../../src/specification/feed-builder";
 import { SpecificationParser } from "../../src/specification/specification-parser";
 
 describe("feed generator", () => {
@@ -399,7 +399,6 @@ function getFeeds(input: string): Feed[] {
         throw new Error(`Unknown input type ${input.type}`);
     });
 
-    const feedBuilder = new FeedBuilder();
-    const feeds = feedBuilder.buildFeeds(start, specification);
+    const feeds = buildFeeds(start, specification);
     return feeds;
 }
