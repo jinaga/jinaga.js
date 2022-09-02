@@ -282,6 +282,103 @@ describe("feed generator", () => {
 
         expect(feeds).toEqual(expectedFeeds);
     });
+
+    it("should accept a projection", () => {
+        const feeds = getFeeds(`
+            (root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                ]
+            } => {
+                names = {
+                    name: MyApplication.Project.Name [
+                        name->project: MyApplication.Project = project
+                    ]
+                }
+            }`);
+
+        const expectedFeeds: Feed[] = [
+            {
+                facts: [
+                    {
+                        factIndex: 1,
+                        factType: "Root"
+                    },
+                    {
+                        factIndex: 2,
+                        factType: "MyApplication.Project"
+                    }
+                ],
+                inputs: [
+                    {
+                        factIndex: 1,
+                        factHash: root.hash
+                    }
+                ],
+                edges: [
+                    {
+                        edgeIndex: 1,
+                        predecessorFactIndex: 1,
+                        successorFactIndex: 2,
+                        roleName: "root"
+                    }
+                ],
+                notExistsConditions: [],
+                outputs: [
+                    {
+                        factIndex: 2
+                    }
+                ]
+            },
+            {
+                facts: [
+                    {
+                        factIndex: 1,
+                        factType: "Root"
+                    },
+                    {
+                        factIndex: 2,
+                        factType: "MyApplication.Project"
+                    },
+                    {
+                        factIndex: 3,
+                        factType: "MyApplication.Project.Name"
+                    }
+                ],
+                inputs: [
+                    {
+                        factIndex: 1,
+                        factHash: root.hash
+                    }
+                ],
+                edges: [
+                    {
+                        edgeIndex: 1,
+                        predecessorFactIndex: 1,
+                        successorFactIndex: 2,
+                        roleName: "root"
+                    },
+                    {
+                        edgeIndex: 2,
+                        predecessorFactIndex: 2,
+                        successorFactIndex: 3,
+                        roleName: "project"
+                    }
+                ],
+                notExistsConditions: [],
+                outputs: [
+                    {
+                        factIndex: 2
+                    },
+                    {
+                        factIndex: 3
+                    }
+                ]
+            }
+        ];
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
 });
 
 const root = dehydrateReference({ type: 'Root' });

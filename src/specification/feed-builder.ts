@@ -1,6 +1,6 @@
 import { FactReference } from "../storage";
 import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput, withNotExistsCondition, withOutput } from "./feed";
-import { Label, Match, PathCondition, Specification } from "./specification";
+import { Label, Match, PathCondition, Projection, Specification } from "./specification";
 
 type FactByIdentifier = {
     [identifier: string]: FactDescription;
@@ -37,7 +37,16 @@ export class FeedBuilder {
         const initialFeed = emptyFeed;
         const { feeds, knownFacts } = this.addEdges(initialFeed, givenFacts, {}, [], "", specification.matches);
 
-        return feeds;
+        // The final feed represents the complete tuple.
+        // Build projections onto that one.
+        const finalFeed = feeds[feeds.length - 1];
+        if (Array.isArray(specification.childProjections)) {
+            const feedsWithProjections = this.addProjections(finalFeed, givenFacts, knownFacts, specification.childProjections);
+            return [ ...feeds, ...feedsWithProjections ];
+        }
+        else {
+            return feeds;
+        }
     }
 
     private addEdges(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
@@ -81,7 +90,7 @@ export class FeedBuilder {
         return { feeds, knownFacts };
     }
 
-    addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], unknown: Label, prefix: string, condition: PathCondition): { feed: Feed; knownFacts: FactByIdentifier; } {
+    private addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], unknown: Label, prefix: string, condition: PathCondition): { feed: Feed; knownFacts: FactByIdentifier; } {
         const given = givenFacts[condition.labelRight];
         if (given) {
             // If the right-hand side is a given, and not yet a known fact,
@@ -169,5 +178,18 @@ export class FeedBuilder {
         }
 
         return { feed, knownFacts };
+    }
+
+    private addProjections(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, projections: Projection[]): Feed[] {
+        const feeds: Feed[] = [];
+        projections.forEach(projection => {
+            if (projection.type === "specification") {
+                // Produce more facts in the tuple, and prefix the labels with the projection name.
+                const prefix = projection.name + ".";
+                const { feeds: feedsWithEdges } = this.addEdges(feed, givenFacts, knownFacts, [], prefix, projection.matches);
+                feeds.push(...feedsWithEdges);
+            }
+        });
+        return feeds;
     }
 }
