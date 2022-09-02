@@ -12,6 +12,10 @@ export interface EdgeDescription {
     successorFactIndex: number;
     roleName: string;
 }
+export interface NotExistsConditionDescription {
+    edges: EdgeDescription[];
+    notExistsConditions: NotExistsConditionDescription[];
+}
 export interface OutputDescription {
     factIndex: number;
 }
@@ -20,6 +24,7 @@ export interface Feed {
     facts: FactDescription[];
     inputs: InputDescription[];
     edges: EdgeDescription[];
+    notExistsConditions: NotExistsConditionDescription[];
     outputs: OutputDescription[];
 }
 
@@ -27,6 +32,7 @@ export const emptyFeed: Feed = {
     facts: [],
     inputs: [],
     edges: [],
+    notExistsConditions: [],
     outputs: []
 };
 
@@ -64,10 +70,19 @@ export function withEdge(feed: Feed, predecessorFactIndex: number, successorFact
         successorFactIndex,
         roleName
     };
-    return {
-        ...feed,
-        edges: [...feed.edges, edge]
-    };
+    if (path.length === 0) {
+        return {
+            ...feed,
+            edges: [...feed.edges, edge]
+        };
+    }
+    else {
+        const notExistsConditions = notExistsWithEdge(feed.notExistsConditions, edge, path);
+        return {
+            ...feed,
+            notExistsConditions
+        };
+    }
 }
 
 export function withOutput(feed: Feed, factIndex: number): Feed {
@@ -78,4 +93,60 @@ export function withOutput(feed: Feed, factIndex: number): Feed {
         ...feed,
         outputs: [...feed.outputs, output]
     };
+}
+
+export function withNotExistsCondition(feed: Feed, path: number[]): { feed: Feed; path: number[]; } {
+    const { notExistsConditions: newNotExistsConditions, path: newPath } = notExistsWithCondition(feed.notExistsConditions, path);
+    const newFeed = {
+        ...feed,
+        notExistsConditions: newNotExistsConditions
+    };
+    return { feed: newFeed, path: newPath };
+}
+
+function notExistsWithEdge(notExistsConditions: NotExistsConditionDescription[], edge: EdgeDescription, path: number[]): NotExistsConditionDescription[] {
+    if (path.length === 1) {
+        return notExistsConditions.map((c, i) => i === path[0] ?
+            {
+                edges: [...c.edges, edge],
+                notExistsConditions: c.notExistsConditions
+            } :
+            c
+        );
+    }
+    else {
+        return notExistsConditions.map((c, i) => i === path[0] ?
+            {
+                edges: c.edges,
+                notExistsConditions: notExistsWithEdge(c.notExistsConditions, edge, path.slice(1))
+            } :
+            c
+        );
+    }
+}
+
+function notExistsWithCondition(notExistsConditions: NotExistsConditionDescription[], path: number[]): { notExistsConditions: NotExistsConditionDescription[]; path: number[]; } {
+    if (path.length === 0) {
+        path = [notExistsConditions.length];
+        notExistsConditions = [
+            ...notExistsConditions,
+            {
+                edges: [],
+                notExistsConditions: []
+            }
+        ];
+        return { notExistsConditions, path };
+    }
+    else {
+        const { notExistsConditions: newNotExistsConditions, path: newPath } = notExistsWithCondition(notExistsConditions[path[0]].notExistsConditions, path.slice(1));
+        notExistsConditions = notExistsConditions.map((c, i) => i === path[0] ?
+            {
+                edges: c.edges,
+                notExistsConditions: newNotExistsConditions
+            } :
+            c
+        );
+        path = [path[0], ...newPath];
+        return { notExistsConditions, path };
+    }
 }

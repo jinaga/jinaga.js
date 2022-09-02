@@ -1,5 +1,5 @@
 import { FactReference } from "../storage";
-import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput, withOutput } from "./feed";
+import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput, withNotExistsCondition, withOutput } from "./feed";
 import { Label, Match, PathCondition, Specification } from "./specification";
 
 type FactByIdentifier = {
@@ -40,12 +40,40 @@ export class FeedBuilder {
         return feeds;
     }
 
-    addEdges(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
+    private addEdges(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, path: number[], prefix: string, matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
         const feeds: Feed[] = [];
         for (const match of matches) {
             for (const condition of match.conditions) {
                 if (condition.type === "path") {
                     ({feed, knownFacts} = this.addPathCondition(feed, givenFacts, knownFacts, path, match.unknown, prefix, condition));
+                }
+                else if (condition.type === "existential") {
+                    if (condition.exists) {
+                        // Include the edges of the existential condition into the current
+                        // query description.
+                        const { feeds: newFeeds } = this.addEdges(feed, givenFacts, knownFacts, path, prefix, condition.matches);
+                        const last = newFeeds.length - 1;
+                        feeds.push(...newFeeds.slice(0, last));
+                        feed = newFeeds[last];
+                    }
+                    else {
+                        // Branch from the current query description and follow the
+                        // edges of the existential condition.
+                        // This will produce tuples that prove the condition false.
+                        const { feeds: newQueryDescriptions } = this.addEdges(feed, givenFacts, knownFacts, path, prefix, condition.matches);
+                        
+                        // Then apply the where clause and continue with the tuple where it is true.
+                        // The path describes which not-exists condition we are currently building on.
+                        // Because the path is not empty, labeled facts will be included in the output.
+                        const { feed: feedWithNotExist, path: conditionalPath } = withNotExistsCondition(feed, path);
+                        const { feeds: newFeedsWithNotExists } = this.addEdges(feedWithNotExist, givenFacts, knownFacts, conditionalPath, prefix, condition.matches);
+                        const last = newFeedsWithNotExists.length - 1;
+                        const feedConditional = newFeedsWithNotExists[last];
+
+                        feeds.push(...newQueryDescriptions);
+                        feeds.push(...newFeedsWithNotExists.slice(0, last));
+                        feed = feedConditional;
+                    }
                 }
             }
         }

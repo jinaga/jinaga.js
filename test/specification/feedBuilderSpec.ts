@@ -38,6 +38,7 @@ describe("feed generator", () => {
                         roleName: "root"
                     }
                 ],
+                notExistsConditions: [],
                 outputs: [
                     {
                         factIndex: 2
@@ -109,6 +110,7 @@ describe("feed generator", () => {
                         roleName: "project"
                     }
                 ],
+                notExistsConditions: [],
                 outputs: [
                     {
                         factIndex: 2
@@ -135,61 +137,6 @@ describe("feed generator", () => {
             }`);
 
         const expectedFeeds: Feed[] = [
-            {
-                facts: [
-                    {
-                        factIndex: 1,
-                        factType: "Jinaga.User"
-                    },
-                    {
-                        factIndex: 2,
-                        factType: "MyApp.Assignment"
-                    },
-                    {
-                        factIndex: 3,
-                        factType: "Root"
-                    },
-                    {
-                        factIndex: 4,
-                        factType: "MyApp.Project"
-                    }
-                ],
-                inputs: [
-                    {
-                        factIndex: 1,
-                        factHash: user.hash
-                    },
-                    {
-                        factIndex: 3,
-                        factHash: root.hash
-                    }
-                ],
-                edges: [
-                    {
-                        edgeIndex: 1,
-                        predecessorFactIndex: 1,
-                        successorFactIndex: 2,
-                        roleName: "user"
-                    },
-                    {
-                        edgeIndex: 2,
-                        predecessorFactIndex: 3,
-                        successorFactIndex: 4,
-                        roleName: "root"
-                    },
-                    {
-                        edgeIndex: 3,
-                        predecessorFactIndex: 4,
-                        successorFactIndex: 2,
-                        roleName: "project"
-                    }
-                ],
-                outputs: [
-                    {
-                        factIndex: 2
-                    }
-                ]
-            },
             {
                 facts: [
                     {
@@ -249,12 +196,85 @@ describe("feed generator", () => {
                         roleName: "assignment"
                     }
                 ],
+                notExistsConditions: [],
                 outputs: [
                     {
                         factIndex: 2
                     },
                     {
                         factIndex: 5
+                    }
+                ]
+            },
+            {
+                facts: [
+                    {
+                        factIndex: 1,
+                        factType: "Jinaga.User"
+                    },
+                    {
+                        factIndex: 2,
+                        factType: "MyApp.Assignment"
+                    },
+                    {
+                        factIndex: 3,
+                        factType: "Root"
+                    },
+                    {
+                        factIndex: 4,
+                        factType: "MyApp.Project"
+                    },
+                    {
+                        factIndex: 5,
+                        factType: "MyApp.Assignment.Revoked"
+                    }
+                ],
+                inputs: [
+                    {
+                        factIndex: 1,
+                        factHash: user.hash
+                    },
+                    {
+                        factIndex: 3,
+                        factHash: root.hash
+                    }
+                ],
+                edges: [
+                    {
+                        edgeIndex: 1,
+                        predecessorFactIndex: 1,
+                        successorFactIndex: 2,
+                        roleName: "user"
+                    },
+                    {
+                        edgeIndex: 2,
+                        predecessorFactIndex: 3,
+                        successorFactIndex: 4,
+                        roleName: "root"
+                    },
+                    {
+                        edgeIndex: 3,
+                        predecessorFactIndex: 4,
+                        successorFactIndex: 2,
+                        roleName: "project"
+                    }
+                ],
+                notExistsConditions: [
+                    {
+                        edges: [
+                            {
+                                edgeIndex: 4,
+                                predecessorFactIndex: 2,
+                                successorFactIndex: 5,
+                                roleName: "assignment"
+                            }
+                        ],
+                        notExistsConditions: []
+                    }
+                ],
+                outputs: [
+                    {
+                        factIndex: 2
                     }
                 ]
             }
