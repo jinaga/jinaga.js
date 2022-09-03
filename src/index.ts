@@ -6,8 +6,8 @@ export { AuthorizationRules } from "./authorization/authorizationRules";
 export { Cache } from './cache';
 export { canonicalizeFact, canonicalPredecessors, computeHash } from './fact/hash';
 export { dehydrateFact, dehydrateReference, hydrate, hydrateFromTree } from "./fact/hydrate";
-export { ObservableSource as Feed, Observable } from './observable/observable';
-export { ObservableSourceImpl as FeedImpl } from './observable/observable-source-impl';
+export { ObservableSource, Observable } from './observable/observable';
+export { ObservableSourceImpl } from './observable/observable-source-impl';
 export { Channel } from "./fork/channel";
 export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
@@ -23,7 +23,7 @@ export {
   SaveResponse
 } from './http/messages';
 export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
-export { ensure, FactDescription, Jinaga, Preposition, Profile, Template, Trace, Tracer } from "./jinaga";
+export { ensure, Jinaga, Preposition, Profile, Template, Trace, Tracer } from "./jinaga";
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { MemoryStore } from './memory/memory-store';
@@ -33,6 +33,8 @@ export { Query } from './query/query';
 export { SpecificationOf } from "./query/query-parser";
 export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from './query/steps';
 export { Declaration } from './specification/declaration';
+export { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription, OutputDescription } from './specification/feed';
+export { buildFeeds } from './specification/feed-builder';
 export { ChildProjections, ElementProjection, getAllFactTypes, getAllRoles, Label, Match, PathCondition, Projection, ResultProjection, SingularProjection, Specification, SpecificationProjection } from './specification/specification';
 export { SpecificationParser } from './specification/specification-parser';
 export { FactBookmark, FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, FactStream, FactTuple, FactSignature, PredecessorCollection, Storage } from './storage';
