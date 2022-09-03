@@ -63,7 +63,7 @@ export function withInput(feed: Feed, factType: string, factHash: string): Feed 
 }
 
 export function withEdge(feed: Feed, predecessorFactIndex: number, successorFactIndex: number, roleName: string, path: number[]): Feed {
-    const edgeIndex = feed.edges.length + 1;
+    const edgeIndex = feed.edges.length + countEdges(feed.notExistsConditions) + 1;
     const edge: EdgeDescription = {
         edgeIndex,
         predecessorFactIndex,
@@ -149,4 +149,9 @@ function notExistsWithCondition(notExistsConditions: NotExistsConditionDescripti
         path = [path[0], ...newPath];
         return { notExistsConditions, path };
     }
+}
+
+function countEdges(notExistsConditions: NotExistsConditionDescription[]): number {
+    return notExistsConditions.reduce((count, c) => count + c.edges.length + countEdges(c.notExistsConditions),
+        0);
 }
