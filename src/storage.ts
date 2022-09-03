@@ -9,11 +9,6 @@ export type FactReference = {
 
 export type FactPath = FactReference[];
 
-export interface FactBookmark {
-    labels: string[];
-    bookmark: string;
-}
-
 export interface FactTuple {
     facts: FactReference[];
     bookmark: string;

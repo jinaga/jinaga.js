@@ -37,6 +37,6 @@ export { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsCond
 export { buildFeeds } from './specification/feed-builder';
 export { ChildProjections, ElementProjection, getAllFactTypes, getAllRoles, Label, Match, PathCondition, Projection, ResultProjection, SingularProjection, Specification, SpecificationProjection } from './specification/specification';
 export { SpecificationParser } from './specification/specification-parser';
-export { FactBookmark, FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, FactStream, FactTuple, FactSignature, PredecessorCollection, Storage } from './storage';
+export { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, FactStream, FactTuple, FactSignature, PredecessorCollection, Storage } from './storage';
 export { UserIdentity } from './user-identity';
 export { Watch } from "./watch/watch";
