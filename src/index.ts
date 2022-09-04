@@ -20,8 +20,7 @@ export {
   ProfileMessage,
   QueryMessage,
   QueryResponse,
-  SaveMessage,
-  SaveResponse
+  SaveMessage
 } from './http/messages';
 export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
 export { ensure, Jinaga, Preposition, Profile, Template, Trace, Tracer } from "./jinaga";

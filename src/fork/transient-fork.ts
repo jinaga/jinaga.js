@@ -56,7 +56,7 @@ export class TransientFork implements Fork {
     }
 
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
-        const response = await this.client.save(serializeSave(envelopes));
+        await this.client.save(serializeSave(envelopes));
         const saved = await this.feed.save(envelopes);
         return saved;
     }

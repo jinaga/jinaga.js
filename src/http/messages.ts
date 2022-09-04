@@ -22,10 +22,6 @@ export interface SaveMessage {
     facts: FactRecord[]
 };
 
-export interface SaveResponse {
-
-};
-
 export interface LoadMessage {
     references: FactReference[]
 };
@@ -36,4 +32,9 @@ export interface LoadResponse {
 
 export interface FeedsResponse {
     feeds: string[];
+}
+
+export interface FeedResponse {
+    references: FactReference[];
+    bookmark: string;
 }
