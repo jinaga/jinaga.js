@@ -13,6 +13,7 @@ export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
 export { TransientFork } from './fork/transient-fork';
 export {
+  FeedsResponse,
   LoadMessage,
   LoadResponse,
   LoginResponse,
