@@ -28,8 +28,8 @@ export class AuthorizationNoOp implements Authorization {
         return this.observableSource.load(references);
     }
 
-    feed(userIdentity: UserIdentity, feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
-        return this.observableSource.feed(feed, bookmark, limit);
+    feed(userIdentity: UserIdentity, feed: Feed, bookmark: string): Promise<FactFeed> {
+        return this.observableSource.feed(feed, bookmark);
     }
 
     async save(userIdentity: UserIdentity, facts: FactRecord[]): Promise<FactRecord[]> {

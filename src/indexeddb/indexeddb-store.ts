@@ -166,7 +166,7 @@ export class IndexedDBStore implements Storage {
     throw new Error('Method not implemented.');
   }
 
-  feed(feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
+  feed(feed: Feed, bookmark: string): Promise<FactFeed> {
     throw new Error('Method not implemented.');
   }
 

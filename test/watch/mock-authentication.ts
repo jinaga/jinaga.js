@@ -38,8 +38,8 @@ export class MockAuthentication implements Authentication {
   read(start: FactReference[], specification: Specification): Promise<any[]> {
       return this.inner.read(start, specification);
   }
-  feed(feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
-      return this.inner.feed(feed, bookmark, limit);
+  feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+      return this.inner.feed(feed, bookmark);
   }
   whichExist(references: FactReference[]): Promise<FactReference[]> {
     throw new Error("WhichExist method not implemented on MockAuthentication.");

@@ -97,8 +97,8 @@ export class PersistentFork implements Fork {
         throw new Error('Method not implemented.');
     }
 
-    feed(feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
-        return this.observableSource.feed(feed, bookmark, limit);
+    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+        return this.observableSource.feed(feed, bookmark);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

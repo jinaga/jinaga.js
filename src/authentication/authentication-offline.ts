@@ -52,8 +52,8 @@ export class AuthenticationOffline implements Authentication {
     return this.inner.read(start, specification);
   }
 
-  feed(feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
-    return this.inner.feed(feed, bookmark, limit);
+  feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+    return this.inner.feed(feed, bookmark);
   }
 
   whichExist(references: FactReference[]): Promise<FactReference[]> {

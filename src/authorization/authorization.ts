@@ -8,7 +8,7 @@ export interface Authorization {
     getOrCreateUserFact(userIdentity: UserIdentity): Promise<FactRecord>;
     query(userIdentity: UserIdentity, start: FactReference, query: Query): Promise<FactPath[]>;
     read(userIdentity: UserIdentity, start: FactReference[], specification: Specification): Promise<any[]>;
-    feed(userIdentity: UserIdentity, feed: Feed, bookmark: string, limit: number): Promise<FactFeed>;
+    feed(userIdentity: UserIdentity, feed: Feed, bookmark: string): Promise<FactFeed>;
     load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactRecord[]>;
     save(userIdentity: UserIdentity, facts: FactRecord[]): Promise<FactRecord[]>;
 }
