@@ -1,7 +1,8 @@
 import { Inverse, invertQuery } from '../query/inverter';
 import { Query } from '../query/query';
+import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactPath, FactRecord, FactReference, Storage } from '../storage';
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, Storage } from '../storage';
 import { mapAsync } from '../util/fn';
 import { ObservableSource, Handler, Observable, ObservableSubscription } from './observable';
 
@@ -104,6 +105,10 @@ export class ObservableSourceImpl implements ObservableSource {
 
     read(start: FactReference[], specification: Specification): Promise<any[]> {
         return this.inner.read(start, specification);
+    }
+
+    feed(feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
+        return this.inner.feed(feed, bookmark, limit);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

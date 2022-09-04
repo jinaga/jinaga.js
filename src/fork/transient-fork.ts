@@ -3,12 +3,13 @@ import { ObservableSource, Handler, Observable, ObservableSubscription } from '.
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, factReferenceEquals } from '../storage';
 import { flatten } from '../util/fn';
 import { Channel } from "./channel";
 import { ChannelProcessor } from "./channel-processor";
 import { Fork } from "./fork";
 import { serializeLoad, serializeQuery, serializeSave } from './serialize';
+import { Feed } from "../specification/feed";
 
 class TransientForkSubscription implements ObservableSubscription {
     constructor(
@@ -42,7 +43,7 @@ export class TransientFork implements Fork {
     private channelProcessor: ChannelProcessor;
 
     constructor(
-        private feed: ObservableSource,
+        private observableSource: ObservableSource,
         private client: WebClient
     ) {
         
@@ -52,18 +53,18 @@ export class TransientFork implements Fork {
         this.channelProcessor.stop();
         this.channelProcessor = null;
         this.channels = [];
-        await this.feed.close();
+        await this.observableSource.close();
     }
 
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         await this.client.save(serializeSave(envelopes));
-        const saved = await this.feed.save(envelopes);
+        const saved = await this.observableSource.save(envelopes);
         return saved;
     }
 
     async query(start: FactReference, query: Query) {
         if (query.isDeterministic()) {
-            const results = await this.feed.query(start, query);
+            const results = await this.observableSource.query(start, query);
             return results;
         }
         else {
@@ -76,12 +77,16 @@ export class TransientFork implements Fork {
         throw new Error('Method not implemented.');
     }
 
+    feed(feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
+        return this.observableSource.feed(feed, bookmark, limit);
+    }
+
     whichExist(references: FactReference[]): Promise<FactReference[]> {
-        return this.feed.whichExist(references);
+        return this.observableSource.whichExist(references);
     }
 
     async load(references: FactReference[]): Promise<FactRecord[]> {
-        const known = await this.feed.load(references);
+        const known = await this.observableSource.load(references);
         const remaining = references.filter(reference => !known.some(factReferenceEquals(reference)));
         if (remaining.length === 0) {
             return known;
@@ -93,7 +98,7 @@ export class TransientFork implements Fork {
     }
 
     from(fact: FactReference, query: Query): Observable {
-        const observable = this.feed.from(fact, query);
+        const observable = this.observableSource.from(fact, query);
         const loaded = this.initiateQuery(fact, query);
         return new TransientForkObservable(observable, loaded);
     }
@@ -143,7 +148,7 @@ export class TransientFork implements Fork {
                     signatures: []
                 };
             });
-            await this.feed.save(envelopes);
+            await this.observableSource.save(envelopes);
             records = records.concat(facts);
         }
         return records;

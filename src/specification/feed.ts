@@ -1,3 +1,5 @@
+import { distinct } from "../util/fn";
+
 export interface FactDescription {
     factType: string;
     factIndex: number;
@@ -154,4 +156,40 @@ function notExistsWithCondition(notExistsConditions: NotExistsConditionDescripti
 function countEdges(notExistsConditions: NotExistsConditionDescription[]): number {
     return notExistsConditions.reduce((count, c) => count + c.edges.length + countEdges(c.notExistsConditions),
         0);
+}
+
+export function getAllFactTypesFromFeed(feed: Feed): string[] {
+    return feed.facts.map(f => f.factType).filter(distinct);
+}
+
+interface RoleDescription {
+    definingFactType: string;
+    name: string;
+    targetType: string;
+}
+
+function getFactTypeFromIndex(feed: Feed, factIndex: number): string {
+    return feed.facts.find(f => f.factIndex === factIndex).factType;
+}
+
+function getAllRolesFromEdges(feed: Feed, edges: EdgeDescription[]): RoleDescription[] {
+    return edges.map(e => ({
+        definingFactType: getFactTypeFromIndex(feed, e.successorFactIndex),
+        name: e.roleName,
+        targetType: getFactTypeFromIndex(feed, e.predecessorFactIndex)
+    }));
+}
+
+function getAllRolesFromConditions(feed: Feed, conditions: NotExistsConditionDescription[]): RoleDescription[] {
+    return conditions.reduce((roles, c) => [
+        ...roles,
+        ...getAllRolesFromEdges(feed, c.edges),
+        ...getAllRolesFromConditions(feed, c.notExistsConditions)],
+        []);
+}
+
+export function getAllRolesFromFeed(feed: Feed): RoleDescription[] {
+    const edgeRoles = getAllRolesFromEdges(feed, feed.edges);
+    const conditionRoles = getAllRolesFromConditions(feed, feed.notExistsConditions);
+    return [...edgeRoles, ...conditionRoles];
 }

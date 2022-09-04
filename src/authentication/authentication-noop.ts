@@ -3,8 +3,9 @@ import { Channel } from "../fork/channel";
 import { LoginResponse } from "../http/messages";
 import { Query } from "../query/query";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference } from "../storage";
+import { FactEnvelope, FactFeed, FactRecord, FactReference } from "../storage";
 import { Authentication } from "./authentication";
+import { Feed } from "../specification/feed";
 
 export class AuthenticationNoOp implements Authentication {
     constructor(
@@ -32,6 +33,9 @@ export class AuthenticationNoOp implements Authentication {
     }
     read(start: FactReference[], specification: Specification): Promise<any[]> {
         return this.inner.read(start, specification);
+    }
+    feed(feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
+        return this.inner.feed(feed, bookmark, limit);
     }
     whichExist(references: FactReference[]): Promise<FactReference[]> {
         return this.inner.whichExist(references);

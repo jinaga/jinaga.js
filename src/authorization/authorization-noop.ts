@@ -2,13 +2,14 @@ import { ObservableSource } from '../observable/observable';
 import { UserIdentity } from "../user-identity";
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
-import { FactRecord, FactReference } from '../storage';
+import { FactFeed, FactRecord, FactReference } from '../storage';
 import { Authorization } from './authorization';
 import { Forbidden } from './authorization-engine';
+import { Feed } from "../specification/feed";
 
 export class AuthorizationNoOp implements Authorization {
     constructor(
-        private feed: ObservableSource
+        private observableSource: ObservableSource
     ) { }
 
     getOrCreateUserFact(userIdentity: UserIdentity): Promise<FactRecord> {
@@ -16,19 +17,23 @@ export class AuthorizationNoOp implements Authorization {
     }
 
     query(userIdentity: UserIdentity, start: FactReference, query: Query): Promise<any[]> {
-        return this.feed.query(start, query);
+        return this.observableSource.query(start, query);
     }
 
     read(userIdentity: UserIdentity, start: FactReference[], specification: Specification): Promise<any[]> {
-        return this.feed.read(start, specification);
+        return this.observableSource.read(start, specification);
     }
 
     load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactRecord[]> {
-        return this.feed.load(references);
+        return this.observableSource.load(references);
+    }
+
+    feed(userIdentity: UserIdentity, feed: Feed, bookmark: string, limit: number): Promise<FactFeed> {
+        return this.observableSource.feed(feed, bookmark, limit);
     }
 
     async save(userIdentity: UserIdentity, facts: FactRecord[]): Promise<FactRecord[]> {
-        const envelopes = await this.feed.save(facts.map(fact => ({
+        const envelopes = await this.observableSource.save(facts.map(fact => ({
             fact,
             signatures: []
         })));
