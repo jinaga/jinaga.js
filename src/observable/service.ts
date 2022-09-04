@@ -3,10 +3,10 @@ import { Query } from '../query/query';
 import { FactReference, factReferenceEquals } from '../storage';
 import { mapAsync } from '../util/fn';
 import { ServiceRunner } from '../util/serviceRunner';
-import { Feed } from './feed';
+import { ObservableSource } from './observable';
 import { Trace } from '../util/trace';
 
-export function runService<U>(feed: Feed, start: FactReference, query: Query, serviceRunner: ServiceRunner, handler: (message: U) => Promise<void>) {
+export function runService<U>(feed: ObservableSource, start: FactReference, query: Query, serviceRunner: ServiceRunner, handler: (message: U) => Promise<void>) {
     let processing: FactReference[] = [];
     const subscription = feed.from(start, query)
         .subscribe(async (pathsAdded) => {

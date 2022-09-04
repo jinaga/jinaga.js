@@ -50,7 +50,7 @@ function sortedPredecessors(predecessors: FactReference[]) {
     });
 }
 
-function computeObjectHash(obj: {}) {
+export function computeObjectHash(obj: {}) {
     if (!obj)
         return '';
 

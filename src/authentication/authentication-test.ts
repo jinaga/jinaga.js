@@ -1,18 +1,19 @@
 import { Authentication } from '../authentication/authentication';
 import { AuthorizationEngine } from '../authorization/authorization-engine';
-import { Feed } from '../feed/feed';
+import { ObservableSource } from '../observable/observable';
 import { LoginResponse } from '../http/messages';
 import { Query } from '../query/query';
-import { FactEnvelope, FactRecord, FactReference } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference } from '../storage';
 import { AuthorizationRules } from '../authorization/authorizationRules';
 import { Channel } from "../fork/channel";
 import { Specification } from "../specification/specification";
+import { Feed } from "../specification/feed";
 
 export class AuthenticationTest implements Authentication {
   private authorizationEngine: AuthorizationEngine | null;
 
   constructor (
-    private inner: Feed,
+    private inner: ObservableSource,
     authorizationRules: AuthorizationRules | null,
     private userFact: FactRecord | null,
     private deviceFact: FactRecord | null
@@ -61,6 +62,10 @@ export class AuthenticationTest implements Authentication {
 
   read(start: FactReference[], specification: Specification): Promise<any[]> {
     return this.inner.read(start, specification);
+  }
+
+  feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+    return this.inner.feed(feed, bookmark);
   }
 
   whichExist(references: FactReference[]): Promise<FactReference[]> {

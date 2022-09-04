@@ -1,11 +1,12 @@
-import { Observable } from '../feed/feed';
+import { Observable } from '../observable/observable';
 import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference } from '../storage';
 import { Authentication } from './authentication';
+import { Feed } from "../specification/feed";
 
 export class Principal {
     
@@ -40,6 +41,10 @@ export class AuthenticationWebClient implements Authentication {
 
     read(start: FactReference[], specification: Specification): Promise<any[]> {
         return this.inner.read(start, specification);
+    }
+
+    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+        return this.inner.feed(feed, bookmark);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

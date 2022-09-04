@@ -1,4 +1,5 @@
 import { Query } from './query/query';
+import { Feed } from "./specification/feed";
 import { Specification } from "./specification/specification";
 import { findIndex } from './util/fn';
 
@@ -9,18 +10,12 @@ export type FactReference = {
 
 export type FactPath = FactReference[];
 
-export interface FactBookmark {
-    labels: string[];
-    bookmark: string;
-}
-
 export interface FactTuple {
     facts: FactReference[];
     bookmark: string;
 }
 
-export interface FactStream {
-    labels: string[];
+export interface FactFeed {
     tuples: FactTuple[];
     bookmark: string;
 }
@@ -51,6 +46,7 @@ export interface Storage {
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     query(start: FactReference, query: Query): Promise<FactPath[]>;
     read(start: FactReference[], specification: Specification): Promise<any[]>;
+    feed(feed: Feed, bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;
 }

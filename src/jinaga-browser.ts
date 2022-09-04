@@ -2,8 +2,8 @@ import { Authentication } from "./authentication/authentication";
 import { AuthenticationNoOp } from "./authentication/authentication-noop";
 import { AuthenticationOffline } from "./authentication/authentication-offline";
 import { AuthenticationWebClient } from "./authentication/authentication-web-client";
-import { Feed } from "./feed/feed";
-import { FeedImpl } from "./feed/feed-impl";
+import { ObservableSource } from "./observable/observable";
+import { ObservableSourceImpl } from "./observable/observable-source-impl";
 import { PersistentFork } from "./fork/persistent-fork";
 import { TransientFork } from "./fork/transient-fork";
 import { SyncStatusNotifier, WebClient } from "./http/web-client";
@@ -25,7 +25,7 @@ export type JinagaBrowserConfig = {
 export class JinagaBrowser {
     static create(config: JinagaBrowserConfig) {
         const store = createStore(config);
-        const feed = new FeedImpl(store);
+        const feed = new ObservableSourceImpl(store);
         const syncStatusNotifier = new SyncStatusNotifier();
         const authentication = createAuthentication(config, feed, syncStatusNotifier);
         return new Jinaga(authentication, null, syncStatusNotifier);
@@ -43,7 +43,7 @@ function createStore(config: JinagaBrowserConfig): Storage {
 
 function createAuthentication(
     config: JinagaBrowserConfig,
-    feed: Feed,
+    feed: ObservableSource,
     syncStatusNotifier: SyncStatusNotifier
 ): Authentication {
     if (config.httpEndpoint) {

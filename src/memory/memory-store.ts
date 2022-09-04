@@ -1,7 +1,8 @@
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
+import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 import { formatDot } from './debug';
 import { Inspector } from './inspector';
@@ -65,6 +66,10 @@ export class MemoryStore implements Storage {
     }
 
     read(start: FactReference[], specification: Specification): Promise<any[]> {
+        throw new Error('Method not implemented.');
+    }
+
+    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
         throw new Error('Method not implemented.');
     }
 

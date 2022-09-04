@@ -1,4 +1,4 @@
-import { LoadMessage, LoadResponse, LoginResponse, QueryMessage, QueryResponse, SaveMessage, SaveResponse } from './messages';
+import { LoadMessage, LoadResponse, LoginResponse, QueryMessage, QueryResponse, SaveMessage } from "./messages";
 
 export type SyncStatus = {
     sending: boolean;
@@ -69,7 +69,7 @@ export class WebClient {
     }
 
     async save(save: SaveMessage) {
-        return <SaveResponse> await this.postWithInfiniteRetry('/save', save);
+        await this.postWithInfiniteRetry('/save', save);
     }
 
     async load(load: LoadMessage) {

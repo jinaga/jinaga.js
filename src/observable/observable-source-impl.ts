@@ -1,9 +1,10 @@
 import { Inverse, invertQuery } from '../query/inverter';
 import { Query } from '../query/query';
+import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactPath, FactRecord, FactReference, Storage } from '../storage';
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, Storage } from '../storage';
 import { mapAsync } from '../util/fn';
-import { Feed, Handler, Observable, ObservableSubscription } from './feed';
+import { ObservableSource, Handler, Observable, ObservableSubscription } from './observable';
 
 type Listener = {
     inverse: Inverse,
@@ -74,7 +75,7 @@ class ObservableImpl implements Observable {
     }
 }
 
-export class FeedImpl implements Feed {
+export class ObservableSourceImpl implements ObservableSource {
     private listenersByTypeAndQuery: {
         [appliedToType: string]: {
             [queryKey: string]: Listener[]
@@ -104,6 +105,10 @@ export class FeedImpl implements Feed {
 
     read(start: FactReference[], specification: Specification): Promise<any[]> {
         return this.inner.read(start, specification);
+    }
+
+    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+        return this.inner.feed(feed, bookmark);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

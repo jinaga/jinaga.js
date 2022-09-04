@@ -1,5 +1,5 @@
 import { Hydration } from '../fact/hydrate';
-import { Feed, ObservableSubscription } from '../feed/feed';
+import { ObservableSource, ObservableSubscription } from '../observable/observable';
 import { Query } from '../query/query';
 import { Preposition } from '../query/query-parser';
 import { FactPath, FactReference, uniqueFactReferences } from '../storage';
@@ -23,7 +23,7 @@ export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
         private query: Query,
         private resultAdded: (path: FactPath, result: Fact, take: ((model: Model) => void)) => void,
         private resultRemoved: (model: Model) => void,
-        private inner: Feed
+        private inner: ObservableSource
     ) {}
 
     begin() {

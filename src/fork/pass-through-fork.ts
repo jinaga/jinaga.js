@@ -1,13 +1,14 @@
-import { Feed, Observable } from "../feed/feed";
+import { ObservableSource, Observable } from "../observable/observable";
 import { Query } from "../query/query";
+import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactReference, FactEnvelope, FactPath, FactRecord } from "../storage";
+import { FactReference, FactEnvelope, FactPath, FactRecord, FactFeed } from "../storage";
 import { Channel } from "./channel";
 import { Fork } from "./fork";
 
 export class PassThroughFork implements Fork {
     constructor(
-        private inner: Feed
+        private inner: ObservableSource
     ) { }
 
     async close(): Promise<void> {
@@ -28,6 +29,10 @@ export class PassThroughFork implements Fork {
 
     read(start: FactReference[], specification: Specification): Promise<any[]> {
         return this.inner.read(start, specification);
+    }
+
+    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+        return this.inner.feed(feed, bookmark);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

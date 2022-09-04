@@ -1,35 +1,40 @@
 import { FactPath, FactRecord, FactReference } from '../storage';
 
-export type ProfileMessage = {
+export interface ProfileMessage {
     displayName: string;
 };
 
-export type LoginResponse = {
+export interface LoginResponse {
     userFact: FactRecord,
     profile: ProfileMessage
 };
 
-export type QueryMessage = {
+export interface QueryMessage {
     start: FactReference,
     query: string
 };
 
-export type QueryResponse = {
+export interface QueryResponse {
     results: FactPath[]
 };
 
-export type SaveMessage = {
+export interface SaveMessage {
     facts: FactRecord[]
 };
 
-export type SaveResponse = {
-
-};
-
-export type LoadMessage = {
+export interface LoadMessage {
     references: FactReference[]
 };
 
-export type LoadResponse = {
+export interface LoadResponse {
     facts: FactRecord[]
 };
+
+export interface FeedsResponse {
+    feeds: string[];
+}
+
+export interface FeedResponse {
+    references: FactReference[];
+    bookmark: string;
+}

@@ -1,13 +1,13 @@
 import { dehydrateReference, dehydrateFact } from "../../src/fact/hydrate";
-import { FeedImpl } from "../../src/feed/feed-impl";
-import { runService } from "../../src/feed/service";
+import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
+import { runService } from "../../src/observable/service";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { fromDescriptiveString } from "../../src/query/descriptive-string";
 import { ServiceRunner } from "../../src/util/serviceRunner";
 
 class TestContext {
     private store = new MemoryStore();
-    private feed = new FeedImpl(this.store);
+    private feed = new ObservableSourceImpl(this.store);
     private exceptions: any[] = [];
     private serviceRunner = new ServiceRunner(exception => this.exceptions.push(exception.message));
 
