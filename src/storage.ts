@@ -15,7 +15,6 @@ export interface FactTuple {
 }
 
 export interface FactStream {
-    labels: string[];
     tuples: FactTuple[];
     bookmark: string;
 }
