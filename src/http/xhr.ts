@@ -16,6 +16,9 @@ function createXHR(
         else if (xhr.status >= 400) {
             retry(xhr.responseText);
         }
+        else if (xhr.status === 201) {
+            resolve(0);
+        }
         else if (xhr.responseType === 'json') {
             const response = <{}>xhr.response;
             resolve(response);
