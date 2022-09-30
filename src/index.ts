@@ -6,6 +6,7 @@ export { AuthorizationRules } from "./authorization/authorizationRules";
 export { Cache } from './cache';
 export { canonicalizeFact, canonicalPredecessors, computeHash, computeObjectHash } from './fact/hash';
 export { dehydrateFact, dehydrateReference, hydrate, hydrateFromTree } from "./fact/hydrate";
+export { TopologicalSorter } from './fact/sorter';
 export { ObservableSource, Observable } from './observable/observable';
 export { ObservableSourceImpl } from './observable/observable-source-impl';
 export { Channel } from "./fork/channel";
