@@ -283,6 +283,30 @@ describe("feed generator", () => {
         expect(feeds).toEqual(expectedFeeds);
     });
 
+    it.only("should parse deeply nested projection", () => {
+        const feeds = getFeeds(`
+            (root: Root) {
+                parent: Parent [
+                    parent->root: Root = root
+                ]
+            } => {
+                children = {
+                    child: Child [
+                        child->parent: Parent = parent
+                    ]
+                } => {
+                    grandchildren = {
+                        grandchild: Grandchild [
+                            grandchild->child: Child = child
+                        ]
+                    }
+                }
+            }`);
+        expect(feeds.length).toBe(3);
+        expect(feeds[2].outputs.length).toBe(1);
+        expect(feeds[2].outputs[0].factIndex).toBe(4);
+    });
+
     it("should accept a projection", () => {
         const feeds = getFeeds(`
             (root: Root) {
