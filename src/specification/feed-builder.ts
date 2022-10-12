@@ -184,13 +184,13 @@ function addProjections(feed: Feed, givenFacts: FactReferenceByIdentifier, known
     projections.forEach(projection => {
         if (projection.type === "specification") {
             // Produce more facts in the tuple.
-            const { feeds: feedsWithEdges } = addEdges(feed, givenFacts, knownFacts, [], projection.matches);
+            const { feeds: feedsWithEdges, knownFacts: knownFactsWithEdges } = addEdges(feed, givenFacts, knownFacts, [], projection.matches);
             feeds.push(...feedsWithEdges);
 
             // Recursively build child projections.
             const finalFeed = feedsWithEdges[feedsWithEdges.length - 1];
             if (Array.isArray(projection.childProjections)) {
-                const feedsWithProjections = addProjections(finalFeed, givenFacts, knownFacts, projection.childProjections);
+                const feedsWithProjections = addProjections(finalFeed, givenFacts, knownFactsWithEdges, projection.childProjections);
                 feeds.push(...feedsWithProjections);
             }
         }
