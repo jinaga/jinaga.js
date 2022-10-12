@@ -283,7 +283,7 @@ describe("feed generator", () => {
         expect(feeds).toEqual(expectedFeeds);
     });
 
-    it.only("should parse deeply nested projection", () => {
+    it("should parse deeply nested projection", () => {
         const feeds = getFeeds(`
             (root: Root) {
                 parent: Parent [
@@ -303,8 +303,7 @@ describe("feed generator", () => {
                 }
             }`);
         expect(feeds.length).toBe(3);
-        expect(feeds[2].outputs.length).toBe(1);
-        expect(feeds[2].outputs[0].factIndex).toBe(4);
+        expect(feeds[2].outputs.length).toBe(3);
     });
 
     it("should accept a projection", () => {
