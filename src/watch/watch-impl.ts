@@ -105,8 +105,9 @@ export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
         paths.forEach(path => {
             if (this.modelMap.hasModel(path)) {
                 const model = this.modelMap.removeModel(path);
-                if (this.resultRemoved)
+                if (this.resultRemoved && model) {
                     this.resultRemoved(model);
+                }
             }
         });
     }

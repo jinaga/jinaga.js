@@ -348,6 +348,9 @@ export class SpecificationParser {
         }
         else if (this.consume("#")) {
             const hash = this.match(/[A-Za-z0-9+/]+={0,2}/);
+            if (!hash) {
+                throw new Error("The hash must be a base64-encoded string");
+            }
             return {
                 fact: null,
                 reference: {

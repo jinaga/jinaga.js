@@ -1,5 +1,5 @@
 class ServiceInstance {
-    promise: Promise<void> = null;
+    promise: Promise<void> | null = null;
 }
 
 export class ServiceRunner {
