@@ -137,7 +137,7 @@ export class MemoryStore implements Storage {
         throw new Error('Cannot yet handle this type of step: ' + step);
     }
 
-    private findFact(reference: FactReference): FactRecord {
-        return this.factRecords.find(factReferenceEquals(reference));
+    private findFact(reference: FactReference): FactRecord | null {
+        return this.factRecords.find(factReferenceEquals(reference)) ?? null;
     }
 }
