@@ -40,7 +40,7 @@ class TransientForkObservable implements Observable {
 
 export class TransientFork implements Fork {
     private channels: Channel[] = [];
-    private channelProcessor: ChannelProcessor;
+    private channelProcessor: ChannelProcessor | null = null;
 
     constructor(
         private observableSource: ObservableSource,
@@ -50,7 +50,9 @@ export class TransientFork implements Fork {
     }
 
     async close() {
-        this.channelProcessor.stop();
+        if (this.channelProcessor) {
+            this.channelProcessor.stop();
+        }
         this.channelProcessor = null;
         this.channels = [];
         await this.observableSource.close();
