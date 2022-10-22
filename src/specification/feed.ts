@@ -169,7 +169,11 @@ interface RoleDescription {
 }
 
 function getFactTypeFromIndex(feed: Feed, factIndex: number): string {
-    return feed.facts.find(f => f.factIndex === factIndex).factType;
+    const fact = feed.facts.find(f => f.factIndex === factIndex);
+    if (!fact) {
+        throw new Error(`Fact with index ${factIndex} not found`);
+    }
+    return fact.factType;
 }
 
 function getAllRolesFromEdges(feed: Feed, edges: EdgeDescription[]): RoleDescription[] {
@@ -185,7 +189,7 @@ function getAllRolesFromConditions(feed: Feed, conditions: NotExistsConditionDes
         ...roles,
         ...getAllRolesFromEdges(feed, c.edges),
         ...getAllRolesFromConditions(feed, c.notExistsConditions)],
-        []);
+        [] as RoleDescription[]);
 }
 
 export function getAllRolesFromFeed(feed: Feed): RoleDescription[] {
