@@ -28,7 +28,7 @@ export class JinagaBrowser {
         const feed = new ObservableSourceImpl(store);
         const syncStatusNotifier = new SyncStatusNotifier();
         const authentication = createAuthentication(config, feed, syncStatusNotifier);
-        return new Jinaga(authentication, null, syncStatusNotifier);
+        return new Jinaga(authentication, syncStatusNotifier);
     }
 }
 

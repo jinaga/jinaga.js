@@ -4,8 +4,6 @@ import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
-import { formatDot } from './debug';
-import { Inspector } from './inspector';
 
 export function getPredecessors(fact: FactRecord | null, role: string) {
     if (!fact) {
@@ -141,13 +139,5 @@ export class MemoryStore implements Storage {
 
     private findFact(reference: FactReference): FactRecord {
         return this.factRecords.find(factReferenceEquals(reference));
-    }
-
-    graphviz(): string[] {
-        return formatDot(this.factRecords);
-    }
-
-    inspect() {
-        return new Inspector(this.factRecords).inspect();
     }
 }

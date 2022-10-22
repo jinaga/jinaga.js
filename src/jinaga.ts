@@ -31,7 +31,6 @@ export class Jinaga {
     
     constructor(
         private authentication: Authentication,
-        private store: MemoryStore,
         private syncStatusNotifier: SyncStatusNotifier
     ) { }
 
@@ -363,26 +362,6 @@ export class Jinaga {
 
     hash<T>(fact: T) {
         return Jinaga.hash(fact);
-    }
-
-    /**
-     * Generate a diagram of all facts in memory.
-     * The diagram is written in the DOT graph language.
-     * Use graphviz.org to visualize the diagram.
-     * 
-     * @returns A DOT diagram of facts in memory
-     */
-    graphviz(): string {
-        return this.store.graphviz().join('\n');
-    }
-
-    /**
-     * Open an inspector in the browser's console window to navigate through facts in memory.
-     * 
-     * @returns An inspector listing all facts
-     */
-    inspect() {
-        return this.store.inspect();
     }
 
     private validateFact(prototype: HashMap) {

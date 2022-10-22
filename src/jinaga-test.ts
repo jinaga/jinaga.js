@@ -23,7 +23,7 @@ export class JinagaTest {
     const feed = new ObservableSourceImpl(store);
     const syncStatusNotifier = new SyncStatusNotifier();
     const authentication = this.createAuthentication(config, feed);
-    return new Jinaga(authentication, null, syncStatusNotifier);
+    return new Jinaga(authentication, syncStatusNotifier);
   }
 
   static saveInitialState(config: JinagaTestConfig, store: MemoryStore) {
