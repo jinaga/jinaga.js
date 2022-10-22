@@ -42,8 +42,8 @@ class Evidence {
         throw new Error('Defect in parsing authorization rule.');
     }
 
-    private findFact(reference: FactReference): FactRecord {
-        return this.factRecords.find(factReferenceEquals(reference));
+    private findFact(reference: FactReference): FactRecord | null {
+        return this.factRecords.find(factReferenceEquals(reference)) ?? null;
     }
 }
 

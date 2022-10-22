@@ -7,7 +7,7 @@ import { flatten } from '../util/fn';
 import { formatDot } from './debug';
 import { Inspector } from './inspector';
 
-export function getPredecessors(fact: FactRecord, role: string) {
+export function getPredecessors(fact: FactRecord | null, role: string) {
     if (!fact) {
         return [];
     }
