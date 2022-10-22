@@ -38,10 +38,10 @@ export class JinagaTest {
   }
 
   static createAuthentication(config: JinagaTestConfig, inner: ObservableSource): Authentication {
-    const authorizationRules = config.authorization &&
-      config.authorization(new AuthorizationRules());
-    const userFact = config.user && dehydrateFact(config.user)[0];
-    const deviceFact = config.device && dehydrateFact(config.device)[0];
+    const authorizationRules = config.authorization ?
+      config.authorization(new AuthorizationRules()) : null;
+    const userFact = config.user ? dehydrateFact(config.user)[0] : null;
+    const deviceFact = config.device ? dehydrateFact(config.device)[0] : null;
     
     return new AuthenticationTest(inner, authorizationRules, userFact, deviceFact);
   }
