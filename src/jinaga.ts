@@ -102,7 +102,7 @@ export class Jinaga {
      */
     async fact<T>(prototype: T) : Promise<T> {
         if (!prototype) {
-            return null;
+            return prototype;
         }
         try {
             this.validateFact(prototype);

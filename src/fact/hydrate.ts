@@ -153,7 +153,7 @@ export function hydrateFromTree<T>(references: FactReference[], records: FactRec
         catch (e) {
             return null;
         }
-    }).filter(f => f);
+    }).filter(f => f) as T[];
 }
 
 export function dehydrateFact(fact: HashMap): FactRecord[] {
