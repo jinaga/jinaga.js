@@ -3,7 +3,7 @@ import { Channel } from "./channel";
 
 export class ChannelProcessor {
     private running = true;
-    private timer: NodeJS.Timer;
+    private timer: NodeJS.Timer | undefined;
 
     constructor(
         private channels: Channel[]
