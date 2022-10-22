@@ -5,16 +5,12 @@ export class Inverse {
     constructor(
         public appliedToType: string,
         public affected: Query,
-        public added: Query,
-        public removed: Query
-    ) {
-        if (!appliedToType) {
-            throw new Error('Inverse is not applied to a specific type.');
-        }
-    }
+        public added: Query | null,
+        public removed: Query | null
+    ) { }
 }
 
-function optimize(steps: Array<Step>) : Array<Step> {
+function optimize(steps: Array<Step>) : Array<Step> | null {
     if (steps.length > 0) {
         // Since a new fact does not yet have successors, an existential condition is always
         // true (if not exists) or false (if exists).
@@ -50,7 +46,7 @@ function invertSteps(steps: Array<Step>): Array<Inverse> {
     var inverses:Array<Inverse> = [];
 
     var oppositeSteps:Array<Step> = [];
-    var appliedToType:string = null;
+    var appliedToType:string | null = null;
     for (var stepIndex = 0; stepIndex < steps.length; ++stepIndex) {
         var step = steps[stepIndex];
 
@@ -86,6 +82,9 @@ function invertSteps(steps: Array<Step>): Array<Inverse> {
             if (join.direction === Direction.Successor) {
                 var rest = optimize(steps.slice(stepIndex + 1));
                 if (rest != null) {
+                    if (!appliedToType) {
+                        throw new Error('Inverse is not applied to a specific type.');
+                    }
                     inverses.push(new Inverse(
                         appliedToType,
                         new Query(oppositeSteps.slice(0)),
