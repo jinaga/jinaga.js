@@ -8,13 +8,7 @@ import { FactEnvelope, FactFeed, FactRecord, FactReference } from '../storage';
 import { Authentication } from './authentication';
 import { Feed } from "../specification/feed";
 
-export class Principal {
-    
-}
-
 export class AuthenticationWebClient implements Authentication {
-    private principal: Principal;
-
     constructor(private inner: Fork, private client: WebClient) {
     }
 
