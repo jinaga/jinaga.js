@@ -193,7 +193,7 @@ export class Jinaga {
         this.validateFact(fact);
         const reference = dehydrateReference(fact);
         const query = new Query(preposition.steps);
-        const onResultAdded = (path: FactPath, fact: U, take: ((model: V) => void)) => {
+        const onResultAdded = (path: FactPath, fact: U, take: ((model: V | null) => void)) => {
             const model = resultAdded(fact);
             take(resultRemoved ? <V>model : null);
         };

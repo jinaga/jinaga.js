@@ -14,15 +14,15 @@ interface WatchChild {
 }
 
 export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
-    private subscription: ObservableSubscription;
+    private subscription: ObservableSubscription | undefined;
     private modelMap = new ModelMap<Model>();
     private children: WatchChild[] = [];
 
     constructor(
         private start: FactReference,
         private query: Query,
-        private resultAdded: (path: FactPath, result: Fact, take: ((model: Model) => void)) => void,
-        private resultRemoved: (model: Model) => void,
+        private resultAdded: (path: FactPath, result: Fact, take: ((model: Model | null) => void)) => void,
+        private resultRemoved: ((model: Model) => void) | undefined,
         private inner: ObservableSource
     ) {}
 
@@ -54,7 +54,7 @@ export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
     ) : Watch<U, V> {
         const query = new Query(preposition.steps);
         const fullQuery = this.query.concat(query);
-        const onResultAdded = (path: FactPath, fact: U, take: ((model: V) => void)) => {
+        const onResultAdded = (path: FactPath, fact: U, take: ((model: V | null) => void)) => {
             const prefix = path.slice(0, this.query.getPathLength());
             this.modelMap.withModel(prefix, (parent: Model) => {
                 const model = resultAdded(parent, fact);
@@ -68,12 +68,12 @@ export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
     }
 
     async load() {
-        await this.subscription.load();
+        await this.subscription?.load();
         await mapAsync(this.children, child => child.load());
     }
 
     stop() {
-        this.subscription.dispose();
+        this.subscription?.dispose();
         this.children.forEach(child => child.stop());
     }
 
@@ -87,8 +87,10 @@ export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
                 const factReference = path[path.length - 1];
                 try {
                     const fact = <Fact>hydration.hydrate(factReference);
-                    this.resultAdded(path, fact, (model: Model) => {
-                        this.modelMap.setModel(path, model);
+                    this.resultAdded(path, fact, (model: Model | null) => {
+                        if (model) {
+                            this.modelMap.setModel(path, model);
+                        }
                     });
                 }
                 catch (x) {
