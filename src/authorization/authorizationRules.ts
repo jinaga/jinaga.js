@@ -60,17 +60,17 @@ function headStep(step: Step) {
 }
 
 interface AuthorizationRule {
-    isAuthorized(userFact: FactReference, fact: FactRecord, evidence: Evidence, store: Storage): Promise<boolean>;
+    isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage): Promise<boolean>;
 }
 
 class AuthorizationRuleAny implements AuthorizationRule {
-    isAuthorized(userFact: FactReference, fact: FactRecord, evidence: Evidence, store: Storage) {
+    isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage) {
         return Promise.resolve(true);
     }
 }
 
 class AuthorizationRuleNone implements AuthorizationRule {
-    isAuthorized(userFact: FactReference, fact: FactRecord, evidence: Evidence, store: Storage): Promise<boolean> {
+    isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage): Promise<boolean> {
         Trace.warn(`No fact of type ${fact.type} is authorized.`);
         return Promise.resolve(false);
     }
@@ -84,7 +84,7 @@ class AuthorizationRuleBy implements AuthorizationRule {
 
     }
 
-    async isAuthorized(userFact: FactReference, fact: FactRecord, evidence: Evidence, store: Storage) {
+    async isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage) {
         if (!userFact) {
             Trace.warn(`No user is logged in while attempting to authorize ${fact.type}.`);
             return false;
@@ -161,7 +161,7 @@ export class AuthorizationRules {
         return !!this.rulesByType[type];
     }
 
-    async isAuthorized(userFact: FactReference, fact: FactRecord, factRecords: FactRecord[], store: Storage) {
+    async isAuthorized(userFact: FactReference | null, fact: FactRecord, factRecords: FactRecord[], store: Storage) {
         const rules = this.rulesByType[fact.type];
         if (!rules) {
             return false;
