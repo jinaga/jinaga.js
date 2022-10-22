@@ -79,7 +79,7 @@ class AuthorizationRuleNone implements AuthorizationRule {
 class AuthorizationRuleBy implements AuthorizationRule {
     constructor(
         private head: Query,
-        private tail: Query
+        private tail: Query | null
     ) {
 
     }
