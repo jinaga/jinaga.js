@@ -1,7 +1,7 @@
 import { FactReference } from '../storage';
 
 function upgradingToVersion({ newVersion, oldVersion }: IDBVersionChangeEvent, ver: number) {
-  return newVersion >= ver && oldVersion < ver;
+  return newVersion && newVersion >= ver && oldVersion < ver;
 }
 
 function openDatabase(indexName: string): Promise<IDBDatabase> {
@@ -38,7 +38,7 @@ export async function withTransaction<T>(db: IDBDatabase, storeNames: string[], 
   const transaction = db.transaction(storeNames, mode);
   const transactionComplete = new Promise<void>((resolve, reject) => {
     transaction.oncomplete = _ => resolve();
-    transaction.onerror = _ => reject(`Error executing transaction ${JSON.stringify(transaction.error.message, null, 2)}`);
+    transaction.onerror = _ => reject(`Error executing transaction ${JSON.stringify(transaction.error?.message, null, 2)}`);
   });
   const [result, v] = await Promise.all([action(transaction), transactionComplete]);
   return result;
@@ -47,7 +47,7 @@ export async function withTransaction<T>(db: IDBDatabase, storeNames: string[], 
 export function execRequest<T>(request: IDBRequest) {
   return new Promise<T>((resolve, reject) => {
     request.onsuccess = (_: Event) => resolve(request.result);
-    request.onerror = (_: Event) => reject(`Error executing request ${JSON.stringify(request.error.message, null, 2)}`);
+    request.onerror = (_: Event) => reject(`Error executing request ${JSON.stringify(request.error?.message, null, 2)}`);
   });
 }
 
@@ -57,6 +57,10 @@ export function factKey(fact: FactReference) {
 
 export function keyToReference(key: string): FactReference {
   const regex = /([^:]*):(.*)/;
-  const [ _, type, hash ] = regex.exec(key);
+  const match = regex.exec(key);
+  if (!match) {
+    throw new Error(`Invalid key ${key}`);
+  }
+  const [ _, type, hash ] = match;
   return { type, hash };
 }
