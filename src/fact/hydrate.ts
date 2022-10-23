@@ -42,7 +42,7 @@ export class Dehydration {
     }
 
     private createFactRecord(fact: HashMap): FactRecord {
-        let type: string = null;
+        let type: string | null = null;
         let fields: HashMap = {};
         let predecessors: PredecessorCollection = {};
         for (let field in fact) {
@@ -77,7 +77,7 @@ export class Dehydration {
 
 type HydrationEntry = {
     record: FactRecord,
-    fact: HashMap
+    fact: HashMap | null
 }
 
 const hashSymbol = typeof(Symbol) === "undefined" ? null : Symbol("hash");
@@ -153,7 +153,7 @@ export function hydrateFromTree<T>(references: FactReference[], records: FactRec
         catch (e) {
             return null;
         }
-    }).filter(f => f);
+    }).filter(f => f) as T[];
 }
 
 export function dehydrateFact(fact: HashMap): FactRecord[] {

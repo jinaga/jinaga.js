@@ -53,7 +53,7 @@ describe("Watch", () => {
   var j: Jinaga;
   beforeEach(() => {
     const memory = new MemoryStore();
-    j = new Jinaga(new MockAuthentication(memory), memory, null);
+    j = new Jinaga(new MockAuthentication(memory), null);
     tasks = [];
   });
 

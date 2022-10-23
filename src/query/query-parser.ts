@@ -55,8 +55,8 @@ export class Preposition<T, U> {
 
 class ParserProxy implements Proxy {
     constructor(
-        private __parent: ParserProxy,
-        private __role: string) {
+        private __parent: ParserProxy | null,
+        private __role: string | null) {
     }
 
     [key:string]: any;
@@ -79,7 +79,7 @@ class ParserProxy implements Proxy {
                 currentSteps.push(new PropertyCondition(name, value));
             }
         }
-        if (this.__parent) {
+        if (this.__parent && this.__role) {
             const steps = this.__parent.createQuery();
             const step: Step = new Join(Direction.Predecessor, this.__role);
             steps.push(step);
@@ -91,7 +91,7 @@ class ParserProxy implements Proxy {
     }
 }
 
-function findTarget(spec:any): Array<Step> {
+function findTarget(spec:any): Array<Step> | null {
     if (spec instanceof ParserProxy) {
         return spec.createQuery();
     }
@@ -100,7 +100,7 @@ function findTarget(spec:any): Array<Step> {
     }
     if (spec instanceof Object) {
         const steps: Array<Step> = [];
-        let targetQuery: Array<Step> = null;
+        let targetQuery: Array<Step> | null = null;
         for (const field in spec) {
             if (!targetQuery) {
                 targetQuery = findTarget(spec[field]);

@@ -29,7 +29,7 @@ export class AuthorizationEngine {
         private feed: ObservableSource
     ) { }
 
-    async authorizeFacts(facts: FactRecord[], userFact: FactRecord) {
+    async authorizeFacts(facts: FactRecord[], userFact: FactRecord | null) {
         const existing = await this.feed.whichExist(facts);
         const sorter = new TopologicalSorter<Promise<AuthorizationResult>>();
         const results = await mapAsync(sorter.sort(facts, (p, f) => this.visit(p, f, userFact, facts, existing)), x => x);
@@ -50,13 +50,13 @@ export class AuthorizationEngine {
     }
 
 
-    private async visit(predecessors: Promise<AuthorizationResult>[], fact: FactRecord, userFact: FactRecord, factRecords: FactRecord[], existing: FactReference[]): Promise<AuthorizationResult> {
+    private async visit(predecessors: Promise<AuthorizationResult>[], fact: FactRecord, userFact: FactRecord | null, factRecords: FactRecord[], existing: FactReference[]): Promise<AuthorizationResult> {
         const predecessorResults = await mapAsync(predecessors, p => p);
         const verdict = await this.authorize(predecessorResults, userFact, fact, factRecords, existing);
         return { fact, verdict };
     }
 
-    private async authorize(predecessors: AuthorizationResult[], userFact: FactRecord, fact: FactRecord, factRecords: FactRecord[], existing: FactReference[]) : Promise<AuthorizationVerdict> {
+    private async authorize(predecessors: AuthorizationResult[], userFact: FactRecord | null, fact: FactRecord, factRecords: FactRecord[], existing: FactReference[]) : Promise<AuthorizationVerdict> {
         if (predecessors.some(p => p.verdict === "Forbidden")) {
             const predecessor = predecessors
                 .filter(p => p.verdict === 'Forbidden')

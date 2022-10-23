@@ -10,7 +10,7 @@ export class TopologicalSorter<T> {
         let factQueue = facts.slice(0);
 
         while (factQueue.length > 0) {
-            const fact = factQueue.shift();
+            const fact = factQueue.shift()!;
             const predecessorKeys = this.allPredecessors(fact);
             const waitingPredecessors = predecessorKeys.filter(key => {
                 return !this.factsVisited[key];
@@ -31,7 +31,7 @@ export class TopologicalSorter<T> {
                             factQueue.push(r);
                         }
                     });
-                    this.factsWaiting[key] = null;
+                    delete this.factsWaiting[key];
                 }
             }
             else {

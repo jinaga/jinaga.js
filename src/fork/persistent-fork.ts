@@ -43,7 +43,7 @@ class PersistentForkObservable implements Observable {
 
 export class PersistentFork implements Fork {
     private channels: Channel[] = [];
-    private channelProcessor: ChannelProcessor;
+    private channelProcessor: ChannelProcessor | null = null;
 
     constructor(
         private observableSource: ObservableSource,

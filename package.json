@@ -7,7 +7,7 @@
   "scripts": {
     "clean": "rimraf dist/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
     "build": "tsc",
-    "test": "jest",
+    "test": "npx tsc --noEmit --project tsconfig.test.json && jest",
     "test:watch": "jest --watch",
     "prepublishOnly": "npm run clean && npm run build && npm run test"
   },

@@ -23,7 +23,7 @@ export class JinagaTest {
     const feed = new ObservableSourceImpl(store);
     const syncStatusNotifier = new SyncStatusNotifier();
     const authentication = this.createAuthentication(config, feed);
-    return new Jinaga(authentication, null, syncStatusNotifier);
+    return new Jinaga(authentication, syncStatusNotifier);
   }
 
   static saveInitialState(config: JinagaTestConfig, store: MemoryStore) {
@@ -38,10 +38,10 @@ export class JinagaTest {
   }
 
   static createAuthentication(config: JinagaTestConfig, inner: ObservableSource): Authentication {
-    const authorizationRules = config.authorization &&
-      config.authorization(new AuthorizationRules());
-    const userFact = config.user && dehydrateFact(config.user)[0];
-    const deviceFact = config.device && dehydrateFact(config.device)[0];
+    const authorizationRules = config.authorization ?
+      config.authorization(new AuthorizationRules()) : null;
+    const userFact = config.user ? dehydrateFact(config.user)[0] : null;
+    const deviceFact = config.device ? dehydrateFact(config.device)[0] : null;
     
     return new AuthenticationTest(inner, authorizationRules, userFact, deviceFact);
   }

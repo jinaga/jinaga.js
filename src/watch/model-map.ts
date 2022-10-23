@@ -62,7 +62,7 @@ export class ModelMap<Model> {
         return pair !== undefined && pair.satisfied;
     }
 
-    removeModel(path: FactPath): Model {
+    removeModel(path: FactPath): Model | null {
         const removedIndex = findIndex(this.modelOrActionByFactPath, factPathMatches(path));
         if (removedIndex >= 0) {
             const pair = this.modelOrActionByFactPath[removedIndex];

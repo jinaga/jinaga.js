@@ -86,7 +86,7 @@ function givenAuthorizationRules(builder: (a: AuthorizationRules) => Authorizati
     return builder(new AuthorizationRules());
 }
 
-async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactReference, fact: FactRecord) {
+async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactReference | null, fact: FactRecord) {
     const store = new MemoryStore();
     const facts = [ ...givenGroupMember(), givenUserFact('unauthorized-user') ];
     await store.save(facts.map(f => ({ fact: f, signatures: [] })));
@@ -95,14 +95,18 @@ async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: F
 
 class User {
     static Type = "Jinaga.User" as const;
-    publicKey: string;
+    constructor(
+        public publicKey: string
+    ) {}
 }
 
 class Group {
     static Type = "Group" as const;
 
     type = Group.Type;
-    identity: string;
+    constructor(
+        public identity: string
+    ) {}
 
     static members(g: Group) {
         return j.match<Member>({
@@ -116,8 +120,10 @@ class Member {
     static Type = "Member" as const;
 
     type = Member.Type;
-    group: Group;
-    user: User;
+    constructor(
+        public group: Group,
+        public user: User
+    ) {}
 
     static user(m: Member) {
         ensure(m).has("user", User);
@@ -130,8 +136,10 @@ class Message {
     static Type = "Message" as const;
 
     type = Message.Type;
-    author: User;
-    group: Group;
+    constructor(
+        public author: User,
+        public group: Group
+    ) {}
 
     static authorOf(m: Message) {
         ensure(m).has("author", User);
@@ -150,8 +158,10 @@ class Approval {
     static Type = "Approval" as const;
 
     type = Approval.Type;
-    message: Message;
-    approver: User;
+    constructor(
+        public message: Message,
+        public approver: User
+    ) {}
 
     static of(m: Message) {
         return j.match<Approval>({

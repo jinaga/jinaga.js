@@ -25,7 +25,9 @@ class TestContext {
             await subscription.load();
         }
         catch (exception) {
-            this.exceptions.push(exception.message);
+            if (exception instanceof Error) {
+                this.exceptions.push(exception.message);
+            }
         }
     }
 

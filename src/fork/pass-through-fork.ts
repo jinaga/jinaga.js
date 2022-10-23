@@ -44,7 +44,7 @@ export class PassThroughFork implements Fork {
     }
 
     addChannel(fact: FactReference, query: Query): Channel {
-        return null;
+        return Channel.NoOp;
     }
 
     removeChannel(channel: Channel): void {

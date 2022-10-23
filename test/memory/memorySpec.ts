@@ -16,7 +16,7 @@ function dehydrateEnvelope(obj: HashMap) {
 }
 
 describe('Memory', () => {
-    let memory: MemoryStore = null;
+    let memory: MemoryStore = null!;
 
     beforeEach(() => {
         memory = new MemoryStore();

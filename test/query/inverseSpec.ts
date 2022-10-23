@@ -16,7 +16,7 @@ describe("QueryInverter", () => {
         var inverses = invertQuery(fromDescriptiveString("S.project F.type=\"Task\""));
         expect(inverses.length).toEqual(1);
         expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Task\" P.project");
-        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].added?.toDescriptiveString()).toEqual("");
         expect(inverses[0].removed).toBeNull();
     });
 
@@ -24,7 +24,7 @@ describe("QueryInverter", () => {
         var inverses = invertQuery(fromDescriptiveString("S.project S.task F.type=\"Completed\""));
         expect(inverses.length).toEqual(1);
         expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Completed\" P.task P.project");
-        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].added?.toDescriptiveString()).toEqual("");
         expect(inverses[0].removed).toBeNull();
     });
 
@@ -32,7 +32,7 @@ describe("QueryInverter", () => {
         var inverses = invertQuery(fromDescriptiveString("F.type=\"Project\" S.project F.type=\"Task\" S.task F.type=\"Completion\""));
         expect(inverses.length).toEqual(1);
         expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Completion\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
-        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].added?.toDescriptiveString()).toEqual("");
         expect(inverses[0].removed).toBeNull();
     });
 
@@ -40,7 +40,7 @@ describe("QueryInverter", () => {
         var inverses = invertQuery(fromDescriptiveString("F.type=\"Project\" S.project F.type=\"Task\""));
         expect(inverses.length).toEqual(1);
         expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Task\" P.project F.type=\"Project\"");
-        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].added?.toDescriptiveString()).toEqual("");
         expect(inverses[0].removed).toBeNull();
     });
 
@@ -49,7 +49,7 @@ describe("QueryInverter", () => {
         expect(inverses.length).toEqual(1);
 
         expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Assignment\" P.user");
-        expect(inverses[0].added.toDescriptiveString()).toEqual("P.project");
+        expect(inverses[0].added?.toDescriptiveString()).toEqual("P.project");
         expect(inverses[0].removed).toBeNull();
     });
 
@@ -57,10 +57,10 @@ describe("QueryInverter", () => {
         var inverses = invertQuery(fromDescriptiveString("F.type=\"Project\" S.project F.type=\"Task\" N(S.task F.type=\"TaskCompleted\")"));
         expect(inverses.length).toEqual(2);
         expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"Task\" P.project F.type=\"Project\"");
-        expect(inverses[0].added.toDescriptiveString()).toEqual("");
+        expect(inverses[0].added?.toDescriptiveString()).toEqual("");
         expect(inverses[0].removed).toBeNull();
         expect(inverses[1].affected.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
-        expect(inverses[1].removed.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task");
+        expect(inverses[1].removed?.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task");
         expect(inverses[1].added).toBeNull();
     });
 
@@ -68,7 +68,7 @@ describe("QueryInverter", () => {
         var inverses = invertQuery(fromDescriptiveString("F.type=\"Project\" S.project F.type=\"Task\" E(S.task F.type=\"TaskCompleted\")"));
         expect(inverses.length).toEqual(1);
         expect(inverses[0].affected.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task F.type=\"Task\" P.project F.type=\"Project\"");
-        expect(inverses[0].added.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task");
+        expect(inverses[0].added?.toDescriptiveString()).toEqual("F.type=\"TaskCompleted\" P.task");
         expect(inverses[0].removed).toBeNull();
     });
 

@@ -44,7 +44,7 @@ export class AuthenticationNoOp implements Authentication {
         return this.inner.load(references);
     }
     addChannel(fact: FactReference, query: Query): Channel {
-        return null;
+        return Channel.NoOp;
     }
     removeChannel(channel: Channel): void {
     }

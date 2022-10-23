@@ -31,8 +31,7 @@ export class Jinaga {
     
     constructor(
         private authentication: Authentication,
-        private store: MemoryStore,
-        private syncStatusNotifier: SyncStatusNotifier
+        private syncStatusNotifier: SyncStatusNotifier | null
     ) { }
 
     /**
@@ -64,7 +63,7 @@ export class Jinaga {
     }
 
     onSyncStatus(handler: (status: SyncStatus) => void) {
-        this.syncStatusNotifier.onSyncStatus(handler);
+        this.syncStatusNotifier?.onSyncStatus(handler);
     }
 
     /**
@@ -103,7 +102,7 @@ export class Jinaga {
      */
     async fact<T>(prototype: T) : Promise<T> {
         if (!prototype) {
-            return null;
+            return prototype;
         }
         try {
             this.validateFact(prototype);
@@ -194,7 +193,7 @@ export class Jinaga {
         this.validateFact(fact);
         const reference = dehydrateReference(fact);
         const query = new Query(preposition.steps);
-        const onResultAdded = (path: FactPath, fact: U, take: ((model: V) => void)) => {
+        const onResultAdded = (path: FactPath, fact: U, take: ((model: V | null) => void)) => {
             const model = resultAdded(fact);
             take(resultRemoved ? <V>model : null);
         };
@@ -352,7 +351,7 @@ export class Jinaga {
         return Jinaga.not(condition);
     }
 
-    static hash<T>(fact: T) {
+    static hash<T extends Object>(fact: T) {
         const hash = lookupHash(fact);
         if (hash) {
             return hash;
@@ -361,28 +360,8 @@ export class Jinaga {
         return reference.hash;
     }
 
-    hash<T>(fact: T) {
+    hash<T extends Object>(fact: T) {
         return Jinaga.hash(fact);
-    }
-
-    /**
-     * Generate a diagram of all facts in memory.
-     * The diagram is written in the DOT graph language.
-     * Use graphviz.org to visualize the diagram.
-     * 
-     * @returns A DOT diagram of facts in memory
-     */
-    graphviz(): string {
-        return this.store.graphviz().join('\n');
-    }
-
-    /**
-     * Open an inspector in the browser's console window to navigate through facts in memory.
-     * 
-     * @returns An inspector listing all facts
-     */
-    inspect() {
-        return this.store.inspect();
     }
 
     private validateFact(prototype: HashMap) {

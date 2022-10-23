@@ -3,10 +3,11 @@ import 'source-map-support/register';
 import { Jinaga } from '../../src/jinaga';
 import { Query } from '../../src/query/query';
 import { ConditionOf, Preposition, SpecificationOf, ensure } from '../../src/query/query-parser';
+import { AuthenticationNoOp } from './AuthenticationNoOp';
 
 describe('Query parser', () => {
 
-    const j = new Jinaga(null, null, null);
+    const j = new Jinaga(new AuthenticationNoOp(), null);
 
     function tasksInList(l: List): SpecificationOf<Task> {
         return j.match({
@@ -31,7 +32,8 @@ describe('Query parser', () => {
     }
 
     function listOfCompletion(c: Completion): SpecificationOf<List> {
-        ensure(c).has("task", "Task").has("list", "List");
+        ensure(c).has("task", "Task");
+        ensure(c.task!).has("list", "List");
         return j.match(c.task?.list);
     }
 
