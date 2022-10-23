@@ -31,7 +31,7 @@ export class Jinaga {
     
     constructor(
         private authentication: Authentication,
-        private syncStatusNotifier: SyncStatusNotifier
+        private syncStatusNotifier: SyncStatusNotifier | null
     ) { }
 
     /**
@@ -63,7 +63,7 @@ export class Jinaga {
     }
 
     onSyncStatus(handler: (status: SyncStatus) => void) {
-        this.syncStatusNotifier.onSyncStatus(handler);
+        this.syncStatusNotifier?.onSyncStatus(handler);
     }
 
     /**
@@ -351,7 +351,7 @@ export class Jinaga {
         return Jinaga.not(condition);
     }
 
-    static hash<T>(fact: T) {
+    static hash<T extends Object>(fact: T) {
         const hash = lookupHash(fact);
         if (hash) {
             return hash;
@@ -360,7 +360,7 @@ export class Jinaga {
         return reference.hash;
     }
 
-    hash<T>(fact: T) {
+    hash<T extends Object>(fact: T) {
         return Jinaga.hash(fact);
     }
 

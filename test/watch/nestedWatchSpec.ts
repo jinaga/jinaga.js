@@ -2,18 +2,18 @@ import { Jinaga, ensure } from "../../src/jinaga";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { MockAuthentication } from "./mock-authentication";
 
-class Room {
+interface Room {
     type: string;
     identifier: number;
 }
 
-class Message {
+interface Message {
     type: string;
     room: Room;
     sender: Person;
 }
 
-class Removed {
+interface Removed {
     type: string;
     message: Message;
 }
@@ -21,10 +21,12 @@ class Removed {
 class Person {
     static Type = "Person" as const;
     type = Person.Type;
-    identifier: number;
+    constructor(
+        public identifier: number
+    ) {}
 }
 
-class Name {
+interface Name {
     type: string;
     person: Person;
     value: string;
@@ -46,7 +48,7 @@ describe("Nested watch", () => {
 
     beforeEach(() => {
         const memory = new MemoryStore();
-        j = new Jinaga(new MockAuthentication(memory), memory, null);
+        j = new Jinaga(new MockAuthentication(memory), null);
         room = {
             type: 'Room',
             identifier: Math.random()
@@ -234,7 +236,7 @@ describe("Nested watch", () => {
         return messages;
     }
 
-    function expectName(name: string) {
+    function expectName(name: string | undefined) {
         expect(messageViewModels.length).toEqual(1);
         if (name) {
             expect(messageViewModels[0].from.length).toEqual(1);

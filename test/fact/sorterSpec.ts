@@ -118,7 +118,7 @@ describe('Topological sorter', () => {
     })
 
     it('should handle a real world example', () => {
-        const facts = [
+        const facts: FactRecord[] = [
             {
                 "type": "ImprovingU.Abstract",
                 "hash": "gkCYyWW5BFEO+heluEKGpuYSFi7CdyXlF3AzH7DXeiR/GSGM5jIQpkOSazF1rcZXssdwqvrxaVmp1Qr58pu00g==",
