@@ -1,8 +1,7 @@
 import { Authentication } from './authentication/authentication';
 import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
-import { runService } from './observable/service';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
-import { MemoryStore } from './memory/memory-store';
+import { runService } from './observable/service';
 import { Query } from './query/query';
 import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf } from './query/query-parser';
 import { FactEnvelope, FactPath, uniqueFactReferences } from './storage';
