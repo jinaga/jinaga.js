@@ -1,4 +1,4 @@
-import { Specification } from "../../src/specification/specification";
+import { Role, Specification, Match, PathCondition } from "../../src/specification/specification";
 import { describeSpecification } from "./description";
 
 export class SpecificationOf<U> {
@@ -21,6 +21,8 @@ class Given<T> {
     ) { }
 
     match<U>(definition: (input: Label<T>, facts: FactRepository) => DefinitionResult<U>): SpecificationOf<U> {
+        const p1: any = createProxy([], this.factType);
+        const result = definition(p1, new FactRepository());
         const specification: Specification = {
             given: [
                 {
@@ -35,7 +37,7 @@ class Given<T> {
     }
 }
 
-type DefinitionResult<T> = Match<T> | SelectResult<T>;
+type DefinitionResult<T> = MatchOf<T> | SelectResult<T>;
 
 type Label<T> = {
     [ R in keyof T ]: T[R] extends string ? Field<string> : Label<T[R]>;
@@ -53,12 +55,16 @@ export function field<T, F extends keyof T>(label: Label<T>, name: F): Projectio
     throw new Error("Not implemented");
 }
 
-class Match<T> {
-    join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): Match<T> {
+class MatchOf<T> {
+    constructor(
+        private match: Match
+    ) { }
+
+    join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): MatchOf<T> {
         throw new Error("Not implemented");
     }
 
-    notExists<U>(tupleDefinition: (proxy: Label<T>, facts: FactRepository) => U): Match<T> {
+    notExists<U>(tupleDefinition: (proxy: Label<T>, facts: FactRepository) => U): MatchOf<T> {
         throw new Error("Not implemented");
     }
 
@@ -78,8 +84,11 @@ interface SelectResult<T> {
 }
 
 class FactRepository {
+    private unknownIndex = 1;
+
     ofType<T>(factConstructor: FactConstructor<T>): Source<T> {
-        throw new Error("Not implemented");
+        const name = `unknown${this.unknownIndex++}`;
+        return new Source<T>(name, factConstructor.Type);
     }
 
     observable<T>(definition: () => ProjectionResult<T>): Projection<Observable<T>> {
@@ -88,8 +97,35 @@ class FactRepository {
 }
 
 class Source<T> {
-    join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): Match<T> {
-        throw new Error("Not implemented");
+    constructor(
+        private name: string,
+        private factType: string
+    ) { }
+
+    join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): MatchOf<T> {
+        const unknown = createProxy([], this.factType);
+        const ancestor = left(unknown);
+        const payloadLeft = getPayload(ancestor);
+        const payloadRight = getPayload(right);
+        if (payloadLeft.factType !== payloadRight.factType) {
+            throw new Error(`Cannot join ${payloadLeft.factType} with ${payloadRight.factType}`);
+        }
+        const condition: PathCondition = {
+            type: "path",
+            rolesLeft: payloadLeft.path,
+            labelRight: "r",
+            rolesRight: payloadRight.path
+        };
+        const match: Match = {
+            unknown: {
+                name: this.name,
+                type: this.factType
+            },
+            conditions: [
+                condition
+            ]
+        };
+        return new MatchOf<T>(match);
     }
 }
 
@@ -114,3 +150,37 @@ interface ProjectionCollection<T> {
 export class Observable<T> {
 
 }
+
+interface LabelPayload {
+    path: Role[];
+    factType: string;
+}
+
+const IDENTITY = Symbol('proxy_target_identity');
+function createProxy(path: Role[], factType: string): any {
+    const payload: LabelPayload = {
+        path,
+        factType
+    };
+    return new Proxy(payload, {
+        get: (target, property) => {
+            if (property === IDENTITY) {
+                return target;
+            }
+            const role = property.toString();
+            const targetType = lookupRoleType(target.factType, role);
+            const path: Role[] = [...target.path, { name: role, targetType }];
+            return createProxy(path, targetType);
+        }
+    });
+}
+
+function getPayload<T>(label: Label<T>): LabelPayload {
+    const proxy: any = label;
+    return proxy[IDENTITY];
+}
+
+function lookupRoleType(factType: string, role: string): string {
+    return "targetType";
+}
+
