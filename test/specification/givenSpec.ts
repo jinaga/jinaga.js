@@ -52,9 +52,9 @@ describe("given", () => {
         );
 
         const expected = `
-        (company: Company) {
-            office: Office [
-                office->company: Company = company
+        (p1: Company) {
+            u1: Office [
+                u1->company: Company = p1
             ]
         }`;
         expect(offices.toDescriptiveString(2)).toBe(expected);

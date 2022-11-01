@@ -1,6 +1,13 @@
+import { Specification } from "../../src/specification/specification";
+import { describeSpecification } from "./description";
+
 export class SpecificationOf<U> {
+    constructor(
+        private specification: Specification
+    ) { }
+
     toDescriptiveString(depth: number) {
-        throw new Error("Method not implemented.");
+        return describeSpecification(this.specification, depth);
     }
 }
 
@@ -10,11 +17,21 @@ export function given<T>(factConstructor: FactConstructor<T>): Given<T> {
 
 class Given<T> {
     constructor(
-        public factType: string
+        private factType: string
     ) { }
 
     match<U>(definition: (input: Label<T>, facts: FactRepository) => DefinitionResult<U>): SpecificationOf<U> {
-        throw new Error("Not implemented");
+        const specification: Specification = {
+            given: [
+                {
+                    name: "p1",
+                    type: this.factType
+                }
+            ],
+            matches: [],
+            childProjections: []
+        };
+        return new SpecificationOf<U>(specification);
     }
 }
 
