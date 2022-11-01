@@ -21,12 +21,13 @@ class Given<T> {
     ) { }
 
     match<U>(definition: (input: Label<T>, facts: FactRepository) => DefinitionResult<U>): SpecificationOf<U> {
-        const p1: any = createProxy([], this.factType);
+        const name = "p1";
+        const p1: any = createProxy(name, [], this.factType);
         const result = definition(p1, new FactRepository());
         const specification: Specification = {
             given: [
                 {
-                    name: "p1",
+                    name,
                     type: this.factType
                 }
             ],
@@ -103,17 +104,20 @@ class Source<T> {
     ) { }
 
     join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): MatchOf<T> {
-        const unknown = createProxy([], this.factType);
+        const unknown = createProxy(this.name, [], this.factType);
         const ancestor = left(unknown);
         const payloadLeft = getPayload(ancestor);
         const payloadRight = getPayload(right);
         if (payloadLeft.factType !== payloadRight.factType) {
             throw new Error(`Cannot join ${payloadLeft.factType} with ${payloadRight.factType}`);
         }
+        if (payloadLeft.root !== this.name) {
+            throw new Error("The left side must be based on the source");
+        }
         const condition: PathCondition = {
             type: "path",
             rolesLeft: payloadLeft.path,
-            labelRight: "r",
+            labelRight: payloadRight.root,
             rolesRight: payloadRight.path
         };
         const match: Match = {
@@ -152,13 +156,15 @@ export class Observable<T> {
 }
 
 interface LabelPayload {
+    root: string;
     path: Role[];
     factType: string;
 }
 
 const IDENTITY = Symbol('proxy_target_identity');
-function createProxy(path: Role[], factType: string): any {
+function createProxy(root: string, path: Role[], factType: string): any {
     const payload: LabelPayload = {
+        root,
         path,
         factType
     };
@@ -170,7 +176,7 @@ function createProxy(path: Role[], factType: string): any {
             const role = property.toString();
             const targetType = lookupRoleType(target.factType, role);
             const path: Role[] = [...target.path, { name: role, targetType }];
-            return createProxy(path, targetType);
+            return createProxy(root, path, targetType);
         }
     });
 }
