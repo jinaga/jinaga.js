@@ -131,7 +131,7 @@ class FactRepository {
     private unknownIndex = 1;
 
     ofType<T>(factConstructor: FactConstructor<T>): Source<T> {
-        const name = `unknown${this.unknownIndex++}`;
+        const name = `u${this.unknownIndex++}`;
         return new Source<T>(this.factTypeMap, name, factConstructor.Type);
     }
 

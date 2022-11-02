@@ -72,7 +72,7 @@ describe("given", () => {
                 u1->company: Company = p1
             ]
         }`;
-        expect(offices.toDescriptiveString(2)).toBe(expected);
+        expect("\n" + offices.toDescriptiveString(2)).toBe(expected + "\n");
     });
     // it("should return a specification", () => {
     //     const officeIdentifiers = given(Company).match((company, facts) =>
