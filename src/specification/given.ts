@@ -64,6 +64,7 @@ class Given<T> {
         const name = "p1";
         const p1: any = createProxy(this.factTypeMap, name, [], this.factType);
         const result = definition(p1, new FactRepository(this.factTypeMap));
+        const matches = result.matches;
         const specification: Specification = {
             given: [
                 {
@@ -71,14 +72,16 @@ class Given<T> {
                     type: this.factType
                 }
             ],
-            matches: [],
+            matches,
             childProjections: []
         };
         return new SpecificationOf<U>(specification);
     }
 }
 
-type DefinitionResult<T> = MatchOf<T> | SelectResult<T>;
+interface DefinitionResult<T> {
+    matches: Match[];
+}
 
 type Label<T> = {
     [ R in keyof T ]: T[R] extends string ? Field<string> : Label<T[R]>;
@@ -88,10 +91,14 @@ interface Field<T> {
     value: T;
 }
 
-class MatchOf<T> {
+class MatchOf<T> implements DefinitionResult<T> {
     constructor(
-        private match: Match
+        public match: Match
     ) { }
+
+    get matches(): Match[] {
+        return [this.match];
+    }
 
     join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): MatchOf<T> {
         throw new Error("Not implemented");
