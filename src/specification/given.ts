@@ -1,6 +1,49 @@
 import { Role, Specification, Match, PathCondition } from "../../src/specification/specification";
 import { describeSpecification } from "./description";
 
+type RoleMap = { [role: string]: string };
+
+class FactOptions<T> {
+    constructor(
+        public factTypeByRole: RoleMap
+    ) { }
+
+    predecessor<U extends keyof T>(role: U, predecessorConstructor: FactConstructor<T[U]>): FactOptions<T> {
+        return new FactOptions<T>({
+            ...this.factTypeByRole,
+            [role]: predecessorConstructor.Type
+        });
+    }
+}
+
+type FactTypeMap = { [factType: string]: RoleMap };
+
+export class Model {
+    constructor(
+        private readonly factTypeMap: FactTypeMap = {}
+    ) { }
+
+    type<T>(factConstructor: FactConstructor<T>, options?: (f: FactOptions<T>) => FactOptions<T>): Model {
+        if (options) {
+            const factOptions = options(new FactOptions<T>({}));
+            return new Model({
+                ...this.factTypeMap,
+                [factConstructor.Type]: factOptions.factTypeByRole
+            });
+        }
+        else {
+            return new Model({
+                ...this.factTypeMap,
+                [factConstructor.Type]: {}
+            });
+        }
+    }
+
+    given<T>(factConstructor: FactConstructor<T>) {
+        return new Given<T>(factConstructor.Type, this.factTypeMap);
+    }
+}
+
 export class SpecificationOf<U> {
     constructor(
         private specification: Specification
@@ -11,19 +54,16 @@ export class SpecificationOf<U> {
     }
 }
 
-export function given<T>(factConstructor: FactConstructor<T>): Given<T> {
-    return new Given<T>(factConstructor.Type);
-}
-
 class Given<T> {
     constructor(
-        private factType: string
+        private factType: string,
+        private factTypeMap: FactTypeMap
     ) { }
 
     match<U>(definition: (input: Label<T>, facts: FactRepository) => DefinitionResult<U>): SpecificationOf<U> {
         const name = "p1";
-        const p1: any = createProxy(name, [], this.factType);
-        const result = definition(p1, new FactRepository());
+        const p1: any = createProxy(this.factTypeMap, name, [], this.factType);
+        const result = definition(p1, new FactRepository(this.factTypeMap));
         const specification: Specification = {
             given: [
                 {
@@ -46,14 +86,6 @@ type Label<T> = {
 
 interface Field<T> {
     value: T;
-}
-
-export function fact<T>(label: Label<T>): Projection<T> {
-    throw new Error("Not implemented");
-}
-
-export function field<T, F extends keyof T>(label: Label<T>, name: F): Projection<T[F]> {
-    throw new Error("Not implemented");
 }
 
 class MatchOf<T> {
@@ -85,11 +117,15 @@ interface SelectResult<T> {
 }
 
 class FactRepository {
+    constructor(
+        private factTypeMap: FactTypeMap
+    ) { }
+
     private unknownIndex = 1;
 
     ofType<T>(factConstructor: FactConstructor<T>): Source<T> {
         const name = `unknown${this.unknownIndex++}`;
-        return new Source<T>(name, factConstructor.Type);
+        return new Source<T>(this.factTypeMap, name, factConstructor.Type);
     }
 
     observable<T>(definition: () => ProjectionResult<T>): Projection<Observable<T>> {
@@ -99,12 +135,13 @@ class FactRepository {
 
 class Source<T> {
     constructor(
+        private factTypeMap: FactTypeMap,
         private name: string,
         private factType: string
     ) { }
 
     join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): MatchOf<T> {
-        const unknown = createProxy(this.name, [], this.factType);
+        const unknown = createProxy(this.factTypeMap, this.name, [], this.factType);
         const ancestor = left(unknown);
         const payloadLeft = getPayload(ancestor);
         const payloadRight = getPayload(right);
@@ -162,7 +199,7 @@ interface LabelPayload {
 }
 
 const IDENTITY = Symbol('proxy_target_identity');
-function createProxy(root: string, path: Role[], factType: string): any {
+function createProxy(factTypeMap: FactTypeMap, root: string, path: Role[], factType: string): any {
     const payload: LabelPayload = {
         root,
         path,
@@ -174,9 +211,9 @@ function createProxy(root: string, path: Role[], factType: string): any {
                 return target;
             }
             const role = property.toString();
-            const targetType = lookupRoleType(target.factType, role);
+            const targetType = lookupRoleType(factTypeMap, target.factType, role);
             const path: Role[] = [...target.path, { name: role, targetType }];
-            return createProxy(root, path, targetType);
+            return createProxy(factTypeMap, root, path, targetType);
         }
     });
 }
@@ -186,7 +223,15 @@ function getPayload<T>(label: Label<T>): LabelPayload {
     return proxy[IDENTITY];
 }
 
-function lookupRoleType(factType: string, role: string): string {
-    return "targetType";
+function lookupRoleType(factTypeMap: FactTypeMap, factType: string, role: string): string {
+    const roleMap = factTypeMap[factType];
+    if (!roleMap) {
+        throw new Error(`Unknown fact type ${factType}`);
+    }
+    const roleType = roleMap[role];
+    if (!roleType) {
+        throw new Error(`Unknown role ${role} on fact type ${factType}`);
+    }
+    return roleType;
 }
 
