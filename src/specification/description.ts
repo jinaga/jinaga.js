@@ -1,11 +1,11 @@
-import { ChildProjections, Condition, Label, Match, Specification } from "../../src/specification/specification";
+import { ChildProjections, Condition, Label, Match, Projection, Specification, SpecificationProjection } from "../../src/specification/specification";
 
 export function describeSpecification(specification: Specification, depth: number) {
     const indent = "    ".repeat(depth);
     const given = specification.given.map(given => describeGiven(given)).join(", ");
     const matches = specification.matches.map(match => describeMatch(match, depth + 1)).join("");
     const projection = (Array.isArray(specification.childProjections) && specification.childProjections.length === 0) ? "" :
-        " => " + describeProjections(specification.childProjections, depth + 1);
+        " => " + describeProjections(specification.childProjections, depth);
 
     return `${indent}(${given}) {\n${matches}${indent}}${projection}\n`;
 }
@@ -35,10 +35,33 @@ function describeCondition(condition: Condition, unknown: string, depth: number)
 
 function describeProjections(projections: ChildProjections, depth: number): string {
     if (Array.isArray(projections)) {
-        throw new Error("Not implemented");
+        const indent = "    ".repeat(depth);
+        const orderedProjections = projections.sort((a, b) => a.name.localeCompare(b.name));
+        const projectionDescriptions = orderedProjections.map(projection => `    ${indent}${projection.name} = ${describeProjection(projection, depth + 1)}\n`).join("");
+        return `{\n${projectionDescriptions}${indent}}`;
     }
     else {
         return `${projections.label}.${projections.field}`;
     }
 }
 
+function describeProjection(projection: Projection, depth: number): string {
+    if (projection.type === "specification") {
+        return describeChildSpecification(projection, depth);
+    }
+    else if (projection.type === "field") {
+        return `${projection.label}.${projection.field}`;
+    }
+    else {
+        throw new Error("Not implemented");
+    }
+}
+
+function describeChildSpecification(specification: SpecificationProjection, depth: number) {
+    const indent = "    ".repeat(depth);
+    const matches = specification.matches.map(match => describeMatch(match, depth + 1)).join("");
+    const projection = (Array.isArray(specification.childProjections) && specification.childProjections.length === 0) ? "" :
+        " => " + describeProjections(specification.childProjections, depth);
+
+    return `{\n${matches}${indent}}${projection}`;
+}

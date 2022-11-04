@@ -105,7 +105,7 @@ describe("given", () => {
                     u1->company: Company = p1
                 ]
             } => {
-                identifier: u1.identifier
+                identifier = u1.identifier
             }`);
     });
     // it("should return a specification", () => {
