@@ -90,20 +90,20 @@ interface Field<T> {
 
 class Traversal<T> {
     constructor(
-        private input: Label<T>,
+        private input: T,
         public matches: Match[],
         public childProjections: ChildProjections
     ) { }
 
-    join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): Traversal<T> {
+    join<U>(left: (input: T) => Label<U>, right: Label<U>): Traversal<T> {
         throw new Error("Not implemented");
     }
 
-    notExists<U>(tupleDefinition: (proxy: Label<T>, facts: FactRepository) => U): Traversal<T> {
+    notExists<U>(tupleDefinition: (proxy: T, facts: FactRepository) => U): Traversal<T> {
         throw new Error("Not implemented");
     }
 
-    select<U>(selector: (label: Label<T>) => SelectorResult<U>): Traversal<U> {
+    select<U>(selector: (input: T) => U): Traversal<U> {
         const definition = selector(this.input);
         if (isLabel<U>(definition)) {
             const payload = getPayload<U>(definition);
@@ -154,7 +154,7 @@ class Source<T> {
         private factType: string
     ) { }
 
-    join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): Traversal<T> {
+    join<U>(left: (input: Label<T>) => Label<U>, right: Label<U>): Traversal<Label<T>> {
         const unknown = createFactProxy(this.factTypeMap, this.name, [], this.factType);
         const ancestor = left(unknown);
         const payloadLeft = getPayload(ancestor);
@@ -193,7 +193,7 @@ class Source<T> {
                 condition
             ]
         };
-        return new Traversal<T>(unknown, [match], []);
+        return new Traversal<Label<T>>(unknown, [match], []);
     }
 }
 
@@ -210,10 +210,6 @@ type CompositeProjection<T> = {
 }
 
 type ProjectionResult<T> = Field<T> | Projection<T> | CompositeProjection<T> | Label<T>;
-
-interface ProjectionCollection<T> {
-
-}
 
 export class Observable<T> {
 
