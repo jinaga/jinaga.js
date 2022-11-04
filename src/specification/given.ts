@@ -65,6 +65,7 @@ class Given<T> {
         const p1: any = createFactProxy(this.factTypeMap, name, [], this.factType);
         const result = definition(p1, new FactRepository(this.factTypeMap));
         const matches = result.matches;
+        const childProjections = result.childProjections;
         const specification: Specification = {
             given: [
                 {
@@ -73,7 +74,7 @@ class Given<T> {
                 }
             ],
             matches,
-            childProjections: []
+            childProjections
         };
         return new SpecificationOf<U>(specification);
     }
@@ -91,7 +92,7 @@ class Traversal<T> {
     constructor(
         private input: Label<T>,
         public matches: Match[],
-        childProjections: ChildProjections
+        public childProjections: ChildProjections
     ) { }
 
     join<U>(left: (unknown: Label<T>) => Label<U>, right: Label<U>): Traversal<T> {

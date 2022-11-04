@@ -1,10 +1,11 @@
-import { Condition, Label, Match, Specification } from "../../src/specification/specification";
+import { ChildProjections, Condition, Label, Match, Specification } from "../../src/specification/specification";
 
 export function describeSpecification(specification: Specification, depth: number) {
     const indent = "    ".repeat(depth);
     const given = specification.given.map(given => describeGiven(given)).join(", ");
     const matches = specification.matches.map(match => describeMatch(match, depth + 1)).join("");
-    const projection = "";
+    const projection = (Array.isArray(specification.childProjections) && specification.childProjections.length === 0) ? "" :
+        " => " + describeProjections(specification.childProjections, depth + 1);
 
     return `${indent}(${given}) {\n${matches}${indent}}${projection}\n`;
 }
@@ -29,6 +30,15 @@ function describeCondition(condition: Condition, unknown: string, depth: number)
     }
     else {
         throw new Error("Not implemented");
+    }
+}
+
+function describeProjections(projections: ChildProjections, depth: number): string {
+    if (Array.isArray(projections)) {
+        throw new Error("Not implemented");
+    }
+    else {
+        return `${projections.label}.${projections.field}`;
     }
 }
 
