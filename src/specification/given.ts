@@ -119,7 +119,22 @@ class Traversal<T> {
             }
         }
         else {
-            throw new Error("Not implemented");
+            const childProjections = Object.getOwnPropertyNames(definition).map((key) => {
+                const child = (definition as any)[key];
+                const payload = getPayload(child);
+                if (payload.type === "field") {
+                    return {
+                        type: "field",
+                        name: key,
+                        label: payload.root,
+                        field: payload.fieldName
+                    } as FieldProjection;
+                }
+                else {
+                    throw new Error("Not implemented");
+                }
+            });
+            return new Traversal<U>(definition, this.matches, childProjections);
         }
     }
 }

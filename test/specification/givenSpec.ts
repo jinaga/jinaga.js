@@ -89,12 +89,26 @@ describe("given", () => {
                 ]
             } => u1.identifier`);
     });
+
+    it("should parse a composite projection with a field", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => ({
+                    identifier: office.identifier
+                }))
+        );
+
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
+            } => {
+                identifier: u1.identifier
+            }`);
+    });
     // it("should return a specification", () => {
-    //     const officeIdentifiers = given(Company).match((company, facts) =>
-    //         facts.ofType(Office)
-    //             .join(office => office.company, company)
-    //             .select(office => office.identifier)
-    //     );
     //     const officeIdentifierComposites = given(Company).match((company, facts) =>
     //         facts.ofType(Office)
     //             .join(office => office.company, company)
