@@ -1,4 +1,4 @@
-import { Model } from "../../src/specification/given";
+import { Model, SpecificationOf } from "../../src/specification/given";
 
 class User {
     static Type = "User" as const;
@@ -44,35 +44,50 @@ class President {
     ) {}
 }
 
+const model = new Model()
+    .type(User)
+    .type(UserName, f => f
+        .predecessor("user", User)
+    )
+    .type(Company, f => f
+        .predecessor("creator", User)
+    )
+    .type(Office, f => f
+        .predecessor("company", Company)
+    )
+    .type(President, f => f
+        .predecessor("office", Office)
+        .predecessor("user", User)
+    );
+
 describe("given", () => {
     it("should parse a successor join", () => {
-        const model = new Model()
-            .type(User)
-            .type(UserName, f => f
-                .predecessor("user", User)
-            )
-            .type(Company, f => f
-                .predecessor("creator", User)
-            )
-            .type(Office, f => f
-                .predecessor("company", Company)
-            )
-            .type(President, f => f
-                .predecessor("office", Office)
-                .predecessor("user", User)
-            );
-        const offices = model.given(Company).match((company, facts) =>
+        const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
         );
 
-        const expected = `
-        (p1: Company) {
-            u1: Office [
-                u1->company: Company = p1
-            ]
-        }`;
-        expect("\n" + offices.toDescriptiveString(2)).toBe(expected + "\n");
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
+            }`);
+    });
+
+    it("should parse a field projection", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => office.identifier)
+        );
+
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
+            } => u1.identifier`);
     });
     // it("should return a specification", () => {
     //     const officeIdentifiers = given(Company).match((company, facts) =>
@@ -115,3 +130,7 @@ describe("given", () => {
     //     expect(offices).toBeDefined();
     // });
 });
+
+function expectSpecification<T>(specification: SpecificationOf<T>, expected: string) {
+    expect("\n" + specification.toDescriptiveString(3)).toBe(expected + "\n");
+}
