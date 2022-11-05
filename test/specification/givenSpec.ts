@@ -108,23 +108,33 @@ describe("given", () => {
                 identifier = u1.identifier
             }`);
     });
+
+    it("should parse a composite projection with a collection", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    presidents: facts.ofType(President)
+                        .join(president => president.office, office)
+                }))
+        );
+
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
+            } => {
+                identifier = u1.identifier
+                presidents = {
+                    u2: President [
+                        u2->office: Office = u1
+                    ]
+                }
+            }`);
+    });
     // it("should return a specification", () => {
-    //     const officeIdentifierComposites = given(Company).match((company, facts) =>
-    //         facts.ofType(Office)
-    //             .join(office => office.company, company)
-    //             .select(office => ({
-    //                 identifier: office.identifier
-    //             }))
-    //     );
-    //     const officePresidentSuccessors = given(Company).match((company, facts) =>
-    //         facts.ofType(Office)
-    //             .join(office => office.company, company)
-    //             .select(office => ({
-    //                 identifier: office.identifier,
-    //                 presidents: facts.ofType(President)
-    //                     .join(president => president.office, office)
-    //             }))
-    //     );
     //     const offices = given(Company).match((company, facts) =>
     //         facts.ofType(Office)
     //             .join(office => office.company, company)

@@ -1,4 +1,4 @@
-import { Role, Specification, Match, PathCondition, ChildProjections, FieldProjection, SingularProjection } from "../../src/specification/specification";
+import { Role, Specification, Match, PathCondition, ChildProjections, FieldProjection, SingularProjection, SpecificationProjection } from "../../src/specification/specification";
 import { describeSpecification } from "./description";
 
 type RoleMap = { [role: string]: string };
@@ -121,14 +121,29 @@ class Traversal<T> {
         else {
             const childProjections = Object.getOwnPropertyNames(definition).map((key) => {
                 const child = (definition as any)[key];
-                const payload = getPayload(child);
-                if (payload.type === "field") {
-                    return {
-                        type: "field",
+                if (isLabel(child)) {
+                    const payload = getPayload(child);
+                    if (payload.type === "field") {
+                        const projection: FieldProjection = {
+                            type: "field",
+                            name: key,
+                            label: payload.root,
+                            field: payload.fieldName
+                        };
+                        return projection;
+                    }
+                    else {
+                        throw new Error("Not implemented");
+                    }
+                }
+                else if (child instanceof Traversal) {
+                    const projection: SpecificationProjection = {
+                        type: "specification",
                         name: key,
-                        label: payload.root,
-                        field: payload.fieldName
-                    } as FieldProjection;
+                        matches: child.matches,
+                        childProjections: child.childProjections
+                    };
+                    return projection;
                 }
                 else {
                     throw new Error("Not implemented");
