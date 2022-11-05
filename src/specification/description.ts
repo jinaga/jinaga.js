@@ -52,8 +52,15 @@ function describeProjection(projection: Projection, depth: number): string {
     else if (projection.type === "field") {
         return `${projection.label}.${projection.field}`;
     }
+    else if (projection.type === "fact") {
+        return projection.label;
+    }
+    else if (projection.type === "hash") {
+        return `#${projection.label}`;
+    }
     else {
-        throw new Error("Not implemented");
+        const _exhaustiveCheck: never = projection;
+        throw new Error(`Unknown projection type: ${(projection as any).type}`);
     }
 }
 
