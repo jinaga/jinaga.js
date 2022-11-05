@@ -100,10 +100,18 @@ class Traversal<T> {
     }
 
     notExists<U>(tupleDefinition: (proxy: T) => Traversal<U>): Traversal<T> {
+        return this.existentialCondition<U>(tupleDefinition, false);
+    }
+
+    exists<U>(tupleDefinition: (proxy: T) => Traversal<U>): Traversal<T> {
+        return this.existentialCondition<U>(tupleDefinition, true);
+    }
+
+    private existentialCondition<U>(tupleDefinition: (proxy: T) => Traversal<U>, exists: boolean) {
         const result = tupleDefinition(this.input);
         const existentialCondition: ExistentialCondition = {
             type: "existential",
-            exists: false,
+            exists,
             matches: result.matches
         };
         if (this.matches.length === 0) {

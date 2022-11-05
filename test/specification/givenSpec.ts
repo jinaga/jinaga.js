@@ -120,6 +120,28 @@ describe("given", () => {
             }`);
     });
 
+    it("should parse positive existential condition", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .exists(office => facts.ofType(OfficeClosed)
+                    .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                    E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1
+                        ]
+                    }
+                ]
+            }`);
+    });
+
     it("should parse nested negative existential condition", () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
