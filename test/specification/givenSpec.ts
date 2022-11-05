@@ -322,6 +322,55 @@ describe("given", () => {
             }`);
     });
 
+    it("should parse multiple joins in opposite order", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    presidents: facts.ofType(President)
+                        .join(president => president.office, office)
+                        .select(president => ({
+                            president: president,
+                            names: facts.ofType(UserName)
+                                .join(userName => userName.user, president.user)
+                                .notExists(userName => facts.ofType(UserName)
+                                    .join(next => next.user, president.user)
+                                    .join(next => next.prior, userName)
+                                )
+                                .select(userName => userName.value)
+                        }))
+                }))
+        );
+
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
+            } => {
+                identifier = u1.identifier
+                presidents = {
+                    u2: President [
+                        u2->office: Office = u1
+                    ]
+                } => {
+                    names = {
+                        u3: User.Name [
+                            u3->user: User = u2->user: User
+                            !E {
+                                u4: User.Name [
+                                    u4->user: User = u2->user: User
+                                    u4->prior: User.Name = u3
+                                ]
+                            }
+                        ]
+                    } => u3.value
+                    president = u2
+                }
+            }`);
+    });
+
     it("should parse select many", () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
