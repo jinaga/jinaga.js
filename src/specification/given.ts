@@ -8,7 +8,7 @@ class FactOptions<T> {
         public factTypeByRole: RoleMap
     ) { }
 
-    predecessor<U extends keyof T>(role: U, predecessorConstructor: FactConstructor<T[U]>): FactOptions<T> {
+    predecessor<U extends keyof T>(role: U, predecessorConstructor: PredecessorConstructor<T[U]>): FactOptions<T> {
         return new FactOptions<T>({
             ...this.factTypeByRole,
             [role]: predecessorConstructor.Type
@@ -81,7 +81,14 @@ class Given<T> {
 }
 
 type Label<T> = {
-    [ R in keyof T ]: T[R] extends string ? Field<string> : Label<T[R]>;
+    [ R in keyof T ]:
+        T[R] extends string ? Field<string> :
+        T[R] extends number ? Field<number> :
+        T[R] extends Date ? Field<Date> :
+        T[R] extends boolean ? Field<boolean> :
+        T[R] extends Array<infer U> ? Label<U> :
+        T[R] extends infer U | undefined ? Label<U> :
+        Label<T[R]>;
 }
 
 interface Field<T> {
@@ -96,7 +103,12 @@ class Traversal<T> {
     ) { }
 
     join<U>(left: (input: T) => Label<U>, right: Label<U>): Traversal<T> {
-        throw new Error("Not implemented");
+        const leftResult = left(this.input);
+        const payloadLeft = getPayload(leftResult);
+        const payloadRight = getPayload(right);
+        const condition = joinCondition(payloadLeft, payloadRight);
+        const matches = this.withCondition(condition);
+        return new Traversal<T>(this.input, matches, this.childProjections);
     }
 
     notExists<U>(tupleDefinition: (proxy: T) => Traversal<U>): Traversal<T> {
@@ -114,13 +126,18 @@ class Traversal<T> {
             exists,
             matches: result.matches
         };
+        const matches: Match[] = this.withCondition<U>(existentialCondition);
+        return new Traversal<T>(this.input, matches, this.childProjections);
+    }
+
+    private withCondition<U>(condition: Condition) {
         if (this.matches.length === 0) {
-            throw new Error("You cannot call notExists() without first calling join().");
+            throw new Error("Cannot add a condition without declaring an unknown.");
         }
         const lastMatch = this.matches[this.matches.length - 1];
         const conditions: Condition[] = [
             ...lastMatch.conditions,
-            existentialCondition
+            condition
         ];
         const matches: Match[] = [
             ...this.matches.slice(0, this.matches.length - 1),
@@ -129,7 +146,7 @@ class Traversal<T> {
                 conditions
             }
         ];
-        return new Traversal<T>(this.input, matches, this.childProjections);
+        return matches;
     }
 
     select<U>(selector: (input: T) => U): Traversal<U> {
@@ -175,7 +192,8 @@ class Traversal<T> {
                         return projection;
                     }
                     else {
-                        throw new Error("Not implemented");
+                        const _exhaustiveCheck: never = payload;
+                        throw new Error(`Unexpected payload type: ${(payload as any).type}`);
                     }
                 }
                 else if (child instanceof Traversal) {
@@ -188,7 +206,7 @@ class Traversal<T> {
                     return projection;
                 }
                 else {
-                    throw new Error("Not implemented");
+                    throw new Error(`Unexpected type for property ${key}: ${typeof child}`);
                 }
             });
             return new Traversal<U>(definition, this.matches, childProjections);
@@ -226,10 +244,6 @@ class FactRepository {
         const name = `u${this.unknownIndex++}`;
         return new Source<T>(this.factTypeMap, name, factConstructor.Type);
     }
-
-    observable<T>(definition: () => ProjectionResult<T>): Projection<Observable<T>> {
-        throw new Error("Not implemented");
-    }
 }
 
 class Source<T> {
@@ -244,31 +258,10 @@ class Source<T> {
         const ancestor = left(unknown);
         const payloadLeft = getPayload(ancestor);
         const payloadRight = getPayload(right);
-        if (payloadLeft.type === "field") {
-            throw new Error(
-                `The property "${payloadLeft.fieldName}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
-                `A field cannot be used in a join.`
-            );
-        }
-        if (payloadRight.type === "field") {
-            throw new Error(
-                `The property "${payloadRight.fieldName}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
-                `A field cannot be used in a join.`
-            );
-        }
-
-        if (payloadLeft.factType !== payloadRight.factType) {
-            throw new Error(`Cannot join ${payloadLeft.factType}" with "${payloadRight.factType}"`);
-        }
         if (payloadLeft.root !== this.name) {
             throw new Error("The left side must be based on the source");
         }
-        const condition: PathCondition = {
-            type: "path",
-            rolesLeft: payloadLeft.path,
-            labelRight: payloadRight.root,
-            rolesRight: payloadRight.path
-        };
+        const condition = joinCondition(payloadLeft, payloadRight);
         const match: Match = {
             unknown: {
                 name: this.name,
@@ -286,6 +279,8 @@ type FactConstructor<T> = (new (...args: any[]) => T) & {
     Type: string;
 }
 
+type PredecessorConstructor<T> = T extends Array<infer U> ? FactConstructor<U> : FactConstructor<T>;
+
 interface Projection<T> {
 
 }
@@ -295,10 +290,6 @@ type CompositeProjection<T> = {
 }
 
 type ProjectionResult<T> = Field<T> | Projection<T> | CompositeProjection<T> | Label<T>;
-
-export class Observable<T> {
-
-}
 
 interface LabelPayloadFact {
     type: "fact";
@@ -316,6 +307,32 @@ interface LabelPayloadField {
 type LabelPayload = LabelPayloadFact | LabelPayloadField;
 
 const IDENTITY = Symbol('proxy_target_identity');
+function joinCondition(payloadLeft: LabelPayload, payloadRight: LabelPayload) {
+    if (payloadLeft.type === "field") {
+        throw new Error(
+            `The property "${payloadLeft.fieldName}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
+            `A field cannot be used in a join.`
+        );
+    }
+    if (payloadRight.type === "field") {
+        throw new Error(
+            `The property "${payloadRight.fieldName}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
+            `A field cannot be used in a join.`
+        );
+    }
+
+    if (payloadLeft.factType !== payloadRight.factType) {
+        throw new Error(`Cannot join ${payloadLeft.factType}" with "${payloadRight.factType}"`);
+    }
+    const condition: PathCondition = {
+        type: "path",
+        rolesLeft: payloadLeft.path,
+        labelRight: payloadRight.root,
+        rolesRight: payloadRight.path
+    };
+    return condition;
+}
+
 function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], factType: string): any {
     const payload: LabelPayloadFact = {
         type: "fact",

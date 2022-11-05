@@ -13,7 +13,8 @@ class UserName {
     type = UserName.Type;
     constructor(
         public user: User,
-        public value: string
+        public value: string,
+        public prior: UserName[]
     ) {}
 }
 
@@ -65,6 +66,7 @@ const model = new Model()
     .type(User)
     .type(UserName, f => f
         .predecessor("user", User)
+        .predecessor("prior", UserName)
     )
     .type(Company, f => f
         .predecessor("creator", User)
@@ -264,6 +266,55 @@ describe("given", () => {
                     names = {
                         u3: User.Name [
                             u3->user: User = u2->user: User
+                        ]
+                    } => u3.value
+                    president = u2
+                }
+            }`);
+    });
+
+    it("should parse multiple joins", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    presidents: facts.ofType(President)
+                        .join(president => president.office, office)
+                        .select(president => ({
+                            president: president,
+                            names: facts.ofType(UserName)
+                                .join(userName => userName.user, president.user)
+                                .notExists(userName => facts.ofType(UserName)
+                                    .join(next => next.prior, userName)
+                                    .join(next => next.user, president.user)
+                                )
+                                .select(userName => userName.value)
+                        }))
+                }))
+        );
+
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
+            } => {
+                identifier = u1.identifier
+                presidents = {
+                    u2: President [
+                        u2->office: Office = u1
+                    ]
+                } => {
+                    names = {
+                        u3: User.Name [
+                            u3->user: User = u2->user: User
+                            !E {
+                                u4: User.Name [
+                                    u4->prior: User.Name = u3
+                                    u4->user: User = u2->user: User
+                                ]
+                            }
                         ]
                     } => u3.value
                     president = u2
