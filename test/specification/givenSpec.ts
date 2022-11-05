@@ -182,12 +182,15 @@ describe("given", () => {
                     identifier: office.identifier,
                     presidents: facts.ofType(President)
                         .join(president => president.office, office)
-                        .select(president => ({
-                            user: president.user,
-                            names: facts.ofType(UserName)
-                                .join(userName => userName.user, president.user)
-                                .select(userName => userName.value)
-                        }))
+                        .selectMany(president => facts.ofType(User)
+                            .join(user => user, president.user)
+                            .select(user => ({
+                                user: user,
+                                names: facts.ofType(UserName)
+                                    .join(userName => userName.user, user)
+                                    .select(userName => userName.value)
+                            }))
+                        )
                 }))
         );
 
@@ -201,14 +204,17 @@ describe("given", () => {
                 presidents = {
                     u2: President [
                         u2->office: Office = u1
-                    ] => {
-                        user = u2.user
-                        names = {
-                            u3: User.Name [
-                                u3->user: User = u2.user
-                            ] => u3.value
-                        }
-                    }
+                    ]
+                    u3: User [
+                        u3 = u2->user: User
+                    ]
+                } => {
+                    names = {
+                        u4: User.Name [
+                            u4->user: User = u3
+                        ]
+                    } => u4.value
+                    user = u3
                 }
             }`);
     });

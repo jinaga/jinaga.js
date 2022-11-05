@@ -165,6 +165,19 @@ class Traversal<T> {
             return new Traversal<U>(definition, this.matches, childProjections);
         }
     }
+
+    selectMany<U>(selector: (input: T) => Traversal<U>): Traversal<U> {
+        const traversal = selector(this.input);
+        const matches = [
+            ...this.matches,
+            ...traversal.matches
+        ];
+        if (!Array.isArray(this.childProjections) || this.childProjections.length > 0) {
+            throw new Error("You cannot call selectMany() after a select()");
+        }
+        const childProjections = traversal.childProjections;
+        return new Traversal<U>(traversal.input, matches, childProjections);
+    }
 }
 
 type SelectorResult<T> = Field<T> | SelectorResultComposite<T>;
