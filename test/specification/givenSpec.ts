@@ -162,14 +162,14 @@ describe("given", () => {
                 presidents = {
                     u2: President [
                         u2->office: Office = u1
-                    ] => {
-                        president = u2
-                        names = {
-                            u3: User.Name [
-                                u3->user: User = u2.user
-                            ] => u3.value
-                        }
-                    }
+                    ]
+                } => {
+                    names = {
+                        u3: User.Name [
+                            u3->user: User = u2->user: User
+                        ]
+                    } => u3.value
+                    president = u2
                 }
             }`);
     });
