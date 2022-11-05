@@ -134,25 +134,45 @@ describe("given", () => {
                 }
             }`);
     });
-    // it("should return a specification", () => {
-    //     const offices = given(Company).match((company, facts) =>
-    //         facts.ofType(Office)
-    //             .join(office => office.company, company)
-    //             .select(office => ({
-    //                 identifier: office.identifier,
-    //                 presidents: facts.ofType(President)
-    //                     .join(president => president.office, office)
-    //                     .select(president => ({
-    //                         user: president.user,
-    //                         names: facts.ofType(UserName)
-    //                             .join(userName => userName.user, president.user)
-    //                             .select(userName => userName.value)
-    //                     }))
-    //             }))
-    //     );
 
-    //     expect(offices).toBeDefined();
-    // });
+    it("should parse a nested collection", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    presidents: facts.ofType(President)
+                        .join(president => president.office, office)
+                        .select(president => ({
+                            user: president.user,
+                            names: facts.ofType(UserName)
+                                .join(userName => userName.user, president.user)
+                                .select(userName => userName.value)
+                        }))
+                }))
+        );
+
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
+            } => {
+                identifier = u1.identifier
+                presidents = {
+                    u2: President [
+                        u2->office: Office = u1
+                    ] => {
+                        user = u2.user
+                        names = {
+                            u3: User.Name [
+                                u3->user: User = u2.user
+                            ] => u3.value
+                        }
+                    }
+                }
+            }`);
+    });
 });
 
 function expectSpecification<T>(specification: SpecificationOf<T>, expected: string) {

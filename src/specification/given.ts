@@ -1,4 +1,4 @@
-import { Role, Specification, Match, PathCondition, ChildProjections, FieldProjection, SingularProjection, SpecificationProjection } from "../../src/specification/specification";
+import { Role, Specification, Match, PathCondition, ChildProjections, FieldProjection, SingularProjection, SpecificationProjection, FactProjection } from "../../src/specification/specification";
 import { describeSpecification } from "./description";
 
 type RoleMap = { [role: string]: string };
@@ -132,6 +132,19 @@ class Traversal<T> {
                         };
                         return projection;
                     }
+                    else if (payload.type === "fact") {
+                        if (payload.path.length > 0) {
+                            throw new Error(
+                                `You cannot project the fact "${payload.path[payload.path.length - 1].name}" directly. ` +
+                                `You must label it first.`);
+                        }
+                        const projection: FactProjection = {
+                            type: "fact",
+                            name: key,
+                            label: payload.root
+                        };
+                        return projection;
+                    }
                     else {
                         throw new Error("Not implemented");
                     }
@@ -191,19 +204,19 @@ class Source<T> {
         const payloadRight = getPayload(right);
         if (payloadLeft.type === "field") {
             throw new Error(
-                `The property ${payloadLeft.fieldName} is not defined to be a predecessor, and is therefore interpreted as a field. ` +
+                `The property "${payloadLeft.fieldName}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
                 `A field cannot be used in a join.`
             );
         }
         if (payloadRight.type === "field") {
             throw new Error(
-                `The property ${payloadRight.fieldName} is not defined to be a predecessor, and is therefore interpreted as a field. ` +
+                `The property "${payloadRight.fieldName}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
                 `A field cannot be used in a join.`
             );
         }
 
         if (payloadLeft.factType !== payloadRight.factType) {
-            throw new Error(`Cannot join ${payloadLeft.factType} with ${payloadRight.factType}`);
+            throw new Error(`Cannot join ${payloadLeft.factType}" with "${payloadRight.factType}"`);
         }
         if (payloadLeft.root !== this.name) {
             throw new Error("The left side must be based on the source");
@@ -282,8 +295,8 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
             else {
                 if (target.path.length > 0) {
                     throw new Error(
-                        `The property ${role} is not defined to be a predecessor, and is therefore interpreted as a field. ` +
-                        `You cannot access a field of the predecessor ${target.path[target.path.length-1].name}. ` +
+                        `The property "${role}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
+                        `You cannot access a field of the predecessor "${target.path[target.path.length-1].name}". ` +
                         `If you want the field of a predecessor, you need to label the predecessor first.`);
                 }
                 return createFieldProxy(target.root, role);
@@ -304,7 +317,7 @@ function createFieldProxy(root: string, fieldName: string): any {
                 return target;
             }
             throw new Error(
-                `The property ${property.toString()} is not defined to be a predecessor, and is therefore interpreted as a field. ` +
+                `The property "${property.toString()}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
                 `You cannot operate on a field within a specification.`
             );
         }
@@ -323,7 +336,7 @@ function isLabel<T>(value: any): value is Label<T> {
 function lookupRoleType(factTypeMap: FactTypeMap, factType: string, role: string): string | undefined {
     const roleMap = factTypeMap[factType];
     if (!roleMap) {
-        throw new Error(`Unknown fact type ${factType}`);
+        throw new Error(`Unknown fact type "${factType}"`);
     }
     const roleType = roleMap[role];
     if (!roleType) {

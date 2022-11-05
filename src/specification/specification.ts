@@ -43,7 +43,13 @@ export interface HashProjection {
     label: string
 }
 
-export type ElementProjection = FieldProjection | HashProjection;
+export interface FactProjection {
+    type: "fact",
+    name: string,
+    label: string
+}
+
+export type ElementProjection = FieldProjection | HashProjection | FactProjection;
 export type Projection = SpecificationProjection | ElementProjection;
 
 export interface SingularProjection {
