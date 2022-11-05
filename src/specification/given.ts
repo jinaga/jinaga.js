@@ -1,4 +1,4 @@
-import { Role, Specification, Match, PathCondition, ChildProjections, FieldProjection, SingularProjection, SpecificationProjection, FactProjection } from "../../src/specification/specification";
+import { ChildProjections, Condition, ExistentialCondition, FactProjection, FieldProjection, Match, PathCondition, Role, SingularProjection, Specification, SpecificationProjection } from "../../src/specification/specification";
 import { describeSpecification } from "./description";
 
 type RoleMap = { [role: string]: string };
@@ -99,8 +99,29 @@ class Traversal<T> {
         throw new Error("Not implemented");
     }
 
-    notExists<U>(tupleDefinition: (proxy: T, facts: FactRepository) => U): Traversal<T> {
-        throw new Error("Not implemented");
+    notExists<U>(tupleDefinition: (proxy: T) => Traversal<U>): Traversal<T> {
+        const result = tupleDefinition(this.input);
+        const existentialCondition: ExistentialCondition = {
+            type: "existential",
+            exists: false,
+            matches: result.matches
+        };
+        if (this.matches.length === 0) {
+            throw new Error("You cannot call notExists() without first calling join().");
+        }
+        const lastMatch = this.matches[this.matches.length - 1];
+        const conditions: Condition[] = [
+            ...lastMatch.conditions,
+            existentialCondition
+        ];
+        const matches: Match[] = [
+            ...this.matches.slice(0, this.matches.length - 1),
+            {
+                ...lastMatch,
+                conditions
+            }
+        ];
+        return new Traversal<T>(this.input, matches, this.childProjections);
     }
 
     select<U>(selector: (input: T) => U): Traversal<U> {

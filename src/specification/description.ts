@@ -16,7 +16,7 @@ function describeGiven(given: Label) {
 
 function describeMatch(match: Match, depth: number) {
     const indent = "    ".repeat(depth);
-    const conditions = match.conditions.map(condition => describeCondition(condition, match.unknown.name, depth + 1)).join(", ");
+    const conditions = match.conditions.map(condition => describeCondition(condition, match.unknown.name, depth + 1)).join("");
 
     return `${indent}${match.unknown.name}: ${match.unknown.type} [\n${conditions}${indent}]\n`;
 }
@@ -27,6 +27,11 @@ function describeCondition(condition: Condition, unknown: string, depth: number)
         const rolesLeft = condition.rolesLeft.map(r => `->${r.name}: ${r.targetType}`).join("");
         const rolesRight = condition.rolesRight.map(r => `->${r.name}: ${r.targetType}`).join("");
         return `${indent}${unknown}${rolesLeft} = ${condition.labelRight}${rolesRight}\n`;
+    }
+    else if (condition.type === "existential") {
+        const matches = condition.matches.map(match => describeMatch(match, depth + 1)).join("");
+        const op = condition.exists ? "" : "!";
+        return `${indent}${op}E {\n${matches}${indent}}\n`;
     }
     else {
         throw new Error("Not implemented");

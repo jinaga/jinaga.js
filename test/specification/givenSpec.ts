@@ -35,6 +35,23 @@ class Office {
     ) {}
 }
 
+class OfficeClosed {
+    static Type = "Office.Closed" as const;
+    type = OfficeClosed.Type;
+    constructor(
+        public office: Office,
+        public date: Date | string
+    ) {}
+}
+
+class OfficeReopened {
+    static Type = "Office.Reopened" as const;
+    type = OfficeReopened.Type;
+    constructor(
+        public officeClosed: OfficeClosed
+    ) {}
+}
+
 class President {
     static Type = "President" as const;
     type = President.Type;
@@ -55,6 +72,12 @@ const model = new Model()
     .type(Office, f => f
         .predecessor("company", Company)
     )
+    .type(OfficeClosed, f => f
+        .predecessor("office", Office)
+    )
+    .type(OfficeReopened, f => f
+        .predecessor("officeClosed", OfficeClosed)
+    )
     .type(President, f => f
         .predecessor("office", Office)
         .predecessor("user", User)
@@ -71,6 +94,28 @@ describe("given", () => {
             (p1: Company) {
                 u1: Office [
                     u1->company: Company = p1
+                ]
+            }`);
+    });
+
+    it("should parse negative existential condition", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office => facts.ofType(OfficeClosed)
+                    .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        expectSpecification(specification, `
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                    !E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1
+                        ]
+                    }
                 ]
             }`);
     });
