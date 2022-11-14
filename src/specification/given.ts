@@ -165,8 +165,12 @@ class Traversal<T> {
                 };
                 return new Traversal<U>(definition, this.matches, childProjection);
             }
+            else if (payload.type === "fact") {
+                throw new Error("You cannot select a singular fact. Project it as a member of an object instead.");
+            }
             else {
-                throw new Error("Not implemented");
+                const _exhaustiveCheck: never = payload;
+                throw new Error(`Unexpected payload type: ${(payload as any).type}`);
             }
         }
         else {
