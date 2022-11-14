@@ -419,6 +419,22 @@ describe("given", () => {
                 }
             }`);
     });
+
+    it("should parse multiple givens", () => {
+        const specification = model.given(Company, User).match((company, user, facts) =>
+            facts.ofType(President)
+                .join(president => president.office.company, company)
+                .join(president => president.user, user)
+        );
+
+        expectSpecification(specification, `
+            (p1: Company, p2: User) {
+                u1: President [
+                    u1->office: Office->company: Company = p1
+                    u1->user: User = p2
+                ]
+            }`);
+    });
 });
 
 function expectSpecification<T>(specification: SpecificationOf<T>, expected: string) {

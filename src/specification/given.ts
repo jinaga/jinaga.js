@@ -18,6 +18,8 @@ class FactOptions<T> {
 
 type FactTypeMap = { [factType: string]: RoleMap };
 
+type ExtractFactConstructors<T> = T extends [ FactConstructor<infer First>, ...infer Rest ] ? [ First, ...ExtractFactConstructors<Rest> ] : [];
+
 export class Model {
     constructor(
         private readonly factTypeMap: FactTypeMap = {}
@@ -39,8 +41,8 @@ export class Model {
         }
     }
 
-    given<T>(factConstructor: FactConstructor<T>) {
-        return new Given<T>(factConstructor.Type, this.factTypeMap);
+    given<T extends FactConstructor<unknown>[]>(...factConstructors: T) {
+        return new Given<ExtractFactConstructors<T>>(factConstructors.map(c => c.Type), this.factTypeMap);
     }
 }
 
@@ -54,25 +56,28 @@ export class SpecificationOf<U> {
     }
 }
 
-class Given<T> {
+type MatchParameters<T> = T extends [ infer First, ...infer Rest ] ? [ Label<First>, ...MatchParameters<Rest> ] : [ FactRepository ];
+
+class Given<T extends any[]> {
     constructor(
-        private factType: string,
+        private factTypes: string[],
         private factTypeMap: FactTypeMap
     ) { }
 
-    match<U>(definition: (input: Label<T>, facts: FactRepository) => Traversal<U>): SpecificationOf<U> {
-        const name = "p1";
-        const p1: any = createFactProxy(this.factTypeMap, name, [], this.factType);
-        const result = definition(p1, new FactRepository(this.factTypeMap));
+    match<U>(definition: (...parameters: MatchParameters<T>) => Traversal<U>): SpecificationOf<U> {
+        const labels = this.factTypes.map((factType, i) => {
+            const name = `p${i + 1}`;
+            return createFactProxy(this.factTypeMap, name, [], factType);
+        });
+        const result = (definition as any)(...labels, new FactRepository(this.factTypeMap));
         const matches = result.matches;
         const childProjections = result.childProjections;
+        const given = this.factTypes.map((type, i) => {
+            const name = `p${i + 1}`;
+            return { name, type };
+        });
         const specification: Specification = {
-            given: [
-                {
-                    name,
-                    type: this.factType
-                }
-            ],
+            given,
             matches,
             childProjections
         };
