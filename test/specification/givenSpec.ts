@@ -1,4 +1,4 @@
-import { Model, SpecificationOf } from "../../src/specification/given";
+import { Model, SpecificationOf, FactRepository, Label } from "../../src/specification/given";
 
 class User {
     static Type = "User" as const;
@@ -34,6 +34,17 @@ class Office {
         public company: Company,
         public identifier: string
     ) {}
+
+    static inCompany(facts: FactRepository, company: Label<Company>) {
+        return facts.ofType(Office)
+            .join(office => office.company, company)
+            .notExists(office => facts.ofType(OfficeClosed)
+                .join(officeClosed => officeClosed.office, office)
+                .notExists(officeClosed => facts.ofType(OfficeReopened)
+                    .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                )
+            );
+    }
 }
 
 class OfficeClosed {
@@ -146,14 +157,7 @@ describe("given", () => {
 
     it("should parse nested negative existential condition", () => {
         const specification = model.given(Company).match((company, facts) =>
-            facts.ofType(Office)
-                .join(office => office.company, company)
-                .notExists(office => facts.ofType(OfficeClosed)
-                    .join(officeClosed => officeClosed.office, office)
-                    .notExists(officeClosed => facts.ofType(OfficeReopened)
-                        .join(officeReopened => officeReopened.officeClosed, officeClosed)
-                    )
-                )
+            Office.inCompany(facts, company)
         );
 
         expectSpecification(specification, `

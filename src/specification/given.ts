@@ -80,7 +80,7 @@ class Given<T> {
     }
 }
 
-type Label<T> = {
+export type Label<T> = {
     [ R in keyof T ]:
         T[R] extends string ? Field<string> :
         T[R] extends number ? Field<number> :
@@ -233,7 +233,7 @@ type SelectorResultComposite<T> = {
     [ R in keyof T ]: SelectorResult<T[R]>;
 }
 
-class FactRepository {
+export class FactRepository {
     constructor(
         private factTypeMap: FactTypeMap
     ) { }
