@@ -45,8 +45,15 @@ function describeProjections(projections: ChildProjections, depth: number): stri
         const projectionDescriptions = orderedProjections.map(projection => `    ${indent}${projection.name} = ${describeProjection(projection, depth + 1)}\n`).join("");
         return `{\n${projectionDescriptions}${indent}}`;
     }
-    else {
+    else if (projections.type === "field") {
         return `${projections.label}.${projections.field}`;
+    }
+    else if (projections.type === "fact") {
+        return projections.label;
+    }
+    else {
+        const _exhaustiveCheck: never = projections;
+        throw new Error(`Unknown projection type: ${(projections as any).type}`);
     }
 }
 

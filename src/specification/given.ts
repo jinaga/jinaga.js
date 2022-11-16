@@ -1,4 +1,4 @@
-import { ChildProjections, Condition, ExistentialCondition, FactProjection, FieldProjection, Match, PathCondition, Role, SingularProjection, Specification, SpecificationProjection } from "../../src/specification/specification";
+import { ChildProjections, Condition, ExistentialCondition, FactProjection, FieldProjection, Match, PathCondition, Role, SingularFactProjection, SingularFieldProjection, Specification, SpecificationProjection } from "../../src/specification/specification";
 import { describeSpecification } from "./description";
 
 type RoleMap = { [role: string]: string };
@@ -160,7 +160,8 @@ class Traversal<T> {
         if (isLabel<U>(definition)) {
             const payload = getPayload<U>(definition);
             if (payload.type === "field") {
-                const childProjection: SingularProjection = {
+                const childProjection: SingularFieldProjection = {
+                    type: "field",
                     label: payload.root,
                     field: payload.fieldName
                 };
@@ -229,9 +230,6 @@ class Traversal<T> {
             ...this.matches,
             ...traversal.matches
         ];
-        if (!Array.isArray(this.childProjections) || this.childProjections.length > 0) {
-            throw new Error("You cannot call selectMany() after a select()");
-        }
         const childProjections = traversal.childProjections;
         return new Traversal<U>(traversal.input, matches, childProjections);
     }
@@ -281,7 +279,11 @@ class Source<T> {
                 condition
             ]
         };
-        return new Traversal<Label<T>>(unknown, [match], []);
+        const projection: SingularFactProjection = {
+            type: "fact",
+            label: this.name
+        };
+        return new Traversal<Label<T>>(unknown, [match], projection);
     }
 }
 

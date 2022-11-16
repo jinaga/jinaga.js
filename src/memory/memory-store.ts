@@ -216,6 +216,12 @@ export class MemoryStore implements Storage {
     }
 
     private createProduct(tuple: ReferencesByName, childProjections: ChildProjections): any {
+        if (Array.isArray(childProjections)) {
+            if (childProjections.length === 0) {
+                throw new Error('Cannot create a product with no child projections.');
+            }
+            throw new Error('Method not implemented.');
+        }
         throw new Error('Method not implemented.');
     }
 }

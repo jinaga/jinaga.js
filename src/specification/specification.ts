@@ -52,14 +52,20 @@ export interface FactProjection {
 export type ElementProjection = FieldProjection | HashProjection | FactProjection;
 export type Projection = SpecificationProjection | ElementProjection;
 
-export interface SingularProjection {
+export interface SingularFieldProjection {
+    type: "field",
     label: string;
     field: string;
 }
 
-export type ChildProjections = Projection[] | SingularProjection;
+export interface SingularFactProjection {
+    type: "fact",
+    label: string;
+}
 
-export type ResultProjection = ElementProjection[] | SingularProjection;
+export type ChildProjections = Projection[] | SingularFieldProjection | SingularFactProjection;
+
+export type ResultProjection = ElementProjection[] | SingularFieldProjection;
 
 export interface Match {
     unknown: Label;

@@ -13,7 +13,7 @@ describe("given", () => {
                 u1: Office [
                     u1->company: Company = p1
                 ]
-            }`);
+            } => u1`);
     });
 
     it("should parse negative existential condition", () => {
@@ -35,7 +35,7 @@ describe("given", () => {
                         ]
                     }
                 ]
-            }`);
+            } => u1`);
     });
 
     it("should parse positive existential condition", () => {
@@ -57,7 +57,7 @@ describe("given", () => {
                         ]
                     }
                 ]
-            }`);
+            } => u1`);
     });
 
     it("should parse nested negative existential condition", () => {
@@ -80,7 +80,7 @@ describe("given", () => {
                         ]
                     }
                 ]
-            }`);
+            } => u1`);
     });
 
     it("should parse a field projection", () => {
@@ -139,7 +139,7 @@ describe("given", () => {
                     u2: President [
                         u2->office: Office = u1
                     ]
-                }
+                } => u2
             }`);
     });
 
@@ -338,7 +338,7 @@ describe("given", () => {
                     u1->office: Office->company: Company = p1
                     u1->user: User = p2
                 ]
-            }`);
+            } => u1`);
     });
 });
 

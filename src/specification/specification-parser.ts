@@ -224,7 +224,11 @@ export class SpecificationParser {
             const label = this.parseIdentifier();
             this.expect(".");
             const field = this.parseIdentifier();
-            return { label, field };
+            return {
+                type: "field",
+                label,
+                field
+            };
         }
     }
 
