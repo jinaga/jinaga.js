@@ -131,7 +131,25 @@ export class Jinaga {
      * @param preposition A template function passed into j.for
      * @returns A promise that resolves to an array of results
      */
-    async query<T, U>(start: T, preposition: Preposition<T, U>) : Promise<U[]> {
+    query<T, U>(start: T, preposition: Preposition<T, U>) : Promise<U[]>;
+    /**
+     * Execute a query for facts matching a specification.
+     * 
+     * @param specification Use Model.given().match() to create a specification
+     * @param given The fact or facts from which to begin the query
+     * @returns A promise that resolves to an array of results
+     */
+    query<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<U[]>;
+    query(first: any, ...rest: any[]): Promise<any[]> {
+        if (rest.length === 1 && rest[0] instanceof Preposition) {
+            return this.oldQuery(first, rest[0]);
+        }
+        else {
+            return this.newQuery(first, ...rest);
+        }
+    }
+
+    private async oldQuery<T, U>(start: T, preposition: Preposition<T, U>) : Promise<U[]> {
         if (!start) {
             return [];
         }
@@ -150,7 +168,7 @@ export class Jinaga {
         return hydrateFromTree(uniqueReferences, facts);
     }
 
-    async query2<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<U[]> {
+    private async newQuery<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<U[]> {
         const innerSpecification = specification.specification;
 
         if (!given || given.some(g => !g)) {
