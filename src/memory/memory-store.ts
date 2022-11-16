@@ -1,3 +1,4 @@
+import { hydrateFromTree } from '../fact/hydrate';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Feed } from "../specification/feed";
@@ -217,12 +218,29 @@ export class MemoryStore implements Storage {
 
     private createProduct(tuple: ReferencesByName, childProjections: ChildProjections): any {
         if (Array.isArray(childProjections)) {
-            if (childProjections.length === 0) {
-                throw new Error('Cannot create a product with no child projections.');
-            }
             throw new Error('Method not implemented.');
         }
-        throw new Error('Method not implemented.');
+        else if (childProjections.type === "fact") {
+            if (!tuple.hasOwnProperty(childProjections.label)) {
+                throw new Error(`The label ${childProjections.label} is not defined.`);
+            }
+            const reference = tuple[childProjections.label];
+            const fact = hydrateFromTree([reference], this.factRecords);
+            if (fact.length === 0) {
+                throw new Error(`The fact ${reference} is not defined.`);
+            }
+            if (fact.length > 1) {
+                throw new Error(`The fact ${reference} is defined more than once.`);
+            }
+            return fact[0];
+        }
+        else if (childProjections.type === "field") {
+            throw new Error('Method not implemented.');
+        }
+        else {
+            const _exhaustiveCheck: never = childProjections;
+            throw new Error(`Unexpected child projection type: ${_exhaustiveCheck}`);
+        }
     }
 }
 

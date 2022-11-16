@@ -139,8 +139,10 @@ export function lookupHash<T extends Object>(fact: T) {
 }
 
 export function hydrate<T>(record: FactRecord) {
-    const fact: any = record.fields;
-    fact.type = record.type;
+    const fact: any = {
+        ...record.fields,
+        type: record.type
+    };
     return <T>fact;
 }
 

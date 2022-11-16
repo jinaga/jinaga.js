@@ -20,6 +20,7 @@ describe("specification query", () => {
         });
 
         const result = await j.query2(specification, company);
-        expect(result).toEqual([office]);
+        expect(result.length).toBe(1);
+        expect(j.hash(result[0])).toBe(j.hash(office));
     });
 });
