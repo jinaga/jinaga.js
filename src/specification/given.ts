@@ -46,9 +46,9 @@ export class Model {
     }
 }
 
-export class SpecificationOf<U> {
+export class SpecificationOf<T, U> {
     constructor(
-        private specification: Specification
+        public specification: Specification
     ) { }
 
     toDescriptiveString(depth: number) {
@@ -57,6 +57,7 @@ export class SpecificationOf<U> {
 }
 
 type MatchParameters<T> = T extends [ infer First, ...infer Rest ] ? [ Label<First>, ...MatchParameters<Rest> ] : [ FactRepository ];
+type SpecificationResult<U> = U extends Label<infer V> ? V : U;
 
 class Given<T extends any[]> {
     constructor(
@@ -64,7 +65,7 @@ class Given<T extends any[]> {
         private factTypeMap: FactTypeMap
     ) { }
 
-    match<U>(definition: (...parameters: MatchParameters<T>) => Traversal<U>): SpecificationOf<U> {
+    match<U>(definition: (...parameters: MatchParameters<T>) => Traversal<U>): SpecificationOf<T, SpecificationResult<U>> {
         const labels = this.factTypes.map((factType, i) => {
             const name = `p${i + 1}`;
             return createFactProxy(this.factTypeMap, name, [], factType);
@@ -81,7 +82,7 @@ class Given<T extends any[]> {
             matches,
             childProjections
         };
-        return new SpecificationOf<U>(specification);
+        return new SpecificationOf<T, SpecificationResult<U>>(specification);
     }
 }
 
@@ -284,7 +285,7 @@ class Source<T> {
     }
 }
 
-type FactConstructor<T> = (new (...args: any[]) => T) & {
+export type FactConstructor<T> = (new (...args: any[]) => T) & {
     Type: string;
 }
 

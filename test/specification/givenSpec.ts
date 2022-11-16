@@ -1,100 +1,5 @@
-import { Model, SpecificationOf, FactRepository, Label } from "../../src/specification/given";
-
-class User {
-    static Type = "User" as const;
-    type = User.Type;
-    constructor(
-        public publicKey: string
-    ) {}
-}
-
-class UserName {
-    static Type = "User.Name" as const;
-    type = UserName.Type;
-    constructor(
-        public user: User,
-        public value: string,
-        public prior: UserName[]
-    ) {}
-}
-
-class Company {
-    static Type = "Company" as const;
-    type = Company.Type;
-    constructor(
-        public creator: User,
-        public identifier: string
-    ) {}
-}
-
-class Office {
-    static Type = "Office" as const;
-    type = Office.Type;
-    constructor(
-        public company: Company,
-        public identifier: string
-    ) {}
-
-    static inCompany(facts: FactRepository, company: Label<Company>) {
-        return facts.ofType(Office)
-            .join(office => office.company, company)
-            .notExists(office => facts.ofType(OfficeClosed)
-                .join(officeClosed => officeClosed.office, office)
-                .notExists(officeClosed => facts.ofType(OfficeReopened)
-                    .join(officeReopened => officeReopened.officeClosed, officeClosed)
-                )
-            );
-    }
-}
-
-class OfficeClosed {
-    static Type = "Office.Closed" as const;
-    type = OfficeClosed.Type;
-    constructor(
-        public office: Office,
-        public date: Date | string
-    ) {}
-}
-
-class OfficeReopened {
-    static Type = "Office.Reopened" as const;
-    type = OfficeReopened.Type;
-    constructor(
-        public officeClosed: OfficeClosed
-    ) {}
-}
-
-class President {
-    static Type = "President" as const;
-    type = President.Type;
-    constructor(
-        public office: Office,
-        public user: User
-    ) {}
-}
-
-const model = new Model()
-    .type(User)
-    .type(UserName, f => f
-        .predecessor("user", User)
-        .predecessor("prior", UserName)
-    )
-    .type(Company, f => f
-        .predecessor("creator", User)
-    )
-    .type(Office, f => f
-        .predecessor("company", Company)
-    )
-    .type(OfficeClosed, f => f
-        .predecessor("office", Office)
-    )
-    .type(OfficeReopened, f => f
-        .predecessor("officeClosed", OfficeClosed)
-    )
-    .type(President, f => f
-        .predecessor("office", Office)
-        .predecessor("user", User)
-    );
+import { SpecificationOf } from "../../src/specification/given";
+import { model, Company, Office, OfficeClosed, President, UserName, User } from "./model";
 
 describe("given", () => {
     it("should parse a successor join", () => {
@@ -437,6 +342,6 @@ describe("given", () => {
     });
 });
 
-function expectSpecification<T>(specification: SpecificationOf<T>, expected: string) {
+function expectSpecification<T, U>(specification: SpecificationOf<T, U>, expected: string) {
     expect("\n" + specification.toDescriptiveString(3)).toBe(expected + "\n");
 }

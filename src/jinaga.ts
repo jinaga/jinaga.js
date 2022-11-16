@@ -3,7 +3,8 @@ import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, loo
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { runService } from './observable/service';
 import { Query } from './query/query';
-import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf } from './query/query-parser';
+import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf as OldSpecificationOf } from './query/query-parser';
+import { SpecificationOf } from './specification/given';
 import { FactEnvelope, FactPath, uniqueFactReferences } from './storage';
 import { Subscription } from "./subscription/subscription";
 import { SubscriptionImpl } from "./subscription/subscription-impl";
@@ -149,6 +150,25 @@ export class Jinaga {
         return hydrateFromTree(uniqueReferences, facts);
     }
 
+    async query2<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<U[]> {
+        const innerSpecification = specification.specification;
+
+        if (!given || given.some(g => !g)) {
+            return [];
+        }
+        if (given.length !== innerSpecification.given.length) {
+            throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
+        }
+
+        const references = given.map(g => {
+            const fact = JSON.parse(JSON.stringify(g));
+            this.validateFact(fact);
+            return dehydrateReference(fact);
+        });
+        const results = await this.authentication.read(references, innerSpecification);
+        return results;
+    }
+
     /**
      * Receive notification when a fact is added or removed from query results.
      * The notification function will initially recieve all matching facts.
@@ -253,7 +273,7 @@ export class Jinaga {
      * @param specification A template function, which returns j.match
      * @returns A preposition that can be passed to query or watch, or used to construct a preposition chain
      */
-    static for<T, U>(specification: (target : T) => SpecificationOf<U>) : Preposition<T, U> {
+    static for<T, U>(specification: (target : T) => OldSpecificationOf<U>) : Preposition<T, U> {
         return Preposition.for(specification);
     }
 
@@ -263,7 +283,7 @@ export class Jinaga {
      * @param specification A template function, which returns j.match
      * @returns A preposition that can be passed to query or watch, or used to construct a preposition chain
      */
-    for<T, U>(specification: (target : T) => SpecificationOf<U>) : Preposition<T, U> {
+    for<T, U>(specification: (target : T) => OldSpecificationOf<U>) : Preposition<T, U> {
         return Jinaga.for(specification);
     }
 
@@ -273,8 +293,8 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A specification that can be used by query or watch
      */
-    static match<T>(template: Template<T>): SpecificationOf<T> {
-        return new SpecificationOf<T>(template,[]);
+    static match<T>(template: Template<T>): OldSpecificationOf<T> {
+        return new OldSpecificationOf<T>(template,[]);
     }
 
     /**
@@ -283,7 +303,7 @@ export class Jinaga {
      * @param template A JSON object with the desired type and predecessors
      * @returns A specification that can be used by query or watch
      */
-    match<T>(template: Template<T>): SpecificationOf<T> {
+    match<T>(template: Template<T>): OldSpecificationOf<T> {
         return Jinaga.match(template);
     }
 

@@ -1,7 +1,7 @@
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Feed } from "../specification/feed";
-import { Specification } from "../specification/specification";
+import { ChildProjections, Label, Match, PathCondition, Role, Specification } from "../specification/specification";
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 
@@ -40,6 +40,8 @@ function loadAll(references: FactReference[], source: FactRecord[], target: Fact
     });
 }
 
+type ReferencesByName = { [name: string]: FactReference };
+
 export class MemoryStore implements Storage {
     private factRecords: FactRecord[] = [];
 
@@ -64,7 +66,15 @@ export class MemoryStore implements Storage {
     }
 
     read(start: FactReference[], specification: Specification): Promise<any[]> {
-        throw new Error('Method not implemented.');
+        if (start.length !== specification.given.length) {
+            throw new Error(`The number of start references (${start.length}) must match the number of given facts (${specification.given.length}).`);
+        }
+        const references = start.reduce((references, reference, index) => ({
+            ...references,
+            [specification.given[index].name]: reference
+        }), {} as ReferencesByName);
+        var products = this.executeMatchesAndProjection(references, specification.matches, specification.childProjections);
+        return Promise.resolve(products);
     }
 
     feed(feed: Feed, bookmark: string): Promise<FactFeed> {
@@ -140,4 +150,90 @@ export class MemoryStore implements Storage {
     private findFact(reference: FactReference): FactRecord | null {
         return this.factRecords.find(factReferenceEquals(reference)) ?? null;
     }
+
+    private executeMatchesAndProjection(references: ReferencesByName, matches: Match[], childProjections: ChildProjections): any[] {
+        const tuples: ReferencesByName[] = this.executeMatches(references, matches);
+        const products: any[] = tuples.map(tuple => this.createProduct(tuple, childProjections));
+        return products;
+    }
+
+    private executeMatches(references: ReferencesByName, matches: Match[]): ReferencesByName[] {
+        const results = matches.reduce(
+            (tuples, match) => tuples.flatMap(
+                tuple => this.executeMatch(tuple, match)
+            ),
+            [references]
+        );
+        return results;
+    }
+
+    private executeMatch(references: ReferencesByName, match: Match): ReferencesByName[] {
+        let results: ReferencesByName[] = [];
+        if (match.conditions.length === 0) {
+            throw new Error("A match must have at least one condition.");
+        }
+        const firstCondition = match.conditions[0];
+        if (firstCondition.type === "path") {
+            const result: FactReference[] = this.executePathCondition(references, match.unknown, firstCondition);
+            results = result.map(reference => ({
+                ...references,
+                [match.unknown.name]: reference
+            }));
+        }
+
+        if (match.conditions.length > 1) {
+            throw new Error('Method not implemented.');
+        }
+        return results;
+    }
+
+    private executePathCondition(references: ReferencesByName, unknown: Label, pathCondition: PathCondition): FactReference[] {
+        if (!references.hasOwnProperty(pathCondition.labelRight)) {
+            throw new Error(`The label ${pathCondition.labelRight} is not defined.`);
+        }
+        const start = references[pathCondition.labelRight];
+        const predecessors = pathCondition.rolesRight.reduce(
+            (set, role) => this.executePredecessorStep(set, role.name, role.targetType),
+            [start]
+        );
+        const invertedRoles = invertRoles(pathCondition.rolesLeft, unknown.type);
+        const results = invertedRoles.reduce(
+            (set, role) => this.executeSuccessorStep(set, role.name, role.declaringType),
+            predecessors
+        );
+        return results;
+    }
+
+    private executePredecessorStep(set: FactReference[], name: string, targetType: string): FactReference[] {
+        throw new Error('Method not implemented.');
+    }
+
+    private executeSuccessorStep(set: FactReference[], name: string, targetType: string): FactReference[] {
+        return set.flatMap(reference => this.factRecords.filter(record =>
+            record.type === targetType &&
+            getPredecessors(record, name).some(factReferenceEquals(reference)))
+        );
+    }
+
+    private createProduct(tuple: ReferencesByName, childProjections: ChildProjections): any {
+        throw new Error('Method not implemented.');
+    }
+}
+
+interface InvertedRole {
+    name: string;
+    declaringType: string;
+}
+
+function invertRoles(roles: Role[], targetType: string): InvertedRole[] {
+    const results: InvertedRole[] = [];
+    let declaringType = targetType;
+    for (const role of roles) {
+        results.push({
+            name: role.name,
+            declaringType
+        });
+        declaringType = role.targetType;
+    }
+    return results.reverse();
 }
