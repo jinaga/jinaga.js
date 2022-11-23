@@ -24,8 +24,8 @@ function describeMatch(match: Match, depth: number) {
 function describeCondition(condition: Condition, unknown: string, depth: number): string {
     const indent = "    ".repeat(depth);
     if (condition.type === "path") {
-        const rolesLeft = condition.rolesLeft.map(r => `->${r.name}: ${r.targetType}`).join("");
-        const rolesRight = condition.rolesRight.map(r => `->${r.name}: ${r.targetType}`).join("");
+        const rolesLeft = condition.rolesLeft.map(r => `->${r.name}: ${r.predecessorType}`).join("");
+        const rolesRight = condition.rolesRight.map(r => `->${r.name}: ${r.predecessorType}`).join("");
         return `${indent}${unknown}${rolesLeft} = ${condition.labelRight}${rolesRight}\n`;
     }
     else if (condition.type === "existential") {

@@ -81,8 +81,8 @@ export class SpecificationParser {
     parseRole(): Role {
         const name = this.parseIdentifier();
         this.expect(":");
-        const targetType = this.parseType();
-        return { name, targetType };
+        const predecessorType = this.parseType();
+        return { name, predecessorType };
     }
 
     parseGiven(): Label[] {

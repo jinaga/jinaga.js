@@ -126,11 +126,11 @@ function addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, kno
         }
         else {
             // If we have not written the fact, we need to write it now.
-            const { feed: feedWithFact, factIndex: predecessorFactIndex } = withFact(feed, role.targetType);
+            const { feed: feedWithFact, factIndex: predecessorFactIndex } = withFact(feed, role.predecessorType);
             feed = withEdge(feedWithFact, predecessorFactIndex, factIndex, role.name, path);
             factIndex = predecessorFactIndex;
         }
-        factType = role.targetType;
+        factType = role.predecessorType;
     }
 
     const rightType = factType;
@@ -140,27 +140,27 @@ function addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, kno
     factType = unknown.type;
     const newEdges: {
         roleName: string;
-        declaringType: string;
+        successorType: string;
     }[] = [];
     for (const role of condition.rolesLeft) {
         newEdges.push({
             roleName: role.name,
-            declaringType: factType
+            successorType: factType
         });
-        factType = role.targetType;
+        factType = role.predecessorType;
     }
 
     if (factType !== rightType) {
         throw new Error(`Type mismatch: ${factType} is compared to ${rightType}`);
     }
 
-    newEdges.reverse().forEach(({ roleName, declaringType }, i) => {
+    newEdges.reverse().forEach(({ roleName, successorType }, i) => {
         if (condition.rolesRight.length + i === roleCount - 1 && knownFact) {
             feed = withEdge(feed, factIndex, knownFact.factIndex, roleName, path);
             factIndex = knownFact.factIndex;
         }
         else {
-            const { feed: feedWithFact, factIndex: successorFactIndex } = withFact(feed, declaringType);
+            const { feed: feedWithFact, factIndex: successorFactIndex } = withFact(feed, successorType);
             feed = withEdge(feedWithFact, factIndex, successorFactIndex, roleName, path);
             factIndex = successorFactIndex;
         }

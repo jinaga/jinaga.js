@@ -358,10 +358,10 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
                 return target;
             }
             const role = property.toString();
-            const targetType = lookupRoleType(factTypeMap, target.factType, role);
-            if (targetType) {
-                const path: Role[] = [...target.path, { name: role, targetType }];
-                return createFactProxy(factTypeMap, target.root, path, targetType);
+            const predecessorType = lookupRoleType(factTypeMap, target.factType, role);
+            if (predecessorType) {
+                const path: Role[] = [...target.path, { name: role, predecessorType }];
+                return createFactProxy(factTypeMap, target.root, path, predecessorType);
             }
             else {
                 if (target.path.length > 0) {

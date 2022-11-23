@@ -5,7 +5,7 @@ export interface Label {
 
 export interface Role {
     name: string;
-    targetType: string;
+    predecessorType: string;
 }
 
 export interface PathCondition {
@@ -98,7 +98,7 @@ function getAllFactTypesFromMatches(matches: Match[]): string[] {
         for (const condition of match.conditions) {
             if (condition.type === "path") {
                 for (const role of condition.rolesLeft) {
-                    factTypes.push(role.targetType);
+                    factTypes.push(role.predecessorType);
                 }
             }
             else if (condition.type === "existential") {
@@ -123,9 +123,9 @@ function getAllFactTypesFromProjections(projections: Projection[]) {
 }
 
 interface RoleDescription {
-    definingFactType: string;
+    successorType: string;
     name: string;
-    targetType: string;
+    predecessorType: string;
 }
 
 type TypeByLabel = {
@@ -145,7 +145,7 @@ export function getAllRoles(specification: Specification): RoleDescription[] {
     const roles: RoleDescription[] = [ ...rolesFromMatches, ...rolesFromProjections ];
     const distinctRoles = roles.filter((value, index, array) => {
         return array.findIndex(r =>
-            r.definingFactType === value.definingFactType &&
+            r.successorType === value.successorType &&
             r.name === value.name) === index;
     });
     return distinctRoles;
@@ -162,16 +162,16 @@ function getAllRolesFromMatches(labels: TypeByLabel, matches: Match[]): { roles:
             if (condition.type === "path") {
                 let type = match.unknown.type;
                 for (const role of condition.rolesLeft) {
-                    roles.push({ definingFactType: type, name: role.name, targetType: role.targetType });
-                    type = role.targetType;
+                    roles.push({ successorType: type, name: role.name, predecessorType: role.predecessorType });
+                    type = role.predecessorType;
                 }
                 type = labels[condition.labelRight];
                 if (!type) {
                     throw new Error(`Label ${condition.labelRight} not found`);
                 }
                 for (const role of condition.rolesRight) {
-                    roles.push({ definingFactType: type, name: role.name, targetType: role.targetType });
-                    type = role.targetType;
+                    roles.push({ successorType: type, name: role.name, predecessorType: role.predecessorType });
+                    type = role.predecessorType;
                 }
             }
             else if (condition.type === "existential") {

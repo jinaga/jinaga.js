@@ -34,7 +34,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "parent",
-                                    targetType: "MyApp.Parent"
+                                    predecessorType: "MyApp.Parent"
                                 }
                             ],
                             labelRight: "parent",
@@ -147,7 +147,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -158,11 +158,11 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "project",
-                                    targetType: "MyApp.Project"
+                                    predecessorType: "MyApp.Project"
                                 },
                                 {
                                     name: "company",
-                                    targetType: "MyApp.Company"
+                                    predecessorType: "MyApp.Company"
                                 }
                             ],
                             labelRight: "company",
@@ -212,7 +212,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -223,11 +223,11 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "project",
-                                    targetType: "MyApp.Project"
+                                    predecessorType: "MyApp.Project"
                                 },
                                 {
                                     name: "company",
-                                    targetType: "MyApp.Company"
+                                    predecessorType: "MyApp.Company"
                                 }
                             ],
                             labelRight: "company",
@@ -248,7 +248,7 @@ describe("Specification parser", () => {
                                             rolesLeft: [
                                                 {
                                                     name: "assignment",
-                                                    targetType: "MyApp.Assignment"
+                                                    predecessorType: "MyApp.Assignment"
                                                 }
                                             ],
                                             labelRight: "assignment",
@@ -315,7 +315,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -340,7 +340,7 @@ describe("Specification parser", () => {
                                     rolesLeft: [
                                         {
                                             name: "assignment",
-                                            targetType: "MyApp.Assignment"
+                                            predecessorType: "MyApp.Assignment"
                                         }
                                     ],
                                     labelRight: "assignment",
@@ -394,7 +394,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -419,7 +419,7 @@ describe("Specification parser", () => {
                                     rolesLeft: [
                                         {
                                             name: "assignment",
-                                            targetType: "MyApp.Assignment"
+                                            predecessorType: "MyApp.Assignment"
                                         }
                                     ],
                                     labelRight: "assignment",
@@ -444,7 +444,7 @@ describe("Specification parser", () => {
                                             rolesLeft: [
                                                 {
                                                     name: "project",
-                                                    targetType: "MyApp.Project"
+                                                    predecessorType: "MyApp.Project"
                                                 }
                                             ],
                                             labelRight: "project",
@@ -490,7 +490,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",

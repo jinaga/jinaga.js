@@ -194,24 +194,24 @@ export class MemoryStore implements Storage {
         }
         const start = references[pathCondition.labelRight];
         const predecessors = pathCondition.rolesRight.reduce(
-            (set, role) => this.executePredecessorStep(set, role.name, role.targetType),
+            (set, role) => this.executePredecessorStep(set, role.name, role.predecessorType),
             [start]
         );
         const invertedRoles = invertRoles(pathCondition.rolesLeft, unknown.type);
         const results = invertedRoles.reduce(
-            (set, role) => this.executeSuccessorStep(set, role.name, role.declaringType),
+            (set, role) => this.executeSuccessorStep(set, role.name, role.successorType),
             predecessors
         );
         return results;
     }
 
-    private executePredecessorStep(set: FactReference[], name: string, targetType: string): FactReference[] {
+    private executePredecessorStep(set: FactReference[], name: string, predecessorType: string): FactReference[] {
         throw new Error('Method not implemented.');
     }
 
-    private executeSuccessorStep(set: FactReference[], name: string, targetType: string): FactReference[] {
+    private executeSuccessorStep(set: FactReference[], name: string, successorType: string): FactReference[] {
         return set.flatMap(reference => this.factRecords.filter(record =>
-            record.type === targetType &&
+            record.type === successorType &&
             getPredecessors(record, name).some(factReferenceEquals(reference)))
         );
     }
@@ -246,18 +246,17 @@ export class MemoryStore implements Storage {
 
 interface InvertedRole {
     name: string;
-    declaringType: string;
+    successorType: string;
 }
 
-function invertRoles(roles: Role[], targetType: string): InvertedRole[] {
+function invertRoles(roles: Role[], type: string): InvertedRole[] {
     const results: InvertedRole[] = [];
-    let declaringType = targetType;
     for (const role of roles) {
         results.push({
             name: role.name,
-            declaringType
+            successorType: type
         });
-        declaringType = role.targetType;
+        type = role.predecessorType;
     }
     return results.reverse();
 }
