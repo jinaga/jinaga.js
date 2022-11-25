@@ -168,7 +168,14 @@ class Traversal<T> {
                 return new Traversal<U>(definition, this.matches, fieldProjection);
             }
             else if (payload.type === "fact") {
-                throw new Error("You cannot select a singular fact. Project it as a member of an object instead.");
+                if (payload.path.length > 0) {
+                    throw new Error(`Cannot select ${payload.root}.${payload.path.join(".")} directly. Give the fact a label first.`);
+                }
+                const factProjection: FactProjection = {
+                    type: "fact",
+                    label: payload.root,
+                };
+                return new Traversal<U>(definition, this.matches, factProjection);
             }
             else {
                 const _exhaustiveCheck: never = payload;
