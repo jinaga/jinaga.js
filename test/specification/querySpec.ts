@@ -41,4 +41,15 @@ describe("specification query", () => {
         expect(result.length).toBe(1);
         expect(j.hash(result[0])).toBe(j.hash(company));
     });
+
+    it("should query for multiple predecessors", async () => {
+        const specification = model.given(Office).match((office, facts) =>
+            facts.ofType(User)
+                .join(user => user, office.company.creator)
+        );
+
+        const result = await j.query(specification, office);
+        expect(result.length).toBe(1);
+        expect(j.hash(result[0])).toBe(j.hash(creator));
+    });
 });
