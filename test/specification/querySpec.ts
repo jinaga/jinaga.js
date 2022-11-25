@@ -1,11 +1,12 @@
 import { Jinaga, JinagaTest } from "../../src";
-import { Company, Employee, model, Office, OfficeClosed, President, User } from "./model";
+import { Company, Employee, model, Office, OfficeClosed, OfficeReopened, President, User } from "./model";
 
 describe("specification query", () => {
     let creator: User;
     let company: Company;
     let office: Office;
     let closedOffice: Office;
+    let reopenedOffice: Office;
     let president: President;
     let employee: Employee;
     let j: Jinaga;
@@ -18,6 +19,8 @@ describe("specification query", () => {
         employee = new Employee(office, new User("--- EMPLOYEE PUBLIC KEY ---"));
         closedOffice = new Office(company, "ClosedOffice");
         const closed = new OfficeClosed(closedOffice, new Date());
+        reopenedOffice = new Office(closedOffice.company, "ReopenedOffice");
+        const reopened = new OfficeReopened(new OfficeClosed(reopenedOffice, new Date()));
         j = JinagaTest.create({
             initialState: [
                 creator,
@@ -26,7 +29,9 @@ describe("specification query", () => {
                 president,
                 employee,
                 closedOffice,
-                closed
+                closed,
+                reopenedOffice,
+                reopened
             ]
         });
     });
@@ -38,10 +43,10 @@ describe("specification query", () => {
         );
 
         const result = await j.query(specification, company);
-        expect(result.length).toBe(2);
         expect(result.map(r => j.hash(r))).toEqual([
             j.hash(office),
-            j.hash(closedOffice)
+            j.hash(closedOffice),
+            j.hash(reopenedOffice)
         ]);
     });
 
@@ -102,7 +107,28 @@ describe("specification query", () => {
         );
 
         const result = await j.query(specification, company);
-        expect(result.length).toBe(1);
-        expect(j.hash(result[0])).toBe(j.hash(closedOffice));
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(closedOffice),
+            j.hash(reopenedOffice)
+        ]);
+    });
+
+    it("should execute nested existential conditions", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office => facts.ofType(OfficeClosed)
+                    .join(officeClosed => officeClosed.office, office)
+                    .notExists(officeClosed => facts.ofType(OfficeReopened)
+                        .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                    )
+                )
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(office),
+            j.hash(reopenedOffice)
+        ]);
     });
 });
