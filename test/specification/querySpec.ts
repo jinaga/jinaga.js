@@ -91,4 +91,18 @@ describe("specification query", () => {
         expect(result.length).toBe(1);
         expect(j.hash(result[0])).toBe(j.hash(office));
     });
+
+    it("should execute positive existential condition", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .exists(office => facts.ofType(OfficeClosed)
+                    .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.length).toBe(1);
+        expect(j.hash(result[0])).toBe(j.hash(closedOffice));
+    });
 });
