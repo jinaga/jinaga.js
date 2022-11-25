@@ -57,7 +57,12 @@ export class SpecificationOf<T, U> {
 }
 
 type MatchParameters<T> = T extends [ infer First, ...infer Rest ] ? [ Label<First>, ...MatchParameters<Rest> ] : [ FactRepository ];
-type SpecificationResult<U> = U extends Label<infer V> ? V : U;
+type SpecificationResult<U> =
+    U extends string ? U :
+    U extends Label<infer V> ? V :
+    U extends Traversal<infer V> ? Array<SpecificationResult<V>> :
+    U extends {} ? { [K in keyof U]: SpecificationResult<U[K]> } :
+    U;
 
 class Given<T extends any[]> {
     constructor(

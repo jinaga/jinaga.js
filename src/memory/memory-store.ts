@@ -260,7 +260,7 @@ export class MemoryStore implements Storage {
     }
     private createComponent(tuple: ReferencesByName, component: ComponentProjection): any {
         if (component.type === "specification") {
-            throw new Error('Method not implemented.');
+            return this.executeMatchesAndProjection(tuple, component.matches, component.projection);
         }
         else {
             return this.createSingularProduct(tuple, component);

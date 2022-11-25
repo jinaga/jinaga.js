@@ -193,4 +193,38 @@ describe("specification query", () => {
             { identifier: "ReopenedOffice", company: "TestCo" }
         ]);
     });
+
+    it("should execute a specification projection", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    employees: facts.ofType(Employee)
+                        .join(employee => employee.office, office)
+                }))
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.map(result => ({
+            identifier: result.identifier,
+            employeeHashes: result.employees.map(employee => j.hash(employee))
+        }))).toEqual([
+            {
+                identifier: "TestOffice",
+                employeeHashes: [
+                    j.hash(employee),
+                    j.hash(otherEmployee)
+                ]
+            },
+            {
+                identifier: "ClosedOffice",
+                employeeHashes: []
+            },
+            {
+                identifier: "ReopenedOffice",
+                employeeHashes: []
+            }
+        ]);
+    });
 });
