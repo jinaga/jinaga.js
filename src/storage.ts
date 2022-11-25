@@ -28,7 +28,7 @@ export type FactRecord = {
     type: string;
     hash: string;
     predecessors: PredecessorCollection,
-    fields: {};
+    fields: { [field: string]: any };
 };
 
 export type FactSignature = {

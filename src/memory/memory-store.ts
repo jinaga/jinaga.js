@@ -266,7 +266,19 @@ export class MemoryStore implements Storage {
             return fact[0];
         }
         else if (projection.type === "field") {
-            throw new Error('Method not implemented.');
+            if (!tuple.hasOwnProperty(projection.label)) {
+                throw new Error(`The label ${projection.label} is not defined.`);
+            }
+            const reference = tuple[projection.label];
+            const fact = this.findFact(reference);
+            if (fact === null) {
+                throw new Error(`The fact ${reference} is not defined.`);
+            }
+            const value: any = fact.fields[projection.field];
+            if (value === undefined) {
+                throw new Error(`The fact ${reference} does not have a field named ${projection.field}.`);
+            }
+            return value;
         }
         else if (projection.type === "hash") {
             throw new Error('Method not implemented.');

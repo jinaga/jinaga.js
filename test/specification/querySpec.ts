@@ -160,4 +160,19 @@ describe("specification query", () => {
             j.hash(employee)
         ]);
     });
+
+    it("should execute a field projection", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => office.identifier)
+        );
+
+        const result = await j.query(specification, company);
+        expect(result).toEqual([
+            "TestOffice",
+            "ClosedOffice",
+            "ReopenedOffice"
+        ]);
+    });
 });
