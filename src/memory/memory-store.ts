@@ -206,7 +206,14 @@ export class MemoryStore implements Storage {
     }
 
     private executePredecessorStep(set: FactReference[], name: string, predecessorType: string): FactReference[] {
-        throw new Error('Method not implemented.');
+        return flatten(set, reference => {
+            const record = this.findFact(reference);
+            if (record === null) {
+                throw new Error(`The fact ${reference} is not defined.`);
+            }
+            const predecessors = getPredecessors(record, name);
+            return predecessors.filter(predecessor => predecessor.type === predecessorType);
+        });
     }
 
     private executeSuccessorStep(set: FactReference[], name: string, successorType: string): FactReference[] {
