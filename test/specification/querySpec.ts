@@ -1,10 +1,11 @@
 import { Jinaga, JinagaTest } from "../../src";
-import { Company, Employee, model, Office, President, User } from "./model";
+import { Company, Employee, model, Office, OfficeClosed, President, User } from "./model";
 
 describe("specification query", () => {
     let creator: User;
     let company: Company;
     let office: Office;
+    let closedOffice: Office;
     let president: President;
     let employee: Employee;
     let j: Jinaga;
@@ -15,13 +16,17 @@ describe("specification query", () => {
         office = new Office(company, "TestOffice");
         president = new President(office, new User("--- PRESIDENT PUBLIC KEY ---"));
         employee = new Employee(office, new User("--- EMPLOYEE PUBLIC KEY ---"));
+        closedOffice = new Office(company, "ClosedOffice");
+        const closed = new OfficeClosed(closedOffice, new Date());
         j = JinagaTest.create({
             initialState: [
                 creator,
                 company,
                 office,
                 president,
-                employee
+                employee,
+                closedOffice,
+                closed
             ]
         });
     });
@@ -33,8 +38,11 @@ describe("specification query", () => {
         );
 
         const result = await j.query(specification, company);
-        expect(result.length).toBe(1);
-        expect(j.hash(result[0])).toBe(j.hash(office));
+        expect(result.length).toBe(2);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(office),
+            j.hash(closedOffice)
+        ]);
     });
 
     it("should query for predecessors", async () => {
@@ -68,5 +76,19 @@ describe("specification query", () => {
         const result = await j.query(specification, employee);
         expect(result.length).toBe(1);
         expect(j.hash(result[0])).toBe(j.hash(president));
+    });
+
+    it("should execute negative existential condition", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office => facts.ofType(OfficeClosed)
+                    .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.length).toBe(1);
+        expect(j.hash(result[0])).toBe(j.hash(office));
     });
 });

@@ -2,7 +2,7 @@ import { hydrateFromTree } from '../fact/hydrate';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Feed } from "../specification/feed";
-import { Label, Match, PathCondition, Projection, Role, Specification } from "../specification/specification";
+import { Condition, Label, Match, PathCondition, Projection, Role, Specification } from "../specification/specification";
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 
@@ -181,9 +181,13 @@ export class MemoryStore implements Storage {
                 [match.unknown.name]: reference
             }));
         }
+        else {
+            throw new Error("The first condition must be a path condition.");
+        }
 
-        if (match.conditions.length > 1) {
-            throw new Error('Method not implemented.');
+        const remainingConditions = match.conditions.slice(1);
+        for (const condition of remainingConditions) {
+            results = this.filterByCondition(references, results, condition);
         }
         return results;
     }
@@ -221,6 +225,25 @@ export class MemoryStore implements Storage {
             record.type === successorType &&
             getPredecessors(record, name).some(factReferenceEquals(reference)))
         );
+    }
+    
+    private filterByCondition(references: ReferencesByName, results: ReferencesByName[], condition: Condition): ReferencesByName[] {
+        if (condition.type === "path") {
+            throw new Error('Method not implemented.');
+        }
+        else if (condition.type === "existential") {
+            var matchingReferences = results.filter(result => {
+                const matches = this.executeMatches(result, condition.matches);
+                return condition.exists ?
+                    matches.length > 0 :
+                    matches.length === 0;
+            });
+            return matchingReferences;
+        }
+        else {
+            const _exhaustiveCheck: never = condition;
+            throw new Error(`Unknown condition type: ${(condition as any).type}`);
+        }
     }
 
     private createProduct(tuple: ReferencesByName, projection: Projection): any {
