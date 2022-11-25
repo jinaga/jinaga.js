@@ -1,5 +1,6 @@
-import { CompositeProjection, Condition, ExistentialCondition, FactProjection, FieldProjection, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification, SpecificationProjection } from "../../src/specification/specification";
+import { hashSymbol } from "../fact/hydrate";
 import { describeSpecification } from "./description";
+import { CompositeProjection, Condition, ExistentialCondition, FactProjection, FieldProjection, HashProjection, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 
 type RoleMap = { [role: string]: string };
 
@@ -178,6 +179,13 @@ class Traversal<T> {
                 };
                 return new Traversal<U>(definition, this.matches, factProjection);
             }
+            else if (payload.type === "hash") {
+                const hashProjection: HashProjection = {
+                    type: "hash",
+                    label: payload.root
+                };
+                return new Traversal<U>(definition, this.matches, hashProjection);
+            }
             else {
                 const _exhaustiveCheck: never = payload;
                 throw new Error(`Unexpected payload type: ${(payload as any).type}`);
@@ -209,6 +217,9 @@ class Traversal<T> {
                             label: payload.root
                         };
                         return projection;
+                    }
+                    else if (payload.type === "hash") {
+                        throw new Error("Method not implemented.");
                     }
                     else {
                         const _exhaustiveCheck: never = payload;
@@ -312,7 +323,12 @@ interface LabelPayloadField {
     fieldName: string;
 }
 
-type LabelPayload = LabelPayloadFact | LabelPayloadField;
+interface LabelPayloadHash {
+    type: "hash";
+    root: string;
+}
+
+type LabelPayload = LabelPayloadFact | LabelPayloadField | LabelPayloadHash;
 
 const IDENTITY = Symbol('proxy_target_identity');
 function joinCondition(payloadLeft: LabelPayload, payloadRight: LabelPayload) {
@@ -327,6 +343,12 @@ function joinCondition(payloadLeft: LabelPayload, payloadRight: LabelPayload) {
             `The property "${payloadRight.fieldName}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
             `A field cannot be used in a join.`
         );
+    }
+    if (payloadLeft.type === "hash") {
+        throw new Error("You cannot join on a hash.");
+    }
+    if (payloadRight.type === "hash") {
+        throw new Error("You cannot join on a hash.");
     }
 
     if (payloadLeft.factType !== payloadRight.factType) {
@@ -352,6 +374,14 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
         get: (target, property) => {
             if (property === IDENTITY) {
                 return target;
+            }
+            if (property === hashSymbol) {
+                if (target.path.length > 0) {
+                    throw new Error(
+                        `You cannot hash the fact "${target.path[target.path.length - 1].name}" directly. ` +
+                        `You must label it first.`);
+                }
+                return createHashProxy(target.root);
             }
             const role = property.toString();
             const predecessorType = lookupRoleType(factTypeMap, target.factType, role);
@@ -386,6 +416,23 @@ function createFieldProxy(root: string, fieldName: string): any {
             throw new Error(
                 `The property "${property.toString()}" is not defined to be a predecessor, and is therefore interpreted as a field. ` +
                 `You cannot operate on a field within a specification.`
+            );
+        }
+    });
+}
+
+function createHashProxy(root: string): any {
+    const payload: LabelPayloadHash = {
+        type: "hash",
+        root
+    };
+    return new Proxy(payload, {
+        get: (target, property) => {
+            if (property === IDENTITY) {
+                return target;
+            }
+            throw new Error(
+                `The property "${property.toString()}" is not defined on a hash.`
             );
         }
     });

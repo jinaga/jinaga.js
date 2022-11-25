@@ -298,7 +298,11 @@ export class MemoryStore implements Storage {
             return value;
         }
         else if (projection.type === "hash") {
-            throw new Error('Method not implemented.');
+            if (!tuple.hasOwnProperty(projection.label)) {
+                throw new Error(`The label ${projection.label} is not defined.`);
+            }
+            const reference = tuple[projection.label];
+            return reference.hash;
         }
         else {
             const _exhaustiveCheck: never = projection;

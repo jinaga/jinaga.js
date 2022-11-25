@@ -227,4 +227,19 @@ describe("specification query", () => {
             }
         ]);
     });
+
+    it("should execute a hash projection", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => j.hash(office))
+        );
+
+        const result = await j.query(specification, company);
+        expect(result).toEqual([
+            j.hash(office),
+            j.hash(closedOffice),
+            j.hash(reopenedOffice)
+        ]);
+    });
 });

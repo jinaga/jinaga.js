@@ -80,7 +80,7 @@ type HydrationEntry = {
     fact: HashMap | null
 }
 
-const hashSymbol = typeof(Symbol) === "undefined" ? null : Symbol("hash");
+export const hashSymbol = typeof(Symbol) === "undefined" ? null : Symbol("hash");
 
 export class Hydration {
     private entries: HydrationEntry[];
