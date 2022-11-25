@@ -73,6 +73,15 @@ export class President {
     ) { }
 }
 
+export class Employee {
+    static Type = "Employee" as const;
+    type = Employee.Type;
+    constructor(
+        public office: Office,
+        public user: User
+    ) { }
+}
+
 export const model = new Model()
     .type(User)
     .type(UserName, f => f
@@ -92,6 +101,10 @@ export const model = new Model()
         .predecessor("officeClosed", OfficeClosed)
     )
     .type(President, f => f
+        .predecessor("office", Office)
+        .predecessor("user", User)
+    )
+    .type(Employee, f => f
         .predecessor("office", Office)
         .predecessor("user", User)
     );
