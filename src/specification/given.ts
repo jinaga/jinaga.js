@@ -88,17 +88,13 @@ class Given<T extends any[]> {
 
 export type Label<T> = {
     [ R in keyof T ]:
-        T[R] extends string ? Field<string> :
-        T[R] extends number ? Field<number> :
-        T[R] extends Date ? Field<Date> :
-        T[R] extends boolean ? Field<boolean> :
+        T[R] extends string ? T[R] :
+        T[R] extends number ? T[R] :
+        T[R] extends Date ? T[R] :
+        T[R] extends boolean ? T[R] :
         T[R] extends Array<infer U> ? Label<U> :
         T[R] extends infer U | undefined ? Label<U> :
         Label<T[R]>;
-}
-
-interface Field<T> {
-    value: T;
 }
 
 class Traversal<T> {
@@ -244,12 +240,6 @@ class Traversal<T> {
         const projection = traversal.projection;
         return new Traversal<U>(traversal.input, matches, projection);
     }
-}
-
-type SelectorResult<T> = Field<T> | SelectorResultComposite<T>;
-
-type SelectorResultComposite<T> = {
-    [ R in keyof T ]: SelectorResult<T[R]>;
 }
 
 export class FactRepository {
