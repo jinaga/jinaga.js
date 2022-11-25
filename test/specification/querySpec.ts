@@ -9,6 +9,7 @@ describe("specification query", () => {
     let reopenedOffice: Office;
     let president: President;
     let employee: Employee;
+    let otherEmployee: Employee;
     let j: Jinaga;
     
     beforeEach(() => {
@@ -17,6 +18,7 @@ describe("specification query", () => {
         office = new Office(company, "TestOffice");
         president = new President(office, new User("--- PRESIDENT PUBLIC KEY ---"));
         employee = new Employee(office, new User("--- EMPLOYEE PUBLIC KEY ---"));
+        otherEmployee = new Employee(office, new User("--- OTHER EMPLOYEE PUBLIC KEY ---"));
         closedOffice = new Office(company, "ClosedOffice");
         const closed = new OfficeClosed(closedOffice, new Date());
         reopenedOffice = new Office(closedOffice.company, "ReopenedOffice");
@@ -28,6 +30,7 @@ describe("specification query", () => {
                 office,
                 president,
                 employee,
+                otherEmployee,
                 closedOffice,
                 closed,
                 reopenedOffice,
@@ -129,6 +132,32 @@ describe("specification query", () => {
         expect(result.map(r => j.hash(r))).toEqual([
             j.hash(office),
             j.hash(reopenedOffice)
+        ]);
+    });
+
+    it("should match all employees", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Employee)
+                .join(employee => employee.office.company, company)
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(employee),
+            j.hash(otherEmployee)
+        ]);
+    });
+
+    it("should execute multiple path conditions", async () => {
+        const specification = model.given(Company, User).match((company, user, facts) =>
+            facts.ofType(Employee)
+                .join(employee => employee.office.company, company)
+                .join(employee => employee.user, user)
+        );
+
+        const result = await j.query(specification, company, employee.user);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(employee)
         ]);
     });
 });

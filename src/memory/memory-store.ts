@@ -187,7 +187,7 @@ export class MemoryStore implements Storage {
 
         const remainingConditions = match.conditions.slice(1);
         for (const condition of remainingConditions) {
-            results = this.filterByCondition(references, results, condition);
+            results = this.filterByCondition(references, match.unknown, results, condition);
         }
         return results;
     }
@@ -227,9 +227,10 @@ export class MemoryStore implements Storage {
         );
     }
     
-    private filterByCondition(references: ReferencesByName, results: ReferencesByName[], condition: Condition): ReferencesByName[] {
+    private filterByCondition(references: ReferencesByName, unknown: Label, results: ReferencesByName[], condition: Condition): ReferencesByName[] {
         if (condition.type === "path") {
-            throw new Error('Method not implemented.');
+            const otherResults = this.executePathCondition(references, unknown, condition);
+            return results.filter(result => otherResults.some(factReferenceEquals(result[unknown.name])));
         }
         else if (condition.type === "existential") {
             var matchingReferences = results.filter(result => {
