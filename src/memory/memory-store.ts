@@ -2,7 +2,7 @@ import { hydrateFromTree } from '../fact/hydrate';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Feed } from "../specification/feed";
-import { ChildProjections, Label, Match, PathCondition, Role, Specification } from "../specification/specification";
+import { Label, Match, PathCondition, Projection, Role, Specification } from "../specification/specification";
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 
@@ -74,7 +74,7 @@ export class MemoryStore implements Storage {
             ...references,
             [specification.given[index].name]: reference
         }), {} as ReferencesByName);
-        var products = this.executeMatchesAndProjection(references, specification.matches, specification.childProjections);
+        var products = this.executeMatchesAndProjection(references, specification.matches, specification.projection);
         return Promise.resolve(products);
     }
 
@@ -152,9 +152,9 @@ export class MemoryStore implements Storage {
         return this.factRecords.find(factReferenceEquals(reference)) ?? null;
     }
 
-    private executeMatchesAndProjection(references: ReferencesByName, matches: Match[], childProjections: ChildProjections): any[] {
+    private executeMatchesAndProjection(references: ReferencesByName, matches: Match[], projection: Projection): any[] {
         const tuples: ReferencesByName[] = this.executeMatches(references, matches);
-        const products: any[] = tuples.map(tuple => this.createProduct(tuple, childProjections));
+        const products: any[] = tuples.map(tuple => this.createProduct(tuple, projection));
         return products;
     }
 
@@ -216,15 +216,15 @@ export class MemoryStore implements Storage {
         );
     }
 
-    private createProduct(tuple: ReferencesByName, childProjections: ChildProjections): any {
-        if (Array.isArray(childProjections)) {
+    private createProduct(tuple: ReferencesByName, projection: Projection): any {
+        if (projection.type === "composite") {
             throw new Error('Method not implemented.');
         }
-        else if (childProjections.type === "fact") {
-            if (!tuple.hasOwnProperty(childProjections.label)) {
-                throw new Error(`The label ${childProjections.label} is not defined.`);
+        else if (projection.type === "fact") {
+            if (!tuple.hasOwnProperty(projection.label)) {
+                throw new Error(`The label ${projection.label} is not defined.`);
             }
-            const reference = tuple[childProjections.label];
+            const reference = tuple[projection.label];
             const fact = hydrateFromTree([reference], this.factRecords);
             if (fact.length === 0) {
                 throw new Error(`The fact ${reference} is not defined.`);
@@ -234,11 +234,14 @@ export class MemoryStore implements Storage {
             }
             return fact[0];
         }
-        else if (childProjections.type === "field") {
+        else if (projection.type === "field") {
+            throw new Error('Method not implemented.');
+        }
+        else if (projection.type === "hash") {
             throw new Error('Method not implemented.');
         }
         else {
-            const _exhaustiveCheck: never = childProjections;
+            const _exhaustiveCheck: never = projection;
             throw new Error(`Unexpected child projection type: ${_exhaustiveCheck}`);
         }
     }

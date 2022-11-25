@@ -25,47 +25,35 @@ export type Condition = PathCondition | ExistentialCondition;
 
 export interface SpecificationProjection {
     type: "specification",
-    name: string,
     matches: Match[],
-    childProjections: ChildProjections
+    projection: Projection
 }
 
 export interface FieldProjection {
     type: "field",
-    name: string,
     label: string,
     field: string
 }
 
 export interface HashProjection {
     type: "hash",
-    name: string,
     label: string
 }
 
 export interface FactProjection {
     type: "fact",
-    name: string,
     label: string
 }
 
-export type ElementProjection = FieldProjection | HashProjection | FactProjection;
-export type Projection = SpecificationProjection | ElementProjection;
-
-export interface SingularFieldProjection {
-    type: "field",
-    label: string;
-    field: string;
+export interface CompositeProjection {
+    type: "composite",
+    components: NamedComponentProjection[]
 }
 
-export interface SingularFactProjection {
-    type: "fact",
-    label: string;
-}
-
-export type ChildProjections = Projection[] | SingularFieldProjection | SingularFactProjection;
-
-export type ResultProjection = ElementProjection[] | SingularFieldProjection;
+export type NamedComponentProjection = { name: string } & ComponentProjection;
+export type ComponentProjection = SpecificationProjection | SingularProjection;
+export type SingularProjection = FieldProjection | HashProjection | FactProjection;
+export type Projection = CompositeProjection | SingularProjection;
 
 export interface Match {
     unknown: Label;
@@ -75,7 +63,7 @@ export interface Match {
 export interface Specification {
     given: Label[];
     matches: Match[];
-    childProjections: ChildProjections;
+    projection: Projection;
 }
 
 export function getAllFactTypes(specification: Specification): string[] {
@@ -84,8 +72,8 @@ export function getAllFactTypes(specification: Specification): string[] {
         factTypes.push(given.type);
     }
     factTypes.push(...getAllFactTypesFromMatches(specification.matches));
-    if (Array.isArray(specification.childProjections)) {
-        factTypes.push(...getAllFactTypesFromProjections(specification.childProjections));
+    if (specification.projection.type === "composite") {
+        factTypes.push(...getAllFactTypesFromProjection(specification.projection));
     }
     const distinctFactTypes = Array.from(new Set(factTypes));
     return distinctFactTypes;
@@ -109,13 +97,13 @@ function getAllFactTypesFromMatches(matches: Match[]): string[] {
     return factTypes;
 }
 
-function getAllFactTypesFromProjections(projections: Projection[]) {
+function getAllFactTypesFromProjection(projection: CompositeProjection) {
     const factTypes: string[] = [];
-    for (const projection of projections) {
-        if (projection.type === "specification") {
-            factTypes.push(...getAllFactTypesFromMatches(projection.matches));
-            if (Array.isArray(projection.childProjections)) {
-                factTypes.push(...getAllFactTypesFromProjections(projection.childProjections));
+    for (const component of projection.components) {
+        if (component.type === "specification") {
+            factTypes.push(...getAllFactTypesFromMatches(component.matches));
+            if (component.projection.type === "composite") {
+                factTypes.push(...getAllFactTypesFromProjection(component.projection));
             }
         }
     }
@@ -140,9 +128,9 @@ export function getAllRoles(specification: Specification): RoleDescription[] {
         }),
         {} as TypeByLabel);
     const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, specification.matches);
-    const projections = Array.isArray(specification.childProjections) ? specification.childProjections : [];
-    const rolesFromProjections = getAllRolesFromProjections(labelsFromMatches, projections);
-    const roles: RoleDescription[] = [ ...rolesFromMatches, ...rolesFromProjections ];
+    const components = specification.projection.type === "composite" ? specification.projection.components : [];
+    const rolesFromComponents = getAllRolesFromComponents(labelsFromMatches, components);
+    const roles: RoleDescription[] = [ ...rolesFromMatches, ...rolesFromComponents ];
     const distinctRoles = roles.filter((value, index, array) => {
         return array.findIndex(r =>
             r.successorType === value.successorType &&
@@ -183,14 +171,14 @@ function getAllRolesFromMatches(labels: TypeByLabel, matches: Match[]): { roles:
     return { roles, labels };
 }
 
-function getAllRolesFromProjections(labels: TypeByLabel, projections: Projection[]): RoleDescription[] {
+function getAllRolesFromComponents(labels: TypeByLabel, components: ComponentProjection[]): RoleDescription[] {
     const roles: RoleDescription[] = [];
-    for (const projection of projections) {
-        if (projection.type === "specification") {
-            const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, projection.matches);
+    for (const component of components) {
+        if (component.type === "specification") {
+            const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, component.matches);
             roles.push(...rolesFromMatches);
-            if (Array.isArray(projection.childProjections)) {
-                roles.push(...getAllRolesFromProjections(labelsFromMatches, projection.childProjections));
+            if (component.projection.type === "composite") {
+                roles.push(...getAllRolesFromComponents(labelsFromMatches, component.projection.components));
             }
         }
     }

@@ -43,7 +43,10 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: []
+            projection: {
+                type: "composite",
+                components: []
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -171,7 +174,10 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: []
+            projection: {
+                type: "composite",
+                components: []
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -261,7 +267,10 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: []
+            projection: {
+                type: "composite",
+                components: []
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -324,34 +333,40 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: [
-                {
-                    type: "specification",
-                    name: "descriptions",
-                    matches: [
-                        {
-                            unknown: {
-                                name: "description",
-                                type: "MyApp.Assignment.Description"
-                            },
-                            conditions: [
-                                {
-                                    type: "path",
-                                    rolesLeft: [
-                                        {
-                                            name: "assignment",
-                                            predecessorType: "MyApp.Assignment"
-                                        }
-                                    ],
-                                    labelRight: "assignment",
-                                    rolesRight: []
-                                }
-                            ]
+            projection: {
+                type: "composite",
+                components: [
+                    {
+                        type: "specification",
+                        name: "descriptions",
+                        matches: [
+                            {
+                                unknown: {
+                                    name: "description",
+                                    type: "MyApp.Assignment.Description"
+                                },
+                                conditions: [
+                                    {
+                                        type: "path",
+                                        rolesLeft: [
+                                            {
+                                                name: "assignment",
+                                                predecessorType: "MyApp.Assignment"
+                                            }
+                                        ],
+                                        labelRight: "assignment",
+                                        rolesRight: []
+                                    }
+                                ]
+                            }
+                        ],
+                        projection: {
+                            type: "composite",
+                            components: []
                         }
-                    ],
-                    childProjections: []
-                }
-            ]
+                    }
+                ]
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -403,61 +418,70 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: [
-                {
-                    type: "specification",
-                    name: "projects",
-                    matches: [
-                        {
-                            unknown: {
-                                name: "project",
-                                type: "MyApp.Project"
-                            },
-                            conditions: [
+            projection: {
+                type: "composite",
+                components: [
+                    {
+                        type: "specification",
+                        name: "projects",
+                        matches: [
+                            {
+                                unknown: {
+                                    name: "project",
+                                    type: "MyApp.Project"
+                                },
+                                conditions: [
+                                    {
+                                        type: "path",
+                                        rolesLeft: [
+                                            {
+                                                name: "assignment",
+                                                predecessorType: "MyApp.Assignment"
+                                            }
+                                        ],
+                                        labelRight: "assignment",
+                                        rolesRight: []
+                                    }
+                                ]
+                            }
+                        ],
+                        projection: {
+                            type: "composite",
+                            components: [
                                 {
-                                    type: "path",
-                                    rolesLeft: [
+                                    type: "specification",
+                                    name: "descriptions",
+                                    matches: [
                                         {
-                                            name: "assignment",
-                                            predecessorType: "MyApp.Assignment"
+                                            unknown: {
+                                                name: "description",
+                                                type: "MyApp.Project.Description"
+                                            },
+                                            conditions: [
+                                                {
+                                                    type: "path",
+                                                    rolesLeft: [
+                                                        {
+                                                            name: "project",
+                                                            predecessorType: "MyApp.Project"
+                                                        }
+                                                    ],
+                                                    labelRight: "project",
+                                                    rolesRight: []
+                                                }
+                                            ]
                                         }
                                     ],
-                                    labelRight: "assignment",
-                                    rolesRight: []
+                                    projection: {
+                                        type: "composite",
+                                        components: []
+                                    }
                                 }
                             ]
                         }
-                    ],
-                    childProjections: [
-                        {
-                            type: "specification",
-                            name: "descriptions",
-                            matches: [
-                                {
-                                    unknown: {
-                                        name: "description",
-                                        type: "MyApp.Project.Description"
-                                    },
-                                    conditions: [
-                                        {
-                                            type: "path",
-                                            rolesLeft: [
-                                                {
-                                                    name: "project",
-                                                    predecessorType: "MyApp.Project"
-                                                }
-                                            ],
-                                            labelRight: "project",
-                                            rolesRight: []
-                                        }
-                                    ]
-                                }
-                            ],
-                            childProjections: []
-                        }
-                    ]
-                }
-            ]
+                    }
+                ]
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -499,14 +523,17 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: [
-                {
-                    type: "field",
-                    name: "value",
-                    label: "name",
-                    field: "value"
-                }
-            ]
+            projection: {
+                type: "composite",
+                components: [
+                    {
+                        type: "field",
+                        name: "value",
+                        label: "name",
+                        field: "value"
+                    }
+                ]
+            }
         };
 
     });

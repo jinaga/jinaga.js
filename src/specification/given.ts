@@ -1,4 +1,4 @@
-import { ChildProjections, Condition, ExistentialCondition, FactProjection, FieldProjection, Match, PathCondition, Role, SingularFactProjection, SingularFieldProjection, Specification, SpecificationProjection } from "../../src/specification/specification";
+import { CompositeProjection, Condition, ExistentialCondition, FactProjection, FieldProjection, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification, SpecificationProjection } from "../../src/specification/specification";
 import { describeSpecification } from "./description";
 
 type RoleMap = { [role: string]: string };
@@ -72,7 +72,7 @@ class Given<T extends any[]> {
         });
         const result = (definition as any)(...labels, new FactRepository(this.factTypeMap));
         const matches = result.matches;
-        const childProjections = result.childProjections;
+        const projection = result.projection;
         const given = this.factTypes.map((type, i) => {
             const name = `p${i + 1}`;
             return { name, type };
@@ -80,7 +80,7 @@ class Given<T extends any[]> {
         const specification: Specification = {
             given,
             matches,
-            childProjections
+            projection
         };
         return new SpecificationOf<T, SpecificationResult<U>>(specification);
     }
@@ -105,7 +105,7 @@ class Traversal<T> {
     constructor(
         private input: T,
         public matches: Match[],
-        public childProjections: ChildProjections
+        public projection: Projection
     ) { }
 
     join<U>(left: (input: T) => Label<U>, right: Label<U>): Traversal<T> {
@@ -114,7 +114,7 @@ class Traversal<T> {
         const payloadRight = getPayload(right);
         const condition = joinCondition(payloadLeft, payloadRight);
         const matches = this.withCondition(condition);
-        return new Traversal<T>(this.input, matches, this.childProjections);
+        return new Traversal<T>(this.input, matches, this.projection);
     }
 
     notExists<U>(tupleDefinition: (proxy: T) => Traversal<U>): Traversal<T> {
@@ -133,7 +133,7 @@ class Traversal<T> {
             matches: result.matches
         };
         const matches: Match[] = this.withCondition<U>(existentialCondition);
-        return new Traversal<T>(this.input, matches, this.childProjections);
+        return new Traversal<T>(this.input, matches, this.projection);
     }
 
     private withCondition<U>(condition: Condition) {
@@ -160,12 +160,12 @@ class Traversal<T> {
         if (isLabel<U>(definition)) {
             const payload = getPayload<U>(definition);
             if (payload.type === "field") {
-                const childProjection: SingularFieldProjection = {
+                const fieldProjection: FieldProjection = {
                     type: "field",
                     label: payload.root,
                     field: payload.fieldName
                 };
-                return new Traversal<U>(definition, this.matches, childProjection);
+                return new Traversal<U>(definition, this.matches, fieldProjection);
             }
             else if (payload.type === "fact") {
                 throw new Error("You cannot select a singular fact. Project it as a member of an object instead.");
@@ -176,12 +176,12 @@ class Traversal<T> {
             }
         }
         else {
-            const childProjections = Object.getOwnPropertyNames(definition).map((key) => {
+            const components = Object.getOwnPropertyNames(definition).map((key) => {
                 const child = (definition as any)[key];
                 if (isLabel(child)) {
                     const payload = getPayload(child);
                     if (payload.type === "field") {
-                        const projection: FieldProjection = {
+                        const projection: NamedComponentProjection = {
                             type: "field",
                             name: key,
                             label: payload.root,
@@ -195,7 +195,7 @@ class Traversal<T> {
                                 `You cannot project the fact "${payload.path[payload.path.length - 1].name}" directly. ` +
                                 `You must label it first.`);
                         }
-                        const projection: FactProjection = {
+                        const projection: NamedComponentProjection = {
                             type: "fact",
                             name: key,
                             label: payload.root
@@ -208,11 +208,11 @@ class Traversal<T> {
                     }
                 }
                 else if (child instanceof Traversal) {
-                    const projection: SpecificationProjection = {
+                    const projection: NamedComponentProjection = {
                         type: "specification",
                         name: key,
                         matches: child.matches,
-                        childProjections: child.childProjections
+                        projection: child.projection
                     };
                     return projection;
                 }
@@ -220,7 +220,11 @@ class Traversal<T> {
                     throw new Error(`Unexpected type for property ${key}: ${typeof child}`);
                 }
             });
-            return new Traversal<U>(definition, this.matches, childProjections);
+            const compositeProjection: CompositeProjection = {
+                type: "composite",
+                components
+            }
+            return new Traversal<U>(definition, this.matches, compositeProjection);
         }
     }
 
@@ -230,8 +234,8 @@ class Traversal<T> {
             ...this.matches,
             ...traversal.matches
         ];
-        const childProjections = traversal.childProjections;
-        return new Traversal<U>(traversal.input, matches, childProjections);
+        const projection = traversal.projection;
+        return new Traversal<U>(traversal.input, matches, projection);
     }
 }
 
@@ -279,7 +283,7 @@ class Source<T> {
                 condition
             ]
         };
-        const projection: SingularFactProjection = {
+        const projection: FactProjection = {
             type: "fact",
             label: this.name
         };
@@ -292,16 +296,6 @@ export type FactConstructor<T> = (new (...args: any[]) => T) & {
 }
 
 type PredecessorConstructor<T> = T extends Array<infer U> ? FactConstructor<U> : FactConstructor<T>;
-
-interface Projection<T> {
-
-}
-
-type CompositeProjection<T> = {
-    [P in keyof(T)]: ProjectionResult<T[P]>;
-}
-
-type ProjectionResult<T> = Field<T> | Projection<T> | CompositeProjection<T> | Label<T>;
 
 interface LabelPayloadFact {
     type: "fact";

@@ -1,7 +1,7 @@
 import { computeHash } from "../fact/hash";
-import { Declaration, DeclaredFact } from "./declaration";
-import { Condition, Label, Match, PathCondition, ExistentialCondition, Projection, Role, Specification, ChildProjections } from "./specification";
 import { PredecessorCollection } from "../storage";
+import { Declaration, DeclaredFact } from "./declaration";
+import { Condition, ExistentialCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 
 type FieldValue = string | number | boolean;
 
@@ -187,13 +187,13 @@ export class SpecificationParser {
         return { matches, labels };
     }
 
-    parseProjection(labels: Label[]): Projection {
+    parseComponent(labels: Label[]): NamedComponentProjection {
         const name = this.parseIdentifier();
         this.expect("=");
         if (this.continues("{")) {
             const { matches, labels: allLabels } = this.parseMatches(labels);
-            const projections = this.parseProjections(allLabels);
-            return { type: "specification", name, matches, childProjections: projections };
+            const projection = this.parseProjection(allLabels);
+            return { type: "specification", name, matches, projection: projection };
         }
         else if (this.consume("#")) {
             const label = this.parseIdentifier();
@@ -207,18 +207,24 @@ export class SpecificationParser {
         }
     }
 
-    parseProjections(labels: Label[]): ChildProjections {
+    parseProjection(labels: Label[]): Projection {
         if (!this.consume("=>")) {
-            return [];
+            return {
+                type: "composite",
+                components: []
+            };
         }
         if (this.continues("{")) {
             this.consume("{");
-            const projections: Projection[] = [];
+            const components: NamedComponentProjection[] = [];
             while (!this.consume("}")) {
-                const projection = this.parseProjection(labels);
-                projections.push(projection);
+                const component = this.parseComponent(labels);
+                components.push(component);
             }
-            return projections;
+            return {
+                type: "composite",
+                components
+            };
         }
         else {
             const label = this.parseIdentifier();
@@ -380,8 +386,8 @@ export class SpecificationParser {
     parseSpecification(): Specification {
         const given = this.parseGiven();
         const { matches, labels } = this.parseMatches(given);
-        const childProjections = this.parseProjections(labels);
-        return { given, matches, childProjections };
+        const projection = this.parseProjection(labels);
+        return { given, matches, projection };
     }
 
     parseDeclaration(knownFacts: Declaration): Declaration {
