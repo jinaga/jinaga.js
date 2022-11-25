@@ -175,4 +175,22 @@ describe("specification query", () => {
             "ReopenedOffice"
         ]);
     });
+
+    it("should execute a composite projection", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    company: company.identifier
+                }))
+        );
+
+        const result = await j.query(specification, company);
+        expect(result).toEqual([
+            { identifier: "TestOffice", company: "TestCo" },
+            { identifier: "ClosedOffice", company: "TestCo" },
+            { identifier: "ReopenedOffice", company: "TestCo" }
+        ]);
+    });
 });

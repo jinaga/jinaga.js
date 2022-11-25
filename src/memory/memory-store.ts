@@ -2,7 +2,7 @@ import { hydrateFromTree } from '../fact/hydrate';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Feed } from "../specification/feed";
-import { Condition, Label, Match, PathCondition, Projection, Role, Specification } from "../specification/specification";
+import { ComponentProjection, Condition, Label, Match, PathCondition, Projection, Role, SingularProjection, Specification } from "../specification/specification";
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 
@@ -249,9 +249,26 @@ export class MemoryStore implements Storage {
 
     private createProduct(tuple: ReferencesByName, projection: Projection): any {
         if (projection.type === "composite") {
+            return projection.components.reduce((obj, component) => ({
+                ...obj,
+                [component.name]: this.createComponent(tuple, component)
+            }), {});
+        }
+        else {
+            return this.createSingularProduct(tuple, projection);
+        }
+    }
+    private createComponent(tuple: ReferencesByName, component: ComponentProjection): any {
+        if (component.type === "specification") {
             throw new Error('Method not implemented.');
         }
-        else if (projection.type === "fact") {
+        else {
+            return this.createSingularProduct(tuple, component);
+        }
+    }
+
+    private createSingularProduct(tuple: ReferencesByName, projection: SingularProjection): any {
+        if (projection.type === "fact") {
             if (!tuple.hasOwnProperty(projection.label)) {
                 throw new Error(`The label ${projection.label} is not defined.`);
             }
