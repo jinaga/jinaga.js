@@ -4,12 +4,22 @@ import { CompositeProjection, Condition, ExistentialCondition, FactProjection, F
 
 type RoleMap = { [role: string]: string };
 
+type PredecessorOf<T, R extends keyof T> =
+    R extends any ?
+        T[R] extends string ? never :
+        T[R] extends number ? never :
+        T[R] extends Date ? never :
+        T[R] extends Date | string ? never :
+        T[R] extends boolean ? never :
+        R :
+    never;
+
 class FactOptions<T> {
     constructor(
         public factTypeByRole: RoleMap
     ) { }
 
-    predecessor<U extends keyof T>(role: U, predecessorConstructor: PredecessorConstructor<T[U]>): FactOptions<T> {
+    predecessor<U extends PredecessorOf<T, keyof T>>(role: U, predecessorConstructor: PredecessorConstructor<T[U]>): FactOptions<T> {
         return new FactOptions<T>({
             ...this.factTypeByRole,
             [role]: predecessorConstructor.Type
