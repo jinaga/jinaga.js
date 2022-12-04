@@ -1,6 +1,6 @@
 import { FactReference } from "../storage";
 import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput, withNotExistsCondition, withOutput } from "./feed";
-import { Label, Match, PathCondition, Projection, Specification } from "./specification";
+import { ComponentProjection, Label, Match, PathCondition, Specification } from "./specification";
 
 type FactByIdentifier = {
     [identifier: string]: FactDescription;
@@ -39,8 +39,8 @@ export function buildFeeds(start: FactReference[], specification: Specification)
     // The final feed represents the complete tuple.
     // Build projections onto that one.
     const finalFeed = feeds[feeds.length - 1];
-    if (Array.isArray(specification.childProjections)) {
-        const feedsWithProjections = addProjections(finalFeed, givenFacts, knownFacts, specification.childProjections);
+    if (specification.projection.type === "composite") {
+        const feedsWithProjections = addProjections(finalFeed, givenFacts, knownFacts, specification.projection.components);
         return [ ...feeds, ...feedsWithProjections ];
     }
     else {
@@ -126,11 +126,11 @@ function addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, kno
         }
         else {
             // If we have not written the fact, we need to write it now.
-            const { feed: feedWithFact, factIndex: predecessorFactIndex } = withFact(feed, role.targetType);
+            const { feed: feedWithFact, factIndex: predecessorFactIndex } = withFact(feed, role.predecessorType);
             feed = withEdge(feedWithFact, predecessorFactIndex, factIndex, role.name, path);
             factIndex = predecessorFactIndex;
         }
-        factType = role.targetType;
+        factType = role.predecessorType;
     }
 
     const rightType = factType;
@@ -140,27 +140,27 @@ function addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, kno
     factType = unknown.type;
     const newEdges: {
         roleName: string;
-        declaringType: string;
+        successorType: string;
     }[] = [];
     for (const role of condition.rolesLeft) {
         newEdges.push({
             roleName: role.name,
-            declaringType: factType
+            successorType: factType
         });
-        factType = role.targetType;
+        factType = role.predecessorType;
     }
 
     if (factType !== rightType) {
         throw new Error(`Type mismatch: ${factType} is compared to ${rightType}`);
     }
 
-    newEdges.reverse().forEach(({ roleName, declaringType }, i) => {
+    newEdges.reverse().forEach(({ roleName, successorType }, i) => {
         if (condition.rolesRight.length + i === roleCount - 1 && knownFact) {
             feed = withEdge(feed, factIndex, knownFact.factIndex, roleName, path);
             factIndex = knownFact.factIndex;
         }
         else {
-            const { feed: feedWithFact, factIndex: successorFactIndex } = withFact(feed, declaringType);
+            const { feed: feedWithFact, factIndex: successorFactIndex } = withFact(feed, successorType);
             feed = withEdge(feedWithFact, factIndex, successorFactIndex, roleName, path);
             factIndex = successorFactIndex;
         }
@@ -179,18 +179,18 @@ function addPathCondition(feed: Feed, givenFacts: FactReferenceByIdentifier, kno
     return { feed, knownFacts };
 }
 
-function addProjections(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, projections: Projection[]): Feed[] {
+function addProjections(feed: Feed, givenFacts: FactReferenceByIdentifier, knownFacts: FactByIdentifier, components: ComponentProjection[]): Feed[] {
     const feeds: Feed[] = [];
-    projections.forEach(projection => {
-        if (projection.type === "specification") {
+    components.forEach(component => {
+        if (component.type === "specification") {
             // Produce more facts in the tuple.
-            const { feeds: feedsWithEdges, knownFacts: knownFactsWithEdges } = addEdges(feed, givenFacts, knownFacts, [], projection.matches);
+            const { feeds: feedsWithEdges, knownFacts: knownFactsWithEdges } = addEdges(feed, givenFacts, knownFacts, [], component.matches);
             feeds.push(...feedsWithEdges);
 
             // Recursively build child projections.
             const finalFeed = feedsWithEdges[feedsWithEdges.length - 1];
-            if (Array.isArray(projection.childProjections)) {
-                const feedsWithProjections = addProjections(finalFeed, givenFacts, knownFactsWithEdges, projection.childProjections);
+            if (component.projection.type === "composite") {
+                const feedsWithProjections = addProjections(finalFeed, givenFacts, knownFactsWithEdges, component.projection.components);
                 feeds.push(...feedsWithProjections);
             }
         }

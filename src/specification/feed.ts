@@ -163,9 +163,9 @@ export function getAllFactTypesFromFeed(feed: Feed): string[] {
 }
 
 interface RoleDescription {
-    definingFactType: string;
+    successorType: string;
     name: string;
-    targetType: string;
+    predecessorType: string;
 }
 
 function getFactTypeFromIndex(feed: Feed, factIndex: number): string {
@@ -178,9 +178,9 @@ function getFactTypeFromIndex(feed: Feed, factIndex: number): string {
 
 function getAllRolesFromEdges(feed: Feed, edges: EdgeDescription[]): RoleDescription[] {
     return edges.map(e => ({
-        definingFactType: getFactTypeFromIndex(feed, e.successorFactIndex),
+        successorType: getFactTypeFromIndex(feed, e.successorFactIndex),
         name: e.roleName,
-        targetType: getFactTypeFromIndex(feed, e.predecessorFactIndex)
+        predecessorType: getFactTypeFromIndex(feed, e.predecessorFactIndex)
     }));
 }
 

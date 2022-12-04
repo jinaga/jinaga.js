@@ -34,7 +34,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "parent",
-                                    targetType: "MyApp.Parent"
+                                    predecessorType: "MyApp.Parent"
                                 }
                             ],
                             labelRight: "parent",
@@ -43,7 +43,10 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: []
+            projection: {
+                type: "composite",
+                components: []
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -147,7 +150,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -158,11 +161,11 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "project",
-                                    targetType: "MyApp.Project"
+                                    predecessorType: "MyApp.Project"
                                 },
                                 {
                                     name: "company",
-                                    targetType: "MyApp.Company"
+                                    predecessorType: "MyApp.Company"
                                 }
                             ],
                             labelRight: "company",
@@ -171,7 +174,10 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: []
+            projection: {
+                type: "composite",
+                components: []
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -212,7 +218,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -223,11 +229,11 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "project",
-                                    targetType: "MyApp.Project"
+                                    predecessorType: "MyApp.Project"
                                 },
                                 {
                                     name: "company",
-                                    targetType: "MyApp.Company"
+                                    predecessorType: "MyApp.Company"
                                 }
                             ],
                             labelRight: "company",
@@ -248,7 +254,7 @@ describe("Specification parser", () => {
                                             rolesLeft: [
                                                 {
                                                     name: "assignment",
-                                                    targetType: "MyApp.Assignment"
+                                                    predecessorType: "MyApp.Assignment"
                                                 }
                                             ],
                                             labelRight: "assignment",
@@ -261,7 +267,10 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: []
+            projection: {
+                type: "composite",
+                components: []
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -315,7 +324,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -324,34 +333,40 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: [
-                {
-                    type: "specification",
-                    name: "descriptions",
-                    matches: [
-                        {
-                            unknown: {
-                                name: "description",
-                                type: "MyApp.Assignment.Description"
-                            },
-                            conditions: [
-                                {
-                                    type: "path",
-                                    rolesLeft: [
-                                        {
-                                            name: "assignment",
-                                            targetType: "MyApp.Assignment"
-                                        }
-                                    ],
-                                    labelRight: "assignment",
-                                    rolesRight: []
-                                }
-                            ]
+            projection: {
+                type: "composite",
+                components: [
+                    {
+                        type: "specification",
+                        name: "descriptions",
+                        matches: [
+                            {
+                                unknown: {
+                                    name: "description",
+                                    type: "MyApp.Assignment.Description"
+                                },
+                                conditions: [
+                                    {
+                                        type: "path",
+                                        rolesLeft: [
+                                            {
+                                                name: "assignment",
+                                                predecessorType: "MyApp.Assignment"
+                                            }
+                                        ],
+                                        labelRight: "assignment",
+                                        rolesRight: []
+                                    }
+                                ]
+                            }
+                        ],
+                        projection: {
+                            type: "composite",
+                            components: []
                         }
-                    ],
-                    childProjections: []
-                }
-            ]
+                    }
+                ]
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -394,7 +409,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -403,61 +418,70 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: [
-                {
-                    type: "specification",
-                    name: "projects",
-                    matches: [
-                        {
-                            unknown: {
-                                name: "project",
-                                type: "MyApp.Project"
-                            },
-                            conditions: [
+            projection: {
+                type: "composite",
+                components: [
+                    {
+                        type: "specification",
+                        name: "projects",
+                        matches: [
+                            {
+                                unknown: {
+                                    name: "project",
+                                    type: "MyApp.Project"
+                                },
+                                conditions: [
+                                    {
+                                        type: "path",
+                                        rolesLeft: [
+                                            {
+                                                name: "assignment",
+                                                predecessorType: "MyApp.Assignment"
+                                            }
+                                        ],
+                                        labelRight: "assignment",
+                                        rolesRight: []
+                                    }
+                                ]
+                            }
+                        ],
+                        projection: {
+                            type: "composite",
+                            components: [
                                 {
-                                    type: "path",
-                                    rolesLeft: [
+                                    type: "specification",
+                                    name: "descriptions",
+                                    matches: [
                                         {
-                                            name: "assignment",
-                                            targetType: "MyApp.Assignment"
+                                            unknown: {
+                                                name: "description",
+                                                type: "MyApp.Project.Description"
+                                            },
+                                            conditions: [
+                                                {
+                                                    type: "path",
+                                                    rolesLeft: [
+                                                        {
+                                                            name: "project",
+                                                            predecessorType: "MyApp.Project"
+                                                        }
+                                                    ],
+                                                    labelRight: "project",
+                                                    rolesRight: []
+                                                }
+                                            ]
                                         }
                                     ],
-                                    labelRight: "assignment",
-                                    rolesRight: []
+                                    projection: {
+                                        type: "composite",
+                                        components: []
+                                    }
                                 }
                             ]
                         }
-                    ],
-                    childProjections: [
-                        {
-                            type: "specification",
-                            name: "descriptions",
-                            matches: [
-                                {
-                                    unknown: {
-                                        name: "description",
-                                        type: "MyApp.Project.Description"
-                                    },
-                                    conditions: [
-                                        {
-                                            type: "path",
-                                            rolesLeft: [
-                                                {
-                                                    name: "project",
-                                                    targetType: "MyApp.Project"
-                                                }
-                                            ],
-                                            labelRight: "project",
-                                            rolesRight: []
-                                        }
-                                    ]
-                                }
-                            ],
-                            childProjections: []
-                        }
-                    ]
-                }
-            ]
+                    }
+                ]
+            }
         };
         expect(specification).toEqual(expected);
     });
@@ -490,7 +514,7 @@ describe("Specification parser", () => {
                             rolesLeft: [
                                 {
                                     name: "user",
-                                    targetType: "Jinaga.User"
+                                    predecessorType: "Jinaga.User"
                                 }
                             ],
                             labelRight: "user",
@@ -499,14 +523,17 @@ describe("Specification parser", () => {
                     ]
                 }
             ],
-            childProjections: [
-                {
-                    type: "field",
-                    name: "value",
-                    label: "name",
-                    field: "value"
-                }
-            ]
+            projection: {
+                type: "composite",
+                components: [
+                    {
+                        type: "field",
+                        name: "value",
+                        label: "name",
+                        field: "value"
+                    }
+                ]
+            }
         };
 
     });
