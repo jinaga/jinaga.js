@@ -1,5 +1,5 @@
 import { TopologicalSorter } from '../fact/sorter';
-import { ObservableSource, Handler, Observable, ObservableSubscription } from '../observable/observable';
+import { ObservableSource, Handler, Observable, ObservableSubscription, SpecificationListener } from '../observable/observable';
 import { WebClient } from '../http/web-client';
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
@@ -122,6 +122,14 @@ export class PersistentFork implements Fork {
         const loadedLocal = this.initiateQueryLocal(fact, query);
         const loadedRemote = this.initiateQueryRemote(fact, query);
         return new PersistentForkObservable(observable, loadedLocal, loadedRemote);
+    }
+
+    addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+        return this.observableSource.addSpecificationListener(specification, onResult);
+    }
+
+    removeSpecificationListener(listener: SpecificationListener) {
+        return this.observableSource.removeSpecificationListener(listener);
     }
 
     addChannel(fact: FactReference, query: Query): Channel {

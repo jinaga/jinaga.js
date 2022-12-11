@@ -1,4 +1,4 @@
-import { ObservableSource, Observable } from "../observable/observable";
+import { ObservableSource, Observable, SpecificationListener } from "../observable/observable";
 import { Query } from "../query/query";
 import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
@@ -17,6 +17,14 @@ export class PassThroughFork implements Fork {
 
     from(fact: FactReference, query: Query): Observable {
         return this.inner.from(fact, query);
+    }
+
+    addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+        return this.inner.addSpecificationListener(specification, onResult);
+    }
+
+    removeSpecificationListener(listener: SpecificationListener) {
+        return this.inner.removeSpecificationListener(listener);
     }
 
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {

@@ -56,4 +56,24 @@ describe("specification watch", () => {
 
         expect(offices).toEqual([j.hash(office)]);
     });
+
+    it("should notify results when added", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+        );
+
+        const offices: string[] = [];
+        const officeObserver = j.watch2(specification, company, office => {
+            offices.push(j.hash(office));
+        });
+
+        await officeObserver.initialized();
+        const newOffice = new Office(company, "NewOffice");
+        await j.fact(newOffice);
+        
+        await officeObserver.stop();
+
+        expect(offices).toEqual([j.hash(office), j.hash(newOffice)]);
+    });
 });

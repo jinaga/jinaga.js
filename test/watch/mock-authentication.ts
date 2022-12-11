@@ -1,5 +1,5 @@
 import { Authentication } from "../../src/authentication/authentication";
-import { ObservableSource, Observable } from "../../src/observable/observable";
+import { ObservableSource, Observable, SpecificationListener } from "../../src/observable/observable";
 import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
 import { Channel } from "../../src/fork/channel";
 import { LoginResponse } from "../../src/http/messages";
@@ -29,8 +29,14 @@ export class MockAuthentication implements Authentication {
   from(fact: FactReference, query: Query): Observable {
       return this.inner.from(fact, query);
   }
+  addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+    return this.inner.addSpecificationListener(specification, onResult);
+  }
+  removeSpecificationListener(listener: SpecificationListener) {
+    return this.inner.removeSpecificationListener(listener);
+  }
   save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
-      return this.inner.save(envelopes);
+    return this.inner.save(envelopes);
   }
   query(start: FactReference, query: Query): Promise<FactReference[][]> {
       return this.inner.query(start, query);

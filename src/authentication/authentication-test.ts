@@ -1,6 +1,6 @@
 import { Authentication } from '../authentication/authentication';
 import { AuthorizationEngine } from '../authorization/authorization-engine';
-import { ObservableSource } from '../observable/observable';
+import { ObservableSource, SpecificationListener } from '../observable/observable';
 import { LoginResponse } from '../http/messages';
 import { Query } from '../query/query';
 import { FactEnvelope, FactFeed, FactRecord, FactReference } from '../storage';
@@ -49,6 +49,14 @@ export class AuthenticationTest implements Authentication {
 
   from(fact: FactReference, query: Query) {
     return this.inner.from(fact, query);
+  }
+
+  addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+    return this.inner.addSpecificationListener(specification, onResult);
+  }
+
+  removeSpecificationListener(listener: SpecificationListener) {
+      return this.inner.removeSpecificationListener(listener);
   }
 
   async save(envelopes: FactEnvelope[]) {

@@ -1,4 +1,4 @@
-import { Observable } from '../observable/observable';
+import { Observable, SpecificationListener } from '../observable/observable';
 import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
 import { WebClient } from '../http/web-client';
@@ -51,6 +51,14 @@ export class AuthenticationWebClient implements Authentication {
 
     from(fact: FactReference, query: Query): Observable {
         return this.inner.from(fact, query);
+    }
+
+    addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+        return this.inner.addSpecificationListener(specification, onResult);
+    }
+
+    removeSpecificationListener(listener: SpecificationListener) {
+        return this.inner.removeSpecificationListener(listener);
     }
 
     addChannel(fact: FactReference, query: Query): Channel {

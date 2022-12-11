@@ -1,4 +1,4 @@
-import { ObservableSource } from "../observable/observable";
+import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Channel } from "../fork/channel";
 import { LoginResponse } from "../http/messages";
 import { Query } from "../query/query";
@@ -23,6 +23,12 @@ export class AuthenticationNoOp implements Authentication {
     }
     from(fact: FactReference, query: Query) {
         return this.inner.from(fact, query);
+    }
+    addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+        return this.inner.addSpecificationListener(specification, onResult);
+    }
+    removeSpecificationListener(listener: SpecificationListener) {
+        return this.inner.removeSpecificationListener(listener);
     }
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const saved = await this.inner.save(envelopes);
