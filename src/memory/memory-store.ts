@@ -70,7 +70,10 @@ export class MemoryStore implements Storage {
         }
         const references = start.reduce((references, reference, index) => ({
             ...references,
-            [specification.given[index].name]: reference
+            [specification.given[index].name]: {
+                type: reference.type,
+                hash: reference.hash
+            }
         }), {} as ReferencesByName);
         var products = this.executeMatchesAndProjection(references, specification.matches, specification.projection);
         return Promise.resolve(products);
@@ -176,7 +179,10 @@ export class MemoryStore implements Storage {
             const result: FactReference[] = this.executePathCondition(references, match.unknown, firstCondition);
             results = result.map(reference => ({
                 ...references,
-                [match.unknown.name]: reference
+                [match.unknown.name]: {
+                    type: reference.type,
+                    hash: reference.hash
+                }
             }));
         }
         else {

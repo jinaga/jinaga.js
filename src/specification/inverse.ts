@@ -1,7 +1,11 @@
 import { Condition, ExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
 
+type InverseOperation = "add" | "remove" | "maybeAdd" | "maybeRemove";
+
 export interface SpecificationInverse {
     specification: Specification;
+    operation: InverseOperation;
+    parentSubset: string[];
 };
 
 export function invertSpecification(specification: Specification): SpecificationInverse[] {
@@ -29,12 +33,14 @@ function invertMatches(matches: Match[], labels: Label[], projection: Projection
             projection: projection
         };
         const inverse: SpecificationInverse = {
-            specification: inverseSpecification
+            specification: inverseSpecification,
+            operation: "add",
+            parentSubset: []
         };
 
         inverses.push(inverse);
 
-        const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, projection, matches[0].conditions);
+        const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, projection, matches[0].conditions, "add");
         inverses.push(...existentialInverses);
     }
 
@@ -123,7 +129,7 @@ function findMatch(matches: Match[], label: string): Match {
     throw new Error(`Label ${label} not found`);
 }
 
-function invertExistentialConditions(outerMatches: Match[], projection: Projection, conditions: Condition[]): SpecificationInverse[] {
+function invertExistentialConditions(outerMatches: Match[], projection: Projection, conditions: Condition[], parentOperation: InverseOperation): SpecificationInverse[] {
     const inverses: SpecificationInverse[] = [];
 
     // Produce inverses for each existential condition in the match.
@@ -138,8 +144,11 @@ function invertExistentialConditions(outerMatches: Match[], projection: Projecti
                     matches: matchesWithoutCondition,
                     projection: projection
                 };
+                const parentSubset = outerMatches.map(m => m.unknown.name);
                 const inverse: SpecificationInverse = {
-                    specification: inverseSpecification
+                    specification: inverseSpecification,
+                    operation: inferOperation(parentOperation, condition.exists),
+                    parentSubset: parentSubset
                 };
 
                 inverses.push(inverse);
@@ -159,5 +168,14 @@ function removeCondition(matches: Match[], condition: ExistentialCondition): Mat
             } :
             match
     );
+}
+
+function inferOperation(parentOperation: InverseOperation, exists: boolean): InverseOperation {
+    if (parentOperation === "add") {
+        return exists ? "maybeAdd" : "remove";
+    }
+    else {
+        throw new Error(`Cannot infer operation from ${parentOperation}, ${exists ? "exists" : "not exists"}`);
+    }
 }
 

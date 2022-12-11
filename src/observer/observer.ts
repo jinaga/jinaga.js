@@ -3,7 +3,7 @@ import { computeObjectHash } from "../fact/hash";
 import { SpecificationListener } from "../observable/observable";
 import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Specification } from "../specification/specification";
-import { FactReference, ProjectedResult } from "../storage";
+import { FactReference, ProjectedResult, ReferencesByName } from "../storage";
 
 export type ResultAddedFunc<U> = (value: U) =>
     Promise<() => Promise<void>> |  // Asynchronous with removal function
@@ -61,7 +61,15 @@ export class ObserverImpl<T> {
     }
 
     private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
-        return await this.notifyAdded(results);
+        if (inverse.operation === "add") {
+            return await this.notifyAdded(results);
+        }
+        else if (inverse.operation === "remove") {
+            return await this.notifyRemoved(inverse.parentSubset, results);
+        }
+        else {
+            throw new Error(`Inverse operation ${inverse.operation} not implemented.`);
+        }
     }
 
     private async notifyAdded(projectedResults: ProjectedResult[]) {
@@ -70,17 +78,38 @@ export class ObserverImpl<T> {
             if (promiseMaybe instanceof Promise) {
                 const functionMaybe = await promiseMaybe;
                 if (functionMaybe instanceof Function) {
-                    this.removalsByTuple[computeObjectHash(pr.tuple)] = functionMaybe;
+                    const tupleHash = computeObjectHash(pr.tuple);
+                    this.removalsByTuple[tupleHash] = functionMaybe;
                 }
             }
             else {
                 const functionMaybe = promiseMaybe;
                 if (functionMaybe instanceof Function) {
-                    this.removalsByTuple[computeObjectHash(pr.tuple)] = async () => {
+                    const tupleHash = computeObjectHash(pr.tuple);
+                    this.removalsByTuple[tupleHash] = async () => {
                         functionMaybe();
                         return Promise.resolve();
                     };
                 }
+            }
+        }
+    }
+
+    async notifyRemoved(parentSubset: string[], projectedResult: ProjectedResult[]): Promise<void> {
+        for (const pr of projectedResult) {
+            const parentTuple = Object.getOwnPropertyNames(pr.tuple)
+                .filter(name => parentSubset.includes(name))
+                .reduce((t, name) =>
+                    ({
+                        ...t,
+                        [name]: pr.tuple[name]
+                    }),
+                    {} as ReferencesByName);
+            const parentTupleHash = computeObjectHash(parentTuple);
+            const removal = this.removalsByTuple[parentTupleHash];
+            if (removal !== undefined) {
+                await removal();
+                delete this.removalsByTuple[parentTupleHash];
             }
         }
     }

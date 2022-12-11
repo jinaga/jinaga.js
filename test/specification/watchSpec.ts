@@ -81,6 +81,10 @@ describe("specification watch", () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                )
         );
 
         const offices: string[] = [];
