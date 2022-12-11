@@ -1,4 +1,5 @@
 import { Authentication } from "../authentication/authentication";
+import { computeObjectHash } from "../fact/hash";
 import { SpecificationListener } from "../observable/observable";
 import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Specification } from "../specification/specification";
@@ -19,6 +20,9 @@ export interface Observer<T> {
 export class ObserverImpl<T> {
     private initialQuery: Promise<void> | undefined;
     private listeners: SpecificationListener[] = [];
+    private removalsByTuple: {
+        [tupleHash: string]: () => Promise<void>;
+    } = {};
 
     constructor(
         private authentication: Authentication,
@@ -32,7 +36,7 @@ export class ObserverImpl<T> {
         const inverses: SpecificationInverse[] = invertSpecification(this.specification);
         const listeners = inverses.map(inverse => this.authentication.addSpecificationListener(
             inverse.specification,
-            (results) => this.onResult(results)
+            (results) => this.onResult(inverse, results)
         ));
         this.listeners = listeners;
     }
@@ -53,15 +57,31 @@ export class ObserverImpl<T> {
 
     private async runInitialQuery() {
         const projectedResults = await this.authentication.read(this.given, this.specification);
-        const results = projectedResults.map(pr => pr.result);
-        for (const result of results) {
-            await this.resultAdded(result);
-        }
+        await this.notifyAdded(projectedResults);
     }
 
-    private async onResult(results: ProjectedResult[]): Promise<void> {
-        for (const result of results) {
-            await this.resultAdded(result.result);
+    private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
+        return await this.notifyAdded(results);
+    }
+
+    private async notifyAdded(projectedResults: ProjectedResult[]) {
+        for (const pr of projectedResults) {
+            const promiseMaybe = this.resultAdded(pr.result);
+            if (promiseMaybe instanceof Promise) {
+                const functionMaybe = await promiseMaybe;
+                if (functionMaybe instanceof Function) {
+                    this.removalsByTuple[computeObjectHash(pr.tuple)] = functionMaybe;
+                }
+            }
+            else {
+                const functionMaybe = promiseMaybe;
+                if (functionMaybe instanceof Function) {
+                    this.removalsByTuple[computeObjectHash(pr.tuple)] = async () => {
+                        functionMaybe();
+                        return Promise.resolve();
+                    };
+                }
+            }
         }
     }
 }
