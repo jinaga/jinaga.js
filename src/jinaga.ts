@@ -2,6 +2,7 @@ import { Authentication } from './authentication/authentication';
 import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { runService } from './observable/service';
+import { Observer } from './observer/observer';
 import { Query } from './query/query';
 import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf as OldSpecificationOf } from './query/query-parser';
 import { SpecificationOf } from './specification/given';
@@ -22,6 +23,13 @@ export interface Profile {
 }
 
 export { Trace, Tracer, Preposition, FactDescription, ensure, Template };
+
+type WatchArgs<T extends unknown[], U> = [...T, (value: U) =>
+    Promise<() => Promise<void>> |  // Asynchronous with removal function
+    Promise<void> |                 // Asynchronous without removal function
+    (() => void) |                  // Synchronous with removal function
+    void                            // Synchronous without removal function
+];
 
 export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
@@ -237,6 +245,10 @@ export class Jinaga {
         const watch = new WatchImpl<U, V>(reference, query, onResultAdded, resultRemoved, this.authentication);
         watch.begin();
         return watch;
+    }
+
+    watch2<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U> {
+        throw new Error("Method not implemented.");
     }
 
     /**
