@@ -2,7 +2,7 @@ import { Authentication } from "../authentication/authentication";
 import { SpecificationListener } from "../observable/observable";
 import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Specification } from "../specification/specification";
-import { FactReference } from "../storage";
+import { FactReference, ProjectedResult } from "../storage";
 
 export type ResultAddedFunc<U> = (value: U) =>
     Promise<() => Promise<void>> |  // Asynchronous with removal function
@@ -59,7 +59,9 @@ export class ObserverImpl<T> {
         }
     }
 
-    private async onResult(results: any[]): Promise<void> {
-        throw new Error("Method not implemented.");
+    private async onResult(results: ProjectedResult[]): Promise<void> {
+        for (const result of results) {
+            await this.resultAdded(result.result);
+        }
     }
 }
