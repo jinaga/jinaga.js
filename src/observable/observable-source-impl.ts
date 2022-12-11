@@ -3,7 +3,7 @@ import { Query } from '../query/query';
 import { describeSpecification } from '../specification/description';
 import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, Storage } from '../storage';
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
 import { computeStringHash } from '../util/encoding';
 import { mapAsync } from '../util/fn';
 import { Handler, Observable, ObservableSource, ObservableSubscription, SpecificationListener } from './observable';
@@ -113,7 +113,7 @@ export class ObservableSourceImpl implements ObservableSource {
         return this.inner.query(start, query);
     }
 
-    read(start: FactReference[], specification: Specification): Promise<any[]> {
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         return this.inner.read(start, specification);
     }
 
@@ -169,7 +169,7 @@ export class ObservableSourceImpl implements ObservableSource {
         }
     }
 
-    public addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>): SpecificationListener {
+    public addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
         if (specification.given.length !== 1) {
             throw new Error("Specification must have exactly one given fact");
         }
@@ -255,7 +255,7 @@ export class ObservableSourceImpl implements ObservableSource {
                     };
                     const results = await this.inner.read([givenReference], specification);
                     for (const specificationListener of listeners.listeners) {
-                        specificationListener.onResult(results);
+                        await specificationListener.onResult(results);
                     }
                 }
             }

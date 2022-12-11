@@ -1,12 +1,12 @@
 import { Authentication } from "../../src/authentication/authentication";
-import { ObservableSource, Observable, SpecificationListener } from "../../src/observable/observable";
-import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
 import { Channel } from "../../src/fork/channel";
 import { LoginResponse } from "../../src/http/messages";
+import { Observable, ObservableSource, SpecificationListener } from "../../src/observable/observable";
+import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
 import { Query } from "../../src/query/query";
-import { Specification } from "../../src/specification/specification";
-import { FactEnvelope, FactFeed, FactRecord, FactReference, Storage } from "../../src/storage";
 import { Feed } from "../../src/specification/feed";
+import { Specification } from "../../src/specification/specification";
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage } from "../../src/storage";
 
 export class MockAuthentication implements Authentication {
   private inner: ObservableSource;
@@ -29,7 +29,7 @@ export class MockAuthentication implements Authentication {
   from(fact: FactReference, query: Query): Observable {
       return this.inner.from(fact, query);
   }
-  addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+  addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
     return this.inner.addSpecificationListener(specification, onResult);
   }
   removeSpecificationListener(listener: SpecificationListener) {

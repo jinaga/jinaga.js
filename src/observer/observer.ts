@@ -30,7 +30,10 @@ export class ObserverImpl<T> {
     public start() {
         this.initialQuery = this.runInitialQuery();
         const inverses: SpecificationInverse[] = invertSpecification(this.specification);
-        const listeners = inverses.map(inverse => this.authentication.addSpecificationListener(inverse.specification, (results) => this.onResult(results)));
+        const listeners = inverses.map(inverse => this.authentication.addSpecificationListener(
+            inverse.specification,
+            (results) => this.onResult(results)
+        ));
         this.listeners = listeners;
     }
 
@@ -49,13 +52,14 @@ export class ObserverImpl<T> {
     }
 
     private async runInitialQuery() {
-        const results: T[] = await this.authentication.read(this.given, this.specification);
+        const projectedResults = await this.authentication.read(this.given, this.specification);
+        const results = projectedResults.map(pr => pr.result);
         for (const result of results) {
             await this.resultAdded(result);
         }
     }
 
-    private async onResult(results: FactReference[]): Promise<void> {
+    private async onResult(results: any[]): Promise<void> {
         throw new Error("Method not implemented.");
     }
 }

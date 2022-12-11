@@ -6,7 +6,8 @@ import { Observer, ObserverImpl, ResultAddedFunc } from './observer/observer';
 import { Query } from './query/query';
 import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf as OldSpecificationOf } from './query/query-parser';
 import { SpecificationOf } from './specification/given';
-import { FactEnvelope, FactPath, uniqueFactReferences } from './storage';
+import { Projection } from './specification/specification';
+import { FactEnvelope, FactPath, ProjectedResult, uniqueFactReferences } from './storage';
 import { Subscription } from "./subscription/subscription";
 import { SubscriptionImpl } from "./subscription/subscription-impl";
 import { SubscriptionNoOp } from "./subscription/subscription-no-op";
@@ -186,8 +187,8 @@ export class Jinaga {
             this.validateFact(fact);
             return dehydrateReference(fact);
         });
-        const results = await this.authentication.read(references, innerSpecification);
-        return results;
+        const projectedResults = await this.authentication.read(references, innerSpecification);
+        return extractResults(projectedResults, innerSpecification.projection);
     }
 
     /**
@@ -464,4 +465,26 @@ export class Jinaga {
             errorHandler(error);
         });
     }
+}
+
+function extractResults(projectedResults: ProjectedResult[], projection: Projection) {
+    const results = [];
+    for (const projectedResult of projectedResults) {
+        let result = projectedResult.result;
+        if (projection.type === "composite") {
+            const obj: any = {};
+            for (const component of projection.components) {
+                const value = result[component.name];
+                if (component.type === "specification") {
+                    obj[component.name] = extractResults(value, component.projection);
+                }
+                else {
+                    obj[component.name] = value;
+                }
+            }
+            result = obj;
+        }
+        results.push(result);
+    }
+    return results;
 }

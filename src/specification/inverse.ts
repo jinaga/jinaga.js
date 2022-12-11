@@ -1,4 +1,4 @@
-import { CompositeProjection, Label, Match, PathCondition, Specification } from "./specification";
+import { Label, Match, PathCondition, Projection, Specification } from "./specification";
 
 export interface SpecificationInverse {
     specification: Specification;
@@ -13,20 +13,16 @@ export function invertSpecification(specification: Specification): Specification
     const matches: Match[] = [...emptyMatches, ...specification.matches];
 
     const labels: Label[] = specification.matches.map(m => m.unknown);
-    const inverses: SpecificationInverse[] = invertMatches(matches, labels);
+    const inverses: SpecificationInverse[] = invertMatches(matches, labels, specification.projection);
     return inverses;
 }
 
-function invertMatches(matches: Match[], labels: Label[]): SpecificationInverse[] {
+function invertMatches(matches: Match[], labels: Label[], projection: Projection): SpecificationInverse[] {
     const inverses: SpecificationInverse[] = [];
 
     // Produce an inverse for each unknown in the original specification.
     for (const label of labels) {
         matches = shakeTree(matches, label.name);
-        const projection: CompositeProjection = {
-            type: "composite",
-            components: []
-        };
         const inverseSpecification: Specification = {
             given: [label],
             matches: matches.slice(1),

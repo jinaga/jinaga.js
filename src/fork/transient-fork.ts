@@ -1,15 +1,15 @@
 import { TopologicalSorter } from '../fact/sorter';
-import { ObservableSource, Handler, Observable, ObservableSubscription, SpecificationListener } from '../observable/observable';
 import { WebClient } from '../http/web-client';
+import { Handler, Observable, ObservableSource, ObservableSubscription, SpecificationListener } from '../observable/observable';
 import { Query } from '../query/query';
+import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactRecord, FactReference, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, factReferenceEquals, ProjectedResult } from '../storage';
 import { flatten } from '../util/fn';
 import { Channel } from "./channel";
 import { ChannelProcessor } from "./channel-processor";
 import { Fork } from "./fork";
 import { serializeLoad, serializeQuery, serializeSave } from './serialize';
-import { Feed } from "../specification/feed";
 
 class TransientForkSubscription implements ObservableSubscription {
     constructor(
@@ -75,7 +75,7 @@ export class TransientFork implements Fork {
         }
     }
 
-    read(start: FactReference[], specification: Specification): Promise<any[]> {
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         throw new Error('Method not implemented.');
     }
 
@@ -105,7 +105,7 @@ export class TransientFork implements Fork {
         return new TransientForkObservable(observable, loaded);
     }
 
-    addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
         return this.observableSource.addSpecificationListener(specification, onResult);
     }
 

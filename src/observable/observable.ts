@@ -1,6 +1,6 @@
-import { Specification } from '../specification/specification';
 import { Query } from '../query/query';
-import { FactPath, FactReference, Storage } from '../storage';
+import { Specification } from '../specification/specification';
+import { FactPath, FactReference, ProjectedResult, Storage } from '../storage';
 
 export interface ObservableSubscription {
     load(): Promise<void>;
@@ -14,11 +14,11 @@ export interface Observable {
 }
 
 export interface SpecificationListener {
-    onResult(results: FactReference[]): Promise<void>;
+    onResult(results: ProjectedResult[]): Promise<void>;
 }
 
 export interface ObservableSource extends Storage {
     from(fact: FactReference, query: Query): Observable;
-    addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>): SpecificationListener;
+    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener;
     removeSpecificationListener(listener: SpecificationListener): void;
 }

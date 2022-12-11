@@ -17,7 +17,7 @@ describe("specification inverse", () => {
                 p1: Company [
                     p1 = u1->company: Company
                 ]
-            }`
+            } => u1`
         ]);
     });
 });

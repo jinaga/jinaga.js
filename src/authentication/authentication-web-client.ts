@@ -1,12 +1,12 @@
-import { Observable, SpecificationListener } from '../observable/observable';
 import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
 import { WebClient } from '../http/web-client';
+import { Observable, SpecificationListener } from '../observable/observable';
 import { Query } from '../query/query';
-import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactRecord, FactReference } from '../storage';
-import { Authentication } from './authentication';
 import { Feed } from "../specification/feed";
+import { Specification } from "../specification/specification";
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult } from '../storage';
+import { Authentication } from './authentication';
 
 export class AuthenticationWebClient implements Authentication {
     constructor(private inner: Fork, private client: WebClient) {
@@ -33,7 +33,7 @@ export class AuthenticationWebClient implements Authentication {
         return this.inner.query(start, query);
     }
 
-    read(start: FactReference[], specification: Specification): Promise<any[]> {
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         return this.inner.read(start, specification);
     }
 
@@ -53,7 +53,7 @@ export class AuthenticationWebClient implements Authentication {
         return this.inner.from(fact, query);
     }
 
-    addSpecificationListener(specification: Specification, onResult: (results: FactReference[]) => Promise<void>) {
+    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
         return this.inner.addSpecificationListener(specification, onResult);
     }
 
