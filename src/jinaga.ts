@@ -221,7 +221,20 @@ export class Jinaga {
         start: T,
         preposition: Preposition<T, U>,
         resultAdded: (result: U) => void) : Watch<U, V>;
-    watch<T, U, V>(
+    watch<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U>;
+    watch(...args: any[]): any {
+        if (args.length === 3 && args[1] instanceof Preposition) {
+            return this.oldWatch(args[0], args[1], args[2]);
+        }
+        else if (args.length === 4 && args[1] instanceof Preposition) {
+            return this.oldWatch(args[0], args[1], args[2], args[3]);
+        }
+        else {
+            return this.newWatch(args[0], ...args.slice(1, args.length-1), args[args.length-1]);
+        }
+    }
+
+    private oldWatch<T, U, V>(
         start: T,
         preposition: Preposition<T, U>,
         resultAdded: (fact: U) => (V | void),
@@ -243,7 +256,7 @@ export class Jinaga {
         return watch;
     }
 
-    watch2<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U> {
+    private newWatch<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U> {
         const given: T = args.slice(0, args.length - 1) as T;
         const resultAdded = args[args.length - 1] as ResultAddedFunc<U>;
         const innerSpecification = specification.specification;

@@ -30,7 +30,7 @@ describe("specification watch", () => {
         );
 
         const offices: string[] = [];
-        const officeObserver = j.watch2(specification, emptyCompany, office => {
+        const officeObserver = j.watch(specification, emptyCompany, office => {
             offices.push(j.hash(office));
         });
 
@@ -47,7 +47,7 @@ describe("specification watch", () => {
         );
 
         const offices: string[] = [];
-        const officeObserver = j.watch2(specification, company, office => {
+        const officeObserver = j.watch(specification, company, office => {
             offices.push(j.hash(office));
         });
 
@@ -64,7 +64,7 @@ describe("specification watch", () => {
         );
 
         const offices: string[] = [];
-        const officeObserver = j.watch2(specification, company, office => {
+        const officeObserver = j.watch(specification, company, office => {
             offices.push(j.hash(office));
         });
 
