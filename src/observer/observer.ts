@@ -1,6 +1,8 @@
+import { Authentication } from "../authentication/authentication";
+import { SpecificationListener } from "../observable/observable";
+import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Specification } from "../specification/specification";
 import { FactReference } from "../storage";
-import { Authentication } from "../authentication/authentication";
 
 export type ResultAddedFunc<U> = (value: U) =>
     Promise<() => Promise<void>> |  // Asynchronous with removal function
@@ -16,6 +18,7 @@ export interface Observer<T> {
 
 export class ObserverImpl<T> {
     private initialQuery: Promise<void> | undefined;
+    private listeners: SpecificationListener[] = [];
 
     constructor(
         private authentication: Authentication,
@@ -26,6 +29,9 @@ export class ObserverImpl<T> {
 
     public start() {
         this.initialQuery = this.runInitialQuery();
+        const inverses: SpecificationInverse[] = invertSpecification(this.specification);
+        const listeners = inverses.map(inverse => this.authentication.addSpecificationListener(inverse.specification, (results) => this.onResult(results)));
+        this.listeners = listeners;
     }
 
     public initialized(): Promise<void> {
@@ -36,6 +42,9 @@ export class ObserverImpl<T> {
     }
 
     public stop(): Promise<void> {
+        for (const listener of this.listeners) {
+            this.authentication.removeSpecificationListener(listener);
+        }
         return Promise.resolve();
     }
 
@@ -44,5 +53,9 @@ export class ObserverImpl<T> {
         for (const result of results) {
             await this.resultAdded(result);
         }
+    }
+
+    private async onResult(results: FactReference[]): Promise<void> {
+        throw new Error("Method not implemented.");
     }
 }
