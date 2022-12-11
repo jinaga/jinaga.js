@@ -1,4 +1,9 @@
-export interface Observer<T> {
-    initialized(): Promise<void>;
-    stop(): Promise<void>;
+export class Observer<T> {
+    public initialized(): Promise<void> {
+        return Promise.resolve();
+    }
+
+    public stop(): Promise<void> {
+        return Promise.resolve();
+    }
 }

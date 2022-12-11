@@ -24,12 +24,13 @@ export interface Profile {
 
 export { Trace, Tracer, Preposition, FactDescription, ensure, Template };
 
-type WatchArgs<T extends unknown[], U> = [...T, (value: U) =>
+type ResultAddedFunc<U> = (value: U) =>
     Promise<() => Promise<void>> |  // Asynchronous with removal function
     Promise<void> |                 // Asynchronous without removal function
     (() => void) |                  // Synchronous with removal function
-    void                            // Synchronous without removal function
-];
+    void;                           // Synchronous without removal function
+
+type WatchArgs<T extends unknown[], U> = [...T, ResultAddedFunc<U>];
 
 export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
@@ -248,7 +249,31 @@ export class Jinaga {
     }
 
     watch2<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U> {
-        throw new Error("Method not implemented.");
+        const given: T = args.slice(0, args.length - 1) as T;
+        const resultAdded = args[args.length - 1] as ResultAddedFunc<U>;
+        const innerSpecification = specification.specification;
+
+        if (!given) {
+            throw new Error("No given facts provided.");
+        }
+        if (given.some(g => !g)) {
+            throw new Error("One or more given facts are null.");
+        }
+        if (!resultAdded || typeof resultAdded !== "function") {
+            throw new Error("No resultAdded function provided.");
+        }
+        if (given.length !== innerSpecification.given.length) {
+            throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
+        }
+
+        const references = given.map(g => {
+            const fact = JSON.parse(JSON.stringify(g));
+            this.validateFact(fact);
+            return dehydrateReference(fact);
+        });
+
+        const observer = new Observer<U>();
+        return observer;
     }
 
     /**
