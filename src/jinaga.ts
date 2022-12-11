@@ -2,7 +2,7 @@ import { Authentication } from './authentication/authentication';
 import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { runService } from './observable/service';
-import { Observer } from './observer/observer';
+import { Observer, ObserverImpl, ResultAddedFunc } from './observer/observer';
 import { Query } from './query/query';
 import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf as OldSpecificationOf } from './query/query-parser';
 import { SpecificationOf } from './specification/given';
@@ -23,12 +23,6 @@ export interface Profile {
 }
 
 export { Trace, Tracer, Preposition, FactDescription, ensure, Template };
-
-type ResultAddedFunc<U> = (value: U) =>
-    Promise<() => Promise<void>> |  // Asynchronous with removal function
-    Promise<void> |                 // Asynchronous without removal function
-    (() => void) |                  // Synchronous with removal function
-    void;                           // Synchronous without removal function
 
 type WatchArgs<T extends unknown[], U> = [...T, ResultAddedFunc<U>];
 
@@ -272,7 +266,8 @@ export class Jinaga {
             return dehydrateReference(fact);
         });
 
-        const observer = new Observer<U>();
+        const observer = new ObserverImpl<U>(this.authentication, references, innerSpecification, resultAdded);
+        observer.start();
         return observer;
     }
 
