@@ -1,4 +1,4 @@
-import { Label, Match, PathCondition, Projection, Specification } from "./specification";
+import { Condition, ExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
 
 export interface SpecificationInverse {
     specification: Specification;
@@ -33,6 +33,9 @@ function invertMatches(matches: Match[], labels: Label[], projection: Projection
         };
 
         inverses.push(inverse);
+
+        const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, projection, matches[0].conditions);
+        inverses.push(...existentialInverses);
     }
 
     return inverses;
@@ -119,3 +122,42 @@ function findMatch(matches: Match[], label: string): Match {
 
     throw new Error(`Label ${label} not found`);
 }
+
+function invertExistentialConditions(outerMatches: Match[], projection: Projection, conditions: Condition[]): SpecificationInverse[] {
+    const inverses: SpecificationInverse[] = [];
+
+    // Produce inverses for each existential condition in the match.
+    for (const condition of conditions) {
+        if (condition.type === "existential") {
+            let matches = [ ...outerMatches, ...condition.matches ];
+            for (const match of condition.matches) {
+                matches = shakeTree(matches, match.unknown.name);
+                const matchesWithoutCondition: Match[] = removeCondition(matches.slice(1), condition);
+                const inverseSpecification: Specification = {
+                    given: [match.unknown],
+                    matches: matchesWithoutCondition,
+                    projection: projection
+                };
+                const inverse: SpecificationInverse = {
+                    specification: inverseSpecification
+                };
+
+                inverses.push(inverse);
+            }
+        }
+    }
+
+    return inverses;
+}
+
+function removeCondition(matches: Match[], condition: ExistentialCondition): Match[] {
+    return matches.map(match =>
+        match.conditions.includes(condition) ?
+            {
+                unknown: match.unknown,
+                conditions: match.conditions.filter(c => c !== condition)
+            } :
+            match
+    );
+}
+
