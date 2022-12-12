@@ -1,5 +1,5 @@
 import { Jinaga, JinagaTest } from "../../src";
-import { Company, model, Office, OfficeClosed, User } from "./model";
+import { Company, model, Office, OfficeClosed, President, User } from "./model";
 
 describe("specification watch", () => {
     let creator: User;
@@ -102,5 +102,51 @@ describe("specification watch", () => {
         await officeObserver.stop();
 
         expect(offices).toEqual([]);
+    });
+
+    it("should notify child results when added", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    president: facts.ofType(President)
+                        .join(president => president.office, office)
+                }))
+        );
+
+        const offices: {
+            identifier: string,
+            president?: string
+        }[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            const model = {
+                identifier: office.identifier,
+                president: undefined as string | undefined
+            };
+            offices.push(model);
+            office.president.onAdded(president => {
+                model.president = j.hash(president);
+            });
+        });
+
+        await officeObserver.initialized();
+        expect(offices).toEqual([
+            {
+                identifier: office.identifier,
+                president: undefined
+            }
+        ]);
+
+        const newPresident = new President(office, new User("--- PRESIDENT PUBLIC KEY ---"));
+        await j.fact(newPresident);
+        await officeObserver.stop();
+
+        expect(offices).toEqual([
+            {
+                identifier: office.identifier,
+                president: j.hash(newPresident)
+            }
+        ]);
     });
 });

@@ -18,12 +18,14 @@ export function invertSpecification(specification: Specification): Specification
     const matches: Match[] = [...emptyMatches, ...specification.matches];
 
     const labels: Label[] = specification.matches.map(m => m.unknown);
-    const inverses: SpecificationInverse[] = invertMatches(matches, labels, "", specification.projection);
-    const projectionInverses: SpecificationInverse[] = invertProjection(matches, "", specification.projection);
+    const givenSubset: string[] = specification.given.map(g => g.name);
+    const inverses: SpecificationInverse[] = invertMatches(matches, labels, "", givenSubset, specification.projection);
+    const resultSubset: string[] = [ ...givenSubset, ...specification.matches.map(m => m.unknown.name) ];
+    const projectionInverses: SpecificationInverse[] = invertProjection(matches, "", resultSubset, specification.projection);
     return [ ...inverses, ...projectionInverses ];
 }
 
-function invertMatches(matches: Match[], labels: Label[], path: string, projection: Projection): SpecificationInverse[] {
+function invertMatches(matches: Match[], labels: Label[], path: string, parentSubset: string[], projection: Projection): SpecificationInverse[] {
     const inverses: SpecificationInverse[] = [];
 
     // Produce an inverse for each unknown in the original specification.
@@ -37,7 +39,7 @@ function invertMatches(matches: Match[], labels: Label[], path: string, projecti
         const inverse: SpecificationInverse = {
             specification: inverseSpecification,
             operation: "add",
-            parentSubset: [],
+            parentSubset: parentSubset,
             path: path
         };
 
@@ -184,7 +186,7 @@ function inferOperation(parentOperation: InverseOperation, exists: boolean): Inv
     }
 }
 
-function invertProjection(matches: Match[], parentPath: string, projection: Projection): SpecificationInverse[] {
+function invertProjection(matches: Match[], parentPath: string, parentSubset: string[], projection: Projection): SpecificationInverse[] {
     const inverses: SpecificationInverse[] = [];
 
     // Produce inverses for all collections in the projection.
@@ -194,8 +196,9 @@ function invertProjection(matches: Match[], parentPath: string, projection: Proj
                 const componentMatches = [ ...matches, ...component.matches ];
                 const componentLabels = component.matches.map(m => m.unknown);
                 const path = parentPath + "." + component.name;
-                const matchInverses = invertMatches(componentMatches, componentLabels, path, component.projection);
-                const projectionInverses = invertProjection(componentMatches, path, component.projection);
+                const matchInverses = invertMatches(componentMatches, componentLabels, path, parentSubset, component.projection);
+                const resultSubset = [ ...parentSubset, ...componentLabels.map(l => l.name) ];
+                const projectionInverses = invertProjection(componentMatches, path, resultSubset, component.projection);
                 inverses.push(...matchInverses, ...projectionInverses);
             }
         }

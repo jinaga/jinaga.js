@@ -2,7 +2,7 @@ import { Authentication } from "../authentication/authentication";
 import { computeObjectHash } from "../fact/hash";
 import { SpecificationListener } from "../observable/observable";
 import { invertSpecification, SpecificationInverse } from "../specification/inverse";
-import { Specification } from "../specification/specification";
+import { Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName } from "../storage";
 
 export type ResultAddedFunc<U> = (value: U) =>
@@ -11,6 +11,10 @@ export type ResultAddedFunc<U> = (value: U) =>
     (() => void) |                  // Synchronous with removal function
     void;                           // Synchronous without removal function
 
+export interface ObservableCollection<T> {
+    onAdded(handler: ResultAddedFunc<T>): void;
+
+}
 
 export interface Observer<T> {
     initialized(): Promise<void>;
@@ -23,6 +27,11 @@ export class ObserverImpl<T> {
     private removalsByTuple: {
         [tupleHash: string]: () => Promise<void>;
     } = {};
+    private addedHandlers: {
+        tupleHash: string;
+        path: string;
+        handler: ResultAddedFunc<any>;
+    }[] = [];
 
     constructor(
         private authentication: Authentication,
@@ -57,12 +66,12 @@ export class ObserverImpl<T> {
 
     private async runInitialQuery() {
         const projectedResults = await this.authentication.read(this.given, this.specification);
-        await this.notifyAdded(projectedResults);
+        await this.notifyAdded(projectedResults, this.specification.projection, "", []);
     }
 
     private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
         if (inverse.operation === "add") {
-            return await this.notifyAdded(results);
+            return await this.notifyAdded(results, inverse.specification.projection, inverse.path, inverse.parentSubset);
         }
         else if (inverse.operation === "remove") {
             return await this.notifyRemoved(inverse.parentSubset, results);
@@ -72,9 +81,14 @@ export class ObserverImpl<T> {
         }
     }
 
-    private async notifyAdded(projectedResults: ProjectedResult[]) {
+    private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[]) {
         for (const pr of projectedResults) {
-            const promiseMaybe = this.resultAdded(pr.result);
+            const result: any = this.injectObservers(pr, projection, path);
+            const parentTupleHash = computeParentTupleHash(pr.tuple, parentSubset);
+            const resultAdded = path === "" ?
+                this.resultAdded :
+                this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path)?.handler;
+            const promiseMaybe = resultAdded ? resultAdded(result) : undefined;
             if (promiseMaybe instanceof Promise) {
                 const functionMaybe = await promiseMaybe;
                 if (functionMaybe instanceof Function) {
@@ -97,15 +111,7 @@ export class ObserverImpl<T> {
 
     async notifyRemoved(parentSubset: string[], projectedResult: ProjectedResult[]): Promise<void> {
         for (const pr of projectedResult) {
-            const parentTuple = Object.getOwnPropertyNames(pr.tuple)
-                .filter(name => parentSubset.includes(name))
-                .reduce((t, name) =>
-                    ({
-                        ...t,
-                        [name]: pr.tuple[name]
-                    }),
-                    {} as ReferencesByName);
-            const parentTupleHash = computeObjectHash(parentTuple);
+            const parentTupleHash = computeParentTupleHash(pr.tuple, parentSubset);
             const removal = this.removalsByTuple[parentTupleHash];
             if (removal !== undefined) {
                 await removal();
@@ -113,4 +119,45 @@ export class ObserverImpl<T> {
             }
         }
     }
+    
+    private injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): any {
+        if (projection.type === "composite") {
+            const composite: any = {};
+            for (const component of projection.components) {
+                if (component.type === "specification") {
+                    const path = parentPath + "." + component.name;
+                    const observable: ObservableCollection<any> = {
+                        onAdded: (handler: ResultAddedFunc<any>) => {
+                            this.addedHandlers.push({
+                                tupleHash: computeObjectHash(pr.tuple),
+                                path: path,
+                                handler: handler
+                            });
+                        }
+                    }
+                    composite[component.name] = observable;
+                }
+                else {
+                    composite[component.name] = pr.result[component.name];
+                }
+            }
+            return composite;
+        }
+        else {
+            return pr.result;
+        }
+    }
 }
+
+function computeParentTupleHash(tuple: ReferencesByName, parentSubset: string[]) {
+    const parentTuple = Object.getOwnPropertyNames(tuple)
+        .filter(name => parentSubset.includes(name))
+        .reduce((t, name) => ({
+            ...t,
+            [name]: tuple[name]
+        }),
+            {} as ReferencesByName);
+    const parentTupleHash = computeObjectHash(parentTuple);
+    return parentTupleHash;
+}
+

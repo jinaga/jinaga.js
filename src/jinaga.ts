@@ -2,7 +2,7 @@ import { Authentication } from './authentication/authentication';
 import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { runService } from './observable/service';
-import { Observer, ObserverImpl, ResultAddedFunc } from './observer/observer';
+import { ObservableCollection, Observer, ObserverImpl, ResultAddedFunc } from './observer/observer';
 import { Query } from './query/query';
 import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf as OldSpecificationOf } from './query/query-parser';
 import { SpecificationOf } from './specification/given';
@@ -25,7 +25,12 @@ export interface Profile {
 
 export { Trace, Tracer, Preposition, FactDescription, ensure, Template };
 
-type WatchArgs<T extends unknown[], U> = [...T, ResultAddedFunc<U>];
+type MakeObservable<T> =
+    T extends Array<infer U> ? ObservableCollection<MakeObservable<U>> :
+    T extends { [key: string]: unknown } ? { [K in keyof T]: MakeObservable<T[K]> } :
+    T;
+
+type WatchArgs<T extends unknown[], U> = [...T, ResultAddedFunc<MakeObservable<U>>];
 
 export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
