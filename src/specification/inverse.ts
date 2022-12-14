@@ -31,9 +31,16 @@ function invertMatches(matches: Match[], labels: Label[], path: string, parentSu
     // Produce an inverse for each unknown in the original specification.
     for (const label of labels) {
         matches = shakeTree(matches, label.name);
+        // The given will not have any successors.
+        // Simplify the matches by removing any conditions that cannot be satisfied.
+        const simplified: Match[] | null = simplifyMatches(matches, label.name);
+        if (simplified === null) {
+            continue;
+        }
+
         const inverseSpecification: Specification = {
             given: [label],
-            matches: matches.slice(1),
+            matches: simplified.slice(1),
             projection: projection
         };
         const inverse: SpecificationInverse = {
@@ -207,3 +214,41 @@ function invertProjection(matches: Match[], parentPath: string, parentSubset: st
     return inverses;
 }
 
+function simplifyMatches(matches: Match[], given: string): Match[] | null {
+    const simplifiedMatches: Match[] = [];
+
+    for (const match of matches) {
+        const simplifiedMatch: Match | null = simplifyMatch(match, given);
+        if (simplifiedMatch === null) {
+            return null;
+        }
+        else {
+            simplifiedMatches.push(simplifiedMatch);
+        }
+    }
+
+    return simplifiedMatches;
+}
+
+function simplifyMatch(match: Match, given: string): Match | null {
+    const simplifiedConditions: Condition[] = [];
+
+    for (const condition of match.conditions) {
+        if (condition.type === "path" &&
+            condition.labelRight === given &&
+            condition.rolesRight.length === 0 &&
+            condition.rolesLeft.length > 0) {
+            // This path condition matches successors of the given.
+            // There are no successors yet, so the condition is unsatisfiable.
+            return null;
+        }
+        // TODO: Handle existential conditions.
+
+        simplifiedConditions.push(condition);
+    }
+
+    return {
+        unknown: match.unknown,
+        conditions: simplifiedConditions
+    };
+}
