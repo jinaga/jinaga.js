@@ -77,6 +77,27 @@ describe("specification watch", () => {
         expect(offices).toEqual([j.hash(office), j.hash(newOffice)]);
     });
 
+    it("should not notify results related to a different starting point", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+        );
+
+        const offices: string[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            offices.push(j.hash(office));
+        });
+
+        await officeObserver.initialized();
+        const newOfficeInOtherCompany = new Office(emptyCompany, "OfficeInOtherCompany");
+        await j.fact(newOfficeInOtherCompany);
+
+        await officeObserver.stop();
+
+        // The array does not contain the new office.
+        expect(offices).toEqual([j.hash(office)]);
+    });
+
     it("should notify results when removed", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
