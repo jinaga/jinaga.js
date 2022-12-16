@@ -33,7 +33,7 @@ describe("specification inverse", () => {
         expect(inverses).toEqual([]);
     });
 
-    it("should invert successor of predecessor", () => {
+    it("should invert predecessor of successor", () => {
         const specification = model.given(Office).match((office, facts) =>
             facts.ofType(President)
                 .join(president => president.office, office)
