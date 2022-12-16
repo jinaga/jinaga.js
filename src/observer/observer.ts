@@ -22,6 +22,7 @@ export interface Observer<T> {
 }
 
 export class ObserverImpl<T> {
+    private givenHash: string;
     private initialQuery: Promise<void> | undefined;
     private listeners: SpecificationListener[] = [];
     private removalsByTuple: {
@@ -38,7 +39,14 @@ export class ObserverImpl<T> {
         private given: FactReference[],
         private specification: Specification,
         private resultAdded: ResultAddedFunc<T>
-    ) { }
+    ) {
+        // Map the given facts to a tuple.
+        const tuple = specification.given.reduce((tuple, label, index) => ({
+            ...tuple,
+            [label.name]: given[index]
+        }), {} as ReferencesByName);
+        this.givenHash = computeObjectHash(tuple);
+    }
 
     public start() {
         this.initialQuery = this.runInitialQuery();
@@ -70,11 +78,18 @@ export class ObserverImpl<T> {
     }
 
     private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
+        // Filter out results that do not match the given.
+        const matchingResults = results.filter(pr =>
+            this.givenHash === computeTupleSubsetHash(pr.tuple, inverse.givenSubset));
+        if (matchingResults.length === 0) {
+            return;
+        }
+
         if (inverse.operation === "add") {
-            return await this.notifyAdded(results, inverse.specification.projection, inverse.path, inverse.parentSubset);
+            return await this.notifyAdded(matchingResults, inverse.specification.projection, inverse.path, inverse.parentSubset);
         }
         else if (inverse.operation === "remove") {
-            return await this.notifyRemoved(inverse.parentSubset, results);
+            return await this.notifyRemoved(inverse.parentSubset, matchingResults);
         }
         else {
             throw new Error(`Inverse operation ${inverse.operation} not implemented.`);
@@ -84,7 +99,7 @@ export class ObserverImpl<T> {
     private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[]) {
         for (const pr of projectedResults) {
             const result: any = this.injectObservers(pr, projection, path);
-            const parentTupleHash = computeParentTupleHash(pr.tuple, parentSubset);
+            const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
             const resultAdded = path === "" ?
                 this.resultAdded :
                 this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path)?.handler;
@@ -111,7 +126,7 @@ export class ObserverImpl<T> {
 
     async notifyRemoved(parentSubset: string[], projectedResult: ProjectedResult[]): Promise<void> {
         for (const pr of projectedResult) {
-            const parentTupleHash = computeParentTupleHash(pr.tuple, parentSubset);
+            const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
             const removal = this.removalsByTuple[parentTupleHash];
             if (removal !== undefined) {
                 await removal();
@@ -149,9 +164,9 @@ export class ObserverImpl<T> {
     }
 }
 
-function computeParentTupleHash(tuple: ReferencesByName, parentSubset: string[]) {
+function computeTupleSubsetHash(tuple: ReferencesByName, subset: string[]) {
     const parentTuple = Object.getOwnPropertyNames(tuple)
-        .filter(name => parentSubset.includes(name))
+        .filter(name => subset.includes(name))
         .reduce((t, name) => ({
             ...t,
             [name]: tuple[name]
