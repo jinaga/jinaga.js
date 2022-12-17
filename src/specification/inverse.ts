@@ -45,10 +45,10 @@ function invertMatches(matches: Match[], labels: Label[], path: string, givenSub
             projection: projection
         };
         const inverse: SpecificationInverse = {
-            inverseSpecification: inverseSpecification,
+            inverseSpecification,
             operation: "add",
-            givenSubset: givenSubset,
-            parentSubset: parentSubset,
+            givenSubset,
+            parentSubset,
             path: path
         };
 
@@ -156,15 +156,15 @@ function invertExistentialConditions(outerMatches: Match[], projection: Projecti
                 const inverseSpecification: Specification = {
                     given: [match.unknown],
                     matches: matchesWithoutCondition,
-                    projection: projection
+                    projection
                 };
                 const parentSubset = outerMatches.map(m => m.unknown.name);
                 const path = parentPath + "." + match.unknown.name;
                 const inverse: SpecificationInverse = {
-                    inverseSpecification: inverseSpecification,
+                    inverseSpecification,
                     operation: inferOperation(parentOperation, condition.exists),
-                    givenSubset: givenSubset,
-                    parentSubset: parentSubset,
+                    givenSubset,
+                    parentSubset,
                     path: path
                 };
 
