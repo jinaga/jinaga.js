@@ -3,7 +3,7 @@ import { Condition, ExistentialCondition, Label, Match, PathCondition, Projectio
 type InverseOperation = "add" | "remove" | "maybeAdd" | "maybeRemove";
 
 export interface SpecificationInverse {
-    specification: Specification;
+    inverseSpecification: Specification;
     operation: InverseOperation;
     givenSubset: string[];
     parentSubset: string[];
@@ -45,7 +45,7 @@ function invertMatches(matches: Match[], labels: Label[], path: string, givenSub
             projection: projection
         };
         const inverse: SpecificationInverse = {
-            specification: inverseSpecification,
+            inverseSpecification: inverseSpecification,
             operation: "add",
             givenSubset: givenSubset,
             parentSubset: parentSubset,
@@ -161,7 +161,7 @@ function invertExistentialConditions(outerMatches: Match[], projection: Projecti
                 const parentSubset = outerMatches.map(m => m.unknown.name);
                 const path = parentPath + "." + match.unknown.name;
                 const inverse: SpecificationInverse = {
-                    specification: inverseSpecification,
+                    inverseSpecification: inverseSpecification,
                     operation: inferOperation(parentOperation, condition.exists),
                     givenSubset: givenSubset,
                     parentSubset: parentSubset,

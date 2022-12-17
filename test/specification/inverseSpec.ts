@@ -128,7 +128,7 @@ describe("specification inverse", () => {
 function fromSpecification<T, U>(specification: SpecificationOf<T, U>) {
     return invertSpecification(specification.specification)
         .map(i => {
-            const desription = describeSpecification(i.specification, 3);
+            const desription = describeSpecification(i.inverseSpecification, 3);
             return "\n" + desription.substring(0, desription.length - 1);
         });
 }

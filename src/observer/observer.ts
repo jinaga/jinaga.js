@@ -52,7 +52,7 @@ export class ObserverImpl<T> {
         this.initialQuery = this.runInitialQuery();
         const inverses: SpecificationInverse[] = invertSpecification(this.specification);
         const listeners = inverses.map(inverse => this.authentication.addSpecificationListener(
-            inverse.specification,
+            inverse.inverseSpecification,
             (results) => this.onResult(inverse, results)
         ));
         this.listeners = listeners;
@@ -86,7 +86,7 @@ export class ObserverImpl<T> {
         }
 
         if (inverse.operation === "add") {
-            return await this.notifyAdded(matchingResults, inverse.specification.projection, inverse.path, inverse.parentSubset);
+            return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset);
         }
         else if (inverse.operation === "remove") {
             return await this.notifyRemoved(inverse.parentSubset, matchingResults);
