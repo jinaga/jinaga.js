@@ -160,15 +160,19 @@ function invertExistentialConditions(outerMatches: Match[], projection: Projecti
                 };
                 const parentSubset = outerMatches.map(m => m.unknown.name);
                 const path = parentPath + "." + match.unknown.name;
+                const operation = inferOperation(parentOperation, condition.exists);
                 const inverse: SpecificationInverse = {
                     inverseSpecification,
-                    operation: inferOperation(parentOperation, condition.exists),
+                    operation,
                     givenSubset,
                     parentSubset,
-                    path: path
+                    path
                 };
 
                 inverses.push(inverse);
+
+                const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, projection, matches[0].conditions, operation, path, givenSubset);
+                inverses.push(...existentialInverses);
             }
         }
     }
@@ -190,6 +194,9 @@ function removeCondition(matches: Match[], condition: ExistentialCondition): Mat
 function inferOperation(parentOperation: InverseOperation, exists: boolean): InverseOperation {
     if (parentOperation === "add") {
         return exists ? "maybeAdd" : "remove";
+    }
+    else if (parentOperation === "remove") {
+        return exists ? "maybeRemove" : "maybeAdd";
     }
     else {
         throw new Error(`Cannot infer operation from ${parentOperation}, ${exists ? "exists" : "not exists"}`);

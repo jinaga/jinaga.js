@@ -1,7 +1,7 @@
 import { describeSpecification } from "../../src/specification/description";
 import { SpecificationOf } from "../../src/specification/given";
 import { invertSpecification } from "../../src/specification/inverse";
-import { Company, model, Office, OfficeClosed, President, User } from "./model";
+import { Company, model, Office, OfficeClosed, OfficeReopened, President, User } from "./model";
 
 describe("specification inverse", () => {
     it("should invert successor", () => {
@@ -120,6 +120,65 @@ describe("specification inverse", () => {
         ]);
         expect(inverses[0].operation).toEqual("add");
         expect(inverses[1].operation).toEqual("maybeAdd");
+    });
+
+    it("should invert restore pattern", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                        .notExists(officeClosed =>
+                            facts.ofType(OfficeReopened)
+                                .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                        )
+                )
+        );
+
+        const inverses = invertSpecification(specification.specification);
+        const formatted = formatInverses(inverses);
+
+        expect(formatted).toEqual([`
+            (u1: Office) {
+                p1: Company [
+                    p1 = u1->company: Company
+                ]
+            } => u1`,`
+            (u2: Office.Closed) {
+                u1: Office [
+                    u1 = u2->office: Office
+                ]
+                p1: Company [
+                    p1 = u1->company: Company
+                ]
+            } => u1`,`
+            (u3: Office.Reopened) {
+                u2: Office.Closed [
+                    u2 = u3->officeClosed: Office.Closed
+                ]
+                u1: Office [
+                    u1 = u2->office: Office
+                    !E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1
+                            !E {
+                                u3: Office.Reopened [
+                                    u3->officeClosed: Office.Closed = u2
+                                ]
+                            }
+                        ]
+                    }
+                ]
+                p1: Company [
+                    p1 = u1->company: Company
+                ]
+            } => u1`
+        ]);
+
+        expect(inverses[0].operation).toEqual("add");
+        expect(inverses[1].operation).toEqual("remove");
+        expect(inverses[2].operation).toEqual("maybeAdd");
     });
 
     it("should invert child properties", () => {
