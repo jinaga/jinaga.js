@@ -68,9 +68,10 @@ describe("specification inverse", () => {
                 )
         );
 
-        const inverses = fromSpecification(specification);
+        const inverses = invertSpecification(specification.specification);
+        const formatted = formatInverses(inverses);
 
-        expect(inverses).toEqual([`
+        expect(formatted).toEqual([`
             (u1: Office) {
                 p1: Company [
                     p1 = u1->company: Company
@@ -85,6 +86,40 @@ describe("specification inverse", () => {
                 ]
             } => u1`
         ]);
+        expect(inverses[0].operation).toEqual("add");
+        expect(inverses[1].operation).toEqual("remove");
+    });
+
+    it("should invert positive existential condition", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .exists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        const inverses = invertSpecification(specification.specification);
+        const formatted = formatInverses(inverses);
+
+        expect(formatted).toEqual([`
+            (u1: Office) {
+                p1: Company [
+                    p1 = u1->company: Company
+                ]
+            } => u1`,`
+            (u2: Office.Closed) {
+                u1: Office [
+                    u1 = u2->office: Office
+                ]
+                p1: Company [
+                    p1 = u1->company: Company
+                ]
+            } => u1`
+        ]);
+        expect(inverses[0].operation).toEqual("add");
+        expect(inverses[1].operation).toEqual("maybeAdd");
     });
 
     it("should invert child properties", () => {
@@ -126,7 +161,12 @@ describe("specification inverse", () => {
 });
 
 function fromSpecification<T, U>(specification: SpecificationOf<T, U>) {
-    return invertSpecification(specification.specification)
+    const inverses = invertSpecification(specification.specification);
+    return formatInverses(inverses);
+}
+
+function formatInverses(inverses: import("/home/mperry/projects/jinaga.js/src/specification/inverse").SpecificationInverse[]) {
+    return inverses
         .map(i => {
             const desription = describeSpecification(i.inverseSpecification, 3);
             return "\n" + desription.substring(0, desription.length - 1);
