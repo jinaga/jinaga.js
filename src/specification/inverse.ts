@@ -8,6 +8,7 @@ export interface SpecificationInverse {
     givenSubset: string[];
     parentSubset: string[];
     path: string;
+    resultSubset: string[];
 };
 
 export function invertSpecification(specification: Specification): SpecificationInverse[] {
@@ -20,13 +21,13 @@ export function invertSpecification(specification: Specification): Specification
 
     const labels: Label[] = specification.matches.map(m => m.unknown);
     const givenSubset: string[] = specification.given.map(g => g.name);
-    const inverses: SpecificationInverse[] = invertMatches(matches, labels, "", givenSubset, givenSubset, specification.projection);
-    const resultSubset: string[] = [ ...givenSubset, ...specification.matches.map(m => m.unknown.name) ];
+    const resultSubset: string[] = [ ...givenSubset, ...labels.map(l => l.name) ];
+    const inverses: SpecificationInverse[] = invertMatches(matches, labels, "", givenSubset, givenSubset, resultSubset, specification.projection);
     const projectionInverses: SpecificationInverse[] = invertProjection(matches, "", givenSubset, resultSubset, specification.projection);
     return [ ...inverses, ...projectionInverses ];
 }
 
-function invertMatches(matches: Match[], labels: Label[], path: string, givenSubset: string[], parentSubset: string[], projection: Projection): SpecificationInverse[] {
+function invertMatches(matches: Match[], labels: Label[], path: string, givenSubset: string[], parentSubset: string[], resultSubset: string[], projection: Projection): SpecificationInverse[] {
     const inverses: SpecificationInverse[] = [];
 
     // Produce an inverse for each unknown in the original specification.
@@ -42,19 +43,20 @@ function invertMatches(matches: Match[], labels: Label[], path: string, givenSub
         const inverseSpecification: Specification = {
             given: [label],
             matches: simplified.slice(1),
-            projection: projection
+            projection
         };
         const inverse: SpecificationInverse = {
             inverseSpecification,
             operation: "add",
             givenSubset,
             parentSubset,
-            path: path
+            path,
+            resultSubset
         };
 
         inverses.push(inverse);
 
-        const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, projection, matches[0].conditions, "add", "", givenSubset);
+        const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, projection, matches[0].conditions, "add", givenSubset, "", givenSubset, resultSubset);
         inverses.push(...existentialInverses);
     }
 
@@ -143,7 +145,7 @@ function findMatch(matches: Match[], label: string): Match {
     throw new Error(`Label ${label} not found`);
 }
 
-function invertExistentialConditions(outerMatches: Match[], projection: Projection, conditions: Condition[], parentOperation: InverseOperation, parentPath: string, givenSubset: string[]): SpecificationInverse[] {
+function invertExistentialConditions(outerMatches: Match[], projection: Projection, conditions: Condition[], parentOperation: InverseOperation, parentSubset: string[], path: string, givenSubset: string[], resultSubset: string[]): SpecificationInverse[] {
     const inverses: SpecificationInverse[] = [];
 
     // Produce inverses for each existential condition in the match.
@@ -158,20 +160,19 @@ function invertExistentialConditions(outerMatches: Match[], projection: Projecti
                     matches: matchesWithoutCondition,
                     projection
                 };
-                const parentSubset = outerMatches.map(m => m.unknown.name);
-                const path = parentPath + "." + match.unknown.name;
                 const operation = inferOperation(parentOperation, condition.exists);
                 const inverse: SpecificationInverse = {
                     inverseSpecification,
                     operation,
                     givenSubset,
                     parentSubset,
-                    path
+                    path,
+                    resultSubset
                 };
 
                 inverses.push(inverse);
 
-                const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, projection, matches[0].conditions, operation, path, givenSubset);
+                const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, projection, matches[0].conditions, operation, parentSubset, path, givenSubset, resultSubset);
                 inverses.push(...existentialInverses);
             }
         }
@@ -213,8 +214,8 @@ function invertProjection(matches: Match[], parentPath: string, givenSubset: str
                 const componentMatches = [ ...matches, ...component.matches ];
                 const componentLabels = component.matches.map(m => m.unknown);
                 const path = parentPath + "." + component.name;
-                const matchInverses = invertMatches(componentMatches, componentLabels, path, givenSubset, parentSubset, component.projection);
                 const resultSubset = [ ...parentSubset, ...componentLabels.map(l => l.name) ];
+                const matchInverses = invertMatches(componentMatches, componentLabels, path, givenSubset, parentSubset, resultSubset, component.projection);
                 const projectionInverses = invertProjection(componentMatches, path, givenSubset, resultSubset, component.projection);
                 inverses.push(...matchInverses, ...projectionInverses);
             }

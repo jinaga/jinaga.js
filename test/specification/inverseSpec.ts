@@ -179,6 +179,18 @@ describe("specification inverse", () => {
         expect(inverses[0].operation).toEqual("add");
         expect(inverses[1].operation).toEqual("remove");
         expect(inverses[2].operation).toEqual("maybeAdd");
+
+        expect(inverses[0].parentSubset).toEqual(["p1"]);
+        expect(inverses[1].parentSubset).toEqual(["p1"]);
+        expect(inverses[2].parentSubset).toEqual(["p1"]);
+
+        expect(inverses[0].path).toEqual("");
+        expect(inverses[1].path).toEqual("");
+        expect(inverses[2].path).toEqual("");
+
+        expect(inverses[0].resultSubset).toEqual(["p1", "u1"]);
+        expect(inverses[1].resultSubset).toEqual(["p1", "u1"]);
+        expect(inverses[2].resultSubset).toEqual(["p1", "u1"]);
     });
 
     it("should invert child properties", () => {

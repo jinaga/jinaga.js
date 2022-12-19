@@ -1,11 +1,13 @@
 import { Jinaga, JinagaTest } from "../../src";
-import { Company, model, Office, OfficeClosed, President, User } from "./model";
+import { Company, model, Office, OfficeClosed, OfficeReopened, President, User } from "./model";
 
 describe("specification watch", () => {
     let creator: User;
     let emptyCompany: Company;
     let company: Company;
     let office: Office;
+    let closedOffice: Office;
+    let closure: OfficeClosed;
     let j: Jinaga;
 
     beforeEach(() => {
@@ -13,12 +15,16 @@ describe("specification watch", () => {
         emptyCompany = new Company(creator, "EmptyCo");
         company = new Company(creator, "TestCo");
         office = new Office(company, "TestOffice");
+        closedOffice = new Office(company, "ClosedOffice");
+        closure = new OfficeClosed(closedOffice, new Date());
         j = JinagaTest.create({
             initialState: [
                 creator,
                 emptyCompany,
                 company,
-                office
+                office,
+                closedOffice,
+                closure
             ]
         });
     });
@@ -54,7 +60,7 @@ describe("specification watch", () => {
         await officeObserver.initialized();
         await officeObserver.stop();
 
-        expect(offices).toEqual([j.hash(office)]);
+        expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
     });
 
     it("should notify results when added", async () => {
@@ -74,7 +80,7 @@ describe("specification watch", () => {
         
         await officeObserver.stop();
 
-        expect(offices).toEqual([j.hash(office), j.hash(newOffice)]);
+        expect(offices).toEqual([j.hash(office), j.hash(closedOffice), j.hash(newOffice)]);
     });
 
     it("should not notify results related to a different starting point", async () => {
@@ -95,7 +101,7 @@ describe("specification watch", () => {
         await officeObserver.stop();
 
         // The array does not contain the new office.
-        expect(offices).toEqual([j.hash(office)]);
+        expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
     });
 
     it("should notify results when removed", async () => {
@@ -125,10 +131,79 @@ describe("specification watch", () => {
         expect(offices).toEqual([]);
     });
 
+    it("should execute nested existial conditions", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                        .notExists(officeClosed =>
+                            facts.ofType(OfficeReopened)
+                                .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                        )
+                )
+        );
+
+        const offices: string[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            const hash = j.hash(office);
+            offices.push(hash);
+            return () => {
+                offices.splice(offices.indexOf(hash), 1);
+            }
+        });
+
+        await officeObserver.initialized();
+
+        await officeObserver.stop();
+
+        expect(offices).toEqual([j.hash(office)]);
+    });
+
+    it("should notify results when re-added", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                        .notExists(officeClosed =>
+                            facts.ofType(OfficeReopened)
+                                .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                        )
+                )
+        );
+
+        const offices: string[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            const hash = j.hash(office);
+            offices.push(hash);
+            return () => {
+                offices.splice(offices.indexOf(hash), 1);
+            }
+        });
+
+        await officeObserver.initialized();
+        await j.fact(new OfficeReopened(closure));
+
+        await officeObserver.stop();
+
+        expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
+    });
+
     it("should notify child results when added", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                        .notExists(officeClosed =>
+                            facts.ofType(OfficeReopened)
+                                .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                        )
+                )
                 .select(office => ({
                     identifier: office.identifier,
                     president: facts.ofType(President)

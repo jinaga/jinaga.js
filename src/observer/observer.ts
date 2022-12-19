@@ -85,13 +85,14 @@ export class ObserverImpl<T> {
             return;
         }
 
-        if (inverse.operation === "add") {
+        if (inverse.operation === "add" || inverse.operation === "maybeAdd") {
             return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset);
         }
-        else if (inverse.operation === "remove") {
-            return await this.notifyRemoved(inverse.parentSubset, matchingResults);
+        else if (inverse.operation === "remove" || inverse.operation === "maybeRemove") {
+            return await this.notifyRemoved(inverse.resultSubset, matchingResults);
         }
         else {
+            const _: never = inverse.operation;
             throw new Error(`Inverse operation ${inverse.operation} not implemented.`);
         }
     }
@@ -124,13 +125,13 @@ export class ObserverImpl<T> {
         }
     }
 
-    async notifyRemoved(parentSubset: string[], projectedResult: ProjectedResult[]): Promise<void> {
+    async notifyRemoved(resultSubset: string[], projectedResult: ProjectedResult[]): Promise<void> {
         for (const pr of projectedResult) {
-            const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
-            const removal = this.removalsByTuple[parentTupleHash];
+            const resultTupleHash = computeTupleSubsetHash(pr.tuple, resultSubset);
+            const removal = this.removalsByTuple[resultTupleHash];
             if (removal !== undefined) {
                 await removal();
-                delete this.removalsByTuple[parentTupleHash];
+                delete this.removalsByTuple[resultTupleHash];
             }
         }
     }
