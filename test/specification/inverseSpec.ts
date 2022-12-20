@@ -1,6 +1,6 @@
 import { describeSpecification } from "../../src/specification/description";
 import { SpecificationOf } from "../../src/specification/given";
-import { invertSpecification } from "../../src/specification/inverse";
+import { invertSpecification, SpecificationInverse } from "../../src/specification/inverse";
 import { Company, model, Office, OfficeClosed, OfficeReopened, President, User } from "./model";
 
 describe("specification inverse", () => {
@@ -232,7 +232,7 @@ function fromSpecification<T, U>(specification: SpecificationOf<T, U>) {
     return formatInverses(inverses);
 }
 
-function formatInverses(inverses: import("/home/mperry/projects/jinaga.js/src/specification/inverse").SpecificationInverse[]) {
+function formatInverses(inverses: SpecificationInverse[]) {
     return inverses
         .map(i => {
             const desription = describeSpecification(i.inverseSpecification, 3);
