@@ -51,25 +51,23 @@ function invertMatches(matches: Match[], labels: Label[], context: InverterConte
         // The given will not have any successors.
         // Simplify the matches by removing any conditions that cannot be satisfied.
         const simplified: Match[] | null = simplifyMatches(matches, label.name);
-        if (simplified === null) {
-            continue;
+        if (simplified !== null) {
+            const inverseSpecification: Specification = {
+                given: [label],
+                matches: simplified.slice(1),
+                projection: context.projection
+            };
+            const inverse: SpecificationInverse = {
+                inverseSpecification,
+                operation: "add",
+                givenSubset: context.givenSubset,
+                parentSubset: context.parentSubset,
+                path: context.path,
+                resultSubset: context.resultSubset
+            };
+    
+            inverses.push(inverse);
         }
-
-        const inverseSpecification: Specification = {
-            given: [label],
-            matches: simplified.slice(1),
-            projection: context.projection
-        };
-        const inverse: SpecificationInverse = {
-            inverseSpecification,
-            operation: "add",
-            givenSubset: context.givenSubset,
-            parentSubset: context.parentSubset,
-            path: context.path,
-            resultSubset: context.resultSubset
-        };
-
-        inverses.push(inverse);
 
         const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, matches[0].conditions, "add", context);
         inverses.push(...existentialInverses);
@@ -265,15 +263,21 @@ function simplifyMatch(match: Match, given: string): Match | null {
     const simplifiedConditions: Condition[] = [];
 
     for (const condition of match.conditions) {
-        if (condition.type === "path" &&
-            condition.labelRight === given &&
-            condition.rolesRight.length === 0 &&
-            condition.rolesLeft.length > 0) {
+        if (expectsSuccessor(condition, given)) {
             // This path condition matches successors of the given.
             // There are no successors yet, so the condition is unsatisfiable.
             return null;
         }
-        // TODO: Handle existential conditions.
+
+        if (condition.type === "existential") {
+            const anyExpectsSuccessor = condition.matches.some(m =>
+                m.conditions.some(c => expectsSuccessor(c, given)));
+            if (anyExpectsSuccessor && condition.exists) {
+                // This existential condition expects successors of the given.
+                // There are no successors yet, so the condition is unsatisfiable.
+                return null;
+            }
+        }
 
         simplifiedConditions.push(condition);
     }
@@ -282,4 +286,11 @@ function simplifyMatch(match: Match, given: string): Match | null {
         unknown: match.unknown,
         conditions: simplifiedConditions
     };
+}
+
+function expectsSuccessor(condition: Condition, given: string) {
+    return condition.type === "path" &&
+        condition.labelRight === given &&
+        condition.rolesRight.length === 0 &&
+        condition.rolesLeft.length > 0;
 }
