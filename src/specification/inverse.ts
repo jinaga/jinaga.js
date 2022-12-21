@@ -209,10 +209,14 @@ function inferOperation(parentOperation: InverseOperation, exists: boolean): Inv
     if (parentOperation === "add") {
         return exists ? "maybeAdd" : "remove";
     }
-    else if (parentOperation === "remove") {
+    else if (parentOperation === "remove" || parentOperation === "maybeRemove") {
         return exists ? "maybeRemove" : "maybeAdd";
     }
+    else if (parentOperation === "maybeAdd") {
+        return exists ? "maybeAdd" : "maybeRemove";
+    }
     else {
+        const _exhaustiveCheck: never = parentOperation;
         throw new Error(`Cannot infer operation from ${parentOperation}, ${exists ? "exists" : "not exists"}`);
     }
 }
