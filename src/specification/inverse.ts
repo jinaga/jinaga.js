@@ -185,7 +185,7 @@ function invertExistentialConditions(outerMatches: Match[], conditions: Conditio
 
                 inverses.push(inverse);
 
-                const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, matches[0].conditions, operation, context);
+                const existentialInverses: SpecificationInverse[] = invertExistentialConditions(matches, match.conditions, operation, context);
                 inverses.push(...existentialInverses);
             }
         }
