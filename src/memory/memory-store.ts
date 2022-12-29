@@ -3,7 +3,7 @@ import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Feed } from "../specification/feed";
 import { ComponentProjection, Condition, Label, Match, PathCondition, Projection, Role, SingularProjection, Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, ProjectedResult, ReferencesByName, Storage } from '../storage';
 import { flatten } from '../util/fn';
 
 export function getPredecessors(fact: FactRecord | null, role: string) {
@@ -41,8 +41,6 @@ function loadAll(references: FactReference[], source: FactRecord[], target: Fact
     });
 }
 
-type ReferencesByName = { [name: string]: FactReference };
-
 export class MemoryStore implements Storage {
     private factRecords: FactRecord[] = [];
 
@@ -66,13 +64,16 @@ export class MemoryStore implements Storage {
         return Promise.resolve(results);
     }
 
-    read(start: FactReference[], specification: Specification): Promise<any[]> {
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         if (start.length !== specification.given.length) {
             throw new Error(`The number of start references (${start.length}) must match the number of given facts (${specification.given.length}).`);
         }
         const references = start.reduce((references, reference, index) => ({
             ...references,
-            [specification.given[index].name]: reference
+            [specification.given[index].name]: {
+                type: reference.type,
+                hash: reference.hash
+            }
         }), {} as ReferencesByName);
         var products = this.executeMatchesAndProjection(references, specification.matches, specification.projection);
         return Promise.resolve(products);
@@ -152,9 +153,9 @@ export class MemoryStore implements Storage {
         return this.factRecords.find(factReferenceEquals(reference)) ?? null;
     }
 
-    private executeMatchesAndProjection(references: ReferencesByName, matches: Match[], projection: Projection): any[] {
+    private executeMatchesAndProjection(references: ReferencesByName, matches: Match[], projection: Projection): ProjectedResult[] {
         const tuples: ReferencesByName[] = this.executeMatches(references, matches);
-        const products: any[] = tuples.map(tuple => this.createProduct(tuple, projection));
+        const products = tuples.map(tuple => this.createProduct(tuple, projection));
         return products;
     }
 
@@ -178,7 +179,10 @@ export class MemoryStore implements Storage {
             const result: FactReference[] = this.executePathCondition(references, match.unknown, firstCondition);
             results = result.map(reference => ({
                 ...references,
-                [match.unknown.name]: reference
+                [match.unknown.name]: {
+                    type: reference.type,
+                    hash: reference.hash
+                }
             }));
         }
         else {
@@ -247,15 +251,23 @@ export class MemoryStore implements Storage {
         }
     }
 
-    private createProduct(tuple: ReferencesByName, projection: Projection): any {
+    private createProduct(tuple: ReferencesByName, projection: Projection): ProjectedResult {
         if (projection.type === "composite") {
-            return projection.components.reduce((obj, component) => ({
+            const result = projection.components.reduce((obj, component) => ({
                 ...obj,
                 [component.name]: this.createComponent(tuple, component)
             }), {});
+            return {
+                tuple,
+                result
+            };
         }
         else {
-            return this.createSingularProduct(tuple, projection);
+            const result = this.createSingularProduct(tuple, projection);
+            return {
+                tuple,
+                result
+            };
         }
     }
     private createComponent(tuple: ReferencesByName, component: ComponentProjection): any {

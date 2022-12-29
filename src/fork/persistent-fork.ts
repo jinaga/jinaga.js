@@ -1,16 +1,16 @@
 import { TopologicalSorter } from '../fact/sorter';
-import { ObservableSource, Handler, Observable, ObservableSubscription } from '../observable/observable';
 import { WebClient } from '../http/web-client';
+import { Handler, Observable, ObservableSource, ObservableSubscription, SpecificationListener } from '../observable/observable';
 import { Query } from '../query/query';
+import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactRecord, FactReference, factReferenceEquals, Queue } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, factReferenceEquals, ProjectedResult, Queue } from '../storage';
 import { flatten } from '../util/fn';
 import { Trace } from '../util/trace';
 import { Channel } from "./channel";
 import { ChannelProcessor } from "./channel-processor";
 import { Fork } from "./fork";
 import { serializeLoad, serializeQuery, serializeSave } from './serialize';
-import { Feed } from "../specification/feed";
 
 class PersistentForkSubscription implements ObservableSubscription {
     constructor(
@@ -93,7 +93,7 @@ export class PersistentFork implements Fork {
         }
     }
 
-    read(start: FactReference[], specification: Specification): Promise<any[]> {
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         throw new Error('Method not implemented.');
     }
 
@@ -122,6 +122,14 @@ export class PersistentFork implements Fork {
         const loadedLocal = this.initiateQueryLocal(fact, query);
         const loadedRemote = this.initiateQueryRemote(fact, query);
         return new PersistentForkObservable(observable, loadedLocal, loadedRemote);
+    }
+
+    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
+        return this.observableSource.addSpecificationListener(specification, onResult);
+    }
+
+    removeSpecificationListener(listener: SpecificationListener) {
+        return this.observableSource.removeSpecificationListener(listener);
     }
 
     addChannel(fact: FactReference, query: Query): Channel {

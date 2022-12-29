@@ -41,11 +41,18 @@ export type FactEnvelope = {
     signatures: FactSignature[];
 }
 
+export type ReferencesByName = { [name: string]: FactReference };
+
+export interface ProjectedResult {
+    tuple: ReferencesByName;
+    result: any;
+}
+
 export interface Storage {
     close(): Promise<void>;
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     query(start: FactReference, query: Query): Promise<FactPath[]>;
-    read(start: FactReference[], specification: Specification): Promise<any[]>;
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
     feed(feed: Feed, bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;

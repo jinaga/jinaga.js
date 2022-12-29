@@ -1,13 +1,13 @@
 import { Authentication } from '../authentication/authentication';
 import { AuthorizationEngine } from '../authorization/authorization-engine';
-import { ObservableSource } from '../observable/observable';
-import { LoginResponse } from '../http/messages';
-import { Query } from '../query/query';
-import { FactEnvelope, FactFeed, FactRecord, FactReference } from '../storage';
 import { AuthorizationRules } from '../authorization/authorizationRules';
 import { Channel } from "../fork/channel";
-import { Specification } from "../specification/specification";
+import { LoginResponse } from '../http/messages';
+import { ObservableSource, SpecificationListener } from '../observable/observable';
+import { Query } from '../query/query';
 import { Feed } from "../specification/feed";
+import { Specification } from "../specification/specification";
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult } from '../storage';
 
 export class AuthenticationTest implements Authentication {
   private authorizationEngine: AuthorizationEngine | null;
@@ -51,6 +51,14 @@ export class AuthenticationTest implements Authentication {
     return this.inner.from(fact, query);
   }
 
+  addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
+    return this.inner.addSpecificationListener(specification, onResult);
+  }
+
+  removeSpecificationListener(listener: SpecificationListener) {
+      return this.inner.removeSpecificationListener(listener);
+  }
+
   async save(envelopes: FactEnvelope[]) {
     await this.authorize(envelopes);
     return await this.inner.save(envelopes);
@@ -60,7 +68,7 @@ export class AuthenticationTest implements Authentication {
     return this.inner.query(start, query);
   }
 
-  read(start: FactReference[], specification: Specification): Promise<any[]> {
+  read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
     return this.inner.read(start, specification);
   }
 

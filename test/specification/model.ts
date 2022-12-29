@@ -73,6 +73,34 @@ export class President {
     ) { }
 }
 
+export class Manager {
+    static Type = "Manager" as const;
+    type = Manager.Type;
+    constructor(
+        public office: Office,
+        public employeeNumber: number
+    ) { }
+}
+
+export class ManagerName {
+    static Type = "Manager.Name" as const;
+    type = ManagerName.Type;
+    constructor(
+        public manager: Manager,
+        public value: string,
+        public prior: ManagerName[]
+    ) { }
+}
+
+export class ManagerTerminated {
+    static Type = "Manager.Terminated" as const;
+    type = ManagerTerminated.Type;
+    constructor(
+        public manager: Manager,
+        public date: Date | string
+    ) { }
+}
+
 export class Employee {
     static Type = "Employee" as const;
     type = Employee.Type;
@@ -103,6 +131,16 @@ export const model = new Model()
     .type(President, f => f
         .predecessor("office", Office)
         .predecessor("user", User)
+    )
+    .type(Manager, f => f
+        .predecessor("office", Office)
+    )
+    .type(ManagerName, f => f
+        .predecessor("manager", Manager)
+        .predecessor("prior", ManagerName)
+    )
+    .type(ManagerTerminated, f => f
+        .predecessor("manager", Manager)
     )
     .type(Employee, f => f
         .predecessor("office", Office)

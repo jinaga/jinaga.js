@@ -1,8 +1,8 @@
-import { ObservableSource, Observable } from "../observable/observable";
+import { Observable, ObservableSource, SpecificationListener } from "../observable/observable";
 import { Query } from "../query/query";
 import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactReference, FactEnvelope, FactPath, FactRecord, FactFeed } from "../storage";
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult } from "../storage";
 import { Channel } from "./channel";
 import { Fork } from "./fork";
 
@@ -19,6 +19,14 @@ export class PassThroughFork implements Fork {
         return this.inner.from(fact, query);
     }
 
+    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
+        return this.inner.addSpecificationListener(specification, onResult);
+    }
+
+    removeSpecificationListener(listener: SpecificationListener) {
+        return this.inner.removeSpecificationListener(listener);
+    }
+
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         return this.inner.save(envelopes);
     }
@@ -27,7 +35,7 @@ export class PassThroughFork implements Fork {
         return this.inner.query(start, query);
     }
 
-    read(start: FactReference[], specification: Specification): Promise<any[]> {
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         return this.inner.read(start, specification);
     }
 

@@ -1,7 +1,7 @@
 import { Query } from './query/query';
 import { Feed } from "./specification/feed";
 import { Specification } from "./specification/specification";
-import { FactEnvelope, FactFeed, FactReference, Storage } from './storage';
+import { FactEnvelope, FactFeed, FactReference, ProjectedResult, Storage } from './storage';
 
 export class Cache implements Storage {
     constructor(private inner: Storage) {
@@ -16,7 +16,7 @@ export class Cache implements Storage {
         return this.inner.query(start, query);
     }
 
-    read(start: FactReference[], specification: Specification): Promise<any[]> {
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         return this.inner.read(start, specification);
     }
 

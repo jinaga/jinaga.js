@@ -1,11 +1,11 @@
-import { ObservableSource } from "../observable/observable";
 import { Channel } from "../fork/channel";
 import { LoginResponse } from "../http/messages";
+import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Query } from "../query/query";
-import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactRecord, FactReference } from "../storage";
-import { Authentication } from "./authentication";
 import { Feed } from "../specification/feed";
+import { Specification } from "../specification/specification";
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult } from "../storage";
+import { Authentication } from "./authentication";
 
 export class AuthenticationNoOp implements Authentication {
     constructor(
@@ -24,6 +24,12 @@ export class AuthenticationNoOp implements Authentication {
     from(fact: FactReference, query: Query) {
         return this.inner.from(fact, query);
     }
+    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
+        return this.inner.addSpecificationListener(specification, onResult);
+    }
+    removeSpecificationListener(listener: SpecificationListener) {
+        return this.inner.removeSpecificationListener(listener);
+    }
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const saved = await this.inner.save(envelopes);
         return saved;
@@ -31,7 +37,7 @@ export class AuthenticationNoOp implements Authentication {
     query(start: FactReference, query: Query) {
         return this.inner.query(start, query);
     }
-    read(start: FactReference[], specification: Specification): Promise<any[]> {
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         return this.inner.read(start, specification);
     }
     feed(feed: Feed, bookmark: string): Promise<FactFeed> {

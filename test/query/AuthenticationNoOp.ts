@@ -1,11 +1,11 @@
 import { Authentication } from '../../src/authentication/authentication';
 import { Channel } from '../../src/fork/channel';
 import { LoginResponse } from '../../src/http/messages';
-import { Observable } from '../../src/observable/observable';
+import { Observable, SpecificationListener } from '../../src/observable/observable';
 import { Query } from '../../src/query/query';
 import { Feed } from '../../src/specification/feed';
 import { Specification } from '../../src/specification/specification';
-import { FactRecord, FactReference, FactEnvelope, FactPath, FactFeed } from '../../src/storage';
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult } from '../../src/storage';
 
 export class AuthenticationNoOp implements Authentication {
     login(): Promise<LoginResponse> {
@@ -21,6 +21,12 @@ export class AuthenticationNoOp implements Authentication {
         throw new Error('Method not implemented.');
     }
     from(fact: FactReference, query: Query): Observable {
+        throw new Error('Method not implemented.');
+    }
+    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
+        throw new Error('Method not implemented.');
+    }
+    removeSpecificationListener(listener: SpecificationListener): void {
         throw new Error('Method not implemented.');
     }
     close(): Promise<void> {

@@ -2,10 +2,12 @@ import { Authentication } from './authentication/authentication';
 import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { runService } from './observable/service';
+import { ObservableCollection, Observer, ObserverImpl, ResultAddedFunc } from './observer/observer';
 import { Query } from './query/query';
 import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf as OldSpecificationOf } from './query/query-parser';
 import { SpecificationOf } from './specification/given';
-import { FactEnvelope, FactPath, uniqueFactReferences } from './storage';
+import { Projection } from './specification/specification';
+import { FactEnvelope, FactPath, ProjectedResult, uniqueFactReferences } from './storage';
 import { Subscription } from "./subscription/subscription";
 import { SubscriptionImpl } from "./subscription/subscription-impl";
 import { SubscriptionNoOp } from "./subscription/subscription-no-op";
@@ -22,6 +24,13 @@ export interface Profile {
 }
 
 export { Trace, Tracer, Preposition, FactDescription, ensure, Template };
+
+type MakeObservable<T> =
+    T extends Array<infer U> ? ObservableCollection<MakeObservable<U>> :
+    T extends { [key: string]: unknown } ? { [K in keyof T]: MakeObservable<T[K]> } :
+    T;
+
+type WatchArgs<T extends unknown[], U> = [...T, ResultAddedFunc<MakeObservable<U>>];
 
 export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
@@ -183,8 +192,8 @@ export class Jinaga {
             this.validateFact(fact);
             return dehydrateReference(fact);
         });
-        const results = await this.authentication.read(references, innerSpecification);
-        return results;
+        const projectedResults = await this.authentication.read(references, innerSpecification);
+        return extractResults(projectedResults, innerSpecification.projection);
     }
 
     /**
@@ -217,7 +226,20 @@ export class Jinaga {
         start: T,
         preposition: Preposition<T, U>,
         resultAdded: (result: U) => void) : Watch<U, V>;
-    watch<T, U, V>(
+    watch<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U>;
+    watch(...args: any[]): any {
+        if (args.length === 3 && args[1] instanceof Preposition) {
+            return this.oldWatch(args[0], args[1], args[2]);
+        }
+        else if (args.length === 4 && args[1] instanceof Preposition) {
+            return this.oldWatch(args[0], args[1], args[2], args[3]);
+        }
+        else {
+            return this.newWatch(args[0], ...args.slice(1, args.length-1), args[args.length-1]);
+        }
+    }
+
+    private oldWatch<T, U, V>(
         start: T,
         preposition: Preposition<T, U>,
         resultAdded: (fact: U) => (V | void),
@@ -237,6 +259,35 @@ export class Jinaga {
         const watch = new WatchImpl<U, V>(reference, query, onResultAdded, resultRemoved, this.authentication);
         watch.begin();
         return watch;
+    }
+
+    private newWatch<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U> {
+        const given: T = args.slice(0, args.length - 1) as T;
+        const resultAdded = args[args.length - 1] as ResultAddedFunc<U>;
+        const innerSpecification = specification.specification;
+
+        if (!given) {
+            throw new Error("No given facts provided.");
+        }
+        if (given.some(g => !g)) {
+            throw new Error("One or more given facts are null.");
+        }
+        if (!resultAdded || typeof resultAdded !== "function") {
+            throw new Error("No resultAdded function provided.");
+        }
+        if (given.length !== innerSpecification.given.length) {
+            throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
+        }
+
+        const references = given.map(g => {
+            const fact = JSON.parse(JSON.stringify(g));
+            this.validateFact(fact);
+            return dehydrateReference(fact);
+        });
+
+        const observer = new ObserverImpl<U>(this.authentication, references, innerSpecification, resultAdded);
+        observer.start();
+        return observer;
     }
 
     /**
@@ -432,4 +483,26 @@ export class Jinaga {
             errorHandler(error);
         });
     }
+}
+
+function extractResults(projectedResults: ProjectedResult[], projection: Projection) {
+    const results = [];
+    for (const projectedResult of projectedResults) {
+        let result = projectedResult.result;
+        if (projection.type === "composite") {
+            const obj: any = {};
+            for (const component of projection.components) {
+                const value = result[component.name];
+                if (component.type === "specification") {
+                    obj[component.name] = extractResults(value, component.projection);
+                }
+                else {
+                    obj[component.name] = value;
+                }
+            }
+            result = obj;
+        }
+        results.push(result);
+    }
+    return results;
 }
