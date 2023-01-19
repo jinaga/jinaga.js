@@ -1,6 +1,6 @@
 import { Condition, ExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
 
-type InverseOperation = "add" | "remove" | "maybeAdd" | "maybeRemove";
+type InverseOperation = "add" | "remove";
 
 export interface SpecificationInverse {
     inverseSpecification: Specification;
@@ -208,13 +208,10 @@ function removeCondition(matches: Match[], condition: ExistentialCondition): Mat
 
 function inferOperation(parentOperation: InverseOperation, exists: boolean): InverseOperation {
     if (parentOperation === "add") {
-        return exists ? "maybeAdd" : "remove";
+        return exists ? "add" : "remove";
     }
-    else if (parentOperation === "remove" || parentOperation === "maybeRemove") {
-        return exists ? "maybeRemove" : "maybeAdd";
-    }
-    else if (parentOperation === "maybeAdd") {
-        return exists ? "maybeAdd" : "maybeRemove";
+    else if (parentOperation === "remove") {
+        return exists ? "remove" : "add";
     }
     else {
         const _exhaustiveCheck: never = parentOperation;
