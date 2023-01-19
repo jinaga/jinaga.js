@@ -115,7 +115,7 @@ describe("specification inverse", () => {
                 ]
             } => u1`
         ]);
-        expect(inverses[0].operation).toEqual("maybeAdd");
+        expect(inverses[0].operation).toEqual("add");
     });
 
     it("should invert restore pattern", () => {
@@ -174,7 +174,7 @@ describe("specification inverse", () => {
 
         expect(inverses[0].operation).toEqual("add");
         expect(inverses[1].operation).toEqual("remove");
-        expect(inverses[2].operation).toEqual("maybeAdd");
+        expect(inverses[2].operation).toEqual("add");
 
         expect(inverses[0].parentSubset).toEqual(["p1"]);
         expect(inverses[1].parentSubset).toEqual(["p1"]);

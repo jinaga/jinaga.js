@@ -85,10 +85,10 @@ export class ObserverImpl<T> {
             return;
         }
 
-        if (inverse.operation === "add" || inverse.operation === "maybeAdd") {
+        if (inverse.operation === "add") {
             return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset);
         }
-        else if (inverse.operation === "remove" || inverse.operation === "maybeRemove") {
+        else if (inverse.operation === "remove") {
             return await this.notifyRemoved(inverse.resultSubset, matchingResults);
         }
         else {
