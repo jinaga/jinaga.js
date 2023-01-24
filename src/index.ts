@@ -28,7 +28,7 @@ export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { MemoryStore } from './memory/memory-store';
 export { User, UserName } from "./model/user";
-export { Observable, ObservableSource } from './observable/observable';
+export { Observable, ObservableSource, SpecificationListener } from './observable/observable';
 export { ObservableSourceImpl } from './observable/observable-source-impl';
 export { fromDescriptiveString } from './query/descriptive-string';
 export { Query } from './query/query';
@@ -37,9 +37,9 @@ export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, S
 export { Declaration } from './specification/declaration';
 export { EdgeDescription, FactDescription, Feed, getAllFactTypesFromFeed, getAllRolesFromFeed, InputDescription, NotExistsConditionDescription, OutputDescription } from './specification/feed';
 export { buildFeeds } from './specification/feed-builder';
-export { ComponentProjection, CompositeProjection, getAllFactTypes, getAllRoles, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection } from './specification/specification';
+export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection } from './specification/specification';
 export { SpecificationParser } from './specification/specification-parser';
-export { FactEnvelope, FactFeed as FactStream, FactPath, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, Storage } from './storage';
+export { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Storage } from './storage';
 export { UserIdentity } from './user-identity';
 export { Watch } from "./watch/watch";
 
