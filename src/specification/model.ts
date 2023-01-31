@@ -14,13 +14,13 @@ type PredecessorOf<T, R extends keyof T> =
         R :
     never;
 
-class FactOptions<T> {
+class FactOptions<T, TRoles extends keyof T> {
     constructor(
         public factTypeByRole: RoleMap
     ) { }
 
-    predecessor<U extends PredecessorOf<T, keyof T>>(role: U, predecessorConstructor: PredecessorConstructor<T[U]>): FactOptions<T> {
-        return new FactOptions<T>({
+    predecessor<U extends TRoles>(role: U, predecessorConstructor: PredecessorConstructor<T[U]>): FactOptions<T, Exclude<TRoles, U>> {
+        return new FactOptions<T, Exclude<TRoles, U>>({
             ...this.factTypeByRole,
             [role]: predecessorConstructor.Type
         });
@@ -36,9 +36,9 @@ export class ModelBuilder {
         public readonly factTypeMap: FactTypeMap = {}
     ) { }
 
-    type<T>(factConstructor: FactConstructor<T>, options?: (f: FactOptions<T>) => FactOptions<T>): ModelBuilder {
+    type<T>(factConstructor: FactConstructor<T>, options?: (f: FactOptions<T, PredecessorOf<T, keyof T>>) => FactOptions<T, never>): ModelBuilder {
         if (options) {
-            const factOptions = options(new FactOptions<T>({}));
+            const factOptions = options(new FactOptions<T, PredecessorOf<T, keyof T>>({}));
             return new ModelBuilder({
                 ...this.factTypeMap,
                 [factConstructor.Type]: factOptions.factTypeByRole
