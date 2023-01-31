@@ -1,6 +1,6 @@
 {
   "name": "jinaga",
-  "version": "5.0.1",
+  "version": "5.0.2",
   "description": "Browser-Server-Browser Synchroninzation",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
