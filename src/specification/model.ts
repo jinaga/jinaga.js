@@ -14,13 +14,13 @@ type PredecessorOf<T, R extends keyof T> =
         R :
     never;
 
-class FactOptions<T> {
+class FactOptions<T, TRoles extends keyof T> {
     constructor(
         public factTypeByRole: RoleMap
     ) { }
 
-    predecessor<U extends PredecessorOf<T, keyof T>>(role: U, predecessorConstructor: PredecessorConstructor<T[U]>): FactOptions<T> {
-        return new FactOptions<T>({
+    predecessor<U extends TRoles>(role: U, predecessorConstructor: PredecessorConstructor<T[U]>): FactOptions<T, Exclude<TRoles, U>> {
+        return new FactOptions<T, Exclude<TRoles, U>>({
             ...this.factTypeByRole,
             [role]: predecessorConstructor.Type
         });
@@ -31,26 +31,40 @@ type FactTypeMap = { [factType: string]: RoleMap };
 
 type ExtractFactConstructors<T> = T extends [ FactConstructor<infer First>, ...infer Rest ] ? [ First, ...ExtractFactConstructors<Rest> ] : [];
 
-export class Model {
+export class ModelBuilder {
     constructor(
-        private readonly factTypeMap: FactTypeMap = {}
+        public readonly factTypeMap: FactTypeMap = {}
     ) { }
 
-    type<T>(factConstructor: FactConstructor<T>, options?: (f: FactOptions<T>) => FactOptions<T>): Model {
+    type<T>(factConstructor: FactConstructor<T>, options?: (f: FactOptions<T, PredecessorOf<T, keyof T>>) => FactOptions<T, never>): ModelBuilder {
         if (options) {
-            const factOptions = options(new FactOptions<T>({}));
-            return new Model({
+            const factOptions = options(new FactOptions<T, PredecessorOf<T, keyof T>>({}));
+            return new ModelBuilder({
                 ...this.factTypeMap,
                 [factConstructor.Type]: factOptions.factTypeByRole
             });
         }
         else {
-            return new Model({
+            return new ModelBuilder({
                 ...this.factTypeMap,
                 [factConstructor.Type]: {}
             });
         }
     }
+
+    with(types: (b: ModelBuilder) => ModelBuilder): ModelBuilder {
+        return types(this);
+    }
+}
+
+export function buildModel(types: (b: ModelBuilder) => ModelBuilder): Model {
+    return new Model(types(new ModelBuilder()).factTypeMap);
+}
+
+export class Model {
+    constructor(
+        private readonly factTypeMap: FactTypeMap = {}
+    ) { }
 
     given<T extends FactConstructor<unknown>[]>(...factConstructors: T) {
         return new Given<ExtractFactConstructors<T>>(factConstructors.map(c => c.Type), this.factTypeMap);
@@ -67,13 +81,13 @@ export class SpecificationOf<T, U> {
     }
 }
 
-type MatchParameters<T> = T extends [ infer First, ...infer Rest ] ? [ Label<First>, ...MatchParameters<Rest> ] : [ FactRepository ];
+type MatchParameters<T> = T extends [ infer First, ...infer Rest ] ? [ LabelOf<First>, ...MatchParameters<Rest> ] : [ FactRepository ];
 type SpecificationResult<U> =
     U extends string ? U :
     U extends number ? U :
     U extends boolean ? U :
     U extends Date ? U :
-    U extends Label<infer V> ? V :
+    U extends LabelOf<infer V> ? V :
     U extends Traversal<infer V> ? Array<SpecificationResult<V>> :
     U extends object ? { [K in keyof U]: SpecificationResult<U[K]> } :
     U;
@@ -105,15 +119,15 @@ class Given<T extends any[]> {
     }
 }
 
-export type Label<T> = {
+export type LabelOf<T> = {
     [ R in keyof T ]:
         T[R] extends string ? T[R] :
         T[R] extends number ? T[R] :
         T[R] extends Date ? T[R] :
         T[R] extends boolean ? T[R] :
-        T[R] extends Array<infer U> ? Label<U> :
-        T[R] extends infer U | undefined ? Label<U> :
-        Label<T[R]>;
+        T[R] extends Array<infer U> ? LabelOf<U> :
+        T[R] extends infer U | undefined ? LabelOf<U> :
+        LabelOf<T[R]>;
 }
 
 class Traversal<T> {
@@ -123,7 +137,7 @@ class Traversal<T> {
         public projection: Projection
     ) { }
 
-    join<U>(left: (input: T) => Label<U>, right: Label<U>): Traversal<T> {
+    join<U>(left: (input: T) => LabelOf<U>, right: LabelOf<U>): Traversal<T> {
         const leftResult = left(this.input);
         const payloadLeft = getPayload(leftResult);
         const payloadRight = getPayload(right);
@@ -232,7 +246,12 @@ class Traversal<T> {
                         return projection;
                     }
                     else if (payload.type === "hash") {
-                        throw new Error("Method not implemented.");
+                        const projection: NamedComponentProjection = {
+                            type: "hash",
+                            name: key,
+                            label: payload.root
+                        };
+                        return projection;
                     }
                     else {
                         const _exhaustiveCheck: never = payload;
@@ -291,7 +310,7 @@ class Source<T> {
         private factType: string
     ) { }
 
-    join<U>(left: (input: Label<T>) => Label<U>, right: Label<U>): Traversal<Label<T>> {
+    join<U>(left: (input: LabelOf<T>) => LabelOf<U>, right: LabelOf<U>): Traversal<LabelOf<T>> {
         const unknown = createFactProxy(this.factTypeMap, this.name, [], this.factType);
         const ancestor = left(unknown);
         const payloadLeft = getPayload(ancestor);
@@ -313,7 +332,7 @@ class Source<T> {
             type: "fact",
             label: this.name
         };
-        return new Traversal<Label<T>>(unknown, [match], projection);
+        return new Traversal<LabelOf<T>>(unknown, [match], projection);
     }
 }
 
@@ -451,12 +470,12 @@ function createHashProxy(root: string): any {
     });
 }
 
-function getPayload<T>(label: Label<T>): LabelPayload {
+function getPayload<T>(label: LabelOf<T>): LabelPayload {
     const proxy: any = label;
     return proxy[IDENTITY];
 }
 
-function isLabel<T>(value: any): value is Label<T> {
+function isLabel<T>(value: any): value is LabelOf<T> {
     return value[IDENTITY] !== undefined;
 }
 

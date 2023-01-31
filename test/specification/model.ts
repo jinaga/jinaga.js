@@ -1,4 +1,4 @@
-import { Model, FactRepository, Label } from "../../src/specification/given";
+import { buildModel, FactRepository, LabelOf, ModelBuilder } from "../../src/specification/model";
 
 export class User {
     static Type = "User" as const;
@@ -35,7 +35,7 @@ export class Office {
         public identifier: string
     ) { }
 
-    static inCompany(facts: FactRepository, company: Label<Company>) {
+    static inCompany(facts: FactRepository, company: LabelOf<Company>) {
         return facts.ofType(Office)
             .join(office => office.company, company)
             .notExists(office => facts.ofType(OfficeClosed)
@@ -110,7 +110,7 @@ export class Employee {
     ) { }
 }
 
-export const model = new Model()
+const officeFacts = (m: ModelBuilder) => m
     .type(User)
     .type(UserName, f => f
         .predecessor("user", User)
@@ -146,3 +146,5 @@ export const model = new Model()
         .predecessor("office", Office)
         .predecessor("user", User)
     );
+
+export const model = buildModel(officeFacts);
