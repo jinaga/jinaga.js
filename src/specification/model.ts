@@ -246,7 +246,12 @@ class Traversal<T> {
                         return projection;
                     }
                     else if (payload.type === "hash") {
-                        throw new Error("Method not implemented.");
+                        const projection: NamedComponentProjection = {
+                            type: "hash",
+                            name: key,
+                            label: payload.root
+                        };
+                        return projection;
                     }
                     else {
                         const _exhaustiveCheck: never = payload;
