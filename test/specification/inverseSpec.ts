@@ -1,5 +1,5 @@
 import { describeSpecification } from "../../src/specification/description";
-import { SpecificationOf } from "../../src/specification/given";
+import { SpecificationOf } from "../../src/specification/model";
 import { invertSpecification, SpecificationInverse } from "../../src/specification/inverse";
 import { Company, model, Office, OfficeClosed, OfficeReopened, President, User } from "./model";
 

@@ -32,11 +32,12 @@ export { Observable, ObservableSource, SpecificationListener } from './observabl
 export { ObservableSourceImpl } from './observable/observable-source-impl';
 export { fromDescriptiveString } from './query/descriptive-string';
 export { Query } from './query/query';
-export { SpecificationOf } from "./query/query-parser";
+export { SpecificationOf as TemplateSpecificationOf } from "./query/query-parser";
 export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from './query/steps';
 export { Declaration } from './specification/declaration';
 export { EdgeDescription, FactDescription, Feed, getAllFactTypesFromFeed, getAllRolesFromFeed, InputDescription, NotExistsConditionDescription, OutputDescription } from './specification/feed';
 export { buildFeeds } from './specification/feed-builder';
+export { FactRepository, Model, SpecificationOf } from './specification/model';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection } from './specification/specification';
 export { SpecificationParser } from './specification/specification-parser';
 export { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Storage } from './storage';

@@ -1,4 +1,4 @@
-import { SpecificationOf } from "../../src/specification/given";
+import { SpecificationOf } from "../../src/specification/model";
 import { model, Company, Office, OfficeClosed, President, UserName, User } from "./model";
 
 describe("given", () => {

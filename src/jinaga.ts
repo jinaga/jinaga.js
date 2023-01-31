@@ -5,7 +5,7 @@ import { runService } from './observable/service';
 import { ObservableCollection, Observer, ObserverImpl, ResultAddedFunc } from './observer/observer';
 import { Query } from './query/query';
 import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf as OldSpecificationOf } from './query/query-parser';
-import { SpecificationOf } from './specification/given';
+import { SpecificationOf } from './specification/model';
 import { Projection } from './specification/specification';
 import { FactEnvelope, FactPath, ProjectedResult, uniqueFactReferences } from './storage';
 import { Subscription } from "./subscription/subscription";

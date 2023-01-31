@@ -31,26 +31,40 @@ type FactTypeMap = { [factType: string]: RoleMap };
 
 type ExtractFactConstructors<T> = T extends [ FactConstructor<infer First>, ...infer Rest ] ? [ First, ...ExtractFactConstructors<Rest> ] : [];
 
-export class Model {
+export class ModelBuilder {
     constructor(
-        private readonly factTypeMap: FactTypeMap = {}
+        public readonly factTypeMap: FactTypeMap = {}
     ) { }
 
-    type<T>(factConstructor: FactConstructor<T>, options?: (f: FactOptions<T>) => FactOptions<T>): Model {
+    type<T>(factConstructor: FactConstructor<T>, options?: (f: FactOptions<T>) => FactOptions<T>): ModelBuilder {
         if (options) {
             const factOptions = options(new FactOptions<T>({}));
-            return new Model({
+            return new ModelBuilder({
                 ...this.factTypeMap,
                 [factConstructor.Type]: factOptions.factTypeByRole
             });
         }
         else {
-            return new Model({
+            return new ModelBuilder({
                 ...this.factTypeMap,
                 [factConstructor.Type]: {}
             });
         }
     }
+
+    with(types: (b: ModelBuilder) => ModelBuilder): ModelBuilder {
+        return types(this);
+    }
+}
+
+export function buildModel(types: (b: ModelBuilder) => ModelBuilder): Model {
+    return new Model(types(new ModelBuilder()).factTypeMap);
+}
+
+export class Model {
+    constructor(
+        private readonly factTypeMap: FactTypeMap = {}
+    ) { }
 
     given<T extends FactConstructor<unknown>[]>(...factConstructors: T) {
         return new Given<ExtractFactConstructors<T>>(factConstructors.map(c => c.Type), this.factTypeMap);

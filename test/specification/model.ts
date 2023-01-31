@@ -1,4 +1,4 @@
-import { Model, FactRepository, Label } from "../../src/specification/given";
+import { buildModel, FactRepository, Label } from "../../src/specification/model";
 
 export class User {
     static Type = "User" as const;
@@ -110,7 +110,7 @@ export class Employee {
     ) { }
 }
 
-export const model = new Model()
+export const model = buildModel(m => m
     .type(User)
     .type(UserName, f => f
         .predecessor("user", User)
@@ -145,4 +145,5 @@ export const model = new Model()
     .type(Employee, f => f
         .predecessor("office", Office)
         .predecessor("user", User)
-    );
+    )
+);
