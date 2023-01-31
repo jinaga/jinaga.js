@@ -37,7 +37,7 @@ export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, S
 export { Declaration } from './specification/declaration';
 export { EdgeDescription, FactDescription, Feed, getAllFactTypesFromFeed, getAllRolesFromFeed, InputDescription, NotExistsConditionDescription, OutputDescription } from './specification/feed';
 export { buildFeeds } from './specification/feed-builder';
-export { FactRepository, Model, SpecificationOf } from './specification/model';
+export { buildModel, FactRepository, LabelOf, Model, ModelBuilder, SpecificationOf } from './specification/model';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection } from './specification/specification';
 export { SpecificationParser } from './specification/specification-parser';
 export { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Storage } from './storage';
