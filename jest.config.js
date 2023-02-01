@@ -5,8 +5,5 @@ module.exports = {
   testMatch: [
     '**/test/**/*Spec.ts',
   ],
-  reporters:
-	[
-		'./test/reporter.js',
-	],
+  reporters: ['jest-progress-bar-reporter'],
 };
