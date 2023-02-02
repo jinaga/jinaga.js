@@ -201,9 +201,13 @@ export class SpecificationParser {
         }
         else {
             const label = this.parseIdentifier();
-            this.expect(".");
-            const field = this.parseIdentifier();
-            return { type: "field", name, label, field };
+            if (this.consume(".")) {
+                const field = this.parseIdentifier();
+                return { type: "field", name, label, field };
+            }
+            else {
+                return { type: "fact", name, label };
+            }
         }
     }
 
@@ -226,15 +230,29 @@ export class SpecificationParser {
                 components
             };
         }
+        else if (this.consume("#")) {
+            const label = this.parseIdentifier();
+            return {
+                type: "hash",
+                label
+            };
+        }
         else {
             const label = this.parseIdentifier();
-            this.expect(".");
-            const field = this.parseIdentifier();
-            return {
-                type: "field",
-                label,
-                field
-            };
+            if (this.consume(".")) {
+                const field = this.parseIdentifier();
+                return {
+                    type: "field",
+                    label,
+                    field
+                };
+            }
+            else {
+                return {
+                    type: "fact",
+                    label
+                };
+            }
         }
     }
 

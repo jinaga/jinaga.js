@@ -535,6 +535,143 @@ describe("Specification parser", () => {
                 ]
             }
         };
+        expect(specification).toEqual(expected);
+    });
 
+    it("accepts fact component", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User) {
+                name: MyApp.User.Name [
+                    name->user:Jinaga.User = user
+                ]
+            } => {
+                userName = name
+            }`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "user",
+                    type: "Jinaga.User"
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "name",
+                        type: "MyApp.User.Name"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    predecessorType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ],
+            projection: {
+                type: "composite",
+                components: [
+                    {
+                        type: "fact",
+                        name: "userName",
+                        label: "name"
+                    }
+                ]
+            }
+        };
+        expect(specification).toEqual(expected);
+    });
+
+    it("accepts hash result", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User) {
+                name: MyApp.User.Name [
+                    name->user:Jinaga.User = user
+                ]
+            } => #name`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "user",
+                    type: "Jinaga.User"
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "name",
+                        type: "MyApp.User.Name"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    predecessorType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ],
+            projection: {
+                type: "hash",
+                label: "name"
+            }
+        };
+        expect(specification).toEqual(expected);
+    });
+
+    it("accepts fact result", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User) {
+                name: MyApp.User.Name [
+                    name->user:Jinaga.User = user
+                ]
+            } => name`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "user",
+                    type: "Jinaga.User"
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "name",
+                        type: "MyApp.User.Name"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    predecessorType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ],
+            projection: {
+                type: "fact",
+                label: "name"
+            }
+        };
+        expect(specification).toEqual(expected);
     });
 });
