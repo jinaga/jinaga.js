@@ -88,18 +88,17 @@ function createAuthentication(
             const queue = new IndexedDBQueue(config.indexedDb);
             const fork = new PersistentFork(feed, queue, webClient);
             const loginStore = new IndexedDBLoginStore(config.indexedDb);
-            const authentication = new AuthenticationOffline(fork, loginStore, webClient);
+            const authentication = new AuthenticationOffline(loginStore, webClient);
             fork.initialize();
             return authentication;
         }
         else {
-            const fork = new TransientFork(feed, webClient);
-            const authentication = new AuthenticationWebClient(fork, webClient);
+            const authentication = new AuthenticationWebClient(webClient);
             return authentication;
         }
     }
     else {
-        const authentication = new AuthenticationNoOp(feed);
+        const authentication = new AuthenticationNoOp();
         return authentication;
     }
 }
