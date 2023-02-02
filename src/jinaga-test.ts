@@ -22,11 +22,11 @@ export class JinagaTest {
   static create(config: JinagaTestConfig) {
     const store = new MemoryStore();
     this.saveInitialState(config, store);
-    const feed = new ObservableSourceImpl(store);
+    const observableSource = new ObservableSourceImpl(store);
     const syncStatusNotifier = new SyncStatusNotifier();
-    const fork = new PassThroughFork(feed);
-    const authentication = this.createAuthentication(config, feed);
-    const factManager = new FactManager(authentication, fork);
+    const fork = new PassThroughFork(observableSource);
+    const authentication = this.createAuthentication(config, observableSource);
+    const factManager = new FactManager(authentication, fork, observableSource);
     return new Jinaga(factManager, syncStatusNotifier);
   }
 

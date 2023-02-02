@@ -2,7 +2,7 @@ import { Authentication } from "../authentication/authentication";
 import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
 import { LoginResponse } from "../http/messages";
-import { Observable, SpecificationListener } from "../observable/observable";
+import { Observable, ObservableSource, SpecificationListener } from "../observable/observable";
 import { Query } from "../query/query";
 import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
@@ -11,7 +11,8 @@ import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedR
 export class FactManager {
     constructor(
         private readonly authentication: Authentication,
-        private readonly fork: Fork
+        private readonly fork: Fork,
+        private readonly observableSource: ObservableSource
     ) { }
 
     login(): Promise<LoginResponse> {

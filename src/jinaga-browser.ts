@@ -28,11 +28,11 @@ export type JinagaBrowserConfig = {
 export class JinagaBrowser {
     static create(config: JinagaBrowserConfig) {
         const store = createStore(config);
-        const feed = new ObservableSourceImpl(store);
+        const observableSource = new ObservableSourceImpl(store);
         const syncStatusNotifier = new SyncStatusNotifier();
-        const fork = createFork(config, feed, syncStatusNotifier);
-        const authentication = createAuthentication(config, feed, syncStatusNotifier);
-        const factManager = new FactManager(authentication, fork);
+        const fork = createFork(config, observableSource, syncStatusNotifier);
+        const authentication = createAuthentication(config, observableSource, syncStatusNotifier);
+        const factManager = new FactManager(authentication, fork, observableSource);
         return new Jinaga(factManager, syncStatusNotifier);
     }
 }

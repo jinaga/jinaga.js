@@ -54,7 +54,7 @@ describe("Nested watch", () => {
         const observableSource = new ObservableSourceImpl(memory);
         const fork = new PassThroughFork(observableSource);
         const authentication = new MockAuthentication(memory);
-        const factManager = new FactManager(authentication, fork);
+        const factManager = new FactManager(authentication, fork, observableSource);
         j = new Jinaga(factManager, null);
         room = {
             type: 'Room',
