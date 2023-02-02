@@ -2,11 +2,12 @@ import { Authentication } from './authentication/authentication';
 import { AuthenticationTest } from './authentication/authentication-test';
 import { AuthorizationRules } from './authorization/authorizationRules';
 import { dehydrateFact, Dehydration } from './fact/hydrate';
-import { ObservableSource } from './observable/observable';
-import { ObservableSourceImpl } from './observable/observable-source-impl';
 import { SyncStatusNotifier } from './http/web-client';
 import { Jinaga } from './jinaga';
+import { FactManager } from './managers/factManager';
 import { MemoryStore } from './memory/memory-store';
+import { ObservableSource } from './observable/observable';
+import { ObservableSourceImpl } from './observable/observable-source-impl';
 import { FactEnvelope } from './storage';
 
 export type JinagaTestConfig = {
@@ -23,7 +24,8 @@ export class JinagaTest {
     const feed = new ObservableSourceImpl(store);
     const syncStatusNotifier = new SyncStatusNotifier();
     const authentication = this.createAuthentication(config, feed);
-    return new Jinaga(authentication, syncStatusNotifier);
+    const factManager = new FactManager(authentication);
+    return new Jinaga(factManager, syncStatusNotifier);
   }
 
   static saveInitialState(config: JinagaTestConfig, store: MemoryStore) {

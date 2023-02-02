@@ -2,8 +2,6 @@ import { Authentication } from "./authentication/authentication";
 import { AuthenticationNoOp } from "./authentication/authentication-noop";
 import { AuthenticationOffline } from "./authentication/authentication-offline";
 import { AuthenticationWebClient } from "./authentication/authentication-web-client";
-import { ObservableSource } from "./observable/observable";
-import { ObservableSourceImpl } from "./observable/observable-source-impl";
 import { PersistentFork } from "./fork/persistent-fork";
 import { TransientFork } from "./fork/transient-fork";
 import { SyncStatusNotifier, WebClient } from "./http/web-client";
@@ -12,7 +10,10 @@ import { IndexedDBLoginStore } from "./indexeddb/indexeddb-login-store";
 import { IndexedDBQueue } from "./indexeddb/indexeddb-queue";
 import { IndexedDBStore } from "./indexeddb/indexeddb-store";
 import { Jinaga } from "./jinaga";
+import { FactManager } from "./managers/factManager";
 import { MemoryStore } from "./memory/memory-store";
+import { ObservableSource } from "./observable/observable";
+import { ObservableSourceImpl } from "./observable/observable-source-impl";
 import { Storage } from "./storage";
 
 export type JinagaBrowserConfig = {
@@ -28,7 +29,8 @@ export class JinagaBrowser {
         const feed = new ObservableSourceImpl(store);
         const syncStatusNotifier = new SyncStatusNotifier();
         const authentication = createAuthentication(config, feed, syncStatusNotifier);
-        return new Jinaga(authentication, syncStatusNotifier);
+        const factManager = new FactManager(authentication);
+        return new Jinaga(factManager, syncStatusNotifier);
     }
 }
 

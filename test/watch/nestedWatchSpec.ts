@@ -1,4 +1,5 @@
 import { Jinaga, ensure } from "../../src/jinaga";
+import { FactManager } from "../../src/managers/factManager";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { MockAuthentication } from "./mock-authentication";
 
@@ -48,7 +49,9 @@ describe("Nested watch", () => {
 
     beforeEach(() => {
         const memory = new MemoryStore();
-        j = new Jinaga(new MockAuthentication(memory), null);
+        const authentication = new MockAuthentication(memory);
+        const factManager = new FactManager(authentication);
+        j = new Jinaga(factManager, null);
         room = {
             type: 'Room',
             identifier: Math.random()

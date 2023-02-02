@@ -1,6 +1,6 @@
-import { Authentication } from './authentication/authentication';
 import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
+import { FactManager } from './managers/factManager';
 import { runService } from './observable/service';
 import { ObservableCollection, Observer, ObserverImpl, ResultAddedFunc } from './observer/observer';
 import { Query } from './query/query';
@@ -39,7 +39,7 @@ export class Jinaga {
     private serviceRunner = new ServiceRunner(exception => this.error(exception));
     
     constructor(
-        private authentication: Authentication,
+        private factManager: FactManager,
         private syncStatusNotifier: SyncStatusNotifier | null
     ) { }
 
@@ -82,7 +82,7 @@ export class Jinaga {
      * @returns A promise that resolves to a fact that represents the user's identity, and the user's profile as reported by the configured Passport strategy
      */
     async login<U>(): Promise<{ userFact: U, profile: Profile }> {
-        const { userFact, profile } = await this.authentication.login();
+        const { userFact, profile } = await this.factManager.login();
         return {
             userFact: hydrate<U>(userFact),
             profile
@@ -97,7 +97,7 @@ export class Jinaga {
      * @returns A promise that resolves to the local machine's identity
      */
     async local<D>(): Promise<D> {
-        const deviceFact = await this.authentication.local();
+        const deviceFact = await this.factManager.local();
         return hydrate<D>(deviceFact);
     }
     
@@ -125,7 +125,7 @@ export class Jinaga {
                     signatures: []
                 };
             });
-            const saved = await this.authentication.save(envelopes);
+            const saved = await this.factManager.save(envelopes);
             return hydrated as T;
         } catch (error) {
             this.error(error);
@@ -166,14 +166,14 @@ export class Jinaga {
         this.validateFact(fact);
         const reference = dehydrateReference(fact);
         const query = new Query(preposition.steps);
-        const results = await this.authentication.query(reference, query);
+        const results = await this.factManager.query(reference, query);
         if (results.length === 0) {
             return [];
         }
         const references = results.map(r => r[r.length - 1]);
         const uniqueReferences = uniqueFactReferences(references);
 
-        const facts = await this.authentication.load(uniqueReferences);
+        const facts = await this.factManager.load(uniqueReferences);
         return hydrateFromTree(uniqueReferences, facts);
     }
 
@@ -192,7 +192,7 @@ export class Jinaga {
             this.validateFact(fact);
             return dehydrateReference(fact);
         });
-        const projectedResults = await this.authentication.read(references, innerSpecification);
+        const projectedResults = await this.factManager.read(references, innerSpecification);
         return extractResults(projectedResults, innerSpecification.projection);
     }
 
@@ -256,7 +256,7 @@ export class Jinaga {
             const model = resultAdded(fact);
             take(resultRemoved ? <V>model : null);
         };
-        const watch = new WatchImpl<U, V>(reference, query, onResultAdded, resultRemoved, this.authentication);
+        const watch = new WatchImpl<U, V>(reference, query, onResultAdded, resultRemoved, this.factManager);
         watch.begin();
         return watch;
     }
@@ -285,7 +285,7 @@ export class Jinaga {
             return dehydrateReference(fact);
         });
 
-        const observer = new ObserverImpl<U>(this.authentication, references, innerSpecification, resultAdded);
+        const observer = new ObserverImpl<U>(this.factManager, references, innerSpecification, resultAdded);
         observer.start();
         return observer;
     }
@@ -310,8 +310,8 @@ export class Jinaga {
         this.validateFact(fact);
         const reference = dehydrateReference(fact);
         const query = new Query(preposition.steps);
-        const channel = this.authentication.addChannel(reference, query);
-        const subscription = new SubscriptionImpl(channel, this.authentication);
+        const channel = this.factManager.addChannel(reference, query);
+        const subscription = new SubscriptionImpl(channel, this.factManager);
         return subscription;
     }
 
@@ -327,7 +327,7 @@ export class Jinaga {
         this.validateFact(fact);
         const reference = dehydrateReference(fact);
         const query = new Query(preposition.steps);
-        const feed = this.authentication;
+        const feed = this.factManager;
         const serviceRunner = this.serviceRunner;
         runService<U>(feed, reference, query, serviceRunner, handler);
     }

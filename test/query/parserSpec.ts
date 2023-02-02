@@ -1,13 +1,15 @@
 import 'source-map-support/register';
 
 import { Jinaga } from '../../src/jinaga';
+import { FactManager } from '../../src/managers/factManager';
 import { Query } from '../../src/query/query';
 import { ConditionOf, Preposition, SpecificationOf, ensure } from '../../src/query/query-parser';
 import { AuthenticationNoOp } from './AuthenticationNoOp';
 
 describe('Query parser', () => {
 
-    const j = new Jinaga(new AuthenticationNoOp(), null);
+    const factManager = new FactManager(new AuthenticationNoOp());
+    const j = new Jinaga(factManager, null);
 
     function tasksInList(l: List): SpecificationOf<Task> {
         return j.match({
