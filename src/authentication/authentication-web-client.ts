@@ -68,4 +68,8 @@ export class AuthenticationWebClient implements Authentication {
     removeChannel(channel: Channel) {
         this.inner.removeChannel(channel);
     }
+
+    authorize(envelopes: FactEnvelope[]): Promise<void> {
+        return Promise.resolve();
+    }
 }

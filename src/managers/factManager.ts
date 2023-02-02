@@ -1,5 +1,6 @@
 import { Authentication } from "../authentication/authentication";
 import { Channel } from "../fork/channel";
+import { Fork } from "../fork/fork";
 import { LoginResponse } from "../http/messages";
 import { Observable, SpecificationListener } from "../observable/observable";
 import { Query } from "../query/query";
@@ -9,7 +10,8 @@ import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedR
 
 export class FactManager {
     constructor(
-        private readonly authentication: Authentication
+        private readonly authentication: Authentication,
+        private readonly fork: Fork
     ) { }
 
     login(): Promise<LoginResponse> {
@@ -22,50 +24,51 @@ export class FactManager {
 
     addChannel(fact: FactReference, query: Query): Channel 
     {
-        return this.authentication.addChannel(fact, query);
+        return this.fork.addChannel(fact, query);
     }
 
     removeChannel(channel: Channel): void {
-        this.authentication.removeChannel(channel);
+        this.fork.removeChannel(channel);
     }
 
     from(fact: FactReference, query: Query): Observable {
-        return this.authentication.from(fact, query);
+        return this.fork.from(fact, query);
     }
 
     addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
-        return this.authentication.addSpecificationListener(specification, onResult);
+        return this.fork.addSpecificationListener(specification, onResult);
     }
 
     removeSpecificationListener(listener: SpecificationListener): void {
-        this.authentication.removeSpecificationListener(listener);
+        this.fork.removeSpecificationListener(listener);
     }
 
     close(): Promise<void> {
-        return this.authentication.close();
+        return this.fork.close();
     }
 
-    save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
-        return this.authentication.save(envelopes);
+    async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+        await this.authentication.authorize(envelopes);
+        return await this.fork.save(envelopes);
     }
 
     query(start: FactReference, query: Query): Promise<FactPath[]> {
-        return this.authentication.query(start, query);
+        return this.fork.query(start, query);
     }
 
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        return this.authentication.read(start, specification);
+        return this.fork.read(start, specification);
     }
 
     feed(feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.authentication.feed(feed, bookmark);
+        return this.fork.feed(feed, bookmark);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
-        return this.authentication.whichExist(references);
+        return this.fork.whichExist(references);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {
-        return this.authentication.load(references);
+        return this.fork.load(references);
     }
 }

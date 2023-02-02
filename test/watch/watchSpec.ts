@@ -1,9 +1,11 @@
-import { Jinaga } from "../../src/jinaga";
-import { MemoryStore } from "../../src/memory/memory-store";
-import { MockAuthentication } from "./mock-authentication";
-import { factReferenceEquals } from "../../src/storage";
 import { dehydrateFact } from "../../src/fact/hydrate";
+import { PassThroughFork } from "../../src/fork/pass-through-fork";
+import { Jinaga } from "../../src/jinaga";
 import { FactManager } from "../../src/managers/factManager";
+import { MemoryStore } from "../../src/memory/memory-store";
+import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
+import { factReferenceEquals } from "../../src/storage";
+import { MockAuthentication } from "./mock-authentication";
 
 class TaskList {
   static Type = "TaskList" as const;
@@ -54,8 +56,10 @@ describe("Watch", () => {
   var j: Jinaga;
   beforeEach(() => {
     const memory = new MemoryStore();
+    const observableSource = new ObservableSourceImpl(memory);
+    const fork = new PassThroughFork(observableSource);
     const authentication = new MockAuthentication(memory);
-    const factManager = new FactManager(authentication);
+    const factManager = new FactManager(authentication, fork);
     j = new Jinaga(factManager, null);
     tasks = [];
   });

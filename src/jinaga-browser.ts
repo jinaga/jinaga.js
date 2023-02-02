@@ -2,6 +2,8 @@ import { Authentication } from "./authentication/authentication";
 import { AuthenticationNoOp } from "./authentication/authentication-noop";
 import { AuthenticationOffline } from "./authentication/authentication-offline";
 import { AuthenticationWebClient } from "./authentication/authentication-web-client";
+import { Fork } from "./fork/fork";
+import { PassThroughFork } from "./fork/pass-through-fork";
 import { PersistentFork } from "./fork/persistent-fork";
 import { TransientFork } from "./fork/transient-fork";
 import { SyncStatusNotifier, WebClient } from "./http/web-client";
@@ -28,8 +30,9 @@ export class JinagaBrowser {
         const store = createStore(config);
         const feed = new ObservableSourceImpl(store);
         const syncStatusNotifier = new SyncStatusNotifier();
+        const fork = createFork(config, feed, syncStatusNotifier);
         const authentication = createAuthentication(config, feed, syncStatusNotifier);
-        const factManager = new FactManager(authentication);
+        const factManager = new FactManager(authentication, fork);
         return new Jinaga(factManager, syncStatusNotifier);
     }
 }
@@ -41,6 +44,33 @@ function createStore(config: JinagaBrowserConfig): Storage {
   else {
     return new MemoryStore();
   }
+}
+
+function createFork(
+    config: JinagaBrowserConfig,
+    feed: ObservableSource,
+    syncStatusNotifier: SyncStatusNotifier
+): Fork {
+    if (config.httpEndpoint) {
+        const httpConnection = new XhrConnection(config.httpEndpoint);
+        const httpTimeoutSeconds = config.httpTimeoutSeconds || 5;
+        const webClient = new WebClient(httpConnection, syncStatusNotifier, {
+            timeoutSeconds: httpTimeoutSeconds
+        });
+        if (config.indexedDb) {
+            const queue = new IndexedDBQueue(config.indexedDb);
+            const fork = new PersistentFork(feed, queue, webClient);
+            return fork;
+        }
+        else {
+            const fork = new TransientFork(feed, webClient);
+            return fork;
+        }
+    }
+    else {
+        const fork = new PassThroughFork(feed);
+        return fork;
+    }
 }
 
 function createAuthentication(

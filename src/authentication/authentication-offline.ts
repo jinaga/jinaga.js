@@ -84,6 +84,10 @@ export class AuthenticationOffline implements Authentication {
     return this.inner.removeChannel(channel);
   }
 
+  authorize(envelopes: FactEnvelope[]): Promise<void> {
+    return Promise.resolve();
+  }
+
   private async loginRemote() {
     const result = await this.client.login();
     if (result && result.userFact && result.profile) {

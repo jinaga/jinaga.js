@@ -1,19 +1,13 @@
-import { Authentication } from '../../src/authentication/authentication';
 import { Channel } from '../../src/fork/channel';
-import { LoginResponse } from '../../src/http/messages';
+import { Fork } from '../../src/fork/fork';
 import { Observable, SpecificationListener } from '../../src/observable/observable';
 import { Query } from '../../src/query/query';
 import { Feed } from '../../src/specification/feed';
 import { Specification } from '../../src/specification/specification';
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult } from '../../src/storage';
 
- export class AuthenticationNoOp implements Authentication {
-    login(): Promise<LoginResponse> {
-        throw new Error('Method not implemented.');
-    }
-    local(): Promise<FactRecord> {
-        throw new Error('Method not implemented.');
-    }
+
+export class ForkNoOp implements Fork {
     addChannel(fact: FactReference, query: Query): Channel {
         throw new Error('Method not implemented.');
     }
@@ -48,13 +42,6 @@ import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedR
         throw new Error('Method not implemented.');
     }
     load(references: FactReference[]): Promise<FactRecord[]> {
-        throw new Error('Method not implemented.');
-    }
-    public getAccessToken(): Promise<string> {
-        throw new Error('Method not implemented.');
-    }
-
-    authorize(envelopes: FactEnvelope[]): Promise<void> {
         throw new Error('Method not implemented.');
     }
 }

@@ -91,7 +91,7 @@ export class AuthenticationTest implements Authentication {
   removeChannel(channel: Channel): void {
   }
   
-  private async authorize(envelopes: FactEnvelope[]) {
+  async authorize(envelopes: FactEnvelope[]) {
     if (this.authorizationEngine) {
       await this.authorizationEngine.authorizeFacts(envelopes.map(e => e.fact), this.userFact);
     }

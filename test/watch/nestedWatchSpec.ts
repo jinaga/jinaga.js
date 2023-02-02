@@ -1,6 +1,8 @@
-import { Jinaga, ensure } from "../../src/jinaga";
+import { PassThroughFork } from "../../src/fork/pass-through-fork";
+import { ensure, Jinaga } from "../../src/jinaga";
 import { FactManager } from "../../src/managers/factManager";
 import { MemoryStore } from "../../src/memory/memory-store";
+import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
 import { MockAuthentication } from "./mock-authentication";
 
 interface Room {
@@ -49,8 +51,10 @@ describe("Nested watch", () => {
 
     beforeEach(() => {
         const memory = new MemoryStore();
+        const observableSource = new ObservableSourceImpl(memory);
+        const fork = new PassThroughFork(observableSource);
         const authentication = new MockAuthentication(memory);
-        const factManager = new FactManager(authentication);
+        const factManager = new FactManager(authentication, fork);
         j = new Jinaga(factManager, null);
         room = {
             type: 'Room',

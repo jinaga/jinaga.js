@@ -54,4 +54,8 @@ export class AuthenticationNoOp implements Authentication {
     }
     removeChannel(channel: Channel): void {
     }
+
+    authorize(envelopes: FactEnvelope[]): Promise<void> {
+        return Promise.resolve();
+    }
 }

@@ -1,5 +1,5 @@
-import { Authentication } from "../authentication/authentication";
 import { computeObjectHash } from "../fact/hash";
+import { FactManager } from "../managers/factManager";
 import { SpecificationListener } from "../observable/observable";
 import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Projection, Specification } from "../specification/specification";
@@ -35,7 +35,7 @@ export class ObserverImpl<T> {
     }[] = [];
 
     constructor(
-        private authentication: Authentication,
+        private factManager: FactManager,
         private given: FactReference[],
         private specification: Specification,
         private resultAdded: ResultAddedFunc<T>
@@ -51,7 +51,7 @@ export class ObserverImpl<T> {
     public start() {
         this.initialQuery = this.runInitialQuery();
         const inverses: SpecificationInverse[] = invertSpecification(this.specification);
-        const listeners = inverses.map(inverse => this.authentication.addSpecificationListener(
+        const listeners = inverses.map(inverse => this.factManager.addSpecificationListener(
             inverse.inverseSpecification,
             (results) => this.onResult(inverse, results)
         ));
@@ -67,13 +67,13 @@ export class ObserverImpl<T> {
 
     public stop(): Promise<void> {
         for (const listener of this.listeners) {
-            this.authentication.removeSpecificationListener(listener);
+            this.factManager.removeSpecificationListener(listener);
         }
         return Promise.resolve();
     }
 
     private async runInitialQuery() {
-        const projectedResults = await this.authentication.read(this.given, this.specification);
+        const projectedResults = await this.factManager.read(this.given, this.specification);
         await this.notifyAdded(projectedResults, this.specification.projection, "", []);
     }
 

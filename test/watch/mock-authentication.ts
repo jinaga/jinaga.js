@@ -59,4 +59,8 @@ export class MockAuthentication implements Authentication {
   removeChannel(channel: Channel): void {
     throw new Error("RemoveChannel method not implemented on MockAuthentication.");
   }
+
+  authorize(envelopes: FactEnvelope[]): Promise<void> {
+    return Promise.resolve();
+  }
 }

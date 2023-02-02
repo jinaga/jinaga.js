@@ -2,6 +2,7 @@ import { Authentication } from './authentication/authentication';
 import { AuthenticationTest } from './authentication/authentication-test';
 import { AuthorizationRules } from './authorization/authorizationRules';
 import { dehydrateFact, Dehydration } from './fact/hydrate';
+import { PassThroughFork } from './fork/pass-through-fork';
 import { SyncStatusNotifier } from './http/web-client';
 import { Jinaga } from './jinaga';
 import { FactManager } from './managers/factManager';
@@ -23,8 +24,9 @@ export class JinagaTest {
     this.saveInitialState(config, store);
     const feed = new ObservableSourceImpl(store);
     const syncStatusNotifier = new SyncStatusNotifier();
+    const fork = new PassThroughFork(feed);
     const authentication = this.createAuthentication(config, feed);
-    const factManager = new FactManager(authentication);
+    const factManager = new FactManager(authentication, fork);
     return new Jinaga(factManager, syncStatusNotifier);
   }
 
