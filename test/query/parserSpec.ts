@@ -6,13 +6,13 @@ import { Query } from '../../src/query/query';
 import { ConditionOf, ensure, Preposition, SpecificationOf } from '../../src/query/query-parser';
 import { AuthenticationNoOp } from './AuthenticationNoOp';
 import { ForkNoOp } from './ForkNoOp';
-import { ObservableSourceImpl } from '../../src/observable/observable-source-impl';
+import { ObservableSource } from '../../src/observable/observable';
 import { MemoryStore } from '../../src/memory/memory-store';
 
 describe('Query parser', () => {
 
     const memory = new MemoryStore();
-    const factManager = new FactManager(new AuthenticationNoOp(), new ForkNoOp(), new ObservableSourceImpl(memory));
+    const factManager = new FactManager(new AuthenticationNoOp(), new ForkNoOp(), new ObservableSource(memory));
     const j = new Jinaga(factManager, null);
 
     function tasksInList(l: List): SpecificationOf<Task> {

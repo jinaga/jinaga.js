@@ -1,12 +1,13 @@
 import { Hydration } from '../fact/hydrate';
-import { ObservableSource, ObservableSubscription } from '../observable/observable';
+import { FactManager } from '../managers/factManager';
+import { ObservableSubscription } from '../observable/observable';
 import { Query } from '../query/query';
 import { Preposition } from '../query/query-parser';
 import { FactPath, FactReference, uniqueFactReferences } from '../storage';
-import { ModelMap } from './model-map';
-import { Watch } from './watch';
 import { mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
+import { ModelMap } from './model-map';
+import { Watch } from './watch';
 
 interface WatchChild {
     load(): Promise<void>;
@@ -23,11 +24,11 @@ export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
         private query: Query,
         private resultAdded: (path: FactPath, result: Fact, take: ((model: Model | null) => void)) => void,
         private resultRemoved: ((model: Model) => void) | undefined,
-        private inner: ObservableSource
+        private factManager: FactManager
     ) {}
 
     begin() {
-        this.subscription = this.inner.from(this.start, this.query)
+        this.subscription = this.factManager.from(this.start, this.query)
             .subscribe(async paths => {
                 try {
                     await this.onAdded(paths);
@@ -61,7 +62,7 @@ export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
                 take(resultRemoved ? <V>model : null);
             });
         }
-        const watch = new WatchImpl<U, V>(this.start, fullQuery, onResultAdded, resultRemoved, this.inner);
+        const watch = new WatchImpl<U, V>(this.start, fullQuery, onResultAdded, resultRemoved, this.factManager);
         watch.begin();
         this.children.push(watch);
         return watch;
@@ -80,7 +81,7 @@ export class WatchImpl<Fact, Model> implements Watch<Fact, Model>, WatchChild {
     private async onAdded(paths: FactPath[]) {
         const references = paths.map(path => path[path.length - 1]);
         const uniqueReferences = uniqueFactReferences(references);
-        const records = await this.inner.load(uniqueReferences);
+        const records = await this.factManager.load(uniqueReferences);
         const hydration = new Hydration(records);
         paths.forEach(path => {
             if (!this.modelMap.hasModel(path)) {

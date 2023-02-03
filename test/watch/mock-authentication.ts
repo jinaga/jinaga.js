@@ -2,7 +2,6 @@ import { Authentication } from "../../src/authentication/authentication";
 import { Channel } from "../../src/fork/channel";
 import { LoginResponse } from "../../src/http/messages";
 import { Observable, ObservableSource, SpecificationListener } from "../../src/observable/observable";
-import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
 import { Query } from "../../src/query/query";
 import { Feed } from "../../src/specification/feed";
 import { Specification } from "../../src/specification/specification";
@@ -14,7 +13,7 @@ export class MockAuthentication implements Authentication {
   constructor(
       storage: Storage
   ) {
-      this.inner = new ObservableSourceImpl(storage);
+      this.inner = new ObservableSource(storage);
   }
 
   async close(): Promise<void> {

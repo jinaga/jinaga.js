@@ -327,9 +327,9 @@ export class Jinaga {
         this.validateFact(fact);
         const reference = dehydrateReference(fact);
         const query = new Query(preposition.steps);
-        const feed = this.factManager;
+        const factManager = this.factManager;
         const serviceRunner = this.serviceRunner;
-        runService<U>(feed, reference, query, serviceRunner, handler);
+        runService<U>(factManager, reference, query, serviceRunner, handler);
     }
 
     async stop() {

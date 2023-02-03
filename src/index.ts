@@ -29,7 +29,7 @@ export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { MemoryStore } from './memory/memory-store';
 export { User, UserName } from "./model/user";
 export { Observable, ObservableSource, SpecificationListener } from './observable/observable';
-export { ObservableSourceImpl } from './observable/observable-source-impl';
+export { ObservableSource as ObservableSourceImpl } from './observable/observable';
 export { fromDescriptiveString } from './query/descriptive-string';
 export { Query } from './query/query';
 export { SpecificationOf as TemplateSpecificationOf } from "./query/query-parser";

@@ -15,7 +15,6 @@ import { Jinaga } from "./jinaga";
 import { FactManager } from "./managers/factManager";
 import { MemoryStore } from "./memory/memory-store";
 import { ObservableSource } from "./observable/observable";
-import { ObservableSourceImpl } from "./observable/observable-source-impl";
 import { Storage } from "./storage";
 
 export type JinagaBrowserConfig = {
@@ -28,7 +27,7 @@ export type JinagaBrowserConfig = {
 export class JinagaBrowser {
     static create(config: JinagaBrowserConfig) {
         const store = createStore(config);
-        const observableSource = new ObservableSourceImpl(store);
+        const observableSource = new ObservableSource(store);
         const syncStatusNotifier = new SyncStatusNotifier();
         const fork = createFork(config, observableSource, syncStatusNotifier);
         const authentication = createAuthentication(config, observableSource, syncStatusNotifier);

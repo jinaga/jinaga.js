@@ -8,7 +8,6 @@ import { Jinaga } from './jinaga';
 import { FactManager } from './managers/factManager';
 import { MemoryStore } from './memory/memory-store';
 import { ObservableSource } from './observable/observable';
-import { ObservableSourceImpl } from './observable/observable-source-impl';
 import { FactEnvelope } from './storage';
 
 export type JinagaTestConfig = {
@@ -22,7 +21,7 @@ export class JinagaTest {
   static create(config: JinagaTestConfig) {
     const store = new MemoryStore();
     this.saveInitialState(config, store);
-    const observableSource = new ObservableSourceImpl(store);
+    const observableSource = new ObservableSource(store);
     const syncStatusNotifier = new SyncStatusNotifier();
     const fork = new PassThroughFork(observableSource);
     const authentication = this.createAuthentication(config, observableSource);
