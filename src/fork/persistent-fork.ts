@@ -60,15 +60,13 @@ export class PersistentFork implements Fork {
         })().catch(err => Trace.error(err));
     }
 
-    async close(): Promise<void> {
-        await this.observableSource.close();
+    close(): Promise<void> {
+        return Promise.resolve();
     }
 
-    async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+    async save(envelopes: FactEnvelope[]): Promise<void> {
         await this.queue.enqueue(envelopes);
         this.sendAndDequeue(envelopes);
-        const saved = await this.observableSource.save(envelopes);
-        return saved;
     }
 
     async query(start: FactReference, query: Query) {
@@ -93,18 +91,6 @@ export class PersistentFork implements Fork {
         }
     }
 
-    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        throw new Error('Method not implemented.');
-    }
-
-    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.observableSource.feed(feed, bookmark);
-    }
-
-    whichExist(references: FactReference[]): Promise<FactReference[]> {
-        return this.observableSource.whichExist(references);
-    }
-
     async load(references: FactReference[]): Promise<FactRecord[]> {
         const known = await this.observableSource.load(references);
         const remaining = references.filter(reference => !known.some(factReferenceEquals(reference)));
@@ -117,19 +103,10 @@ export class PersistentFork implements Fork {
         }
     }
 
-    from(fact: FactReference, query: Query): Observable {
-        const observable = this.observableSource.from(fact, query);
+    decorateObservable(fact: FactReference, query: Query, observable: Observable) {
         const loadedLocal = this.initiateQueryLocal(fact, query);
         const loadedRemote = this.initiateQueryRemote(fact, query);
         return new PersistentForkObservable(observable, loadedLocal, loadedRemote);
-    }
-
-    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
-        return this.observableSource.addSpecificationListener(specification, onResult);
-    }
-
-    removeSpecificationListener(listener: SpecificationListener) {
-        return this.observableSource.removeSpecificationListener(listener);
     }
 
     addChannel(fact: FactReference, query: Query): Channel {

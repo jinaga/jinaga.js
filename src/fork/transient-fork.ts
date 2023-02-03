@@ -55,13 +55,10 @@ export class TransientFork implements Fork {
         }
         this.channelProcessor = null;
         this.channels = [];
-        await this.observableSource.close();
     }
 
-    async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+    async save(envelopes: FactEnvelope[]): Promise<void> {
         await this.client.save(serializeSave(envelopes));
-        const saved = await this.observableSource.save(envelopes);
-        return saved;
     }
 
     async query(start: FactReference, query: Query) {
@@ -73,18 +70,6 @@ export class TransientFork implements Fork {
             const response = await this.client.query(serializeQuery(start, query));
             return response.results;
         }
-    }
-
-    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        throw new Error('Method not implemented.');
-    }
-
-    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.observableSource.feed(feed, bookmark);
-    }
-
-    whichExist(references: FactReference[]): Promise<FactReference[]> {
-        return this.observableSource.whichExist(references);
     }
 
     async load(references: FactReference[]): Promise<FactRecord[]> {
@@ -99,18 +84,9 @@ export class TransientFork implements Fork {
         }
     }
 
-    from(fact: FactReference, query: Query): Observable {
-        const observable = this.observableSource.from(fact, query);
+    decorateObservable(fact: FactReference, query: Query, observable: Observable) {
         const loaded = this.initiateQuery(fact, query);
         return new TransientForkObservable(observable, loaded);
-    }
-
-    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
-        return this.observableSource.addSpecificationListener(specification, onResult);
-    }
-
-    removeSpecificationListener(listener: SpecificationListener) {
-        return this.observableSource.removeSpecificationListener(listener);
     }
 
     addChannel(fact: FactReference, query: Query): Channel {

@@ -6,7 +6,7 @@ import { Observable, ObservableSource, SpecificationListener } from "../observab
 import { Query } from "../query/query";
 import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult } from "../storage";
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, ProjectedResult } from "../storage";
 
 export class FactManager {
     constructor(
@@ -33,40 +33,44 @@ export class FactManager {
     }
 
     from(fact: FactReference, query: Query): Observable {
-        return this.fork.from(fact, query);
+        const observable = this.observableSource.from(fact, query);
+        return this.fork.decorateObservable(fact, query, observable);
     }
 
     addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
-        return this.fork.addSpecificationListener(specification, onResult);
+        return this.observableSource.addSpecificationListener(specification, onResult);
     }
 
     removeSpecificationListener(listener: SpecificationListener): void {
-        this.fork.removeSpecificationListener(listener);
+        this.observableSource.removeSpecificationListener(listener);
     }
 
-    close(): Promise<void> {
-        return this.fork.close();
+    async close(): Promise<void> {
+        await this.fork.close();
+        await this.observableSource.close();
     }
 
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         await this.authentication.authorize(envelopes);
-        return await this.fork.save(envelopes);
+        await this.fork.save(envelopes);
+        return await this.observableSource.save(envelopes);
     }
 
-    query(start: FactReference, query: Query): Promise<FactPath[]> {
-        return this.fork.query(start, query);
+    async query(start: FactReference, query: Query): Promise<FactPath[]> {
+        const results = await this.fork.query(start, query);
+        return results;
     }
 
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        return this.fork.read(start, specification);
+        return this.observableSource.read(start, specification);
     }
 
     feed(feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.fork.feed(feed, bookmark);
+        return this.observableSource.feed(feed, bookmark);
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
-        return this.fork.whichExist(references);
+        return this.observableSource.whichExist(references);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {
