@@ -29,9 +29,9 @@ export class JinagaBrowser {
         const store = createStore(config);
         const observableSource = new ObservableSource(store);
         const syncStatusNotifier = new SyncStatusNotifier();
-        const fork = createFork(config, observableSource, syncStatusNotifier);
-        const authentication = createAuthentication(config, observableSource, syncStatusNotifier);
-        const factManager = new FactManager(authentication, fork, observableSource);
+        const fork = createFork(config, store, syncStatusNotifier);
+        const authentication = createAuthentication(config, store, syncStatusNotifier);
+        const factManager = new FactManager(authentication, fork, observableSource, store);
         return new Jinaga(factManager, syncStatusNotifier);
     }
 }
@@ -47,7 +47,7 @@ function createStore(config: JinagaBrowserConfig): Storage {
 
 function createFork(
     config: JinagaBrowserConfig,
-    feed: ObservableSource,
+    store: Storage,
     syncStatusNotifier: SyncStatusNotifier
 ): Fork {
     if (config.httpEndpoint) {
@@ -58,23 +58,23 @@ function createFork(
         });
         if (config.indexedDb) {
             const queue = new IndexedDBQueue(config.indexedDb);
-            const fork = new PersistentFork(feed, queue, webClient);
+            const fork = new PersistentFork(store, queue, webClient);
             return fork;
         }
         else {
-            const fork = new TransientFork(feed, webClient);
+            const fork = new TransientFork(store, webClient);
             return fork;
         }
     }
     else {
-        const fork = new PassThroughFork(feed);
+        const fork = new PassThroughFork(store);
         return fork;
     }
 }
 
 function createAuthentication(
     config: JinagaBrowserConfig,
-    feed: ObservableSource,
+    store: Storage,
     syncStatusNotifier: SyncStatusNotifier
 ): Authentication {
     if (config.httpEndpoint) {
@@ -85,7 +85,7 @@ function createAuthentication(
         });
         if (config.indexedDb) {
             const queue = new IndexedDBQueue(config.indexedDb);
-            const fork = new PersistentFork(feed, queue, webClient);
+            const fork = new PersistentFork(store, queue, webClient);
             const loginStore = new IndexedDBLoginStore(config.indexedDb);
             const authentication = new AuthenticationOffline(loginStore, webClient);
             fork.initialize();

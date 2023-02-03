@@ -1,10 +1,8 @@
 import { TopologicalSorter } from '../fact/sorter';
 import { WebClient } from '../http/web-client';
-import { Handler, Observable, ObservableSource, ObservableSubscription, SpecificationListener } from '../observable/observable';
+import { Handler, Observable, ObservableSubscription } from '../observable/observable';
 import { Query } from '../query/query';
-import { Feed } from "../specification/feed";
-import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactRecord, FactReference, factReferenceEquals, ProjectedResult, Queue } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, factReferenceEquals, Queue, Storage } from '../storage';
 import { flatten } from '../util/fn';
 import { Trace } from '../util/trace';
 import { Channel } from "./channel";
@@ -46,7 +44,7 @@ export class PersistentFork implements Fork {
     private channelProcessor: ChannelProcessor | null = null;
 
     constructor(
-        private observableSource: ObservableSource,
+        private storage: Storage,
         private queue: Queue,
         private client: WebClient
     ) {
@@ -71,7 +69,7 @@ export class PersistentFork implements Fork {
 
     async query(start: FactReference, query: Query) {
         if (query.isDeterministic()) {
-            const results = await this.observableSource.query(start, query);
+            const results = await this.storage.query(start, query);
             return results;
         }
         else {
@@ -81,7 +79,7 @@ export class PersistentFork implements Fork {
             }
             catch (errRemote) {
                 try {
-                    const results = await this.observableSource.query(start, query);
+                    const results = await this.storage.query(start, query);
                     return results;
                 }
                 catch (errLocal) {
@@ -92,7 +90,7 @@ export class PersistentFork implements Fork {
     }
 
     async load(references: FactReference[]): Promise<FactRecord[]> {
-        const known = await this.observableSource.load(references);
+        const known = await this.storage.load(references);
         const remaining = references.filter(reference => !known.some(factReferenceEquals(reference)));
         if (remaining.length === 0) {
             return known;
@@ -133,7 +131,7 @@ export class PersistentFork implements Fork {
     }
 
     private async initiateQueryLocal(start: FactReference, query: Query) {
-      const paths = await this.observableSource.query(start, query);
+      const paths = await this.storage.query(start, query);
       if (paths.length > 0) {
         const references = distinct(flatten(paths, p => p));
         await this.load(references);
@@ -162,7 +160,7 @@ export class PersistentFork implements Fork {
                     signatures: []
                 };
             });
-            await this.observableSource.save(envelopes);
+            await this.storage.save(envelopes);
             records = records.concat(facts);
         }
         return records;

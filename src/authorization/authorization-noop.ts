@@ -1,15 +1,14 @@
-import { ObservableSource } from '../observable/observable';
-import { UserIdentity } from "../user-identity";
 import { Query } from '../query/query';
+import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactFeed, FactRecord, FactReference } from '../storage';
+import { FactFeed, FactRecord, FactReference, Storage } from '../storage';
+import { UserIdentity } from "../user-identity";
 import { Authorization } from './authorization';
 import { Forbidden } from './authorization-engine';
-import { Feed } from "../specification/feed";
 
 export class AuthorizationNoOp implements Authorization {
     constructor(
-        private observableSource: ObservableSource
+        private store: Storage
     ) { }
 
     getOrCreateUserFact(userIdentity: UserIdentity): Promise<FactRecord> {
@@ -17,23 +16,23 @@ export class AuthorizationNoOp implements Authorization {
     }
 
     query(userIdentity: UserIdentity, start: FactReference, query: Query): Promise<any[]> {
-        return this.observableSource.query(start, query);
+        return this.store.query(start, query);
     }
 
     read(userIdentity: UserIdentity, start: FactReference[], specification: Specification): Promise<any[]> {
-        return this.observableSource.read(start, specification);
+        return this.store.read(start, specification);
     }
 
     load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactRecord[]> {
-        return this.observableSource.load(references);
+        return this.store.load(references);
     }
 
     feed(userIdentity: UserIdentity, feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.observableSource.feed(feed, bookmark);
+        return this.store.feed(feed, bookmark);
     }
 
     async save(userIdentity: UserIdentity, facts: FactRecord[]): Promise<FactRecord[]> {
-        const envelopes = await this.observableSource.save(facts.map(fact => ({
+        const envelopes = await this.store.save(facts.map(fact => ({
             fact,
             signatures: []
         })));

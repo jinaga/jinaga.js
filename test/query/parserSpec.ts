@@ -12,7 +12,7 @@ import { MemoryStore } from '../../src/memory/memory-store';
 describe('Query parser', () => {
 
     const memory = new MemoryStore();
-    const factManager = new FactManager(new AuthenticationNoOp(), new ForkNoOp(), new ObservableSource(memory));
+    const factManager = new FactManager(new AuthenticationNoOp(), new ForkNoOp(), new ObservableSource(memory), memory);
     const j = new Jinaga(factManager, null);
 
     function tasksInList(l: List): SpecificationOf<Task> {

@@ -1,12 +1,12 @@
-import { Observable, ObservableSource } from "../observable/observable";
+import { Observable } from "../observable/observable";
 import { Query } from "../query/query";
-import { FactEnvelope, FactPath, FactRecord, FactReference } from "../storage";
+import { FactEnvelope, FactPath, FactRecord, FactReference, Storage } from "../storage";
 import { Channel } from "./channel";
 import { Fork } from "./fork";
 
 export class PassThroughFork implements Fork {
     constructor(
-        private inner: ObservableSource
+        private storage: Storage
     ) { }
 
     async close(): Promise<void> {
@@ -22,11 +22,11 @@ export class PassThroughFork implements Fork {
     }
 
     query(start: FactReference, query: Query): Promise<FactPath[]> {
-        return this.inner.query(start, query);
+        return this.storage.query(start, query);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {
-        return this.inner.load(references);
+        return this.storage.load(references);
     }
 
     addChannel(fact: FactReference, query: Query): Channel {

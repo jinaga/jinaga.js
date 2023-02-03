@@ -57,9 +57,9 @@ describe("Watch", () => {
   beforeEach(() => {
     const memory = new MemoryStore();
     const observableSource = new ObservableSource(memory);
-    const fork = new PassThroughFork(observableSource);
+    const fork = new PassThroughFork(memory);
     const authentication = new MockAuthentication(memory);
-    const factManager = new FactManager(authentication, fork, observableSource);
+    const factManager = new FactManager(authentication, fork, observableSource, memory);
     j = new Jinaga(factManager, null);
     tasks = [];
   });

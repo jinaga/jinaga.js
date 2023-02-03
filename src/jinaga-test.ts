@@ -8,7 +8,7 @@ import { Jinaga } from './jinaga';
 import { FactManager } from './managers/factManager';
 import { MemoryStore } from './memory/memory-store';
 import { ObservableSource } from './observable/observable';
-import { FactEnvelope } from './storage';
+import { FactEnvelope, Storage } from './storage';
 
 export type JinagaTestConfig = {
   authorization?: (a: AuthorizationRules) => AuthorizationRules,
@@ -23,9 +23,9 @@ export class JinagaTest {
     this.saveInitialState(config, store);
     const observableSource = new ObservableSource(store);
     const syncStatusNotifier = new SyncStatusNotifier();
-    const fork = new PassThroughFork(observableSource);
-    const authentication = this.createAuthentication(config, observableSource);
-    const factManager = new FactManager(authentication, fork, observableSource);
+    const fork = new PassThroughFork(store);
+    const authentication = this.createAuthentication(config, store);
+    const factManager = new FactManager(authentication, fork, observableSource, store);
     return new Jinaga(factManager, syncStatusNotifier);
   }
 
@@ -40,12 +40,12 @@ export class JinagaTest {
     }
   }
 
-  static createAuthentication(config: JinagaTestConfig, inner: ObservableSource): Authentication {
+  static createAuthentication(config: JinagaTestConfig, store: Storage): Authentication {
     const authorizationRules = config.authorization ?
       config.authorization(new AuthorizationRules()) : null;
     const userFact = config.user ? dehydrateFact(config.user)[0] : null;
     const deviceFact = config.device ? dehydrateFact(config.device)[0] : null;
     
-    return new AuthenticationTest(inner, authorizationRules, userFact, deviceFact);
+    return new AuthenticationTest(store, authorizationRules, userFact, deviceFact);
   }
 }

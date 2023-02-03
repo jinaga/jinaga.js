@@ -1,7 +1,6 @@
 import { computeHash, verifyHash } from '../fact/hash';
 import { TopologicalSorter } from '../fact/sorter';
-import { ObservableSource } from '../observable/observable';
-import { FactRecord, FactReference } from '../storage';
+import { FactRecord, FactReference, Storage } from '../storage';
 import { distinct, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 import { AuthorizationRules } from './authorizationRules';
@@ -26,11 +25,11 @@ type AuthorizationResult = {
 export class AuthorizationEngine {
     constructor(
         private authorizationRules: AuthorizationRules,
-        private feed: ObservableSource
+        private store: Storage
     ) { }
 
     async authorizeFacts(facts: FactRecord[], userFact: FactRecord | null) {
-        const existing = await this.feed.whichExist(facts);
+        const existing = await this.store.whichExist(facts);
         const sorter = new TopologicalSorter<Promise<AuthorizationResult>>();
         const results = await mapAsync(sorter.sort(facts, (p, f) => this.visit(p, f, userFact, facts, existing)), x => x);
         const rejected = results.filter(r => r.verdict === "Forbidden");
@@ -72,7 +71,7 @@ export class AuthorizationEngine {
             return "Forbidden";
         }
 
-        const isAuthorized = await this.authorizationRules.isAuthorized(userFact, fact, factRecords, this.feed);
+        const isAuthorized = await this.authorizationRules.isAuthorized(userFact, fact, factRecords, this.store);
         if (predecessors.some(p => p.verdict === "New") || !existing.some(f => f.hash === fact.hash && f.type === fact.type)) {
             if (!isAuthorized) {
                 if (this.authorizationRules.hasRule(fact.type)) {

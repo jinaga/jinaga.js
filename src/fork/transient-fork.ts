@@ -1,10 +1,8 @@
 import { TopologicalSorter } from '../fact/sorter';
 import { WebClient } from '../http/web-client';
-import { Handler, Observable, ObservableSource, ObservableSubscription, SpecificationListener } from '../observable/observable';
+import { Handler, Observable, ObservableSubscription } from '../observable/observable';
 import { Query } from '../query/query';
-import { Feed } from "../specification/feed";
-import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactRecord, FactReference, factReferenceEquals, ProjectedResult } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 import { Channel } from "./channel";
 import { ChannelProcessor } from "./channel-processor";
@@ -43,7 +41,7 @@ export class TransientFork implements Fork {
     private channelProcessor: ChannelProcessor | null = null;
 
     constructor(
-        private observableSource: ObservableSource,
+        private storage: Storage,
         private client: WebClient
     ) {
         
@@ -63,7 +61,7 @@ export class TransientFork implements Fork {
 
     async query(start: FactReference, query: Query) {
         if (query.isDeterministic()) {
-            const results = await this.observableSource.query(start, query);
+            const results = await this.storage.query(start, query);
             return results;
         }
         else {
@@ -73,7 +71,7 @@ export class TransientFork implements Fork {
     }
 
     async load(references: FactReference[]): Promise<FactRecord[]> {
-        const known = await this.observableSource.load(references);
+        const known = await this.storage.load(references);
         const remaining = references.filter(reference => !known.some(factReferenceEquals(reference)));
         if (remaining.length === 0) {
             return known;
@@ -134,7 +132,7 @@ export class TransientFork implements Fork {
                     signatures: []
                 };
             });
-            await this.observableSource.save(envelopes);
+            await this.storage.save(envelopes);
             records = records.concat(facts);
         }
         return records;

@@ -16,9 +16,9 @@ class TestContext {
     constructor() {
         const memory = new MemoryStore();
         const observableSource = new ObservableSource(memory);
-        const fork = new PassThroughFork(observableSource);
+        const fork = new PassThroughFork(memory);
         const authentication = new AuthenticationNoOp();
-        this.factManager = new FactManager(authentication, fork, observableSource);
+        this.factManager = new FactManager(authentication, fork, observableSource, memory);
     }
 
     async fact(fact: {}) {

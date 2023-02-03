@@ -106,47 +106,22 @@ export class ObservableSource {
         }
     } = {};
 
-    constructor(private inner: Storage) {
+    constructor(private store: Storage) {
         this.listenersByTypeAndQuery = {};
     }
 
-    async close(): Promise<void> {
-        await this.inner.close();
-    }
-
-    async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
-        const saved = await this.inner.save(envelopes);
+    async notify(saved: FactEnvelope[]): Promise<FactEnvelope[]> {
         for (let index = 0; index < saved.length; index++) {
             const envelope = saved[index];
             await this.notifyFactSaved(envelope.fact);
         }
         return saved;
     }
-    
-    query(start: FactReference, query: Query) {
-        return this.inner.query(start, query);
-    }
-
-    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        return this.inner.read(start, specification);
-    }
-
-    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.inner.feed(feed, bookmark);
-    }
-
-    whichExist(references: FactReference[]): Promise<FactReference[]> {
-        return this.inner.whichExist(references);
-    }
-
-    load(references: FactReference[]) {
-        return this.inner.load(references);
-    }
 
     from(fact: FactReference, query: Query): Observable {
         const inverses = invertQuery(query);
         const observable = new ObservableImpl(fact, query, inverses,
-            this.inner.query(fact, query),
+            this.store.query(fact, query),
             listener => { this.addListener(listener); },
             listener => { this.removeListener(listener); });
         return observable;
@@ -240,7 +215,7 @@ export class ObservableSource {
                 const listeners = listenersByQuery[queryKey];
                 if (listeners && listeners.length > 0) {
                     const query = listeners[0].inverse.affected;
-                    const affected = await this.inner.query(fact, query);
+                    const affected = await this.store.query(fact, query);
                     await mapAsync(listeners, async listener => {
                         const matching = affected.filter(path => {
                             const last = path[path.length - 1];
@@ -267,7 +242,7 @@ export class ObservableSource {
                         type: fact.type,
                         hash: fact.hash
                     };
-                    const results = await this.inner.read([givenReference], specification);
+                    const results = await this.store.read([givenReference], specification);
                     for (const specificationListener of listeners.listeners) {
                         await specificationListener.onResult(results);
                     }
@@ -279,7 +254,7 @@ export class ObservableSource {
     private async notifyListener(prefix: FactPath, listener: Listener) {
         const fact = prefix[prefix.length - 1];
         if (listener.inverse.added && listener.added) {
-            const added = await this.inner.query(fact, listener.inverse.added);
+            const added = await this.store.query(fact, listener.inverse.added);
             if (added.length > 0) {
                 const paths = added.map(path => prefix.concat(path));
                 listener.added(paths);

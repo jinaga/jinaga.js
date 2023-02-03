@@ -2,20 +2,19 @@ import { Authentication } from '../authentication/authentication';
 import { AuthorizationEngine } from '../authorization/authorization-engine';
 import { AuthorizationRules } from '../authorization/authorizationRules';
 import { LoginResponse } from '../http/messages';
-import { ObservableSource } from '../observable/observable';
-import { FactEnvelope, FactRecord } from '../storage';
+import { FactEnvelope, FactRecord, Storage } from '../storage';
 
 export class AuthenticationTest implements Authentication {
   private authorizationEngine: AuthorizationEngine | null;
 
   constructor (
-    private inner: ObservableSource,
+    store: Storage,
     authorizationRules: AuthorizationRules | null,
     private userFact: FactRecord | null,
     private deviceFact: FactRecord | null
   ) {
     this.authorizationEngine = authorizationRules &&
-      new AuthorizationEngine(authorizationRules, inner);
+      new AuthorizationEngine(authorizationRules, store);
   }
 
   async login() {
