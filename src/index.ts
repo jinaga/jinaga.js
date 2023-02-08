@@ -1,4 +1,5 @@
 export { Authentication } from './authentication/authentication';
+export { AuthenticationNoOp } from './authentication/authentication-noop';
 export { Authorization } from './authorization/authorization';
 export { AuthorizationEngine, Forbidden } from './authorization/authorization-engine';
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
