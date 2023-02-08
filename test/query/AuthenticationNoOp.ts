@@ -9,7 +9,7 @@ import { FactEnvelope, FactRecord } from '../../src/storage';
     local(): Promise<FactRecord> {
         throw new Error('Method not implemented.');
     }
-    authorize(envelopes: FactEnvelope[]): Promise<void> {
-        return Promise.resolve();
+    authorize(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+        return Promise.resolve(envelopes);
     }
 }

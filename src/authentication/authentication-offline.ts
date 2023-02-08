@@ -32,8 +32,8 @@ export class AuthenticationOffline implements Authentication {
     throw new Error('Local device has no persistence.');
   }
 
-  authorize(envelopes: FactEnvelope[]): Promise<void> {
-    return Promise.resolve();
+  authorize(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+    return Promise.resolve(envelopes);
   }
 
   private async loginRemote() {

@@ -9,7 +9,7 @@ export class AuthenticationNoOp implements Authentication {
     local(): Promise<FactRecord> {
         throw new Error('No persistent device.');
     }
-    authorize(envelopes: FactEnvelope[]): Promise<void> {
-        return Promise.resolve();
+    authorize(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+        return Promise.resolve(envelopes);
     }
 }

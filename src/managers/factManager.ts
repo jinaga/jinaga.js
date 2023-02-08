@@ -4,9 +4,8 @@ import { Fork } from "../fork/fork";
 import { LoginResponse } from "../http/messages";
 import { Observable, ObservableSource, SpecificationListener } from "../observable/observable";
 import { Query } from "../query/query";
-import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
+import { FactEnvelope, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
 
 export class FactManager {
     constructor(
@@ -52,9 +51,9 @@ export class FactManager {
     }
 
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
-        await this.authentication.authorize(envelopes);
-        await this.fork.save(envelopes);
-        const saved = await this.store.save(envelopes);
+        const authorized = await this.authentication.authorize(envelopes);
+        await this.fork.save(authorized);
+        const saved = await this.store.save(authorized);
         await this.observableSource.notify(saved);
         return saved;
     }
@@ -66,14 +65,6 @@ export class FactManager {
 
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         return this.store.read(start, specification);
-    }
-
-    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.store.feed(feed, bookmark);
-    }
-
-    whichExist(references: FactReference[]): Promise<FactReference[]> {
-        return this.store.whichExist(references);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {

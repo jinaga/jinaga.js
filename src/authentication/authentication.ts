@@ -4,5 +4,5 @@ import { FactEnvelope, FactRecord } from '../storage';
 export interface Authentication {
     login(): Promise<LoginResponse>;
     local(): Promise<FactRecord>;
-    authorize(envelopes: FactEnvelope[]): Promise<void>;
+    authorize(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
 }
