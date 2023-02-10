@@ -69,8 +69,9 @@ export class FactManager {
         return results;
     }
 
-    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        return this.store.read(start, specification);
+    async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        await this.networkManager.fetch(start, specification);
+        return await this.store.read(start, specification);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {

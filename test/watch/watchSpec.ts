@@ -60,8 +60,8 @@ describe("Watch", () => {
     const observableSource = new ObservableSource(memory);
     const fork = new PassThroughFork(memory);
     const authentication = new MockAuthentication(memory);
-    const networkManager = new NetworkManager(new NetworkNoOp(), memory);
-    const factManager = new FactManager(authentication, fork, observableSource, memory, networkManager);
+    const network = new NetworkNoOp();
+    const factManager = new FactManager(authentication, fork, observableSource, memory, network);
     j = new Jinaga(factManager, null);
     tasks = [];
   });

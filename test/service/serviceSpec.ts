@@ -19,8 +19,8 @@ class TestContext {
         const observableSource = new ObservableSource(memory);
         const fork = new PassThroughFork(memory);
         const authentication = new AuthenticationNoOp();
-        const networkManager = new NetworkManager(new NetworkNoOp(), memory);
-        this.factManager = new FactManager(authentication, fork, observableSource, memory, networkManager);
+        const network = new NetworkNoOp();
+        this.factManager = new FactManager(authentication, fork, observableSource, memory, network);
     }
 
     async fact(fact: {}) {

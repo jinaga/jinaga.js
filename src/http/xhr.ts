@@ -50,7 +50,7 @@ export class XhrConnection implements HttpConnection {
         });
     }
 
-    post(path: string, body: {}, timeoutSeconds: number) {
+    post(path: string, body: {} | string, timeoutSeconds: number) {
         return new Promise<HttpResponse>((resolve,reject) => {
             const xhr = createXHR('POST', this.url + path,
                 (result: any) => {
@@ -72,9 +72,15 @@ export class XhrConnection implements HttpConnection {
                     });
                 }
             );
-            xhr.setRequestHeader('Content-Type', 'application/json');
             xhr.timeout = timeoutSeconds * 1000;
-            xhr.send(JSON.stringify(body));
+            if (typeof body === 'string') {
+                xhr.setRequestHeader('Content-Type', 'text/plain');
+                xhr.send(body);
+            }
+            else {
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.send(JSON.stringify(body));
+            }
         });
     }
 }

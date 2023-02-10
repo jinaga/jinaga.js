@@ -127,8 +127,7 @@ async function executeStep(paths: string[][], step: Step, predecessorIndex: IDBI
 export class IndexedDBStore implements Storage {
   constructor (
     private indexName: string
-  ) { }
-  
+  ) { }  
   close() {
     return Promise.resolve();
   }
@@ -188,5 +187,13 @@ export class IndexedDBStore implements Storage {
         return <FactRecord[]>factRecords;
       });
     });
+  }
+
+  loadBookmark(feed: string): Promise<string> {
+    throw new Error('Method not implemented.');
+  }
+  
+  saveBookmark(feed: string, bookmark: string): Promise<void> {
+    throw new Error('Method not implemented.');
   }
 }

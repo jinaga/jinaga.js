@@ -43,6 +43,7 @@ function loadAll(references: FactReference[], source: FactRecord[], target: Fact
 
 export class MemoryStore implements Storage {
     private factRecords: FactRecord[] = [];
+    private bookmarksByFeed: { [feed: string]: string } = {};
 
     close(): Promise<void> {
         return Promise.resolve();
@@ -95,6 +96,16 @@ export class MemoryStore implements Storage {
         return Promise.resolve(target);
     }
 
+    loadBookmark(feed: string): Promise<string> {
+        const bookmark = this.bookmarksByFeed.hasOwnProperty(feed) ? this.bookmarksByFeed[feed] : '';
+        return Promise.resolve(bookmark);
+    }
+    
+    saveBookmark(feed: string, bookmark: string): Promise<void> {
+        this.bookmarksByFeed[feed] = bookmark;
+        return Promise.resolve();
+    }
+    
     private executeQuery(start: FactReference, steps: Step[]) {
         return steps.reduce((paths, step) => {
             return this.executeStep(paths, step);
