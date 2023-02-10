@@ -2,6 +2,7 @@ import { dehydrateFact } from "../../src/fact/hydrate";
 import { PassThroughFork } from "../../src/fork/pass-through-fork";
 import { Jinaga } from "../../src/jinaga";
 import { FactManager } from "../../src/managers/factManager";
+import { NetworkManager, NetworkNoOp } from "../../src/managers/NetworkManager";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { ObservableSource } from "../../src/observable/observable";
 import { factReferenceEquals } from "../../src/storage";
@@ -59,7 +60,8 @@ describe("Watch", () => {
     const observableSource = new ObservableSource(memory);
     const fork = new PassThroughFork(memory);
     const authentication = new MockAuthentication(memory);
-    const factManager = new FactManager(authentication, fork, observableSource, memory);
+    const networkManager = new NetworkManager(new NetworkNoOp(), memory);
+    const factManager = new FactManager(authentication, fork, observableSource, memory, networkManager);
     j = new Jinaga(factManager, null);
     tasks = [];
   });

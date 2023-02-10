@@ -1,6 +1,7 @@
 import { dehydrateFact, dehydrateReference } from "../../src/fact/hydrate";
 import { PassThroughFork } from "../../src/fork/pass-through-fork";
 import { FactManager } from "../../src/managers/factManager";
+import { NetworkManager, NetworkNoOp } from "../../src/managers/NetworkManager";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { ObservableSource } from "../../src/observable/observable";
 import { runService } from "../../src/observable/service";
@@ -18,7 +19,8 @@ class TestContext {
         const observableSource = new ObservableSource(memory);
         const fork = new PassThroughFork(memory);
         const authentication = new AuthenticationNoOp();
-        this.factManager = new FactManager(authentication, fork, observableSource, memory);
+        const networkManager = new NetworkManager(new NetworkNoOp(), memory);
+        this.factManager = new FactManager(authentication, fork, observableSource, memory, networkManager);
     }
 
     async fact(fact: {}) {

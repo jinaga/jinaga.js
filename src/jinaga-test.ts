@@ -6,6 +6,7 @@ import { PassThroughFork } from './fork/pass-through-fork';
 import { SyncStatusNotifier } from './http/web-client';
 import { Jinaga } from './jinaga';
 import { FactManager } from './managers/factManager';
+import { NetworkNoOp } from './managers/NetworkManager';
 import { MemoryStore } from './memory/memory-store';
 import { ObservableSource } from './observable/observable';
 import { FactEnvelope, Storage } from './storage';
@@ -25,7 +26,8 @@ export class JinagaTest {
     const syncStatusNotifier = new SyncStatusNotifier();
     const fork = new PassThroughFork(store);
     const authentication = this.createAuthentication(config, store);
-    const factManager = new FactManager(authentication, fork, observableSource, store);
+    const network = new NetworkNoOp();
+    const factManager = new FactManager(authentication, fork, observableSource, store, network);
     return new Jinaga(factManager, syncStatusNotifier);
   }
 

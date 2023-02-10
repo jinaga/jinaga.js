@@ -6,14 +6,20 @@ import { Observable, ObservableSource, SpecificationListener } from "../observab
 import { Query } from "../query/query";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
+import { Network, NetworkManager } from "./NetworkManager";
 
 export class FactManager {
+    private networkManager: NetworkManager;
+
     constructor(
         private readonly authentication: Authentication,
         private readonly fork: Fork,
         private readonly observableSource: ObservableSource,
-        private readonly store: Storage
-    ) { }
+        private readonly store: Storage,
+        network: Network
+    ) {
+        this.networkManager = new NetworkManager(network, store);
+    }
 
     login(): Promise<LoginResponse> {
         return this.authentication.login();
