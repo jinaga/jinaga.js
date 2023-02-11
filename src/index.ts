@@ -11,6 +11,7 @@ export { Channel } from "./fork/channel";
 export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
 export { TransientFork } from './fork/transient-fork';
+export { HttpNetwork } from "./http/httpNetwork";
 export {
   FeedResponse,
   FeedsResponse,
@@ -26,10 +27,11 @@ export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient
 export { ensure, Jinaga, Preposition, Profile, Template, Trace, Tracer } from "./jinaga";
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
+export { FactManager } from "./managers/factManager";
+export { Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
 export { MemoryStore } from './memory/memory-store';
 export { User, UserName } from "./model/user";
-export { Observable, ObservableSource, SpecificationListener } from './observable/observable';
-export { ObservableSource as ObservableSourceImpl } from './observable/observable';
+export { Observable, ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
 export { fromDescriptiveString } from './query/descriptive-string';
 export { Query } from './query/query';
 export { SpecificationOf as TemplateSpecificationOf } from "./query/query-parser";
