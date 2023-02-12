@@ -56,6 +56,9 @@ export interface Storage {
     feed(feed: Feed, bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;
+
+    loadBookmark(feed: string): Promise<string>;
+    saveBookmark(feed: string, bookmark: string): Promise<void>;
 }
 
 export interface Queue {

@@ -2,12 +2,14 @@ import { Authentication } from './authentication/authentication';
 import { AuthenticationTest } from './authentication/authentication-test';
 import { AuthorizationRules } from './authorization/authorizationRules';
 import { dehydrateFact, Dehydration } from './fact/hydrate';
-import { ObservableSource } from './observable/observable';
-import { ObservableSourceImpl } from './observable/observable-source-impl';
+import { PassThroughFork } from './fork/pass-through-fork';
 import { SyncStatusNotifier } from './http/web-client';
 import { Jinaga } from './jinaga';
+import { FactManager } from './managers/factManager';
+import { NetworkNoOp } from './managers/NetworkManager';
 import { MemoryStore } from './memory/memory-store';
-import { FactEnvelope } from './storage';
+import { ObservableSource } from './observable/observable';
+import { FactEnvelope, Storage } from './storage';
 
 export type JinagaTestConfig = {
   authorization?: (a: AuthorizationRules) => AuthorizationRules,
@@ -20,10 +22,13 @@ export class JinagaTest {
   static create(config: JinagaTestConfig) {
     const store = new MemoryStore();
     this.saveInitialState(config, store);
-    const feed = new ObservableSourceImpl(store);
+    const observableSource = new ObservableSource(store);
     const syncStatusNotifier = new SyncStatusNotifier();
-    const authentication = this.createAuthentication(config, feed);
-    return new Jinaga(authentication, syncStatusNotifier);
+    const fork = new PassThroughFork(store);
+    const authentication = this.createAuthentication(config, store);
+    const network = new NetworkNoOp();
+    const factManager = new FactManager(authentication, fork, observableSource, store, network);
+    return new Jinaga(factManager, syncStatusNotifier);
   }
 
   static saveInitialState(config: JinagaTestConfig, store: MemoryStore) {
@@ -37,12 +42,12 @@ export class JinagaTest {
     }
   }
 
-  static createAuthentication(config: JinagaTestConfig, inner: ObservableSource): Authentication {
+  static createAuthentication(config: JinagaTestConfig, store: Storage): Authentication {
     const authorizationRules = config.authorization ?
       config.authorization(new AuthorizationRules()) : null;
     const userFact = config.user ? dehydrateFact(config.user)[0] : null;
     const deviceFact = config.device ? dehydrateFact(config.device)[0] : null;
     
-    return new AuthenticationTest(inner, authorizationRules, userFact, deviceFact);
+    return new AuthenticationTest(store, authorizationRules, userFact, deviceFact);
   }
 }

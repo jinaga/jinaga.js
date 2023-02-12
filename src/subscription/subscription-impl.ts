@@ -1,16 +1,16 @@
 import { Channel } from "../fork/channel";
-import { Fork } from "../fork/fork";
+import { FactManager } from "../managers/factManager";
 import { Subscription } from "./subscription";
 
 export class SubscriptionImpl implements Subscription {
     constructor(
         private channel: Channel,
-        private inner: Fork
+        private factManager: FactManager
     ) {
         
     }
 
     stop() {
-        this.inner.removeChannel(this.channel);
+        this.factManager.removeChannel(this.channel);
     }
 }

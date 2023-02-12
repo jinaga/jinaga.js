@@ -1,4 +1,13 @@
 import { ComponentProjection, Condition, Label, Match, Projection, Specification, SpecificationProjection } from "../../src/specification/specification";
+import { FactReference } from "../storage";
+
+export function describeDeclaration(references: FactReference[], labels: Label[]) {
+    const declaration = references.map((reference, index) => {
+        const label = labels[index];
+        return `let ${label.name}: ${label.type} = #${reference.hash}\n`;
+    }).join("");
+    return declaration;
+}
 
 export function describeSpecification(specification: Specification, depth: number) {
     const indent = "    ".repeat(depth);

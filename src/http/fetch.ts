@@ -20,12 +20,12 @@ export class FetchConnection implements HttpConnection {
     return Promise.race([callFetch(), timeout()]);
   }
 
-  async post(path: string, body: {}, timeoutSeconds: number): Promise<HttpResponse> {
+  async post(path: string, body: {} | string, timeoutSeconds: number): Promise<HttpResponse> {
     const response = await fetch(this.url + path, {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: (typeof body === 'string') ? body : JSON.stringify(body),
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': (typeof body === 'string') ? 'text/plain' : 'application/json'
       }
     });
     const json = await response.json();

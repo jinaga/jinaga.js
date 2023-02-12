@@ -1,10 +1,8 @@
 import { TopologicalSorter } from '../fact/sorter';
 import { WebClient } from '../http/web-client';
-import { Handler, Observable, ObservableSource, ObservableSubscription, SpecificationListener } from '../observable/observable';
+import { Handler, Observable, ObservableSubscription } from '../observable/observable';
 import { Query } from '../query/query';
-import { Feed } from "../specification/feed";
-import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactRecord, FactReference, factReferenceEquals, ProjectedResult } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
 import { flatten } from '../util/fn';
 import { Channel } from "./channel";
 import { ChannelProcessor } from "./channel-processor";
@@ -43,7 +41,7 @@ export class TransientFork implements Fork {
     private channelProcessor: ChannelProcessor | null = null;
 
     constructor(
-        private observableSource: ObservableSource,
+        private storage: Storage,
         private client: WebClient
     ) {
         
@@ -55,18 +53,15 @@ export class TransientFork implements Fork {
         }
         this.channelProcessor = null;
         this.channels = [];
-        await this.observableSource.close();
     }
 
-    async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+    async save(envelopes: FactEnvelope[]): Promise<void> {
         await this.client.save(serializeSave(envelopes));
-        const saved = await this.observableSource.save(envelopes);
-        return saved;
     }
 
     async query(start: FactReference, query: Query) {
         if (query.isDeterministic()) {
-            const results = await this.observableSource.query(start, query);
+            const results = await this.storage.query(start, query);
             return results;
         }
         else {
@@ -75,20 +70,8 @@ export class TransientFork implements Fork {
         }
     }
 
-    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        throw new Error('Method not implemented.');
-    }
-
-    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.observableSource.feed(feed, bookmark);
-    }
-
-    whichExist(references: FactReference[]): Promise<FactReference[]> {
-        return this.observableSource.whichExist(references);
-    }
-
     async load(references: FactReference[]): Promise<FactRecord[]> {
-        const known = await this.observableSource.load(references);
+        const known = await this.storage.load(references);
         const remaining = references.filter(reference => !known.some(factReferenceEquals(reference)));
         if (remaining.length === 0) {
             return known;
@@ -99,18 +82,9 @@ export class TransientFork implements Fork {
         }
     }
 
-    from(fact: FactReference, query: Query): Observable {
-        const observable = this.observableSource.from(fact, query);
+    decorateObservable(fact: FactReference, query: Query, observable: Observable) {
         const loaded = this.initiateQuery(fact, query);
         return new TransientForkObservable(observable, loaded);
-    }
-
-    addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>) {
-        return this.observableSource.addSpecificationListener(specification, onResult);
-    }
-
-    removeSpecificationListener(listener: SpecificationListener) {
-        return this.observableSource.removeSpecificationListener(listener);
     }
 
     addChannel(fact: FactReference, query: Query): Channel {
@@ -158,7 +132,7 @@ export class TransientFork implements Fork {
                     signatures: []
                 };
             });
-            await this.observableSource.save(envelopes);
+            await this.storage.save(envelopes);
             records = records.concat(facts);
         }
         return records;

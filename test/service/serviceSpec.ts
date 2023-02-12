@@ -1,27 +1,39 @@
-import { dehydrateReference, dehydrateFact } from "../../src/fact/hydrate";
-import { ObservableSourceImpl } from "../../src/observable/observable-source-impl";
-import { runService } from "../../src/observable/service";
+import { dehydrateFact, dehydrateReference } from "../../src/fact/hydrate";
+import { PassThroughFork } from "../../src/fork/pass-through-fork";
+import { FactManager } from "../../src/managers/factManager";
+import { NetworkManager, NetworkNoOp } from "../../src/managers/NetworkManager";
 import { MemoryStore } from "../../src/memory/memory-store";
+import { ObservableSource } from "../../src/observable/observable";
+import { runService } from "../../src/observable/service";
 import { fromDescriptiveString } from "../../src/query/descriptive-string";
 import { ServiceRunner } from "../../src/util/serviceRunner";
+import { AuthenticationNoOp } from "../query/AuthenticationNoOp";
 
 class TestContext {
-    private store = new MemoryStore();
-    private feed = new ObservableSourceImpl(this.store);
+    private factManager: FactManager;
     private exceptions: any[] = [];
     private serviceRunner = new ServiceRunner(exception => this.exceptions.push(exception.message));
+
+    constructor() {
+        const memory = new MemoryStore();
+        const observableSource = new ObservableSource(memory);
+        const fork = new PassThroughFork(memory);
+        const authentication = new AuthenticationNoOp();
+        const network = new NetworkNoOp();
+        this.factManager = new FactManager(authentication, fork, observableSource, memory, network);
+    }
 
     async fact(fact: {}) {
         const records = dehydrateFact(fact);
         const envelopes = records.map(f => ({ fact: f, signatures: [] }));
-        await this.feed.save(envelopes);
+        await this.factManager.save(envelopes);
     }
 
     async run(fact: {}, queryString: string, handler: (message: {}) => Promise<void>) {
         try {
             const start = dehydrateReference(fact);
             const query = fromDescriptiveString(queryString);
-            const subscription = runService(this.feed, start, query, this.serviceRunner, handler);
+            const subscription = runService(this.factManager, start, query, this.serviceRunner, handler);
             await subscription.load();
         }
         catch (exception) {

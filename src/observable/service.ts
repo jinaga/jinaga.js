@@ -1,17 +1,17 @@
 import { Hydration } from '../fact/hydrate';
+import { FactManager } from '../managers/factManager';
 import { Query } from '../query/query';
 import { FactReference, factReferenceEquals } from '../storage';
 import { mapAsync } from '../util/fn';
 import { ServiceRunner } from '../util/serviceRunner';
-import { ObservableSource } from './observable';
 import { Trace } from '../util/trace';
 
-export function runService<U>(feed: ObservableSource, start: FactReference, query: Query, serviceRunner: ServiceRunner, handler: (message: U) => Promise<void>) {
+export function runService<U>(factManager: FactManager, start: FactReference, query: Query, serviceRunner: ServiceRunner, handler: (message: U) => Promise<void>) {
     let processing: FactReference[] = [];
-    const subscription = feed.from(start, query)
+    const subscription = factManager.from(start, query)
         .subscribe(async (pathsAdded) => {
             const factsAdded = pathsAdded.map(p => p[p.length - 1]);
-            const recordsAdded = await feed.load(factsAdded);
+            const recordsAdded = await factManager.load(factsAdded);
             const hydration = new Hydration(recordsAdded);
             await mapAsync(factsAdded, async reference => {
                 processing.push(reference);

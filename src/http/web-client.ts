@@ -1,4 +1,4 @@
-import { LoadMessage, LoadResponse, LoginResponse, QueryMessage, QueryResponse, SaveMessage } from "./messages";
+import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse, QueryMessage, QueryResponse, SaveMessage } from "./messages";
 
 export type SyncStatus = {
     sending: boolean;
@@ -40,7 +40,7 @@ export type HttpResponse = HttpSuccess | HttpFailure | HttpRetry;
 
 export interface HttpConnection {
     get(path: string): Promise<{}>;
-    post(path: string, body: {}, timeoutSeconds: number): Promise<HttpResponse>;
+    post(path: string, body: {} | string, timeoutSeconds: number): Promise<HttpResponse>;
 }
 
 function delay(timeSeconds: number): Promise<void> {
@@ -76,7 +76,15 @@ export class WebClient {
         return <LoadResponse> await this.postWithLimitedRetry('/load', load);
     }
 
-    private async postWithLimitedRetry(path: string, body: {}) {
+    async feeds(request: string): Promise<FeedsResponse> {
+        return <FeedsResponse> await this.postWithLimitedRetry('/feeds', request);
+    }
+
+    async feed(feed: string, bookmark: string): Promise<FeedResponse> {
+        return <FeedResponse> await this.httpConnection.get(`/feeds/${feed}?b=${bookmark}`);
+    }
+
+    private async postWithLimitedRetry(path: string, body: {} | string) {
         let timeoutSeconds = this.config.timeoutSeconds;
         let retrySeconds = 1;
 
@@ -99,7 +107,7 @@ export class WebClient {
         }
     }
 
-    private async postWithInfiniteRetry(path: string, body: {}) {
+    private async postWithInfiniteRetry(path: string, body: {} | string) {
         let timeoutSeconds = this.config.timeoutSeconds;
         let retrySeconds = 1;
 

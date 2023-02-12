@@ -1,9 +1,9 @@
 export { Authentication } from './authentication/authentication';
+export { AuthenticationNoOp } from './authentication/authentication-noop';
 export { Authorization } from './authorization/authorization';
 export { AuthorizationEngine, Forbidden } from './authorization/authorization-engine';
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
 export { AuthorizationRules } from "./authorization/authorizationRules";
-export { Cache } from './cache';
 export { canonicalizeFact, canonicalPredecessors, computeHash, computeObjectHash } from './fact/hash';
 export { dehydrateFact, dehydrateReference, hydrate, hydrateFromTree } from "./fact/hydrate";
 export { TopologicalSorter } from './fact/sorter';
@@ -11,6 +11,7 @@ export { Channel } from "./fork/channel";
 export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
 export { TransientFork } from './fork/transient-fork';
+export { HttpNetwork } from "./http/httpNetwork";
 export {
   FeedResponse,
   FeedsResponse,
@@ -26,10 +27,11 @@ export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient
 export { ensure, Jinaga, Preposition, Profile, Template, Trace, Tracer } from "./jinaga";
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
+export { FactManager } from "./managers/factManager";
+export { Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
 export { MemoryStore } from './memory/memory-store';
 export { User, UserName } from "./model/user";
-export { Observable, ObservableSource, SpecificationListener } from './observable/observable';
-export { ObservableSourceImpl } from './observable/observable-source-impl';
+export { Observable, ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
 export { fromDescriptiveString } from './query/descriptive-string';
 export { Query } from './query/query';
 export { SpecificationOf as TemplateSpecificationOf } from "./query/query-parser";

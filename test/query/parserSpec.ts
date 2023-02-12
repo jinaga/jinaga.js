@@ -1,13 +1,21 @@
 import 'source-map-support/register';
 
 import { Jinaga } from '../../src/jinaga';
+import { FactManager } from '../../src/managers/factManager';
+import { NetworkNoOp } from '../../src/managers/NetworkManager';
+import { MemoryStore } from '../../src/memory/memory-store';
+import { ObservableSource } from '../../src/observable/observable';
 import { Query } from '../../src/query/query';
-import { ConditionOf, Preposition, SpecificationOf, ensure } from '../../src/query/query-parser';
+import { ConditionOf, ensure, Preposition, SpecificationOf } from '../../src/query/query-parser';
 import { AuthenticationNoOp } from './AuthenticationNoOp';
+import { ForkNoOp } from './ForkNoOp';
 
 describe('Query parser', () => {
 
-    const j = new Jinaga(new AuthenticationNoOp(), null);
+    const memory = new MemoryStore();
+    const network = new NetworkNoOp();
+    const factManager = new FactManager(new AuthenticationNoOp(), new ForkNoOp(), new ObservableSource(memory), memory, network);
+    const j = new Jinaga(factManager, null);
 
     function tasksInList(l: List): SpecificationOf<Task> {
         return j.match({
