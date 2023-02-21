@@ -228,7 +228,7 @@ export class MemoryStore implements Storage {
         return flatten(set, reference => {
             const record = this.findFact(reference);
             if (record === null) {
-                throw new Error(`The fact ${reference} is not defined.`);
+                throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
             }
             const predecessors = getPredecessors(record, name);
             return predecessors.filter(predecessor => predecessor.type === predecessorType);
