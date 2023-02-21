@@ -124,9 +124,9 @@ const commentAuthor = model.given(Comment).match((comment, facts) =>
 
 function authorization(a: AuthorizationRules) {
   return a
-    .any(User.Type)
-    .type(Site.Type, siteCreator)
-    .any(Content.Type)
-    .type(Comment.Type, commentAuthor)
+    .any(User)
+    .type(Site, siteCreator)
+    .any(Content)
+    .type(Comment, commentAuthor)
     ;
 }

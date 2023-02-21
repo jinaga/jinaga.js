@@ -2,7 +2,7 @@ import { getPredecessors } from '../memory/memory-store';
 import { Query } from '../query/query';
 import { Preposition } from '../query/query-parser';
 import { Direction, Join, PropertyCondition, Step } from '../query/steps';
-import { SpecificationOf } from '../specification/model';
+import { FactConstructor, SpecificationOf } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification } from '../specification/specification';
 import { FactRecord, FactReference, factReferenceEquals, ReferencesByName, Storage } from '../storage';
 import { findIndex, flatten, flattenAsync, mapAsync } from '../util/fn';
@@ -265,22 +265,35 @@ export class AuthorizationRules {
         return rules(this);
     }
 
-    no(type: string) {
+    no(type: string): AuthorizationRules;
+    no<T>(factConstructor: FactConstructor<T>): AuthorizationRules;
+    no<T>(typeOrFactConstructor: string | FactConstructor<T>): AuthorizationRules {
+        const type = typeof(typeOrFactConstructor) === 'string' ?
+            typeOrFactConstructor :
+            typeOrFactConstructor.Type;
         return this.withRule(type, new AuthorizationRuleNone());
     }
 
-    any(type: string) {
+    any(type: string): AuthorizationRules;
+    any<T>(factConstructor: FactConstructor<T>): AuthorizationRules;
+    any<T>(typeOrFactConstructor: string | FactConstructor<T>): AuthorizationRules {
+        const type = typeof(typeOrFactConstructor) === 'string' ?
+            typeOrFactConstructor :
+            typeOrFactConstructor.Type;
         return this.withRule(type, new AuthorizationRuleAny());
     }
 
     type<T, U>(type: string, preposition: Preposition<T, U>): AuthorizationRules;
-    type<T, U>(type: string, specification: SpecificationOf<[T], U>): AuthorizationRules;
-    type<T, U>(type: string, prepositionOrSpecification: Preposition<T, U> | SpecificationOf<[T], U>): AuthorizationRules {
-        if (prepositionOrSpecification instanceof Preposition) {
+    type<T, U>(factConstructor: FactConstructor<T>, specification: SpecificationOf<[T], U>): AuthorizationRules;
+    type<T, U>(type: string | FactConstructor<T>, prepositionOrSpecification: Preposition<T, U> | SpecificationOf<[T], U>): AuthorizationRules {
+        if (typeof(type) === 'string' && prepositionOrSpecification instanceof Preposition) {
             return this.oldType(type, prepositionOrSpecification);
         }
-        else {
+        else if (typeof(type) === 'function' && prepositionOrSpecification instanceof SpecificationOf<[T], U>) {
             return this.newType(type, prepositionOrSpecification);
+        }
+        else {
+            throw new Error('Invalid arguments.');
         }
     }
 
@@ -302,7 +315,8 @@ export class AuthorizationRules {
         return this.withRule(type, new AuthorizationRuleQuery(head, tail));
     }
 
-    private newType<T, U>(type: string, specification: SpecificationOf<[T], U>): AuthorizationRules {
+    private newType<T, U>(factConstructor: FactConstructor<T>, specification: SpecificationOf<[T], U>): AuthorizationRules {
+        const type = factConstructor.Type;
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
     }
 
