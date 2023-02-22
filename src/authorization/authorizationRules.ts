@@ -383,9 +383,9 @@ export class AuthorizationRules {
             return false;
         }
 
-        const evidence = new FactGraph(factRecords);
+        const graph = new FactGraph(factRecords);
         const results = await mapAsync(rules, async r =>
-            await r.isAuthorized(userFact, fact, evidence, store));
+            await r.isAuthorized(userFact, fact, graph, store));
         return results.some(b => b);
     }
 }
