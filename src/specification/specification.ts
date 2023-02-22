@@ -184,3 +184,10 @@ function getAllRolesFromComponents(labels: TypeByLabel, components: ComponentPro
     }
     return roles;
 }
+
+export function splitAtFirstPredecessor(specification: Specification): { head: Specification | undefined, tail: Specification | undefined } {
+    return {
+        head: specification,
+        tail: undefined
+    };
+}
