@@ -3,16 +3,19 @@ import { AuthorizationRules, buildModel, ensure, Jinaga, JinagaTest } from '../.
 describe("Feedback authorization from specification", () => {
   let j: Jinaga;
   let site: Site;
+  let content: Content;
 
   beforeEach(async () => {
     site = new Site(new User("Site creator"), "site identifier");
+    content = new Content(site, "/path/to/content");
 
     j = JinagaTest.create({
       model,
       authorization,
       user: new User("Logged in user"),
       initialState: [
-        site
+        site,
+        content
       ]
     });
   });
@@ -41,7 +44,6 @@ describe("Feedback authorization from specification", () => {
 
   it("should not allow a comment from another user", async () => {
     const user = await j.fact(new User("Another user"));
-    const content = await j.fact(new Content(site, "/path/to/content"));
 
     const promise = j.fact(new Comment("comment unique id", content, user));
 
@@ -50,11 +52,16 @@ describe("Feedback authorization from specification", () => {
 
   it("should allow a comment from logged in user", async () => {
     const { userFact: user } = await j.login<User>();
-    const content = await j.fact(new Content(site, "/path/to/content"));
     const comment = await j.fact(new Comment("comment unique id", content, user));
 
     expect(comment.author.publicKey).toEqual(user.publicKey);
   });
+
+  it("should not allow a post from another user", async () => {
+    const promise = j.fact(new Content(site, "/path/to/new/content"));
+
+    await expect(promise).rejects.not.toBeNull();
+  })
 });
 
 const j = Jinaga;
@@ -117,7 +124,7 @@ function authorization(a: AuthorizationRules) {
   return a
     .any(User)
     .type(Site, site => site.creator)
-    .any(Content)
+    .type(Content, content => content.site.creator)
     .type(Comment, comment => comment.author)
     ;
 }
