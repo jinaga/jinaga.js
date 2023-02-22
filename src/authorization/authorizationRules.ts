@@ -9,7 +9,7 @@ import { FactRecord, FactReference, factReferenceEquals, ReferencesByName, Stora
 import { findIndex, flatten, flattenAsync, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 
-class Evidence {
+class FactGraph {
     constructor(
         private factRecords: FactRecord[]
     ) { }
@@ -157,17 +157,17 @@ function headStep(step: Step) {
 }
 
 interface AuthorizationRule {
-    isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage): Promise<boolean>;
+    isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
 }
 
 class AuthorizationRuleAny implements AuthorizationRule {
-    isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage) {
+    isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage) {
         return Promise.resolve(true);
     }
 }
 
 class AuthorizationRuleNone implements AuthorizationRule {
-    isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage): Promise<boolean> {
+    isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
         Trace.warn(`No fact of type ${fact.type} is authorized.`);
         return Promise.resolve(false);
     }
@@ -181,12 +181,12 @@ class AuthorizationRuleQuery implements AuthorizationRule {
 
     }
 
-    async isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage) {
+    async isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage) {
         if (!userFact) {
             Trace.warn(`No user is logged in while attempting to authorize ${fact.type}.`);
             return false;
         }
-        const predecessors = evidence.query(fact, this.head);
+        const predecessors = graph.query(fact, this.head);
         const results = await flattenAsync(predecessors, async p =>
             await this.executeQuery(store, p));
         const authorized = results.some(factReferenceEquals(userFact));
@@ -217,7 +217,7 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
         private specification: Specification
     ) { }
 
-    async isAuthorized(userFact: FactReference | null, fact: FactRecord, evidence: Evidence, store: Storage): Promise<boolean> {
+    async isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
         if (!userFact) {
             Trace.warn(`No user is logged in while attempting to authorize ${fact.type}.`);
             return false;
@@ -383,7 +383,7 @@ export class AuthorizationRules {
             return false;
         }
 
-        const evidence = new Evidence(factRecords);
+        const evidence = new FactGraph(factRecords);
         const results = await mapAsync(rules, async r =>
             await r.isAuthorized(userFact, fact, evidence, store));
         return results.some(b => b);
