@@ -185,9 +185,59 @@ function getAllRolesFromComponents(labels: TypeByLabel, components: ComponentPro
     return roles;
 }
 
-export function splitAtFirstPredecessor(specification: Specification): { head: Specification | undefined, tail: Specification | undefined } {
-    return {
-        head: specification,
-        tail: undefined
-    };
+export function splitBeforeFirstSuccessor(specification: Specification): { head: Specification | undefined, tail: Specification | undefined } {
+    // Find the first match (if any) that seeks successors or has an existential condition
+    const firstMatchWithSuccessor = specification.matches.findIndex(match =>
+        match.conditions.some(condition =>
+            condition.type === "path" && condition.rolesLeft.length > 0));
+
+    if (firstMatchWithSuccessor === -1) {
+        // No match seeks successors, so the whole specification is deterministic
+        return {
+            head: specification,
+            tail: undefined
+        };
+    }
+    else {
+        // If there is only a single path condition, then split that path.
+        const pivot = specification.matches[firstMatchWithSuccessor];
+        if (pivot.conditions.length !== 1) {
+            throw new Error("Not implemented");
+        }
+
+        const condition = pivot.conditions[0];
+        if (condition.type !== "path") {
+            throw new Error("Not implemented");
+        }
+
+        if (condition.rolesRight.length === 0) {
+            // The path contains only successor joins.
+            // Put the entire match in the tail.
+            if (firstMatchWithSuccessor === 0) {
+                // There is nothing to put in the head
+                return {
+                    head: undefined,
+                    tail: specification
+                };
+            }
+            else {
+                // Split the matches between the head and tail
+                const head: Specification = {
+                    given: specification.given,
+                    matches: specification.matches.slice(0, firstMatchWithSuccessor),
+                    projection: specification.projection
+                };
+                const tail: Specification = {
+                    given: specification.given,
+                    matches: specification.matches.slice(firstMatchWithSuccessor),
+                    projection: specification.projection
+                };
+                return {
+                    head,
+                    tail
+                };
+            }
+        }
+        throw new Error("Not implemented");
+    }
 }
