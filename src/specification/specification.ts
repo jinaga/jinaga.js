@@ -207,7 +207,7 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
 
         const condition = pivot.conditions[0];
         if (condition.type !== "path") {
-            throw new Error("Not implemented");
+            throw new Error('Expected a path condition');
         }
 
         if (condition.rolesRight.length === 0) {
@@ -251,7 +251,65 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
                 };
             }
         }
-        throw new Error("Not implemented");
+        else {
+            // The path contains both predecessor and successor joins.
+            // Split the path into two paths.
+            const splitLabel: Label = {
+                name: 's1',
+                type: condition.rolesRight[condition.rolesRight.length - 1].predecessorType
+            };
+            const headCondition: Condition = {
+                type: "path",
+                labelRight: condition.labelRight,
+                rolesLeft: [],
+                rolesRight: condition.rolesRight
+            };
+            const headMatch: Match = {
+                unknown: splitLabel,
+                conditions: [headCondition]
+            }
+            const tailCondition: Condition = {
+                type: "path",
+                labelRight: splitLabel.name,
+                rolesLeft: condition.rolesLeft,
+                rolesRight: []
+            };
+            const tailMatch: Match = {
+                unknown: pivot.unknown,
+                conditions: [tailCondition]
+            };
+
+            // Assemble the head and tail matches
+            const headMatches = specification.matches.slice(0, firstMatchWithSuccessor).concat(headMatch);
+            const tailMatches = [tailMatch].concat(specification.matches.slice(firstMatchWithSuccessor + 1));
+
+            // Compute the givens of the head and tail
+            const headGiven = referencedLabels(headMatches, specification.given);
+            const allLabels = specification.given
+                .concat(specification.matches.map(match => match.unknown))
+                .concat([ splitLabel ]);
+            const tailGiven = referencedLabels(tailMatches, allLabels);
+
+            // Project the tail givens
+            const headProjection: Projection = tailGiven.length === 1 ?
+                <FactProjection>{ type: "fact", label: tailGiven[0].name } :
+                <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (
+                    <FactProjection>{ type: "fact", label: label.name })) };
+            const head: Specification = {
+                given: headGiven,
+                matches: headMatches,
+                projection: headProjection
+            };
+            const tail: Specification = {
+                given: tailGiven,
+                matches: tailMatches,
+                projection: specification.projection
+            };
+            return {
+                head,
+                tail
+            };
+        }
     }
 }
 

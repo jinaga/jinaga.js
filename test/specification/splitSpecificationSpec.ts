@@ -50,6 +50,28 @@ describe('Split specification', () => {
                 ]
             } => u2`);
     });
+
+    it('should split if successor and then predecessor', () => {
+        const specification = model.given(Employee).match((employee, facts) =>
+            facts.ofType(President)
+                .join(president => president.office, employee.office));
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Employee) {
+                s1: Office [
+                    s1 = p1->office: Office
+                ]
+            } => s1`);
+        expect(tail).toBeDefined();
+        expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
+            (s1: Office) {
+                u1: President [
+                    u1->office: Office = s1
+                ]
+            } => u1`);
+    });
 });
 
 function fixWhitespace(s: string): string {
