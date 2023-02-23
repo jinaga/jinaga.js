@@ -188,8 +188,8 @@ function getAllRolesFromComponents(labels: TypeByLabel, components: ComponentPro
 export function splitBeforeFirstSuccessor(specification: Specification): { head: Specification | undefined, tail: Specification | undefined } {
     // Find the first match (if any) that seeks successors or has an existential condition
     const firstMatchWithSuccessor = specification.matches.findIndex(match =>
-        match.conditions.some(condition =>
-            condition.type === "path" && condition.rolesLeft.length > 0));
+        match.conditions.length !== 1 || match.conditions.some(condition =>
+            condition.type !== "path" || condition.rolesLeft.length > 0));
 
     if (firstMatchWithSuccessor === -1) {
         // No match seeks successors, so the whole specification is deterministic
@@ -202,7 +202,7 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
         // If there is only a single path condition, then split that path.
         const pivot = specification.matches[firstMatchWithSuccessor];
         if (pivot.conditions.length !== 1) {
-            throw new Error("Not implemented");
+            throw new Error('Expected a single condition');
         }
 
         const condition = pivot.conditions[0];
@@ -222,14 +222,27 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
             }
             else {
                 // Split the matches between the head and tail
+                const headMatches = specification.matches.slice(0, firstMatchWithSuccessor);
+                const tailMatches = specification.matches.slice(firstMatchWithSuccessor);
+
+                // Compute the givens of the head and tail
+                const headGiven = referencedLabels(headMatches, specification.given);
+                const allLabels = specification.given.concat(specification.matches.map(match => match.unknown));
+                const tailGiven = referencedLabels(tailMatches, allLabels);
+
+                // Project the tail givens
+                const headProjection: Projection = tailGiven.length === 1 ?
+                    <FactProjection>{ type: "fact", label: tailGiven[0].name } :
+                    <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (
+                        <FactProjection>{ type: "fact", label: label.name })) };
                 const head: Specification = {
-                    given: specification.given,
-                    matches: specification.matches.slice(0, firstMatchWithSuccessor),
-                    projection: specification.projection
+                    given: headGiven,
+                    matches: headMatches,
+                    projection: headProjection
                 };
                 const tail: Specification = {
-                    given: specification.given,
-                    matches: specification.matches.slice(firstMatchWithSuccessor),
+                    given: tailGiven,
+                    matches: tailMatches,
                     projection: specification.projection
                 };
                 return {
@@ -239,5 +252,30 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
             }
         }
         throw new Error("Not implemented");
+    }
+}
+
+function referencedLabels(matches: Match[], labels: Label[]): Label[] {
+    // Find all labels referenced in the matches
+    const definedLabels = matches.map(match => match.unknown.name);
+    const referencedLabels = matches.flatMap(labelsInMatch)
+        .filter(label => definedLabels.indexOf(label) === -1);
+    return labels.filter(label => referencedLabels.indexOf(label.name) !== -1);
+}
+
+function labelsInMatch(match: Match): string[] {
+    return match.conditions.flatMap(labelsInCondition);
+}
+
+function labelsInCondition(condition: Condition): string[] {
+    if (condition.type === "path") {
+        return [ condition.labelRight ];
+    }
+    else if (condition.type === "existential") {
+        return condition.matches.flatMap(labelsInMatch);
+    }
+    else {
+        const _exhaustiveCheck: never = condition;
+        throw new Error(`Unexpected condition type ${(condition as any).type}`);
     }
 }
