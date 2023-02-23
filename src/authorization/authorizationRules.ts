@@ -212,13 +212,6 @@ class AuthorizationRuleQuery implements AuthorizationRule {
     }
 }
 
-function seeksSuccessors(match: Match): boolean {
-    return match.conditions.some(condition =>
-        (condition.type === 'path' && condition.rolesLeft.length > 0) ||
-        (condition.type === 'existential' && condition.matches.some(seeksSuccessors))
-    );
-}
-
 class AuthorizationRuleSpecification implements AuthorizationRule {
     constructor(
         private specification: Specification
@@ -280,6 +273,10 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
     }
 }
 
+type UserSpecificationDefinition<T> = (fact: LabelOf<T>, facts: FactRepository) => Traversal<User>;
+
+type UserPredecessorSelector<T> = (fact: LabelOf<T>) => LabelOf<User>;
+
 export class AuthorizationRules {
     private rulesByType: {[type: string]: AuthorizationRule[]} = {};
 
@@ -310,18 +307,18 @@ export class AuthorizationRules {
     }
 
     type<T, U>(type: string, preposition: Preposition<T, U>): AuthorizationRules;
-    type<T>(factConstructor: FactConstructor<T>, definition: (fact: LabelOf<T>, facts: FactRepository) => Traversal<User>): AuthorizationRules;
-    type<T>(factConstructor: FactConstructor<T>, predecessorSelector: (fact: LabelOf<T>) => LabelOf<User>): AuthorizationRules;
-    type<T, U>(type: string | FactConstructor<T>, prepositionOrSpecification: Preposition<T, U> | ((fact: LabelOf<T>, facts: FactRepository) => Traversal<User>) | ((fact: LabelOf<T>) => LabelOf<User>)): AuthorizationRules {
+    type<T>(factConstructor: FactConstructor<T>, definition: UserSpecificationDefinition<T>): AuthorizationRules;
+    type<T>(factConstructor: FactConstructor<T>, predecessorSelector: UserPredecessorSelector<T>): AuthorizationRules;
+    type<T, U>(type: string | FactConstructor<T>, prepositionOrSpecification: Preposition<T, U> | UserSpecificationDefinition<T> | UserPredecessorSelector<T>): AuthorizationRules {
         if (typeof(type) === 'string' && prepositionOrSpecification instanceof Preposition) {
             return this.oldType(type, prepositionOrSpecification);
         }
         else if (typeof(type) === 'function' && typeof(prepositionOrSpecification) === 'function') {
             if (prepositionOrSpecification.arguments.length === 2) {
-                return this.typeFromDefinition(type, <(fact: LabelOf<T>, facts: FactRepository) => Traversal<U>>prepositionOrSpecification);
+                return this.typeFromDefinition(type, <UserSpecificationDefinition<T>>prepositionOrSpecification);
             }
             else {
-                return this.typeFromPredecessorSelector(type, <(fact: LabelOf<T>) => LabelOf<User>>prepositionOrSpecification);
+                return this.typeFromPredecessorSelector(type, <UserPredecessorSelector<T>>prepositionOrSpecification);
             }
         }
         else {
@@ -347,7 +344,7 @@ export class AuthorizationRules {
         return this.withRule(type, new AuthorizationRuleQuery(head, tail));
     }
 
-    private typeFromDefinition<T, U>(factConstructor: FactConstructor<T>, definition: (fact: LabelOf<T>, facts: FactRepository) => Traversal<U>): AuthorizationRules {
+    private typeFromDefinition<T>(factConstructor: FactConstructor<T>, definition: UserSpecificationDefinition<T>): AuthorizationRules {
         const type = factConstructor.Type;
         if (this.model === undefined) {
             throw new Error('The model must be given to define a rule using a specification.');
@@ -356,7 +353,7 @@ export class AuthorizationRules {
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
     }
 
-    private typeFromPredecessorSelector<T, U>(factConstructor: FactConstructor<T>, predecessorSelector: (fact: LabelOf<T>) => LabelOf<User>): AuthorizationRules {
+    private typeFromPredecessorSelector<T>(factConstructor: FactConstructor<T>, predecessorSelector: UserPredecessorSelector<T>): AuthorizationRules {
         const type = factConstructor.Type;
         if (this.model === undefined) {
             throw new Error('The model must be given to define a rule using a specification.');
