@@ -8,6 +8,7 @@ describe("Feedback authorization from specification", () => {
     site = new Site(new User("Site creator"), "site identifier");
 
     j = JinagaTest.create({
+      model,
       authorization,
       user: new User("Logged in user"),
       initialState: [
@@ -112,21 +113,15 @@ const model = buildModel(b => b
   )
 );
 
-const siteCreator = model.given(Site).match((site, facts) =>
-  facts.ofType(User)
-    .join(user => user, site.creator)
-);
-
-const commentAuthor = model.given(Comment).match((comment, facts) =>
-  facts.ofType(User)
-    .join(user => user, comment.author)
-);
-
 function authorization(a: AuthorizationRules) {
   return a
     .any(User)
-    .type(Site, siteCreator)
+    .type(Site, (site, facts) =>
+      facts.ofType(User)
+        .join(user => user, site.creator))
     .any(Content)
-    .type(Comment, commentAuthor)
+    .type(Comment, (comment, facts) =>
+      facts.ofType(User)
+        .join(user => user, comment.author))
     ;
 }

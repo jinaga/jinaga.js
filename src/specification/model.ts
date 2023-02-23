@@ -130,7 +130,7 @@ export type LabelOf<T> = {
         LabelOf<T[R]>;
 }
 
-class Traversal<T> {
+export class Traversal<T> {
     constructor(
         private input: T,
         public matches: Match[],

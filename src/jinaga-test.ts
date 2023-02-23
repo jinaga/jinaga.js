@@ -9,9 +9,11 @@ import { FactManager } from './managers/factManager';
 import { NetworkNoOp } from './managers/NetworkManager';
 import { MemoryStore } from './memory/memory-store';
 import { ObservableSource } from './observable/observable';
+import { Model } from './specification/model';
 import { FactEnvelope, Storage } from './storage';
 
 export type JinagaTestConfig = {
+  model?: Model,
   authorization?: (a: AuthorizationRules) => AuthorizationRules,
   user?: {},
   device?: {},
@@ -44,7 +46,7 @@ export class JinagaTest {
 
   static createAuthentication(config: JinagaTestConfig, store: Storage): Authentication {
     const authorizationRules = config.authorization ?
-      config.authorization(new AuthorizationRules()) : null;
+      config.authorization(new AuthorizationRules(config.model)) : null;
     const userFact = config.user ? dehydrateFact(config.user)[0] : null;
     const deviceFact = config.device ? dehydrateFact(config.device)[0] : null;
     
