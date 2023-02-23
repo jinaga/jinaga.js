@@ -51,7 +51,7 @@ describe('Split specification', () => {
             } => u2`);
     });
 
-    it('should split if successor and then predecessor', () => {
+    it('should split if predecessor and then successor, but in one match', () => {
         const specification = model.given(Employee).match((employee, facts) =>
             facts.ofType(President)
                 .join(president => president.office, employee.office));

@@ -83,6 +83,7 @@ describe("Feedback authorization from specification", () => {
       content = new Content(site, "/path/to/content");
   
       j = JinagaTest.create({
+        model,
         authorization,
         user: siteCreator,
         initialState: [
@@ -118,6 +119,7 @@ describe("Feedback authorization from specification", () => {
       const guestBlogger = new GuestBlogger(site, guestUser);
   
       j = JinagaTest.create({
+        model,
         authorization,
         user: guestUser,
         initialState: [
@@ -207,6 +209,7 @@ function authorization(a: AuthorizationRules) {
   return a
     .any(User)
     .type(Site, site => site.creator)
+    .type(GuestBlogger, guestBlogger => guestBlogger.site.creator)
     .type(Content, content => content.site.creator)
     .type(Content, (content, facts) =>
       facts.ofType(GuestBlogger)
