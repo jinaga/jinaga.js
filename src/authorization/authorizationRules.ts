@@ -3,7 +3,7 @@ import { Query } from '../query/query';
 import { Preposition } from '../query/query-parser';
 import { Direction, Join, PropertyCondition, Step } from '../query/steps';
 import { FactConstructor, SpecificationOf } from '../specification/model';
-import { Condition, Label, Match, PathCondition, Specification } from '../specification/specification';
+import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { FactRecord, FactReference, factReferenceEquals, ReferencesByName, Storage } from '../storage';
 import { findIndex, flatten, flattenAsync, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
@@ -240,21 +240,42 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
         }
         const label = this.specification.projection.label;
 
-        // Find the first match (if any) that seeks successors.
-        const firstSuccessorMatch = findIndex(this.specification.matches, seeksSuccessors);
+        // Split the specification.
+        // The head is deterministic, and can be run on the graph.
+        // The tail is non-deterministic, and must be run on the store.
+        const { head, tail } = splitBeforeFirstSuccessor(this.specification);
 
-        // If there is no such match, then execute the rule based solely on the evidence.
-        if (firstSuccessorMatch === -1) {
-            const results = evidence.executeSpecification(
-                this.specification.given[0].name,
-                this.specification.matches,
-                label,
-                fact);
-            const authorized = results.some(factReferenceEquals(userFact));
-            return authorized;
+        // If there is no head, then the specification is unsatisfiable.
+        if (head === undefined) {
+            throw new Error('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
         }
 
-        throw new Error('Not implemented.');
+        // Execute the head on the graph.
+        if (head.projection.type !== 'fact') {
+            throw new Error('The head of the specification must project a fact.');
+        }
+        let results = evidence.executeSpecification(
+            head.given[0].name,
+            head.matches,
+            head.projection.label,
+            fact);
+
+        // If there is a tail, execute it on the store.
+        if (tail !== undefined) {
+            if (tail.given.length !== 1) {
+                throw new Error('The tail of the specification must be given a single fact.');
+            }
+            const tailResults: FactReference[] = [];
+            for (const result of results) {
+                const users = await store.read([result], tail);
+                tailResults.push(...users.map(user => user.tuple[label]));
+            }
+            results = tailResults;
+        }
+
+        // If any of the results match the user, then the user is authorized.
+        const authorized = results.some(factReferenceEquals(userFact));
+        return authorized;
     }
 }
 
