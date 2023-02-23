@@ -314,7 +314,7 @@ export class AuthorizationRules {
             return this.oldType(type, prepositionOrSpecification);
         }
         else if (typeof(type) === 'function' && typeof(prepositionOrSpecification) === 'function') {
-            if (prepositionOrSpecification.arguments.length === 2) {
+            if (prepositionOrSpecification.length === 2) {
                 return this.typeFromDefinition(type, <UserSpecificationDefinition<T>>prepositionOrSpecification);
             }
             else {
