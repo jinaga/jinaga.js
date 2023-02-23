@@ -116,12 +116,8 @@ const model = buildModel(b => b
 function authorization(a: AuthorizationRules) {
   return a
     .any(User)
-    .type(Site, (site, facts) =>
-      facts.ofType(User)
-        .join(user => user, site.creator))
+    .type(Site, site => site.creator)
     .any(Content)
-    .type(Comment, (comment, facts) =>
-      facts.ofType(User)
-        .join(user => user, comment.author))
+    .type(Comment, comment => comment.author)
     ;
 }

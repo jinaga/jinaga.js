@@ -1,8 +1,9 @@
 import { getPredecessors } from '../memory/memory-store';
+import { User } from '../model/user';
 import { Query } from '../query/query';
 import { Preposition } from '../query/query-parser';
 import { Direction, Join, PropertyCondition, Step } from '../query/steps';
-import { FactConstructor, FactRepository, LabelOf, Model, SpecificationOf, Traversal } from '../specification/model';
+import { FactConstructor, FactRepository, LabelOf, Model, Traversal } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { FactRecord, FactReference, factReferenceEquals, ReferencesByName, Storage } from '../storage';
 import { findIndex, flatten, flattenAsync, mapAsync } from '../util/fn';
@@ -309,13 +310,19 @@ export class AuthorizationRules {
     }
 
     type<T, U>(type: string, preposition: Preposition<T, U>): AuthorizationRules;
-    type<T, U>(factConstructor: FactConstructor<T>, definition: (fact: LabelOf<T>, facts: FactRepository) => Traversal<U>): AuthorizationRules;
-    type<T, U>(type: string | FactConstructor<T>, prepositionOrSpecification: Preposition<T, U> | ((fact: LabelOf<T>, facts: FactRepository) => Traversal<U>)): AuthorizationRules {
+    type<T>(factConstructor: FactConstructor<T>, definition: (fact: LabelOf<T>, facts: FactRepository) => Traversal<User>): AuthorizationRules;
+    type<T>(factConstructor: FactConstructor<T>, predecessorSelector: (fact: LabelOf<T>) => LabelOf<User>): AuthorizationRules;
+    type<T, U>(type: string | FactConstructor<T>, prepositionOrSpecification: Preposition<T, U> | ((fact: LabelOf<T>, facts: FactRepository) => Traversal<User>) | ((fact: LabelOf<T>) => LabelOf<User>)): AuthorizationRules {
         if (typeof(type) === 'string' && prepositionOrSpecification instanceof Preposition) {
             return this.oldType(type, prepositionOrSpecification);
         }
         else if (typeof(type) === 'function' && typeof(prepositionOrSpecification) === 'function') {
-            return this.newType(type, prepositionOrSpecification);
+            if (prepositionOrSpecification.arguments.length === 2) {
+                return this.typeFromDefinition(type, <(fact: LabelOf<T>, facts: FactRepository) => Traversal<U>>prepositionOrSpecification);
+            }
+            else {
+                return this.typeFromPredecessorSelector(type, <(fact: LabelOf<T>) => LabelOf<User>>prepositionOrSpecification);
+            }
         }
         else {
             throw new Error('Invalid arguments.');
@@ -340,12 +347,23 @@ export class AuthorizationRules {
         return this.withRule(type, new AuthorizationRuleQuery(head, tail));
     }
 
-    private newType<T, U>(factConstructor: FactConstructor<T>, definition: (fact: LabelOf<T>, facts: FactRepository) => Traversal<U>): AuthorizationRules {
+    private typeFromDefinition<T, U>(factConstructor: FactConstructor<T>, definition: (fact: LabelOf<T>, facts: FactRepository) => Traversal<U>): AuthorizationRules {
         const type = factConstructor.Type;
         if (this.model === undefined) {
             throw new Error('The model must be given to define a rule using a specification.');
         }
         const specification = this.model.given(factConstructor).match(definition);
+        return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
+    }
+
+    private typeFromPredecessorSelector<T, U>(factConstructor: FactConstructor<T>, predecessorSelector: (fact: LabelOf<T>) => LabelOf<User>): AuthorizationRules {
+        const type = factConstructor.Type;
+        if (this.model === undefined) {
+            throw new Error('The model must be given to define a rule using a specification.');
+        }
+        const specification = this.model.given(factConstructor).match((fact, facts) =>
+            facts.ofType(User)
+                .join(user => user, predecessorSelector(fact)));
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
     }
 
