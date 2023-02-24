@@ -94,3 +94,14 @@ npm ci
 npm run build
 npm test
 ```
+
+## Release
+
+To release a new version of Jinaga.JS, bump the version number, create and push a tag,
+and create a release. The GitHub Actions workflow will build and publish the package.
+
+```bash
+npm version patch
+git push --follow-tags
+gh release create v$(node -p "require('./package.json').version") --generate-notes --verify-tag
+```
