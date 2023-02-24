@@ -112,3 +112,24 @@ The server cannot start the query on the database. The database does
 not yet contain the submitted fact. So the server must first take at least
 one predecessor step to find a good starting point. It then runs the tail
 on the database starting from that point.
+
+## Race Conditions
+
+Authorization rules with successor steps are the source of the only
+race conditions that occur in a historical model. If the server learns
+about a fact before it learns about the successors in the authorization
+rule, then the server will reject the fact. But if it learns about the
+successors before it learns about the fact, then the server will accept
+it.
+
+This problem is compounded when an authorization rule contains a negative
+existential condition. More commonly, this is known as revocation. For
+example, suppose we want to allow the creator of a site to revoke the
+access of a guest blogger. The rule would contain a "not exists" condition.
+If the guest blogger got their post in before the revocation, then the
+server would accept it. But if they waited until after the revocation,
+then the server would reject it.
+
+Race conditions like these lead to a loss of consistency. Different
+replicas may see successor facts in a different order. They will therefore
+reach different conclusions about the authorization of a fact.
