@@ -83,7 +83,7 @@ function givenMessageInGroup() {
 
 function givenAuthorizationRules(builder: (a: AuthorizationRules) => AuthorizationRules =
         a => a) {
-    return builder(new AuthorizationRules());
+    return builder(new AuthorizationRules(undefined));
 }
 
 async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactReference | null, fact: FactRecord) {

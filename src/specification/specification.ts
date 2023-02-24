@@ -184,3 +184,156 @@ function getAllRolesFromComponents(labels: TypeByLabel, components: ComponentPro
     }
     return roles;
 }
+
+export function splitBeforeFirstSuccessor(specification: Specification): { head: Specification | undefined, tail: Specification | undefined } {
+    // Find the first match (if any) that seeks successors or has an existential condition
+    const firstMatchWithSuccessor = specification.matches.findIndex(match =>
+        match.conditions.length !== 1 || match.conditions.some(condition =>
+            condition.type !== "path" || condition.rolesLeft.length > 0));
+
+    if (firstMatchWithSuccessor === -1) {
+        // No match seeks successors, so the whole specification is deterministic
+        return {
+            head: specification,
+            tail: undefined
+        };
+    }
+    else {
+        // If there is only a single path condition, then split that path.
+        const pivot = specification.matches[firstMatchWithSuccessor];
+        if (pivot.conditions.length !== 1) {
+            throw new Error('Expected a single condition');
+        }
+
+        const condition = pivot.conditions[0];
+        if (condition.type !== "path") {
+            throw new Error('Expected a path condition');
+        }
+
+        if (condition.rolesRight.length === 0) {
+            // The path contains only successor joins.
+            // Put the entire match in the tail.
+            if (firstMatchWithSuccessor === 0) {
+                // There is nothing to put in the head
+                return {
+                    head: undefined,
+                    tail: specification
+                };
+            }
+            else {
+                // Split the matches between the head and tail
+                const headMatches = specification.matches.slice(0, firstMatchWithSuccessor);
+                const tailMatches = specification.matches.slice(firstMatchWithSuccessor);
+
+                // Compute the givens of the head and tail
+                const headGiven = referencedLabels(headMatches, specification.given);
+                const allLabels = specification.given.concat(specification.matches.map(match => match.unknown));
+                const tailGiven = referencedLabels(tailMatches, allLabels);
+
+                // Project the tail givens
+                const headProjection: Projection = tailGiven.length === 1 ?
+                    <FactProjection>{ type: "fact", label: tailGiven[0].name } :
+                    <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (
+                        <FactProjection>{ type: "fact", label: label.name })) };
+                const head: Specification = {
+                    given: headGiven,
+                    matches: headMatches,
+                    projection: headProjection
+                };
+                const tail: Specification = {
+                    given: tailGiven,
+                    matches: tailMatches,
+                    projection: specification.projection
+                };
+                return {
+                    head,
+                    tail
+                };
+            }
+        }
+        else {
+            // The path contains both predecessor and successor joins.
+            // Split the path into two paths.
+            const splitLabel: Label = {
+                name: 's1',
+                type: condition.rolesRight[condition.rolesRight.length - 1].predecessorType
+            };
+            const headCondition: Condition = {
+                type: "path",
+                labelRight: condition.labelRight,
+                rolesLeft: [],
+                rolesRight: condition.rolesRight
+            };
+            const headMatch: Match = {
+                unknown: splitLabel,
+                conditions: [headCondition]
+            }
+            const tailCondition: Condition = {
+                type: "path",
+                labelRight: splitLabel.name,
+                rolesLeft: condition.rolesLeft,
+                rolesRight: []
+            };
+            const tailMatch: Match = {
+                unknown: pivot.unknown,
+                conditions: [tailCondition]
+            };
+
+            // Assemble the head and tail matches
+            const headMatches = specification.matches.slice(0, firstMatchWithSuccessor).concat(headMatch);
+            const tailMatches = [tailMatch].concat(specification.matches.slice(firstMatchWithSuccessor + 1));
+
+            // Compute the givens of the head and tail
+            const headGiven = referencedLabels(headMatches, specification.given);
+            const allLabels = specification.given
+                .concat(specification.matches.map(match => match.unknown))
+                .concat([ splitLabel ]);
+            const tailGiven = referencedLabels(tailMatches, allLabels);
+
+            // Project the tail givens
+            const headProjection: Projection = tailGiven.length === 1 ?
+                <FactProjection>{ type: "fact", label: tailGiven[0].name } :
+                <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (
+                    <FactProjection>{ type: "fact", label: label.name })) };
+            const head: Specification = {
+                given: headGiven,
+                matches: headMatches,
+                projection: headProjection
+            };
+            const tail: Specification = {
+                given: tailGiven,
+                matches: tailMatches,
+                projection: specification.projection
+            };
+            return {
+                head,
+                tail
+            };
+        }
+    }
+}
+
+function referencedLabels(matches: Match[], labels: Label[]): Label[] {
+    // Find all labels referenced in the matches
+    const definedLabels = matches.map(match => match.unknown.name);
+    const referencedLabels = matches.flatMap(labelsInMatch)
+        .filter(label => definedLabels.indexOf(label) === -1);
+    return labels.filter(label => referencedLabels.indexOf(label.name) !== -1);
+}
+
+function labelsInMatch(match: Match): string[] {
+    return match.conditions.flatMap(labelsInCondition);
+}
+
+function labelsInCondition(condition: Condition): string[] {
+    if (condition.type === "path") {
+        return [ condition.labelRight ];
+    }
+    else if (condition.type === "existential") {
+        return condition.matches.flatMap(labelsInMatch);
+    }
+    else {
+        const _exhaustiveCheck: never = condition;
+        throw new Error(`Unexpected condition type ${(condition as any).type}`);
+    }
+}
