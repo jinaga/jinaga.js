@@ -1,0 +1,11 @@
+digraph {
+  rankdir=BT
+
+  Site -> User [label=" creator "]
+  Post -> Site
+  Comment -> Post, User [label=" author " color=gray fontcolor=gray]
+  GuestBlogger -> Site, User [color=gray]
+
+  Comment [color=gray fontcolor=gray]
+  GuestBlogger [color=gray fontcolor=gray]
+}
