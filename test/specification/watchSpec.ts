@@ -1,5 +1,5 @@
 import { Jinaga, JinagaTest } from "../../src";
-import { Company, Manager, ManagerName, ManagerTerminated, model, Office, OfficeClosed, OfficeReopened, President, User } from "./model";
+import { Company, Manager, ManagerName, ManagerTerminated, model, Office, OfficeClosed, OfficeReopened, President, User, UserName } from "./model";
 
 describe("specification watch", () => {
     let creator: User;
@@ -289,6 +289,72 @@ describe("specification watch", () => {
             {
                 identifier: office.identifier,
                 president: j.hash(newPresident)
+            }
+        ]);
+
+        await officeObserver.stop();
+    });
+
+    it("should notify grandchild results when existing", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                        .notExists(officeClosed =>
+                            facts.ofType(OfficeReopened)
+                                .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                        )
+                )
+                .select(office => ({
+                    identifier: office.identifier,
+                    president: facts.ofType(President)
+                        .join(president => president.office, office)
+                        .select(president => ({
+                            hash: j.hash(president),
+                            name: facts.ofType(UserName)
+                                .join(userName => userName.user, president.user)
+                                .notExists(userName => facts.ofType(UserName)
+                                    .join(next => next.prior, userName)
+                                )
+                        }))
+                }))
+        );
+
+        // Add the president and their name before beginning the watch
+        const presidentUser = new User("--- PRESIDENT PUBLIC KEY ---");
+        const newPresident = new President(office, presidentUser);
+        await j.fact(newPresident);
+        const presidentName = new UserName(presidentUser, "Mr. President", []);
+        await j.fact(presidentName);
+
+        const offices: {
+            identifier: string,
+            presidentHash?: string
+            presidentName?: string
+        }[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            const model = {
+                identifier: office.identifier,
+                presidentHash: undefined as string | undefined,
+                presidentName: undefined as string | undefined
+            };
+            offices.push(model);
+            office.president.onAdded(president => {
+                model.presidentHash = president.hash;
+                president.name.onAdded(name => {
+                    model.presidentName = name.value;
+                });
+            });
+        });
+
+        await officeObserver.initialized();
+        expect(offices).toEqual([
+            {
+                identifier: office.identifier,
+                presidentHash: j.hash(newPresident),
+                presidentName: "Mr. President"
             }
         ]);
 
