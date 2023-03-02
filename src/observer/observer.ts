@@ -149,6 +149,9 @@ export class ObserverImpl<T> {
                                 path: path,
                                 handler: handler
                             });
+                            for (const child of pr.result[component.name]) {
+                                handler(child.result);
+                            }
                         }
                     }
                     composite[component.name] = observable;

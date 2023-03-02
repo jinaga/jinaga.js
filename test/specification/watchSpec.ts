@@ -246,6 +246,55 @@ describe("specification watch", () => {
         ]);
     });
 
+    it("should notify child results when existing", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                        .notExists(officeClosed =>
+                            facts.ofType(OfficeReopened)
+                                .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                        )
+                )
+                .select(office => ({
+                    identifier: office.identifier,
+                    president: facts.ofType(President)
+                        .join(president => president.office, office)
+                }))
+        );
+
+        // Add the president before beginning the watch
+        const newPresident = new President(office, new User("--- PRESIDENT PUBLIC KEY ---"));
+        await j.fact(newPresident);
+
+        const offices: {
+            identifier: string,
+            president?: string
+        }[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            const model = {
+                identifier: office.identifier,
+                president: undefined as string | undefined
+            };
+            offices.push(model);
+            office.president.onAdded(president => {
+                model.president = j.hash(president);
+            });
+        });
+
+        await officeObserver.initialized();
+        expect(offices).toEqual([
+            {
+                identifier: office.identifier,
+                president: j.hash(newPresident)
+            }
+        ]);
+
+        await officeObserver.stop();
+    });
+
     it("should notify when manager and name added", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
