@@ -122,6 +122,16 @@ export class ObserverImpl<T> {
                     };
                 }
             }
+
+            // Recursively notify added for specification results.
+            if (projection.type === "composite") {
+                for (const component of projection.components) {
+                    if (component.type === "specification") {
+                        const childPath = path + "." + component.name;
+                        await this.notifyAdded(pr.result[component.name], component.projection, childPath, Object.keys(pr.tuple));
+                    }
+                }
+            }
         }
     }
 
