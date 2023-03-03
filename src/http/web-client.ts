@@ -1,3 +1,4 @@
+import { Trace } from "../util/trace";
 import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse, QueryMessage, QueryResponse, SaveMessage } from "./messages";
 
 export type SyncStatus = {
@@ -97,10 +98,13 @@ export class WebClient {
                 throw new Error(response.error);
             }
             else {
-                await delay(retrySeconds + Math.random());
-                timeoutSeconds = Math.min(timeoutSeconds * 2, 60);
-                retrySeconds = retrySeconds * 2;
-                if (retrySeconds >= 8) {
+                if (retrySeconds <= 4) {
+                    Trace.warn(`Retrying in ${retrySeconds} seconds: ${response.error}`);
+                    await delay(retrySeconds + Math.random());
+                    timeoutSeconds = Math.min(timeoutSeconds * 2, 60);
+                    retrySeconds = retrySeconds * 2;
+                }
+                else {
                     throw new Error(response.error);
                 }
             }
@@ -144,6 +148,7 @@ export class WebClient {
                     retryInSeconds: retrySeconds,
                     warning: response.error
                 });
+                Trace.warn(`Retrying in ${retrySeconds} seconds: ${response.error}`);
                 await delay(retrySeconds + Math.random());
                 timeoutSeconds = Math.min(timeoutSeconds * 2, 60);
                 retrySeconds = Math.min(retrySeconds * 2, 60);
