@@ -1,10 +1,14 @@
 export interface Tracer {
+    info(message: string): void;
     warn(message: string): void;
     error(error: any): void;
     dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T>;
+    metric(message: string, measurements: { [key: string]: number }): void;
 }
 
 class NoOpTracer implements Tracer {
+    info(message: string): void {
+    }
     warn(message: string): void {
     }
     error(error: any): void {
@@ -12,9 +16,14 @@ class NoOpTracer implements Tracer {
     dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
         return operation();
     }
+    metric(message: string, measurements: { [key: string]: number }): void {
+    }
 }
 
 class ConsoleTracer implements Tracer {
+    info(message: string): void {
+        console.log(message);
+    }
     warn(message: string): void {
         console.warn(message);
     }
@@ -34,6 +43,10 @@ class ConsoleTracer implements Tracer {
             console.log(`Dependency: ${name} (${data}) took ${duration}ms`);
         }
     }
+
+    metric(message: string, measurements: { [key: string]: number }): void {
+        console.log(`Metric: ${message}`, measurements);
+    }
 }
 
 export class Trace {
@@ -46,6 +59,10 @@ export class Trace {
     static off() {
         Trace.tracer = new NoOpTracer();
     }
+
+    static info(message: string): void {
+        this.tracer.info(message);
+    }
     
     static warn(message: string): void {
         this.tracer.warn(message);
@@ -57,5 +74,9 @@ export class Trace {
 
     static dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
         return this.tracer.dependency(name, data, operation);
+    }
+
+    static metric(message: string, measurements: { [key: string]: number }): void {
+        this.tracer.metric(message, measurements);
     }
 }

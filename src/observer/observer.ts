@@ -4,6 +4,7 @@ import { SpecificationListener } from "../observable/observable";
 import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName } from "../storage";
+import { Trace } from "../util/trace";
 
 export type ResultAddedFunc<U> = (value: U) =>
     Promise<() => Promise<void>> |  // Asynchronous with removal function
@@ -104,6 +105,10 @@ export class ObserverImpl<T> {
             const resultAdded = path === "" ?
                 this.resultAdded :
                 this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path)?.handler;
+            if (resultAdded) {
+                const types = Object.values(pr.tuple).map(t => t.type).join(', ');
+                Trace.info(`Observer: Added ${types} ${path}`);
+            }
             const promiseMaybe = resultAdded ? resultAdded(result) : undefined;
             if (promiseMaybe instanceof Promise) {
                 const functionMaybe = await promiseMaybe;
@@ -140,6 +145,8 @@ export class ObserverImpl<T> {
             const resultTupleHash = computeTupleSubsetHash(pr.tuple, resultSubset);
             const removal = this.removalsByTuple[resultTupleHash];
             if (removal !== undefined) {
+                const types = Object.values(pr.tuple).map(t => t.type).join(', ');
+                Trace.info(`Observer: Removed ${types}`);
                 await removal();
                 delete this.removalsByTuple[resultTupleHash];
             }
