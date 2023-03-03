@@ -1,3 +1,4 @@
+import { Trace } from "../util/trace";
 import { HttpConnection, HttpResponse } from "./web-client";
 
 function createXHR(
@@ -29,9 +30,11 @@ function createXHR(
         }
     };
     xhr.ontimeout = (event) => {
+        Trace.warn('Network request timed out.');
         retry('Network request timed out.');
     };
     xhr.onerror = (event) => {
+        Trace.warn('Network request failed.');
         retry('Network request failed.');
     };
     xhr.setRequestHeader('Accept', 'application/json');
@@ -44,43 +47,47 @@ export class XhrConnection implements HttpConnection {
     }
 
     get(path: string) {
-        return new Promise<{}>((resolve, reject) => {
-            const xhr = createXHR('GET', this.url + path, resolve, reject, reject);
-            xhr.send();
+        return Trace.dependency('GET', path, () => {
+            return new Promise<{}>((resolve, reject) => {
+                const xhr = createXHR('GET', this.url + path, resolve, reject, reject);
+                xhr.send();
+            });
         });
     }
 
     post(path: string, body: {} | string, timeoutSeconds: number) {
-        return new Promise<HttpResponse>((resolve,reject) => {
-            const xhr = createXHR('POST', this.url + path,
-                (result: any) => {
-                    resolve({
-                        result: "success",
-                        response: result
-                    })
-                },
-                (reason: any) => {
-                    resolve({
-                        result: "failure",
-                        error: reason
-                    })
-                },
-                (reason: any) => {
-                    resolve({
-                        result: "retry",
-                        error: reason
-                    });
+        return Trace.dependency('POST', path, () => {
+            return new Promise<HttpResponse>((resolve,reject) => {
+                const xhr = createXHR('POST', this.url + path,
+                    (result: any) => {
+                        resolve({
+                            result: "success",
+                            response: result
+                        })
+                    },
+                    (reason: any) => {
+                        resolve({
+                            result: "failure",
+                            error: reason
+                        })
+                    },
+                    (reason: any) => {
+                        resolve({
+                            result: "retry",
+                            error: reason
+                        });
+                    }
+                );
+                xhr.timeout = timeoutSeconds * 1000;
+                if (typeof body === 'string') {
+                    xhr.setRequestHeader('Content-Type', 'text/plain');
+                    xhr.send(body);
                 }
-            );
-            xhr.timeout = timeoutSeconds * 1000;
-            if (typeof body === 'string') {
-                xhr.setRequestHeader('Content-Type', 'text/plain');
-                xhr.send(body);
-            }
-            else {
-                xhr.setRequestHeader('Content-Type', 'application/json');
-                xhr.send(JSON.stringify(body));
-            }
+                else {
+                    xhr.setRequestHeader('Content-Type', 'application/json');
+                    xhr.send(JSON.stringify(body));
+                }
+            });
         });
     }
 }
