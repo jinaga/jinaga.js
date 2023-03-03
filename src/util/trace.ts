@@ -1,10 +1,13 @@
 export interface Tracer {
+    info(message: string): void;
     warn(message: string): void;
     error(error: any): void;
     dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T>;
 }
 
 class NoOpTracer implements Tracer {
+    info(message: string): void {
+    }
     warn(message: string): void {
     }
     error(error: any): void {
@@ -15,6 +18,9 @@ class NoOpTracer implements Tracer {
 }
 
 class ConsoleTracer implements Tracer {
+    info(message: string): void {
+        console.log(message);
+    }
     warn(message: string): void {
         console.warn(message);
     }
@@ -50,7 +56,7 @@ export class Trace {
     static warn(message: string): void {
         this.tracer.warn(message);
     }
-
+    
     static error(error: any): void {
         this.tracer.error(error);
     }
