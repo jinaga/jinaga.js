@@ -92,7 +92,6 @@ export class NetworkManager {
                     this.loadAndSave(loadBatch)
                         .then(() => resolve())
                         .catch(e => reject(e));
-                    resolve();
                 }, 100);
             });
         }
