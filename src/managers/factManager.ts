@@ -18,7 +18,8 @@ export class FactManager {
         private readonly store: Storage,
         network: Network
     ) {
-        this.networkManager = new NetworkManager(network, store);
+        this.networkManager = new NetworkManager(network, store,
+            factsAdded => this.observableSource.notify(factsAdded));
     }
 
     login(): Promise<LoginResponse> {

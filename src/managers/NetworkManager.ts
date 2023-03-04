@@ -30,7 +30,8 @@ export class NetworkManager {
 
     constructor(
         private readonly network: Network,
-        private readonly store: Storage
+        private readonly store: Storage,
+        private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>
     ) { }
 
     async fetch(start: FactReference[], specification: Specification) {
@@ -103,6 +104,6 @@ export class NetworkManager {
 
         const factsAdded = await this.store.save(graph);
 
-        // TODO: Notify observers about the facts added.
+        await this.notifyFactsAdded(factsAdded);
     }
 }
