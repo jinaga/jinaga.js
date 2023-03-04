@@ -1,6 +1,6 @@
 import { FeedResponse } from "../http/messages";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactReference, Storage } from "../storage";
+import { FactEnvelope, FactReference, factReferenceEquals, Storage } from "../storage";
 
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
@@ -25,6 +25,8 @@ export class NetworkNoOp implements Network {
 
 export class NetworkManager {
     private activeFeeds = new Map<string, Promise<void>>();
+    private loadBatch: FactReference[] = [];
+    private loadCompleted: Promise<void> | null = null;
 
     constructor(
         private readonly network: Network,
@@ -61,11 +63,7 @@ export class NetworkManager {
             const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
             const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
             if (unknownFactReferences.length > 0) {
-                const graph: FactEnvelope[] = await this.network.load(unknownFactReferences);
-
-                const factsAdded = await this.store.save(graph);
-
-                // TODO: Notify observers about the facts added.
+                await this.loadInBatch(unknownFactReferences);
             }
 
             bookmark = nextBookmark;
@@ -73,5 +71,39 @@ export class NetworkManager {
         }
 
         this.activeFeeds.delete(feed);
+    }
+
+    private loadInBatch(factReferences: FactReference[]) {
+        // Add the fact references that are not already in the batch.
+        for (const fr of factReferences) {
+            if (!this.loadBatch.some(factReferenceEquals(fr))) {
+                this.loadBatch.push(fr);
+            }
+        }
+
+        // Start a new batch if one is not already waiting.
+        if (this.loadCompleted === null) {
+            this.loadCompleted = new Promise<void>((resolve, reject) => {
+                setTimeout(() => {
+                    // Prepare to start a new batch.
+                    const loadBatch = this.loadBatch;
+                    this.loadBatch = [];
+                    this.loadCompleted = null;
+                    this.loadAndSave(loadBatch)
+                        .then(() => resolve())
+                        .catch(e => reject(e));
+                    resolve();
+                }, 100);
+            });
+        }
+        return this.loadCompleted;
+    }
+
+    private async loadAndSave(factReferences: FactReference[]) {
+        const graph: FactEnvelope[] = await this.network.load(factReferences);
+
+        const factsAdded = await this.store.save(graph);
+
+        // TODO: Notify observers about the facts added.
     }
 }
