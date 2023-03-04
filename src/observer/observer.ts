@@ -29,6 +29,7 @@ export class ObserverImpl<T> {
     private removalsByTuple: {
         [tupleHash: string]: () => Promise<void>;
     } = {};
+    private notifiedTuples = new Set<string>();
     private addedHandlers: {
         tupleHash: string;
         path: string;
@@ -39,7 +40,7 @@ export class ObserverImpl<T> {
         private factManager: FactManager,
         private given: FactReference[],
         private specification: Specification,
-        private resultAdded: ResultAddedFunc<T>
+        resultAdded: ResultAddedFunc<T>
     ) {
         // Map the given facts to a tuple.
         const tuple = specification.given.reduce((tuple, label, index) => ({
@@ -47,6 +48,13 @@ export class ObserverImpl<T> {
             [label.name]: given[index]
         }), {} as ReferencesByName);
         this.givenHash = computeObjectHash(tuple);
+
+        // Add the initial handler.
+        this.addedHandlers.push({
+            path: "",
+            tupleHash: this.givenHash,
+            handler: resultAdded
+        });
     }
 
     public start() {
@@ -75,7 +83,8 @@ export class ObserverImpl<T> {
 
     private async runInitialQuery() {
         const projectedResults = await this.factManager.read(this.given, this.specification);
-        await this.notifyAdded(projectedResults, this.specification.projection, "", []);
+        const givenSubset = this.specification.given.map(g => g.name);
+        await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
     }
 
     private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
@@ -102,29 +111,30 @@ export class ObserverImpl<T> {
         for (const pr of projectedResults) {
             const result: any = this.injectObservers(pr, projection, path);
             const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
-            const resultAdded = path === "" ?
-                this.resultAdded :
-                this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path)?.handler;
-            if (resultAdded) {
+            const addedHandler = this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path);
+            const resultAdded = addedHandler?.handler;
+            const tupleHash = computeObjectHash(pr.tuple);
+            // Don't call result added if we have already called it for this tuple.
+            if (resultAdded && this.notifiedTuples.has(tupleHash) === false) {
                 const types = Object.values(pr.tuple).map(t => t.type).join(', ');
                 Trace.info(`Observer: Added ${types} ${path}`);
-            }
-            const promiseMaybe = resultAdded ? resultAdded(result) : undefined;
-            if (promiseMaybe instanceof Promise) {
-                const functionMaybe = await promiseMaybe;
-                if (functionMaybe instanceof Function) {
-                    const tupleHash = computeObjectHash(pr.tuple);
-                    this.removalsByTuple[tupleHash] = functionMaybe;
+
+                const promiseMaybe = resultAdded(result);
+                this.notifiedTuples.add(tupleHash);
+                if (promiseMaybe instanceof Promise) {
+                    const functionMaybe = await promiseMaybe;
+                    if (functionMaybe instanceof Function) {
+                        this.removalsByTuple[tupleHash] = functionMaybe;
+                    }
                 }
-            }
-            else {
-                const functionMaybe = promiseMaybe;
-                if (functionMaybe instanceof Function) {
-                    const tupleHash = computeObjectHash(pr.tuple);
-                    this.removalsByTuple[tupleHash] = async () => {
-                        functionMaybe();
-                        return Promise.resolve();
-                    };
+                else {
+                    const functionMaybe = promiseMaybe;
+                    if (functionMaybe instanceof Function) {
+                        this.removalsByTuple[tupleHash] = async () => {
+                            functionMaybe();
+                            return Promise.resolve();
+                        };
+                    }
                 }
             }
 
@@ -149,6 +159,9 @@ export class ObserverImpl<T> {
                 Trace.info(`Observer: Removed ${types}`);
                 await removal();
                 delete this.removalsByTuple[resultTupleHash];
+
+                // After the tuple is removed, it can be re-added.
+                this.notifiedTuples.delete(resultTupleHash);
             }
         }
     }
