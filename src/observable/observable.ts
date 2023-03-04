@@ -110,12 +110,11 @@ export class ObservableSource {
         this.listenersByTypeAndQuery = {};
     }
 
-    async notify(saved: FactEnvelope[]): Promise<FactEnvelope[]> {
+    async notify(saved: FactEnvelope[]): Promise<void> {
         for (let index = 0; index < saved.length; index++) {
             const envelope = saved[index];
             await this.notifyFactSaved(envelope.fact);
         }
-        return saved;
     }
 
     from(fact: FactReference, query: Query): Observable {

@@ -1,6 +1,6 @@
 import { FeedResponse } from "../http/messages";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactReference, Storage } from "../storage";
+import { FactEnvelope, FactReference, factReferenceEquals, Storage } from "../storage";
 
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
@@ -24,39 +24,86 @@ export class NetworkNoOp implements Network {
 }
 
 export class NetworkManager {
+    private activeFeeds = new Map<string, Promise<void>>();
+    private loadBatch: FactReference[] = [];
+    private loadCompleted: Promise<void> | null = null;
+
     constructor(
         private readonly network: Network,
-        private readonly store: Storage
+        private readonly store: Storage,
+        private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>
     ) { }
 
     async fetch(start: FactReference[], specification: Specification) {
         const feeds: string[] = await this.network.feeds(start, specification);
 
-        // TODO: Fork to fetch from each feed.
-        for (const feed of feeds) {
-            let bookmark: string = await this.store.loadBookmark(feed);
+        // Fork to fetch from each feed.
+        const promises = feeds.map(feed => {
+            if (this.activeFeeds.has(feed)) {
+                return this.activeFeeds.get(feed);
+            }
+            else {
+                const promise = this.processFeed(feed);
+                this.activeFeeds.set(feed, promise);
+                return promise;
+            }
+        });
+        await Promise.all(promises);
+    }
 
-            while (true) {
-                const { references: factReferences, bookmark: nextBookmark } =
-                    await this.network.fetchFeed(feed, bookmark);
+    private async processFeed(feed: string) {
+        let bookmark: string = await this.store.loadBookmark(feed);
 
-                if (factReferences.length === 0) {
-                    break;
-                }
+        while (true) {
+            const { references: factReferences, bookmark: nextBookmark } = await this.network.fetchFeed(feed, bookmark);
 
-                const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
-                const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
-                if (unknownFactReferences.length > 0) {
-                    const graph: FactEnvelope[] = await this.network.load(unknownFactReferences);
+            if (factReferences.length === 0) {
+                break;
+            }
 
-                    const factsAadded = await this.store.save(graph);
+            const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
+            const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
+            if (unknownFactReferences.length > 0) {
+                await this.loadInBatch(unknownFactReferences);
+            }
 
-                    // TODO: Notify observers about the fats added.
-                }
+            bookmark = nextBookmark;
+            await this.store.saveBookmark(feed, bookmark);
+        }
 
-                bookmark = nextBookmark;
-                await this.store.saveBookmark(feed, bookmark);
+        this.activeFeeds.delete(feed);
+    }
+
+    private loadInBatch(factReferences: FactReference[]) {
+        // Add the fact references that are not already in the batch.
+        for (const fr of factReferences) {
+            if (!this.loadBatch.some(factReferenceEquals(fr))) {
+                this.loadBatch.push(fr);
             }
         }
+
+        // Start a new batch if one is not already waiting.
+        if (this.loadCompleted === null) {
+            this.loadCompleted = new Promise<void>((resolve, reject) => {
+                setTimeout(() => {
+                    // Prepare to start a new batch.
+                    const loadBatch = this.loadBatch;
+                    this.loadBatch = [];
+                    this.loadCompleted = null;
+                    this.loadAndSave(loadBatch)
+                        .then(resolve)
+                        .catch(reject);
+                }, 100);
+            });
+        }
+        return this.loadCompleted;
+    }
+
+    private async loadAndSave(factReferences: FactReference[]) {
+        const graph: FactEnvelope[] = await this.network.load(factReferences);
+
+        const factsAdded = await this.store.save(graph);
+
+        await this.notifyFactsAdded(factsAdded);
     }
 }
