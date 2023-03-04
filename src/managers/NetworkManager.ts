@@ -90,8 +90,8 @@ export class NetworkManager {
                     this.loadBatch = [];
                     this.loadCompleted = null;
                     this.loadAndSave(loadBatch)
-                        .then(() => resolve())
-                        .catch(e => reject(e));
+                        .then(resolve)
+                        .catch(reject);
                 }, 100);
             });
         }
