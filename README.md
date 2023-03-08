@@ -101,6 +101,8 @@ To release a new version of Jinaga.JS, bump the version number, create and push 
 and create a release. The GitHub Actions workflow will build and publish the package.
 
 ```bash
+git c main
+git pull
 npm version patch
 git push --follow-tags
 gh release create v$(node -p "require('./package.json').version") --generate-notes --verify-tag
