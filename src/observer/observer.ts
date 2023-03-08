@@ -59,6 +59,9 @@ export class ObserverImpl<T> {
 
     public start() {
         this.initialQuery = this.runInitialQuery();
+    }
+
+    private addSpecificationListeners() {
         const inverses: SpecificationInverse[] = invertSpecification(this.specification);
         const listeners = inverses.map(inverse => this.factManager.addSpecificationListener(
             inverse.inverseSpecification,
@@ -83,6 +86,7 @@ export class ObserverImpl<T> {
 
     private async runInitialQuery() {
         const projectedResults = await this.factManager.read(this.given, this.specification);
+        this.addSpecificationListeners();
         const givenSubset = this.specification.given.map(g => g.name);
         await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
     }
