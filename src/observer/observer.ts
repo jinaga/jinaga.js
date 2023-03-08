@@ -57,8 +57,13 @@ export class ObserverImpl<T> {
         });
     }
 
-    public start() {
-        this.initialQuery = this.runInitialQuery();
+    public start(initialLoad: boolean) {
+        if (initialLoad) {
+            this.initialQuery = this.runInitialQuery();
+        }
+        else {
+            this.initialQuery = this.runSubsequentQuery();
+        }
     }
 
     private addSpecificationListeners() {
@@ -85,10 +90,19 @@ export class ObserverImpl<T> {
     }
 
     private async runInitialQuery() {
+        await this.factManager.fetch(this.given, this.specification);
         const projectedResults = await this.factManager.read(this.given, this.specification);
         this.addSpecificationListeners();
         const givenSubset = this.specification.given.map(g => g.name);
         await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
+    }
+
+    private async runSubsequentQuery() {
+        const projectedResults = await this.factManager.read(this.given, this.specification);
+        this.addSpecificationListeners();
+        const givenSubset = this.specification.given.map(g => g.name);
+        await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
+        this.factManager.fetch(this.given, this.specification);
     }
 
     private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
