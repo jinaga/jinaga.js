@@ -192,6 +192,7 @@ export class Jinaga {
             this.validateFact(fact);
             return dehydrateReference(fact);
         });
+        await this.factManager.fetch(references, innerSpecification);
         const projectedResults = await this.factManager.read(references, innerSpecification);
         return extractResults(projectedResults, innerSpecification.projection);
     }
@@ -285,9 +286,7 @@ export class Jinaga {
             return dehydrateReference(fact);
         });
 
-        const observer = new ObserverImpl<U>(this.factManager, references, innerSpecification, resultAdded);
-        observer.start();
-        return observer;
+        return this.factManager.startObserver<U>(references, innerSpecification, resultAdded);
     }
 
     /**
