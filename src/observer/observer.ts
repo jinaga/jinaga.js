@@ -18,13 +18,15 @@ export interface ObservableCollection<T> {
 }
 
 export interface Observer<T> {
-    initialized(): Promise<void>;
+    cached(): Promise<boolean>;
+    loaded(): Promise<void>;
     stop(): Promise<void>;
 }
 
-export class ObserverImpl<T> {
+export class ObserverImpl<T> implements Observer<T> {
     private givenHash: string;
-    private initialQuery: Promise<void> | undefined;
+    private cachedPromise: Promise<boolean> | undefined;
+    private loadedPromise: Promise<void> | undefined;
     private listeners: SpecificationListener[] = [];
     private removalsByTuple: {
         [tupleHash: string]: () => Promise<void>;
@@ -59,10 +61,25 @@ export class ObserverImpl<T> {
 
     public start(initialLoad: boolean) {
         if (initialLoad) {
-            this.initialQuery = this.runInitialQuery();
+            // The data is not yet cached.
+            this.cachedPromise = Promise.resolve(false);
+            // Fetch from the server and then read from local storage.
+            this.loadedPromise = this.fetch()
+                .then(() => this.read());
         }
         else {
-            this.initialQuery = this.runSubsequentQuery();
+            // Read from local storage into the cache.
+            this.cachedPromise = this.read()
+                .then(() => {
+                    // The cache is ready.
+                    return true;
+                });
+            this.loadedPromise = this.cachedPromise
+                .then(() => {
+                    // Don't return the promise.
+                    // Start the fetch immediately after read, but don't wait for it.
+                    this.fetch();
+                 });
         }
     }
 
@@ -75,11 +92,18 @@ export class ObserverImpl<T> {
         this.listeners = listeners;
     }
 
-    public initialized(): Promise<void> {
-        if (this.initialQuery === undefined) {
+    public cached(): Promise<boolean> {
+        if (this.cachedPromise === undefined) {
             throw new Error("The observer has not been started.");
         }
-        return this.initialQuery;
+        return this.cachedPromise;
+    }
+
+    public loaded(): Promise<void> {
+        if (this.loadedPromise === undefined) {
+            throw new Error("The observer has not been started.");
+        }
+        return this.loadedPromise;
     }
 
     public stop(): Promise<void> {
@@ -89,20 +113,15 @@ export class ObserverImpl<T> {
         return Promise.resolve();
     }
 
-    private async runInitialQuery() {
+    private async fetch() {
         await this.factManager.fetch(this.given, this.specification);
-        const projectedResults = await this.factManager.read(this.given, this.specification);
-        this.addSpecificationListeners();
-        const givenSubset = this.specification.given.map(g => g.name);
-        await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
     }
 
-    private async runSubsequentQuery() {
+    private async read() {
         const projectedResults = await this.factManager.read(this.given, this.specification);
         this.addSpecificationListeners();
         const givenSubset = this.specification.given.map(g => g.name);
         await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
-        this.factManager.fetch(this.given, this.specification);
     }
 
     private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
