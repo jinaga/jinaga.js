@@ -70,16 +70,10 @@ export class ObserverImpl<T> implements Observer<T> {
         else {
             // Read from local storage into the cache.
             this.cachedPromise = this.read()
-                .then(() => {
-                    // The cache is ready.
-                    return true;
-                });
+                .then(() => true);      // The cache is ready.
+            // Then fetch from the server to update the cache.
             this.loadedPromise = this.cachedPromise
-                .then(() => {
-                    // Don't return the promise.
-                    // Start the fetch immediately after read, but don't wait for it.
-                    this.fetch();
-                 });
+                .then(() => this.fetch());
         }
     }
 
