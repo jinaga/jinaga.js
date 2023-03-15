@@ -1,0 +1,7 @@
+digraph {
+  rankdir=TB;
+
+  Uninitialized -> Loading [label=" immediate"]
+  Loading -> Loaded [label=" fetch and read"]
+  Loading -> Error [label=" error"]
+}

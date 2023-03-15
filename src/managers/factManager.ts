@@ -98,7 +98,7 @@ export class FactManager {
         const observer = new ObserverImpl<U>(this, references, specification, resultAdded);
         observer.start(initialLoad);
         if (initialLoad) {
-            observer.initialized().then(() => {
+            observer.loaded().then(() => {
                 this.loadedSpecifications.add(specificationHash);
             });
         }

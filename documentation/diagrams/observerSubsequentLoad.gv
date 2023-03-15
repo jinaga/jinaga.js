@@ -1,0 +1,6 @@
+digraph {
+  rankdir=TB
+
+  Uninitialized -> Loaded [label=" read"]
+  Loaded -> Loaded [label=" fetch"]
+}
