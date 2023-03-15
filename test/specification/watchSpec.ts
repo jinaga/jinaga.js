@@ -40,7 +40,7 @@ describe("specification watch", () => {
             offices.push(j.hash(office));
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         await officeObserver.stop();
 
         expect(offices).toEqual([]);
@@ -57,7 +57,7 @@ describe("specification watch", () => {
             offices.push(j.hash(office));
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         await officeObserver.stop();
 
         expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
@@ -74,7 +74,7 @@ describe("specification watch", () => {
             offices.push(j.hash(office));
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         const newOffice = new Office(company, "NewOffice");
         await j.fact(newOffice);
         
@@ -94,7 +94,7 @@ describe("specification watch", () => {
             offices.push(j.hash(office));
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         const newOfficeInOtherCompany = new Office(emptyCompany, "OfficeInOtherCompany");
         await j.fact(newOfficeInOtherCompany);
 
@@ -123,7 +123,7 @@ describe("specification watch", () => {
             }
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         await j.fact(new OfficeClosed(office, new Date()));
         
         await officeObserver.stop();
@@ -154,7 +154,7 @@ describe("specification watch", () => {
             }
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
 
         await officeObserver.stop();
 
@@ -184,7 +184,7 @@ describe("specification watch", () => {
             }
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         await j.fact(new OfficeReopened(closure));
 
         await officeObserver.stop();
@@ -226,7 +226,7 @@ describe("specification watch", () => {
             });
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         expect(offices).toEqual([
             {
                 identifier: office.identifier,
@@ -284,7 +284,7 @@ describe("specification watch", () => {
             });
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         expect(offices).toEqual([
             {
                 identifier: office.identifier,
@@ -349,7 +349,7 @@ describe("specification watch", () => {
             });
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         expect(offices).toEqual([
             {
                 identifier: office.identifier,
@@ -418,7 +418,7 @@ describe("specification watch", () => {
             });
         });
 
-        await officeObserver.initialized();
+        await officeObserver.loaded();
         expect(offices).toEqual([
             {
                 identifier: "TestOffice",
