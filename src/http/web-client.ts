@@ -66,23 +66,45 @@ export class WebClient {
     }
 
     async query(query: QueryMessage) {
+        return <QueryResponse> await this.post('/query', query);
+    }
+
+    async queryWithRetry(query: QueryMessage) {
         return <QueryResponse> await this.postWithLimitedRetry('/query', query);
     }
 
     async save(save: SaveMessage) {
+        await this.post('/save', save);
+    }
+
+    async saveWithRetry(save: SaveMessage) {
         await this.postWithInfiniteRetry('/save', save);
     }
 
     async load(load: LoadMessage) {
+        return <LoadResponse> await this.post('/load', load);
+    }
+
+    async loadWithRetry(load: LoadMessage) {
         return <LoadResponse> await this.postWithLimitedRetry('/load', load);
     }
 
     async feeds(request: string): Promise<FeedsResponse> {
-        return <FeedsResponse> await this.postWithLimitedRetry('/feeds', request);
+        return <FeedsResponse> await this.post('/feeds', request);
     }
 
     async feed(feed: string, bookmark: string): Promise<FeedResponse> {
         return <FeedResponse> await this.httpConnection.get(`/feeds/${feed}?b=${bookmark}`);
+    }
+
+    private async post(path: string, body: {} | string) {
+        const response = await this.httpConnection.post(path, body, this.config.timeoutSeconds);
+        if (response.result === 'success') {
+            return response.response;
+        }
+        else {
+            throw new Error(response.error);
+        }
     }
 
     private async postWithLimitedRetry(path: string, body: {} | string) {
