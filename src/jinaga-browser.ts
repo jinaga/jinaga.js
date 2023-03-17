@@ -31,9 +31,10 @@ export class JinagaBrowser {
         const store = createStore(config);
         const observableSource = new ObservableSource(store);
         const syncStatusNotifier = new SyncStatusNotifier();
-        const fork = createFork(config, store, syncStatusNotifier);
-        const authentication = createAuthentication(config, syncStatusNotifier);
-        const network = createNetwork(config, syncStatusNotifier);
+        const webClient = createWebClient(config, syncStatusNotifier);
+        const fork = createFork(config, store, webClient);
+        const authentication = createAuthentication(config, webClient);
+        const network = createNetwork(webClient);
         const factManager = new FactManager(authentication, fork, observableSource, store, network);
         return new Jinaga(factManager, syncStatusNotifier);
     }
@@ -48,17 +49,29 @@ function createStore(config: JinagaBrowserConfig): Storage {
   }
 }
 
-function createFork(
+function createWebClient(
     config: JinagaBrowserConfig,
-    store: Storage,
     syncStatusNotifier: SyncStatusNotifier
-): Fork {
+): WebClient | null {
     if (config.httpEndpoint) {
         const httpConnection = new XhrConnection(config.httpEndpoint);
         const httpTimeoutSeconds = config.httpTimeoutSeconds || 5;
         const webClient = new WebClient(httpConnection, syncStatusNotifier, {
             timeoutSeconds: httpTimeoutSeconds
         });
+        return webClient;
+    }
+    else {
+        return null;
+    }
+}
+
+function createFork(
+    config: JinagaBrowserConfig,
+    store: Storage,
+    webClient: WebClient | null
+): Fork {
+    if (webClient) {
         if (config.indexedDb) {
             const queue = new IndexedDBQueue(config.indexedDb);
             const fork = new PersistentFork(store, queue, webClient);
@@ -78,14 +91,9 @@ function createFork(
 
 function createAuthentication(
     config: JinagaBrowserConfig,
-    syncStatusNotifier: SyncStatusNotifier
+    webClient: WebClient | null
 ): Authentication {
-    if (config.httpEndpoint) {
-        const httpConnection = new XhrConnection(config.httpEndpoint);
-        const httpTimeoutSeconds = config.httpTimeoutSeconds || 5;
-        const webClient = new WebClient(httpConnection, syncStatusNotifier, {
-            timeoutSeconds: httpTimeoutSeconds
-        });
+    if (webClient) {
         if (config.indexedDb) {
             const loginStore = new IndexedDBLoginStore(config.indexedDb);
             const authentication = new AuthenticationOffline(loginStore, webClient);
@@ -103,15 +111,9 @@ function createAuthentication(
 }
 
 function createNetwork(
-    config: JinagaBrowserConfig,
-    syncStatusNotifier: SyncStatusNotifier
+    webClient: WebClient | null
 ): Network {
-    if (config.httpEndpoint) {
-        const httpConnection = new XhrConnection(config.httpEndpoint);
-        const httpTimeoutSeconds = config.httpTimeoutSeconds || 5;
-        const webClient = new WebClient(httpConnection, syncStatusNotifier, {
-            timeoutSeconds: httpTimeoutSeconds
-        });
+    if (webClient) {
         const network = new HttpNetwork(webClient);
         return network;
     }
