@@ -74,7 +74,7 @@ export class PersistentFork implements Fork {
         }
         else {
             try {
-                const response = await this.client.query(serializeQuery(start, query));
+                const response = await this.client.queryWithRetry(serializeQuery(start, query));
                 return response.results;
             }
             catch (errRemote) {
@@ -139,7 +139,7 @@ export class PersistentFork implements Fork {
     }
 
     private async initiateQueryRemote(start: FactReference, query: Query) {
-        const queryResponse = await this.client.query(serializeQuery(start, query));
+        const queryResponse = await this.client.queryWithRetry(serializeQuery(start, query));
         const paths = queryResponse.results;
         if (paths.length > 0) {
             const references = distinct(flatten(paths, p => p));
@@ -152,7 +152,7 @@ export class PersistentFork implements Fork {
         let records: FactRecord[] = [];
         for (let start = 0; start < references.length; start += 300) {
             const chunk = references.slice(start, start + 300);
-            const response = await this.client.load(serializeLoad(chunk));
+            const response = await this.client.loadWithRetry(serializeLoad(chunk));
             const facts = sorter.sort(response.facts, (p, f) => f);
             const envelopes = facts.map(fact => {
                 return <FactEnvelope>{
@@ -168,7 +168,7 @@ export class PersistentFork implements Fork {
 
     private sendAndDequeue(envelopes: FactEnvelope[]) {
         (async () => {
-            await this.client.save(serializeSave(envelopes));
+            await this.client.saveWithRetry(serializeSave(envelopes));
             await this.queue.dequeue(envelopes);
         })().catch(err => Trace.error(err));
     }
