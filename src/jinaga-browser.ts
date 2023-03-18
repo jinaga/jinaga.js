@@ -32,7 +32,7 @@ export class JinagaBrowser {
         const observableSource = new ObservableSource(store);
         const syncStatusNotifier = new SyncStatusNotifier();
         const fork = createFork(config, store, syncStatusNotifier);
-        const authentication = createAuthentication(config, store, syncStatusNotifier);
+        const authentication = createAuthentication(config, syncStatusNotifier);
         const network = createNetwork(config, syncStatusNotifier);
         const factManager = new FactManager(authentication, fork, observableSource, store, network);
         return new Jinaga(factManager, syncStatusNotifier);
@@ -62,6 +62,7 @@ function createFork(
         if (config.indexedDb) {
             const queue = new IndexedDBQueue(config.indexedDb);
             const fork = new PersistentFork(store, queue, webClient);
+            fork.initialize();
             return fork;
         }
         else {
@@ -77,7 +78,6 @@ function createFork(
 
 function createAuthentication(
     config: JinagaBrowserConfig,
-    store: Storage,
     syncStatusNotifier: SyncStatusNotifier
 ): Authentication {
     if (config.httpEndpoint) {
@@ -87,11 +87,8 @@ function createAuthentication(
             timeoutSeconds: httpTimeoutSeconds
         });
         if (config.indexedDb) {
-            const queue = new IndexedDBQueue(config.indexedDb);
-            const fork = new PersistentFork(store, queue, webClient);
             const loginStore = new IndexedDBLoginStore(config.indexedDb);
             const authentication = new AuthenticationOffline(loginStore, webClient);
-            fork.initialize();
             return authentication;
         }
         else {
