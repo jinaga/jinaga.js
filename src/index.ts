@@ -11,6 +11,7 @@ export { Channel } from "./fork/channel";
 export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
 export { TransientFork } from './fork/transient-fork';
+export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvider";
 export { HttpNetwork } from "./http/httpNetwork";
 export {
   FeedResponse,
@@ -45,4 +46,3 @@ export { SpecificationParser } from './specification/specification-parser';
 export { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Storage } from './storage';
 export { UserIdentity } from './user-identity';
 export { Watch } from "./watch/watch";
-
