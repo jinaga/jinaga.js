@@ -115,7 +115,10 @@ export class XhrConnection implements HttpConnection {
                     };
                 }
                 else {
-                    throw new Error(`Unexpected content type ${response.responseType}`);
+                    return {
+                        result: "success",
+                        response: JSON.parse(response.response)
+                    };
                 }
             }
             else {
