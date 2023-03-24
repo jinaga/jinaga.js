@@ -170,7 +170,16 @@ export class IndexedDBStore implements Storage {
   }
 
   whichExist(references: FactReference[]): Promise<FactReference[]> {
-      throw new Error('whichExist not yet implemented on IndexedDB store.');
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['fact'], 'readonly', async tx => {
+        const factObjectStore = tx.objectStore('fact');
+        const factKeys = references.map(factKey);
+        const factRecords = await Promise.all(factKeys.map(key => execRequest<FactRecord>(factObjectStore.get(key))));
+        return factRecords
+          .filter(fact => !!fact)
+          .map(fact => keyToReference(factKey(fact)));
+      });
+    });
   }
 
   load(references: FactReference[]): Promise<FactRecord[]> {
@@ -183,17 +192,28 @@ export class IndexedDBStore implements Storage {
         const distinctAncestors = allAncestors
           .filter(distinct);
         const factRecords = await Promise.all(distinctAncestors.map(key =>
-          execRequest(factObjectStore.get(key))));
-        return <FactRecord[]>factRecords;
+          execRequest<FactRecord>(factObjectStore.get(key))));
+        return factRecords;
       });
     });
   }
 
   loadBookmark(feed: string): Promise<string> {
-    throw new Error('Method not implemented.');
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['bookmark'], 'readonly', async tx => {
+        const bookmarkObjectStore = tx.objectStore('bookmark');
+        const bookmark = await execRequest<string | undefined>(bookmarkObjectStore.get(feed));
+        return bookmark || '';
+      });
+    });
   }
   
   saveBookmark(feed: string, bookmark: string): Promise<void> {
-    throw new Error('Method not implemented.');
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['bookmark'], 'readwrite', async tx => {
+        const bookmarkObjectStore = tx.objectStore('bookmark');
+        await execRequest(bookmarkObjectStore.put(bookmark, feed));
+      });
+    });
   }
 }
