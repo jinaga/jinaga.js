@@ -279,9 +279,12 @@ export class IndexedDBStore implements Storage {
 
         // Remove specifications older than 30 days.
         const oldMruDate = new Date(mruDate.getTime() - 1000 * 60 * 60 * 24 * 30);
-        const mruIndex = specificationObjectStore.index('mru');
-        const oldMruKeys = await execRequest<string[]>(mruIndex.getAllKeys(IDBKeyRange.upperBound(oldMruDate)));
-        await Promise.all(oldMruKeys.map(key => execRequest(specificationObjectStore.delete(key))));
+        const cursor = await execRequest<IDBCursorWithValue | null>(
+          specificationObjectStore.openCursor(IDBKeyRange.upperBound(oldMruDate)));
+        while (cursor) {
+          await execRequest(cursor.delete());
+          await cursor.continue();
+        }
       });
     });
   }
