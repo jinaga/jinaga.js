@@ -25,6 +25,8 @@ function openDatabase(indexName: string): Promise<IDBDatabase> {
       }
       if (upgradingToVersion(ev, 2)) {
         db.createObjectStore('bookmark');
+        const specificationObjectStore = db.createObjectStore('specification');
+        specificationObjectStore.createIndex('mru', '', { unique: false });
       }
     }
   });

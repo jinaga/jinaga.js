@@ -129,7 +129,7 @@ async function executeStep(paths: string[][], step: Step, predecessorIndex: IDBI
 export class IndexedDBStore implements Storage {
   constructor (
     private indexName: string
-  ) { }  
+  ) { }
 
   close() {
     return Promise.resolve();
@@ -257,6 +257,31 @@ export class IndexedDBStore implements Storage {
       return withTransaction(db, ['bookmark'], 'readwrite', async tx => {
         const bookmarkObjectStore = tx.objectStore('bookmark');
         await execRequest(bookmarkObjectStore.put(bookmark, feed));
+      });
+    });
+  }
+
+  getMruDate(specificationHash: string): Promise<Date | null> {
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['specification'], 'readonly', async tx => {
+        const specificationObjectStore = tx.objectStore('specification');
+        const mruDate = await execRequest<Date | undefined>(specificationObjectStore.get(specificationHash));
+        return mruDate || null;
+      });
+    });
+  }
+
+  setMruDate(specificationHash: string, mruDate: Date): Promise<void> {
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['specification'], 'readwrite', async tx => {
+        const specificationObjectStore = tx.objectStore('specification');
+        await execRequest(specificationObjectStore.put(mruDate, specificationHash));
+
+        // Remove specifications older than 30 days.
+        const oldMruDate = new Date(mruDate.getTime() - 1000 * 60 * 60 * 24 * 30);
+        const mruIndex = specificationObjectStore.index('mru');
+        const oldMruKeys = await execRequest<string[]>(mruIndex.getAllKeys(IDBKeyRange.upperBound(oldMruDate)));
+        await Promise.all(oldMruKeys.map(key => execRequest(specificationObjectStore.delete(key))));
       });
     });
   }

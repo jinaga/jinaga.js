@@ -46,6 +46,7 @@ export class MemoryStore implements Storage {
     private factRecords: FactRecord[] = [];
     private bookmarksByFeed: { [feed: string]: string } = {};
     private runner: SpecificationRunner;
+    private mruDateBySpecificationHash: { [specificationHash: string]: Date } = {};
 
     constructor() {
         this.runner = new SpecificationRunner({
@@ -106,6 +107,16 @@ export class MemoryStore implements Storage {
         return Promise.resolve();
     }
     
+    getMruDate(specificationHash: string): Promise<Date | null> {
+        const mruDate: Date | null = this.mruDateBySpecificationHash[specificationHash] ?? null;
+        return Promise.resolve(mruDate);
+    }
+
+    setMruDate(specificationHash: string, mruDate: Date): Promise<void> {
+        this.mruDateBySpecificationHash[specificationHash] = mruDate;
+        return Promise.resolve();
+    }
+
     private executeQuery(start: FactReference, steps: Step[]) {
         return steps.reduce((paths, step) => {
             return this.executeStep(paths, step);

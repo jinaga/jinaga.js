@@ -1,9 +1,11 @@
 import { computeObjectHash } from "../fact/hash";
 import { FactManager } from "../managers/factManager";
 import { SpecificationListener } from "../observable/observable";
+import { describeDeclaration, describeSpecification } from "../specification/description";
 import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName } from "../storage";
+import { computeStringHash } from "../util/encoding";
 import { Trace } from "../util/trace";
 
 export type ResultAddedFunc<U> = (value: U) =>
@@ -37,6 +39,7 @@ export class ObserverImpl<T> implements Observer<T> {
         path: string;
         handler: ResultAddedFunc<any>;
     }[] = [];
+    private specificationHash: string;
 
     constructor(
         private factManager: FactManager,
@@ -57,24 +60,43 @@ export class ObserverImpl<T> implements Observer<T> {
             tupleHash: this.givenHash,
             handler: resultAdded
         });
+
+        // Identify the specification by its hash.
+        const declarationString = describeDeclaration(given, specification.given);
+        const specificationString = describeSpecification(specification, 0);
+        const request = `${declarationString}\n${specificationString}`;
+        this.specificationHash = computeStringHash(request);
     }
 
-    public start(initialLoad: boolean) {
-        if (initialLoad) {
-            // The data is not yet cached.
-            this.cachedPromise = Promise.resolve(false);
-            // Fetch from the server and then read from local storage.
-            this.loadedPromise = this.fetch()
-                .then(() => this.read());
-        }
-        else {
-            // Read from local storage into the cache.
-            this.cachedPromise = this.read()
-                .then(() => true);      // The cache is ready.
-            // Then fetch from the server to update the cache.
-            this.loadedPromise = this.cachedPromise
-                .then(() => this.fetch());
-        }
+    public start() {
+        this.cachedPromise = new Promise((cacheResolve, _) => {
+            this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
+                try {
+                    const mruDate: Date | null = await this.factManager.getMruDate(this.specificationHash);
+                    if (mruDate === null) {
+                        // The data is not yet cached.
+                        cacheResolve(false);
+                        // Fetch from the server and then read from local storage.
+                        await this.fetch();
+                        await this.read();
+                        loadResolve();
+                    }
+                    else {
+                        // Read from local storage into the cache.
+                        await this.read();
+                        cacheResolve(true);
+                        // Then fetch from the server to update the cache.
+                        await this.fetch();
+                        loadResolve();
+                    }
+                    await this.factManager.setMruDate(this.specificationHash, new Date());
+                }
+                catch (e) {
+                    cacheResolve(false);
+                    loadReject(e);
+                }
+            });
+        });
     }
 
     private addSpecificationListeners() {
