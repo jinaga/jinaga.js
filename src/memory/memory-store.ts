@@ -125,7 +125,7 @@ export class MemoryStore implements Storage {
             if (step.direction === Direction.Predecessor) {
                 return flatten(paths, path => {
                     const fact = path[path.length - 1];
-                    const record = this.findFact(fact);
+                    const record = this.factRecords.find(factReferenceEquals(fact)) ?? null;
                     return getPredecessors(record, step.role).map(predecessor =>
                         path.concat([predecessor])
                     );
@@ -160,22 +160,25 @@ export class MemoryStore implements Storage {
         throw new Error('Cannot yet handle this type of step: ' + step);
     }
 
-    private findFact(reference: FactReference): FactRecord | null {
-        return this.factRecords.find(factReferenceEquals(reference)) ?? null;
+    private findFact(reference: FactReference): Promise<FactRecord | null> {
+        const fact = this.factRecords.find(factReferenceEquals(reference)) ?? null;
+        return Promise.resolve(fact);
     }
 
-    private getPredecessors(reference: FactReference, name: string, predecessorType: string): FactReference[] {
-        const record = this.findFact(reference);
+    private getPredecessors(reference: FactReference, name: string, predecessorType: string): Promise<FactReference[]> {
+        const record = this.factRecords.find(factReferenceEquals(reference)) ?? null;
         if (record === null) {
             throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
         }
         const predecessors = getPredecessors(record, name);
-        return predecessors.filter(predecessor => predecessor.type === predecessorType);
+        const matching = predecessors.filter(predecessor => predecessor.type === predecessorType);
+        return Promise.resolve(matching);
     }
     
-    private getSuccessors(reference: FactReference, name: string, successorType: string): FactRecord[] {
-        return this.factRecords.filter(record => record.type === successorType &&
+    private getSuccessors(reference: FactReference, name: string, successorType: string): Promise<FactReference[]> {
+        const successors = this.factRecords.filter(record => record.type === successorType &&
             getPredecessors(record, name).some(factReferenceEquals(reference)));
+        return Promise.resolve(successors);
     }
 
     private hydrate(reference: FactReference) {
@@ -186,6 +189,6 @@ export class MemoryStore implements Storage {
         if (fact.length > 1) {
             throw new Error(`The fact ${reference} is defined more than once.`);
         }
-        return fact[0];
+        return Promise.resolve(fact[0]);
     }
 }

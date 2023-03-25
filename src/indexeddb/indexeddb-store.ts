@@ -1,8 +1,10 @@
+import { hydrateFromTree } from '../fact/hydrate';
 import { TopologicalSorter } from '../fact/sorter';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
+import { SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
 import { distinct, filterAsync, flatten, flattenAsync } from '../util/fn';
 import { execRequest, factKey, keyToReference, withDatabase, withTransaction } from './driver';
@@ -125,9 +127,19 @@ async function executeStep(paths: string[][], step: Step, predecessorIndex: IDBI
 }
 
 export class IndexedDBStore implements Storage {
+  private runner: SpecificationRunner;
+
   constructor (
     private indexName: string
-  ) { }  
+  ) {
+    this.runner = new SpecificationRunner({
+      getPredecessors: this.getPredecessors.bind(this),
+      getSuccessors: this.getSuccessors.bind(this),
+      findFact: this.findFact.bind(this),
+      hydrate: this.hydrate.bind(this)
+    });
+  }  
+
   close() {
     return Promise.resolve();
   }
@@ -215,5 +227,53 @@ export class IndexedDBStore implements Storage {
         await execRequest(bookmarkObjectStore.put(bookmark, feed));
       });
     });
+  }
+
+  private findFact(reference: FactReference): Promise<FactRecord | null> {
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['fact'], 'readonly', async tx => {
+        const factObjectStore = tx.objectStore('fact');
+        const fact = await execRequest<FactRecord | undefined>(factObjectStore.get(factKey(reference)));
+        return fact || null;
+      });
+    });
+  }
+
+  private getPredecessors(reference: FactReference, name: string, predecessorType: string): Promise<FactReference[]> {
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['edge'], 'readonly', async tx => {
+        const edgeObjectStore = tx.objectStore('edge');
+        const predecessorIndex = edgeObjectStore.index('predecessor');
+        const edges = await execRequest<Edge[]>(predecessorIndex.getAll([factKey(reference), name]));
+        return edges
+          .map(edge => keyToReference(edge.successor))
+          .filter(reference => reference.type === predecessorType);
+      });
+    });
+  }
+
+  private getSuccessors(reference: FactReference, name: string, successorType: string): Promise<FactReference[]> {
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['edge'], 'readonly', async tx => {
+        const edgeObjectStore = tx.objectStore('edge');
+        const successorIndex = edgeObjectStore.index('successor');
+        const edges = await execRequest<Edge[]>(successorIndex.getAll([factKey(reference), name]));
+        return edges
+          .map(edge => keyToReference(edge.successor))
+          .filter(reference => reference.type === successorType);
+      });
+    });
+  }
+
+  private async hydrate(reference: FactReference): Promise<unknown> {
+    const factRecords = await this.load([reference]);
+    const fact = hydrateFromTree([reference], factRecords);
+    if (fact.length === 0) {
+      throw new Error(`The fact ${reference} is not defined.`);
+    }
+    if (fact.length > 1) {
+      throw new Error(`The fact ${reference} is defined more than once.`);
+    }
+    return fact[0];
   }
 }
