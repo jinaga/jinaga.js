@@ -175,15 +175,15 @@ export class IndexedDBStore implements Storage {
 
         const runner = new SpecificationRunner({
           async getPredecessors(reference, name, predecessorType) {
-            const edges = await execRequest<Edge[]>(predecessorIndex.getAll([factKey(reference), name]));
-            return edges
-              .map(edge => keyToReference(edge.successor))
-              .filter(reference => reference.type === predecessorType);
-          },
-          async getSuccessors(reference, name, successorType) {
             const edges = await execRequest<Edge[]>(successorIndex.getAll([factKey(reference), name]));
             return edges
               .map(edge => keyToReference(edge.predecessor))
+              .filter(reference => reference.type === predecessorType);
+          },
+          async getSuccessors(reference, name, successorType) {
+            const edges = await execRequest<Edge[]>(predecessorIndex.getAll([factKey(reference), name]));
+            return edges
+              .map(edge => keyToReference(edge.successor))
               .filter(reference => reference.type === successorType);
           },
           findFact(reference) {
