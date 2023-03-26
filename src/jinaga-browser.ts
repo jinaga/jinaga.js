@@ -56,11 +56,12 @@ function createWebClient(
     syncStatusNotifier: SyncStatusNotifier
 ): WebClient | null {
     if (config.httpEndpoint) {
-        const getHeaders = config.httpAuthenticationProvider
-            ? config.httpAuthenticationProvider.getHeaders
+        const provider = config.httpAuthenticationProvider;
+        const getHeaders = provider
+            ? () => provider.getHeaders()
             : () => Promise.resolve({});
-        const reauthenticate = config.httpAuthenticationProvider
-            ? config.httpAuthenticationProvider.reauthenticate
+        const reauthenticate = provider
+            ? () => provider.reauthenticate()
             : () => Promise.resolve(false);
         const httpConnection = new XhrConnection(config.httpEndpoint, getHeaders, reauthenticate);
         const httpTimeoutSeconds = config.httpTimeoutSeconds || 5;
