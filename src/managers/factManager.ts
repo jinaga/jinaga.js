@@ -5,15 +5,12 @@ import { LoginResponse } from "../http/messages";
 import { Observable, ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { Query } from "../query/query";
-import { describeDeclaration, describeSpecification } from "../specification/description";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
-import { computeStringHash } from "../util/encoding";
 import { Network, NetworkManager } from "./NetworkManager";
 
 export class FactManager {
     private networkManager: NetworkManager;
-    private loadedSpecifications = new Set<string>();
 
     constructor(
         private readonly authentication: Authentication,
@@ -86,22 +83,17 @@ export class FactManager {
         return this.fork.load(references);
     }
 
+    getMruDate(specificationHash: string): Promise<Date | null> {
+        return this.store.getMruDate(specificationHash);
+    }
+
+    setMruDate(specificationHash: string, mruDate: Date): Promise<void> {
+        return this.store.setMruDate(specificationHash, mruDate);
+    }
+
     startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>): Observer<U> {
-        // Identify the specification by its hash.
-        const declarationString = describeDeclaration(references, specification.given);
-        const specificationString = describeSpecification(specification, 0);
-        const request = `${declarationString}\n${specificationString}`;
-        const specificationHash = computeStringHash(request);
-
-        const initialLoad = !this.loadedSpecifications.has(specificationHash);
-
         const observer = new ObserverImpl<U>(this, references, specification, resultAdded);
-        observer.start(initialLoad);
-        if (initialLoad) {
-            observer.loaded().then(() => {
-                this.loadedSpecifications.add(specificationHash);
-            });
-        }
+        observer.start();
         return observer;
     }
 }

@@ -59,6 +59,9 @@ export interface Storage {
 
     loadBookmark(feed: string): Promise<string>;
     saveBookmark(feed: string, bookmark: string): Promise<void>;
+
+    getMruDate(specificationHash: string): Promise<Date | null>;
+    setMruDate(specificationHash: string, mruDate: Date): Promise<void>;
 }
 
 export interface Queue {

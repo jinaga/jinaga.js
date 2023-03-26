@@ -1,93 +1,182 @@
 import { Trace } from "../util/trace";
+import { HttpHeaders } from "./authenticationProvider";
 import { HttpConnection, HttpResponse } from "./web-client";
 
-function createXHR(
-    method: string,
-    path: string,
-    resolve: (result: any) => void,
-    reject: (reason: any) => void,
-    retry: (reason: any) => void
-) {
-    const xhr = new XMLHttpRequest();
-    xhr.open(method, path, true);
-    xhr.onload = () => {
-        if (xhr.status === 403) {
-            reject(xhr.responseText);
-        }
-        else if (xhr.status >= 400) {
-            retry(xhr.responseText);
-        }
-        else if (xhr.status === 201) {
-            resolve(0);
-        }
-        else if (xhr.responseType === 'json') {
-            const response = <{}>xhr.response;
-            resolve(response);
-        }
-        else {
-            const response = <{}>JSON.parse(xhr.response);
-            resolve(response);
-        }
-    };
-    xhr.ontimeout = (event) => {
-        Trace.warn('Network request timed out.');
-        retry('Network request timed out.');
-    };
-    xhr.onerror = (event) => {
-        Trace.warn('Network request failed.');
-        retry('Network request failed.');
-    };
-    xhr.setRequestHeader('Accept', 'application/json');
-    return xhr;
+interface XHRHttpResponse {
+    statusCode: number;
+    statusMessage: string | undefined;
+    responseType: XMLHttpRequestResponseType;
+    response: any;
 }
 
 export class XhrConnection implements HttpConnection {
     constructor(
-        private url: string) {
-    }
+        private url: string,
+        private getHeaders: () => Promise<HttpHeaders>,
+        private reauthenticate: () => Promise<boolean>
+    ) { }
 
-    get(path: string) {
-        return Trace.dependency('GET', path, () => {
-            return new Promise<{}>((resolve, reject) => {
-                const xhr = createXHR('GET', this.url + path, resolve, reject, reject);
-                xhr.send();
-            });
-        });
-    }
-
-    post(path: string, body: {} | string, timeoutSeconds: number) {
-        return Trace.dependency('POST', path, () => {
-            return new Promise<HttpResponse>((resolve,reject) => {
-                const xhr = createXHR('POST', this.url + path,
-                    (result: any) => {
-                        resolve({
-                            result: "success",
-                            response: result
-                        })
-                    },
-                    (reason: any) => {
-                        resolve({
-                            result: "failure",
-                            error: reason
-                        })
-                    },
-                    (reason: any) => {
-                        resolve({
-                            result: "retry",
-                            error: reason
-                        });
-                    }
-                );
-                xhr.timeout = timeoutSeconds * 1000;
-                if (typeof body === 'string') {
-                    xhr.setRequestHeader('Content-Type', 'text/plain');
-                    xhr.send(body);
+    get(path: string): Promise<{}> {
+        return Trace.dependency('GET', path, async () => {
+            let headers = await this.getHeaders();
+            let response = await this.httpGet(path, headers);
+            if (response.statusCode === 401 || response.statusCode === 407 || response.statusCode === 419) {
+                const retry = await this.reauthenticate();
+                if (retry) {
+                    headers = await this.getHeaders();
+                    response = await this.httpGet(path, headers);
+                }
+            }
+            if (response.statusCode >= 400) {
+                throw new Error(response.statusMessage);
+            }
+            else if (response.statusCode === 200) {
+                if (response.responseType === 'json') {
+                    return <{}>response.response;
                 }
                 else {
-                    xhr.setRequestHeader('Content-Type', 'application/json');
-                    xhr.send(JSON.stringify(body));
+                    return <{}>JSON.parse(response.response);
                 }
-            });
+            }
+            else {
+                throw new Error(`Unexpected status code ${response.statusCode}: ${response.statusMessage}`);
+            }
         });
+    }
+    
+    private httpGet(tail: string, headers: HttpHeaders): Promise<XHRHttpResponse> {
+        return new Promise<XHRHttpResponse>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", this.url + tail, true);
+            xhr.onload = () => {
+                resolve({
+                    statusCode: xhr.status,
+                    statusMessage: xhr.statusText,
+                    responseType: xhr.responseType,
+                    response: xhr.response
+                });
+            };
+            xhr.ontimeout = (event) => {
+                Trace.warn('Network request timed out.');
+                resolve({
+                    statusCode: 408,
+                    statusMessage: "Request Timeout",
+                    responseType: xhr.responseType,
+                    response: xhr.response
+                });
+            };
+            xhr.onerror = (event) => {
+                Trace.warn('Network request failed.');
+                resolve({
+                    statusCode: 500,
+                    statusMessage: "Network request failed",
+                    responseType: xhr.responseType,
+                    response: xhr.response
+                });
+            };
+            xhr.setRequestHeader('Accept', 'application/json');
+            setHeaders(headers, xhr);
+            xhr.timeout = 30000;
+            xhr.send();
+        });
+    }
+
+    post(path: string, body: {} | string, timeoutSeconds: number): Promise<HttpResponse> {
+        return Trace.dependency('POST', path, async () => {
+            let headers = await this.getHeaders();
+            let response = await this.httpPost(path, headers, body, timeoutSeconds);
+            if (response.statusCode === 401 || response.statusCode === 407 || response.statusCode === 419) {
+                const reauthenticated = await this.reauthenticate();
+                if (reauthenticated) {
+                    headers = await this.getHeaders();
+                    response = await this.httpPost(path, headers, body, timeoutSeconds);
+                }
+            }
+            if (response.statusCode === 403) {
+                throw new Error(response.statusMessage);
+            }
+            else if (response.statusCode >= 400) {
+                return {
+                    result: "retry",
+                    error: response.statusMessage || "Unknown error"
+                }
+            }
+            else if (response.statusCode === 201) {
+                return {
+                    result: "success",
+                    response: {}
+                };
+            }
+            else if (response.statusCode === 200) {
+                if (response.responseType === 'json') {
+                    return {
+                        result: "success",
+                        response: response.response
+                    };
+                }
+                else {
+                    return {
+                        result: "success",
+                        response: JSON.parse(response.response)
+                    };
+                }
+            }
+            else {
+                throw new Error(`Unexpected status code ${response.statusCode}: ${response.statusMessage}`);
+            }
+        });
+    }
+
+    private httpPost(tail: string, headers: HttpHeaders, body: string | {}, timeoutSeconds: number): Promise<XHRHttpResponse> {
+        return new Promise<XHRHttpResponse>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", this.url + tail, true);
+            xhr.onload = () => {
+                resolve({
+                    statusCode: xhr.status,
+                    statusMessage: xhr.statusText,
+                    responseType: xhr.responseType,
+                    response: xhr.response,
+                });
+            };
+            xhr.ontimeout = (event) => {
+                Trace.warn('Network request timed out.');
+                resolve({
+                    statusCode: 408,
+                    statusMessage: "Request Timeout",
+                    responseType: xhr.responseType,
+                    response: xhr.response
+                });
+            };
+            xhr.onerror = (event) => {
+                Trace.warn('Network request failed.');
+                resolve({
+                    statusCode: 500,
+                    statusMessage: "Network request failed",
+                    responseType: xhr.responseType,
+                    response: xhr.response
+                });
+            };
+            xhr.setRequestHeader('Accept', 'application/json');
+            setHeaders(headers, xhr);
+            xhr.timeout = timeoutSeconds * 1000;
+            if (typeof body === 'string') {
+                xhr.setRequestHeader('Content-Type', 'text/plain');
+                xhr.send(body);
+            }
+            else {
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.send(JSON.stringify(body));
+            }
+        });
+    }
+}
+
+function setHeaders(headers: HttpHeaders, xhr: XMLHttpRequest) {
+    for (const key in headers) {
+        const value = headers[key];
+        if (value) {
+            xhr.setRequestHeader(key, value);
+        }
     }
 }

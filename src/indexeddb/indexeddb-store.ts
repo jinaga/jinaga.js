@@ -1,8 +1,10 @@
+import { hydrateFromTree } from '../fact/hydrate';
 import { TopologicalSorter } from '../fact/sorter';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
+import { SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
 import { distinct, filterAsync, flatten, flattenAsync } from '../util/fn';
 import { execRequest, factKey, keyToReference, withDatabase, withTransaction } from './driver';
@@ -127,7 +129,8 @@ async function executeStep(paths: string[][], step: Step, predecessorIndex: IDBI
 export class IndexedDBStore implements Storage {
   constructor (
     private indexName: string
-  ) { }  
+  ) { }
+
   close() {
     return Promise.resolve();
   }
@@ -162,7 +165,48 @@ export class IndexedDBStore implements Storage {
   }
 
   read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-    throw new Error('Method not implemented.');
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['edge', 'fact', 'ancestor'], 'readonly', tx => {
+        const edgeObjectStore = tx.objectStore('edge');
+        const predecessorIndex = edgeObjectStore.index('predecessor');
+        const successorIndex = edgeObjectStore.index('successor');
+        const factObjectStore = tx.objectStore('fact');
+        const ancestorObjectStore = tx.objectStore('ancestor');
+
+        const runner = new SpecificationRunner({
+          async getPredecessors(reference, name, predecessorType) {
+            const edges = await execRequest<Edge[]>(successorIndex.getAll([factKey(reference), name]));
+            return edges
+              .map(edge => keyToReference(edge.predecessor))
+              .filter(reference => reference.type === predecessorType);
+          },
+          async getSuccessors(reference, name, successorType) {
+            const edges = await execRequest<Edge[]>(predecessorIndex.getAll([factKey(reference), name]));
+            return edges
+              .map(edge => keyToReference(edge.successor))
+              .filter(reference => reference.type === successorType);
+          },
+          findFact(reference) {
+            return execRequest<FactRecord>(factObjectStore.get(factKey(reference)));
+          },
+          async hydrate(reference) {
+            const allAncestors = await execRequest<string[]>(ancestorObjectStore.get(factKey(reference)));
+            const distinctAncestors = allAncestors.filter(distinct);
+            const factRecords = await Promise.all(distinctAncestors.map(key =>
+              execRequest<FactRecord>(factObjectStore.get(key))));
+            const facts = hydrateFromTree([reference], factRecords);
+            if (facts.length === 0) {
+              throw new Error(`The fact ${reference} is not defined.`);
+            }
+            if (facts.length > 1) {
+              throw new Error(`The fact ${reference} is defined more than once.`);
+            }
+            return facts[0];
+          }
+        });
+        return runner.read(start, specification);
+      });
+    });
   }
 
   feed(feed: Feed, bookmark: string): Promise<FactFeed> {
@@ -170,7 +214,16 @@ export class IndexedDBStore implements Storage {
   }
 
   whichExist(references: FactReference[]): Promise<FactReference[]> {
-      throw new Error('whichExist not yet implemented on IndexedDB store.');
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['fact'], 'readonly', async tx => {
+        const factObjectStore = tx.objectStore('fact');
+        const factKeys = references.map(factKey);
+        const factRecords = await Promise.all(factKeys.map(key => execRequest<FactRecord>(factObjectStore.get(key))));
+        return factRecords
+          .filter(fact => !!fact)
+          .map(fact => keyToReference(factKey(fact)));
+      });
+    });
   }
 
   load(references: FactReference[]): Promise<FactRecord[]> {
@@ -183,17 +236,56 @@ export class IndexedDBStore implements Storage {
         const distinctAncestors = allAncestors
           .filter(distinct);
         const factRecords = await Promise.all(distinctAncestors.map(key =>
-          execRequest(factObjectStore.get(key))));
-        return <FactRecord[]>factRecords;
+          execRequest<FactRecord>(factObjectStore.get(key))));
+        return factRecords;
       });
     });
   }
 
   loadBookmark(feed: string): Promise<string> {
-    throw new Error('Method not implemented.');
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['bookmark'], 'readonly', async tx => {
+        const bookmarkObjectStore = tx.objectStore('bookmark');
+        const bookmark = await execRequest<string | undefined>(bookmarkObjectStore.get(feed));
+        return bookmark || '';
+      });
+    });
   }
   
   saveBookmark(feed: string, bookmark: string): Promise<void> {
-    throw new Error('Method not implemented.');
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['bookmark'], 'readwrite', async tx => {
+        const bookmarkObjectStore = tx.objectStore('bookmark');
+        await execRequest(bookmarkObjectStore.put(bookmark, feed));
+      });
+    });
+  }
+
+  getMruDate(specificationHash: string): Promise<Date | null> {
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['specification'], 'readonly', async tx => {
+        const specificationObjectStore = tx.objectStore('specification');
+        const mruDate = await execRequest<Date | undefined>(specificationObjectStore.get(specificationHash));
+        return mruDate || null;
+      });
+    });
+  }
+
+  setMruDate(specificationHash: string, mruDate: Date): Promise<void> {
+    return withDatabase(this.indexName, db => {
+      return withTransaction(db, ['specification'], 'readwrite', async tx => {
+        const specificationObjectStore = tx.objectStore('specification');
+        await execRequest(specificationObjectStore.put(mruDate, specificationHash));
+
+        // Remove specifications older than 30 days.
+        const oldMruDate = new Date(mruDate.getTime() - 1000 * 60 * 60 * 24 * 30);
+        const cursor = await execRequest<IDBCursorWithValue | null>(
+          specificationObjectStore.openCursor(IDBKeyRange.upperBound(oldMruDate)));
+        while (cursor) {
+          await execRequest(cursor.delete());
+          await cursor.continue();
+        }
+      });
+    });
   }
 }

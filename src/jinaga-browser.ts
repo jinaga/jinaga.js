@@ -6,6 +6,7 @@ import { Fork } from "./fork/fork";
 import { PassThroughFork } from "./fork/pass-through-fork";
 import { PersistentFork } from "./fork/persistent-fork";
 import { TransientFork } from "./fork/transient-fork";
+import { AuthenticationProvider } from "./http/authenticationProvider";
 import { HttpNetwork } from "./http/httpNetwork";
 import { SyncStatusNotifier, WebClient } from "./http/web-client";
 import { XhrConnection } from "./http/xhr";
@@ -23,7 +24,8 @@ export type JinagaBrowserConfig = {
     httpEndpoint?: string,
     wsEndpoint?: string,
     indexedDb?: string,
-    httpTimeoutSeconds?: number
+    httpTimeoutSeconds?: number,
+    httpAuthenticationProvider?: AuthenticationProvider
 }
 
 export class JinagaBrowser {
@@ -54,7 +56,14 @@ function createWebClient(
     syncStatusNotifier: SyncStatusNotifier
 ): WebClient | null {
     if (config.httpEndpoint) {
-        const httpConnection = new XhrConnection(config.httpEndpoint);
+        const provider = config.httpAuthenticationProvider;
+        const getHeaders = provider
+            ? () => provider.getHeaders()
+            : () => Promise.resolve({});
+        const reauthenticate = provider
+            ? () => provider.reauthenticate()
+            : () => Promise.resolve(false);
+        const httpConnection = new XhrConnection(config.httpEndpoint, getHeaders, reauthenticate);
         const httpTimeoutSeconds = config.httpTimeoutSeconds || 5;
         const webClient = new WebClient(httpConnection, syncStatusNotifier, {
             timeoutSeconds: httpTimeoutSeconds
