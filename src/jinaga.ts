@@ -2,9 +2,9 @@ import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, loo
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { FactManager } from './managers/factManager';
 import { runService } from './observable/service';
-import { ObservableCollection, Observer, ObserverImpl, ResultAddedFunc } from './observer/observer';
+import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
 import { Query } from './query/query';
-import { ConditionOf, ensure, FactDescription, Preposition, SpecificationOf as OldSpecificationOf } from './query/query-parser';
+import { ConditionOf, ensure, FactDescription, SpecificationOf as OldSpecificationOf, Preposition } from './query/query-parser';
 import { SpecificationOf } from './specification/model';
 import { Projection } from './specification/specification';
 import { FactEnvelope, FactPath, ProjectedResult, uniqueFactReferences } from './storage';
