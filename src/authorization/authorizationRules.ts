@@ -1,9 +1,9 @@
 import { getPredecessors } from '../memory/memory-store';
-import { User } from '../model/user';
+import { User, Device } from '../model/user';
 import { Query } from '../query/query';
 import { Preposition } from '../query/query-parser';
 import { Direction, Join, PropertyCondition, Step } from '../query/steps';
-import { FactConstructor, FactRepository, LabelOf, Model, Traversal } from '../specification/model';
+import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { FactRecord, FactReference, factReferenceEquals, ReferencesByName, Storage } from '../storage';
 import { findIndex, flatten, flattenAsync, mapAsync } from '../util/fn';
@@ -273,9 +273,9 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
     }
 }
 
-type UserSpecificationDefinition<T> = (fact: LabelOf<T>, facts: FactRepository) => Traversal<User>;
+type UserSpecificationDefinition<T> = (fact: LabelOf<T>, facts: FactRepository) => (Traversal<User> | Traversal<Device>);
 
-type UserPredecessorSelector<T> = (fact: LabelOf<T>) => LabelOf<User>;
+type UserPredecessorSelector<T> = (fact: LabelOf<T>) => (LabelOf<User> | LabelOf<Device>);
 
 export class AuthorizationRules {
     private rulesByType: {[type: string]: AuthorizationRule[]} = {};
@@ -358,9 +358,24 @@ export class AuthorizationRules {
         if (this.model === undefined) {
             throw new Error('The model must be given to define a rule using a specification.');
         }
-        const specification = this.model.given(factConstructor).match((fact, facts) =>
-            facts.ofType(User)
-                .join(user => user, predecessorSelector(fact)));
+        const specification = this.model.given(factConstructor).match((fact, facts) => {
+            const label = predecessorSelector(fact);
+            const payload = getPayload(label);
+            if (payload.type !== 'fact') {
+                throw new Error('Authorization rules must select facts.');
+            }
+            if (payload.factType === User.Type) {
+                return facts.ofType(User)
+                    .join(user => user, label);
+            }
+            else if (payload.factType === Device.Type) {
+                return facts.ofType(Device)
+                    .join(device => device, label);
+            }
+            else {
+                throw new Error(`Authorization rules must select users or devices.`);
+            }
+        });
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
     }
 

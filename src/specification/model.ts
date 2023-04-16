@@ -470,7 +470,7 @@ function createHashProxy(root: string): any {
     });
 }
 
-function getPayload<T>(label: LabelOf<T>): LabelPayload {
+export function getPayload<T>(label: LabelOf<T>): LabelPayload {
     const proxy: any = label;
     return proxy[IDENTITY];
 }
