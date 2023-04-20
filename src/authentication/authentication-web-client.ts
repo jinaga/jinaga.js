@@ -1,4 +1,3 @@
-import { Fork } from "../fork/fork";
 import { WebClient } from '../http/web-client';
 import { FactEnvelope, FactRecord } from '../storage';
 import { Authentication } from './authentication';

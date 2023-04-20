@@ -83,10 +83,6 @@ export class SpecificationOf<T, U> {
 
 type MatchParameters<T> = T extends [ infer First, ...infer Rest ] ? [ LabelOf<First>, ...MatchParameters<Rest> ] : [ FactRepository ];
 type SpecificationResult<U> =
-    U extends string ? U :
-    U extends number ? U :
-    U extends boolean ? U :
-    U extends Date ? U :
     U extends LabelOf<infer V> ? V :
     U extends Traversal<infer V> ? Array<SpecificationResult<V>> :
     U extends object ? { [K in keyof U]: SpecificationResult<U[K]> } :
@@ -119,7 +115,7 @@ class Given<T extends any[]> {
     }
 }
 
-export type LabelOf<T> = {
+export type LabelOf<T> = { _label: "Label" } & {
     [ R in keyof T ]:
         T[R] extends string ? T[R] :
         T[R] extends number ? T[R] :
@@ -470,7 +466,7 @@ function createHashProxy(root: string): any {
     });
 }
 
-function getPayload<T>(label: LabelOf<T>): LabelPayload {
+export function getPayload<T>(label: LabelOf<T>): LabelPayload {
     const proxy: any = label;
     return proxy[IDENTITY];
 }

@@ -1,4 +1,3 @@
-import { AuthorizationRules } from "../authorization/authorizationRules";
 import { Jinaga as j } from "../jinaga";
 import { ensure } from "../query/query-parser";
 
@@ -39,4 +38,13 @@ export class UserName {
     ensure(n).has("user", User);
     return j.match(n.user);
   }
+}
+
+export class Device {
+  static Type = "Jinaga.Device";
+  public type = Device.Type;
+
+  constructor(
+    public publicKey: string
+  ) { }
 }
