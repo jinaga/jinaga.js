@@ -25,7 +25,7 @@ export {
   SaveMessage
 } from './http/messages';
 export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
-export { Jinaga, Preposition, Profile, Template, Trace, Tracer, ensure } from "./jinaga";
+export { Jinaga, MakeObservable, Preposition, Profile, Template, Trace, Tracer, ensure } from './jinaga';
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
@@ -33,6 +33,7 @@ export { FactManager } from "./managers/factManager";
 export { MemoryStore } from './memory/memory-store';
 export { Device, User, UserName } from "./model/user";
 export { Observable, ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
+export { ObservableCollection } from './observer/observer';
 export { fromDescriptiveString } from './query/descriptive-string';
 export { Query } from './query/query';
 export { SpecificationOf as TemplateSpecificationOf } from "./query/query-parser";
