@@ -80,6 +80,7 @@ export class SpecificationOf<T, U> {
         return describeSpecification(this.specification, depth);
     }
 }
+export type ProjectionOf<TSpecification> = TSpecification extends SpecificationOf<unknown, infer TProjection> ? TProjection : never;
 
 type MatchParameters<T> = T extends [ infer First, ...infer Rest ] ? [ LabelOf<First>, ...MatchParameters<Rest> ] : [ FactRepository ];
 type SpecificationResult<U> =

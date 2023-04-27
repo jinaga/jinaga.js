@@ -25,7 +25,7 @@ export interface Profile {
 
 export { Trace, Tracer, Preposition, FactDescription, ensure, Template };
 
-type MakeObservable<T> =
+export type MakeObservable<T> =
     T extends Array<infer U> ? ObservableCollection<MakeObservable<U>> :
     T extends { [key: string]: unknown } ? { [K in keyof T]: MakeObservable<T[K]> } :
     T;
