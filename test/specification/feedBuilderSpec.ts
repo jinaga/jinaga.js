@@ -27,7 +27,7 @@ describe("feed generator", () => {
                 inputs: [
                     {
                         factIndex: 1,
-                        factHash: root.hash
+                        inputIndex: 0
                     }
                 ],
                 edges: [
@@ -83,11 +83,11 @@ describe("feed generator", () => {
                 inputs: [
                     {
                         factIndex: 1,
-                        factHash: user.hash
+                        inputIndex: 0
                     },
                     {
                         factIndex: 3,
-                        factHash: root.hash
+                        inputIndex: 1
                     }
                 ],
                 edges: [
@@ -163,11 +163,11 @@ describe("feed generator", () => {
                 inputs: [
                     {
                         factIndex: 1,
-                        factHash: user.hash
+                        inputIndex: 0
                     },
                     {
                         factIndex: 3,
-                        factHash: root.hash
+                        inputIndex: 1
                     }
                 ],
                 edges: [
@@ -232,11 +232,11 @@ describe("feed generator", () => {
                 inputs: [
                     {
                         factIndex: 1,
-                        factHash: user.hash
+                        inputIndex: 0
                     },
                     {
                         factIndex: 3,
-                        factHash: root.hash
+                        inputIndex: 1
                     }
                 ],
                 edges: [
@@ -335,7 +335,7 @@ describe("feed generator", () => {
                 inputs: [
                     {
                         factIndex: 1,
-                        factHash: root.hash
+                        inputIndex: 0
                     }
                 ],
                 edges: [
@@ -371,7 +371,7 @@ describe("feed generator", () => {
                 inputs: [
                     {
                         factIndex: 1,
-                        factHash: root.hash
+                        inputIndex: 0
                     }
                 ],
                 edges: [
@@ -412,16 +412,6 @@ function getFeeds(input: string): Feed[] {
     parser.skipWhitespace();
     const specification = parser.parseSpecification();
 
-    const start = specification.given.map(input => {
-        if (input.type === 'Root') {
-            return root;
-        }
-        if (input.type === 'Jinaga.User') {
-            return user;
-        }
-        throw new Error(`Unknown input type ${input.type}`);
-    });
-
-    const feeds = buildFeeds(start, specification);
+    const feeds = buildFeeds(specification);
     return feeds;
 }
