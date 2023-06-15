@@ -1,7 +1,7 @@
 import { describeSpecification } from "../../src/specification/description";
-import { SpecificationOf } from "../../src/specification/model";
 import { invertSpecification, SpecificationInverse } from "../../src/specification/inverse";
-import { Company, model, Office, OfficeClosed, OfficeReopened, President, User } from "./model";
+import { SpecificationOf } from "../../src/specification/model";
+import { Company, model, Office, OfficeClosed, OfficeReopened, President, User } from "../companyModel";
 
 describe("specification inverse", () => {
     it("should invert successor", () => {
