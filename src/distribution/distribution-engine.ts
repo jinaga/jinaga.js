@@ -115,13 +115,6 @@ function notExistsConditionsEqual(ruleCondition: NotExistsConditionDescription, 
   return true;
 }
 
-function outputsEqual(ruleOutput: OutputDescription, targetOutput: OutputDescription): boolean {
-  if (ruleOutput.factIndex !== targetOutput.factIndex) {
-    return false;
-  }
-  return true;
-}
-
 function compareSets<T>(a: T[], b: T[], equals: (a: T, b: T) => boolean): boolean {
   if (a.length !== b.length) {
     return false;

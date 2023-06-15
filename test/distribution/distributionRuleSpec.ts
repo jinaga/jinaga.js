@@ -5,11 +5,12 @@ import { Dehydration } from "../../src/fact/hydrate";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { User } from "../../src/model/user";
 import { Specification } from "../../src/specification/specification";
-import { FactReference } from "../../src/storage";
+import { FactEnvelope, FactReference, Storage } from "../../src/storage";
 import { Blog, Post, Publish, model } from "../blogModel";
 
 describe("distribution rules", () => {
-  const engine = givenDistributionEngine(r => r
+  const store = new MemoryStore();
+  const engine = givenDistributionEngine(store, r => r
     .everyone(model.given(Blog).match((blog, facts) =>
       facts.ofType(Post)
         .join(post => post.blog, blog)
@@ -36,7 +37,11 @@ describe("distribution rules", () => {
   const creatorReference = dehydration.dehydrate(creator);
   const readerReference = dehydration.dehydrate(reader);
   const blogReference = dehydration.dehydrate(blog);
-  
+  store.save(dehydration.factRecords().map(f => <FactEnvelope>{
+    fact: f,
+    signatures: []
+  }));
+
   it("should prevent public access to unpublished posts", async () => {
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Post)
@@ -114,10 +119,9 @@ describe("distribution rules", () => {
   });
 });
 
-function givenDistributionEngine(rules: (r: DistributionRules) => DistributionRules) {
+function givenDistributionEngine(store: Storage, rules: (r: DistributionRules) => DistributionRules) {
   const distributionRules = rules(new DistributionRules([]));
-  const memory = new MemoryStore();
-  const engine = new DistributionEngine(distributionRules, memory);
+  const engine = new DistributionEngine(distributionRules, store);
   return engine;
 }
 
