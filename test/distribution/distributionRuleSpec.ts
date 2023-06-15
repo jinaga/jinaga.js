@@ -130,9 +130,9 @@ async function assessSpecification(
   const feeds = buildFeeds(specification);
   for (const feed of feeds) {
     const assessment = await engine.canDistribute(feed, start, user);
-    if (assessment) {
-      return true;
+    if (!assessment) {
+      return false;
     }
   }
-  return false;
+  return true;
 }

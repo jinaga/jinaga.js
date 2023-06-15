@@ -1,5 +1,5 @@
 import { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription, OutputDescription } from "../specification/feed";
-import { FactReference, Storage } from "../storage";
+import { FactReference, Storage, factReferenceEquals } from "../storage";
 import { DistributionRules } from "./distribution-rules";
 
 export class DistributionEngine {
@@ -12,7 +12,29 @@ export class DistributionEngine {
     for (const rule of this.distributionRules.rules) {
       for (const ruleFeed of rule.feeds) {
         if (feedsEqual(ruleFeed, targetFeed)) {
-          return true;
+          // If this rule applies to any user, then we can distribute.
+          if (rule.user === null) {
+            return true;
+          }
+
+          // If there is no user logged in, then we cannot distribute.
+          if (user === null) {
+            return false;
+          }
+
+          // The projection must be a singular label.
+          if (rule.user.projection.type !== 'fact') {
+            throw new Error('The projection must be a singular label.');
+          }
+          const label = rule.user.projection.label;
+
+          // Find the set of users to whom we can distribute this feed.
+          const users = await this.store.read(start, rule.user);
+          const results = users.map(user => user.tuple[label])
+
+          // If any of the results match the user, then we can distribute to the user.
+          const authorized = results.some(factReferenceEquals(user));
+          return authorized;
         }
       }
     }
