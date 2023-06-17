@@ -1,4 +1,8 @@
+import { DistributionEngine } from "../distribution/distribution-engine";
+import { computeObjectHash } from "../fact/hash";
 import { FeedResponse } from "../http/messages";
+import { Feed } from "../specification/feed";
+import { buildFeeds } from "../specification/feed-builder";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactReference, factReferenceEquals, Storage } from "../storage";
 import { Trace } from "../util/trace";
@@ -17,6 +21,81 @@ export class NetworkNoOp implements Network {
 
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
         return Promise.resolve({ references: [], bookmark });
+    }
+
+    load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
+        return Promise.resolve([]);
+    }
+}
+
+type FeedByHash = {
+    [hash: string]: {
+        start: {
+            factReference: FactReference,
+            index: number
+        }[],
+        feed: Feed
+    }
+}
+
+export class NetworkDistribution implements Network {
+    private feedCache: FeedByHash = {};
+
+    constructor(
+        private readonly distributionEngine: DistributionEngine,
+        private readonly user: FactReference | null
+    ) { }
+
+    feeds(start: FactReference[], specification: Specification): Promise<string[]> {
+        const feeds = buildFeeds(specification);
+        const feedsByHash = feeds.reduce((map, feed) => {
+            const indexedStart = start.map((factReference, index) => ({
+                factReference,
+                index
+            }));
+            const feedObject = {
+                start: indexedStart,
+                feed
+            };
+            const hash = computeObjectHash(feedObject);
+            return ({
+                ...map,
+                [hash]: feedObject
+            });
+        }, {} as FeedByHash);
+        const feedHashes = Object.keys(feedsByHash);
+        this.feedCache = {
+            ...this.feedCache,
+            ...feedsByHash
+        };
+        return Promise.resolve(feedHashes);
+    }
+
+    async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
+        const feedObject = this.feedCache[feed];
+        if (!feedObject) {
+            throw new Error(`Feed ${feed} not found`);
+        }
+        const maxIndex = feedObject.start.reduce((max, start) => Math.max(max, start.index), 0);
+        const start: FactReference[] = [];
+        for (let i = 0; i <= maxIndex; i++) {
+            const factReference = feedObject.start.find(start => start.index === i)?.factReference;
+            if (!factReference) {
+                throw new Error(`Feed ${feed} missing start at index ${i}`);
+            }
+            start.push(factReference);
+        }
+        const canDistribute = await this.distributionEngine.canDistribute(feedObject.feed, start, this.user);
+
+        if (!canDistribute) {
+            throw new Error(`Feed ${feed} not authorized`);
+        }
+
+        // Pretend that we are at the end of the feed.
+        return {
+            references: [],
+            bookmark
+        };
     }
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {

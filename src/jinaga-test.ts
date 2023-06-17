@@ -1,12 +1,14 @@
 import { Authentication } from './authentication/authentication';
 import { AuthenticationTest } from './authentication/authentication-test';
 import { AuthorizationRules } from './authorization/authorizationRules';
+import { DistributionEngine } from './distribution/distribution-engine';
+import { DistributionRules } from './distribution/distribution-rules';
 import { dehydrateFact, Dehydration } from './fact/hydrate';
 import { PassThroughFork } from './fork/pass-through-fork';
 import { SyncStatusNotifier } from './http/web-client';
 import { Jinaga } from './jinaga';
 import { FactManager } from './managers/factManager';
-import { NetworkNoOp } from './managers/NetworkManager';
+import { Network, NetworkDistribution, NetworkNoOp } from './managers/NetworkManager';
 import { MemoryStore } from './memory/memory-store';
 import { ObservableSource } from './observable/observable';
 import { Model } from './specification/model';
@@ -15,6 +17,7 @@ import { FactEnvelope, Storage } from './storage';
 export type JinagaTestConfig = {
   model?: Model,
   authorization?: (a: AuthorizationRules) => AuthorizationRules,
+  distribution?: (d: DistributionRules) => DistributionRules,
   user?: {},
   device?: {},
   initialState?: {}[]
@@ -28,7 +31,7 @@ export class JinagaTest {
     const syncStatusNotifier = new SyncStatusNotifier();
     const fork = new PassThroughFork(store);
     const authentication = this.createAuthentication(config, store);
-    const network = new NetworkNoOp();
+    const network = this.createNetwork(config, store);
     const factManager = new FactManager(authentication, fork, observableSource, store, network);
     return new Jinaga(factManager, syncStatusNotifier);
   }
@@ -47,9 +50,28 @@ export class JinagaTest {
   static createAuthentication(config: JinagaTestConfig, store: Storage): Authentication {
     const authorizationRules = config.authorization ?
       config.authorization(new AuthorizationRules(config.model)) : null;
-    const userFact = config.user ? dehydrateFact(config.user)[0] : null;
-    const deviceFact = config.device ? dehydrateFact(config.device)[0] : null;
+    const userFact = JinagaTest.getUserFact(config);
+    const deviceFact = JinagaTest.getDeviceFact(config);
     
     return new AuthenticationTest(store, authorizationRules, userFact, deviceFact);
+  }
+
+  static createNetwork(config: JinagaTestConfig, store: MemoryStore): Network {
+    if (config.distribution) {
+      const distributionRules = config.distribution(new DistributionRules([]));
+      const distributionEngine = new DistributionEngine(distributionRules, store);
+      return new NetworkDistribution(distributionEngine, this.getUserFact(config));
+    }
+    else {
+      return new NetworkNoOp();
+    }
+  }
+
+  private static getUserFact(config: JinagaTestConfig) {
+    return config.user ? dehydrateFact(config.user)[0] : null;
+  }
+
+  private static getDeviceFact(config: JinagaTestConfig) {
+    return config.device ? dehydrateFact(config.device)[0] : null;
   }
 }

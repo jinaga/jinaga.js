@@ -1,4 +1,5 @@
-import { User } from "../src/model/user"
+import { DistributionRules } from "../src/distribution/distribution-rules";
+import { User } from "../src/model/user";
 import { buildModel } from "../src/specification/model";
 
 export class Blog {
@@ -45,3 +46,22 @@ export const model = buildModel(b => b
     .predecessor("post", Post)
   )
 );
+
+export const distribution = (r: DistributionRules) => r
+  .everyone(model.given(Blog).match((blog, facts) =>
+    facts.ofType(Post)
+      .join(post => post.blog, blog)
+      .exists(post => facts.ofType(Publish)
+        .join(publish => publish.post, post)
+      )
+  ))
+  .only(model.given(Blog).match((blog, facts) =>
+    facts.ofType(Post)
+      .join(post => post.blog, blog)
+  ),
+    model.given(Blog).match((blog, facts) =>
+      facts.ofType(User)
+        .join(user => user, blog.creator)
+    )
+  )
+  ;
