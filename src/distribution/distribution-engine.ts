@@ -11,30 +11,33 @@ export class DistributionEngine {
   async canDistribute(targetFeed: Feed, start: FactReference[], user: FactReference | null): Promise<boolean> {
     for (const rule of this.distributionRules.rules) {
       for (const ruleFeed of rule.feeds) {
-        if (feedsEqual(ruleFeed, targetFeed)) {
-          // If this rule applies to any user, then we can distribute.
-          if (rule.user === null) {
-            return true;
+        const permutations = permutationsOf(start, ruleFeed, targetFeed);
+        for (const permutation of permutations) {
+          if (feedsEqual(ruleFeed, targetFeed)) {
+            // If this rule applies to any user, then we can distribute.
+            if (rule.user === null) {
+              return true;
+            }
+
+            // If there is no user logged in, then we cannot distribute.
+            if (user === null) {
+              return false;
+            }
+
+            // The projection must be a singular label.
+            if (rule.user.projection.type !== 'fact') {
+              throw new Error('The projection must be a singular label.');
+            }
+            const label = rule.user.projection.label;
+
+            // Find the set of users to whom we can distribute this feed.
+            const users = await this.store.read(permutation, rule.user);
+            const results = users.map(user => user.tuple[label])
+
+            // If any of the results match the user, then we can distribute to the user.
+            const authorized = results.some(factReferenceEquals(user));
+            return authorized;
           }
-
-          // If there is no user logged in, then we cannot distribute.
-          if (user === null) {
-            return false;
-          }
-
-          // The projection must be a singular label.
-          if (rule.user.projection.type !== 'fact') {
-            throw new Error('The projection must be a singular label.');
-          }
-          const label = rule.user.projection.label;
-
-          // Find the set of users to whom we can distribute this feed.
-          const users = await this.store.read(start, rule.user);
-          const results = users.map(user => user.tuple[label])
-
-          // If any of the results match the user, then we can distribute to the user.
-          const authorized = results.some(factReferenceEquals(user));
-          return authorized;
         }
       }
     }
@@ -49,10 +52,8 @@ function feedsEqual(ruleFeed: Feed, targetFeed: Feed): boolean {
     return false;
   }
 
-  // Compare the sets of inputs.
-  if (!compareSets(ruleFeed.inputs, targetFeed.inputs, inputsEqual)) {
-    return false;
-  }
+  // Do not compare the sets of inputs.
+  // The matching permutation has already been calculated.
 
   // Compare the sets of edges.
   if (!compareSets(ruleFeed.edges, targetFeed.edges, edgesEqual)) {
@@ -75,16 +76,6 @@ function factsEqual(ruleFact: FactDescription, targetFact: FactDescription): boo
     return false;
   }
   if (ruleFact.factIndex !== targetFact.factIndex) {
-    return false;
-  }
-  return true;
-}
-
-function inputsEqual(ruleInput: InputDescription, targetInput: InputDescription): boolean {
-  if (ruleInput.factIndex !== targetInput.factIndex) {
-    return false;
-  }
-  if (ruleInput.inputIndex !== targetInput.inputIndex) {
     return false;
   }
   return true;
@@ -125,4 +116,47 @@ function compareSets<T>(a: T[], b: T[], equals: (a: T, b: T) => boolean): boolea
     }
   }
   return true;
+}
+
+function permutationsOf(start: FactReference[], ruleFeed: Feed, targetFeed: Feed): FactReference[][] {
+  function permute(
+    ruleInputs: InputDescription[],
+    targetInputs: InputDescription[]
+  ): FactReference[][] {
+    // If there are no more rule inputs, then end the recursion.
+    // We have found one matching permutation.
+    if (ruleInputs.length === 0) {
+      return [[]];
+    }
+
+    const [ ruleInput, ...remainingRuleInputs ] = ruleInputs;
+    const ruleFact = ruleFeed.facts.find(f => f.factIndex === ruleInput.factIndex);
+    if (!ruleFact) {
+      throw new Error(`Rule fact index ${ruleInput.factIndex} was not found.`);
+    }
+    // Find all of the target inputs that match the first rule input.
+    return targetInputs.flatMap((targetInput, targetIndex) => {
+      const targetFact = targetFeed.facts.find(f => f.factIndex === targetInput.factIndex);
+      if (!targetFact) {
+        throw new Error(`Target fact index ${targetInput.factIndex} was not found.`);
+      }
+      if (targetFact.factType !== ruleFact.factType) {
+        return [];
+      }
+
+      // Remove the target input from the set of candidates.
+      const remainingTargetInputs = targetInputs.slice(0, targetIndex)
+        .concat(targetInputs.slice(targetIndex + 1));
+
+      // Recursively find all permutations of the remainder.
+      return permute(remainingRuleInputs, remainingTargetInputs)
+        .map(permutation => {
+          permutation[ruleInput.inputIndex] = start[targetInput.inputIndex];
+          return permutation;
+        });
+    });
+  }
+
+  const permutations = permute(ruleFeed.inputs, targetFeed.inputs);
+  return permutations;
 }

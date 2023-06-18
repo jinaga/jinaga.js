@@ -165,7 +165,7 @@ describe("distribution rules", () => {
   });
 
   it("should permit access to published blogs and my own comments", async () => {
-    const specification = model.given(Blog, User).match((blog, user, facts) =>
+    const specification = model.given(User, Blog).match((user, blog, facts) =>
       facts.ofType(Post)
         .join(post => post.blog, blog)
         .exists(post => facts.ofType(Publish)
@@ -180,7 +180,7 @@ describe("distribution rules", () => {
     );
 
     const j = givenLoggedIn(commenter);
-    const result = await j.query(specification, blog, commenter);
+    const result = await j.query(specification, commenter, blog);
     expect(result).toHaveLength(0);
   });
 
