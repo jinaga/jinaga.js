@@ -81,7 +81,7 @@ export class MemoryStore implements Storage {
         return this.runner.read(start, specification);
     }
 
-    feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+    feed(feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed> {
         throw new Error('Method not implemented.');
     }
 
