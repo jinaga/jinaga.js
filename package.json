@@ -1,9 +1,14 @@
 {
   "name": "jinaga",
   "version": "5.3.2",
-  "description": "Browser-Server-Browser Synchroninzation",
+  "description": "Data management for web and mobile applications.",
   "keywords": [
-    "messaging"
+    "state",
+    "immutable",
+    "middleware",
+    "api",
+    "offline",
+    "pwa"
   ],
   "homepage": "http://jinaga.com",
   "bugs": {
