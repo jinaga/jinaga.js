@@ -53,7 +53,7 @@ export interface Storage {
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     query(start: FactReference, query: Query): Promise<FactPath[]>;
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
-    feed(feed: Feed, bookmark: string): Promise<FactFeed>;
+    feed(feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;
 

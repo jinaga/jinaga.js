@@ -27,8 +27,8 @@ export class AuthorizationNoOp implements Authorization {
         return this.store.load(references);
     }
 
-    feed(userIdentity: UserIdentity, feed: Feed, bookmark: string): Promise<FactFeed> {
-        return this.store.feed(feed, bookmark);
+    feed(userIdentity: UserIdentity, feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed> {
+        return this.store.feed(feed, start, bookmark);
     }
 
     async save(userIdentity: UserIdentity, facts: FactRecord[]): Promise<FactRecord[]> {

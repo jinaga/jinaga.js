@@ -1,5 +1,5 @@
 import { Jinaga, JinagaTest } from "../../src";
-import { Company, Manager, ManagerName, ManagerTerminated, model, Office, OfficeClosed, OfficeReopened, President, User, UserName } from "./model";
+import { Company, Manager, ManagerName, ManagerTerminated, Office, OfficeClosed, OfficeReopened, President, User, UserName, model } from "../companyModel";
 
 describe("specification watch", () => {
     let creator: User;

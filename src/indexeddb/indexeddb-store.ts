@@ -209,7 +209,7 @@ export class IndexedDBStore implements Storage {
     });
   }
 
-  feed(feed: Feed, bookmark: string): Promise<FactFeed> {
+  feed(feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed> {
     throw new Error('Method not implemented.');
   }
 

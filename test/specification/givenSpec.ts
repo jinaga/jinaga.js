@@ -1,5 +1,5 @@
 import { SpecificationOf } from "../../src/specification/model";
-import { model, Company, Office, OfficeClosed, President, UserName, User } from "./model";
+import { Company, Office, OfficeClosed, President, User, UserName, model } from "../companyModel";
 
 describe("given", () => {
     it("should parse a successor join", () => {

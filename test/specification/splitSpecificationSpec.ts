@@ -1,6 +1,6 @@
 import { describeSpecification } from "../../src/specification/description";
 import { Specification, splitBeforeFirstSuccessor } from "../../src/specification/specification";
-import { Company, Employee, model, Office, President } from "./model";
+import { Company, Employee, Office, President, model } from "../companyModel";
 
 describe('Split specification', () => {
     it('should put all in head if only predecessor joins', () => {

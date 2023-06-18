@@ -1,4 +1,4 @@
-import { buildModel, FactRepository, LabelOf, ModelBuilder } from "../../src/specification/model";
+import { buildModel, FactRepository, LabelOf, ModelBuilder } from "../src/specification/model";
 
 export class User {
     static Type = "User" as const;

@@ -6,7 +6,7 @@ export interface FactDescription {
 }
 export interface InputDescription {
     factIndex: number;
-    factHash: string;
+    inputIndex: number;
 }
 export interface EdgeDescription {
     edgeIndex: number;
@@ -52,11 +52,11 @@ export function withFact(feed: Feed, factType: string): { feed: Feed, factIndex:
     return { feed, factIndex };
 }
 
-export function withInput(feed: Feed, factType: string, factHash: string): Feed {
+export function withInput(feed: Feed, factType: string, inputIndex: number): Feed {
     const { feed: feedWithFact, factIndex } = withFact(feed, factType);
     const input: InputDescription = {
         factIndex,
-        factHash
+        inputIndex
     };
     return {
         ...feedWithFact,
