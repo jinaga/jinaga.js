@@ -137,14 +137,20 @@ describe("distribution rules", () => {
 
   it("should permit commenter to access their own comments", async () => {
     const specification = model.given(Blog, User).match((blog, commenter, facts) =>
-      facts.ofType(Comment)
-        .join(comment => comment.post.blog, blog)
-        .join(comment => comment.author, commenter)
+      facts.ofType(Post)
+        .join(post => post.blog, blog)
+        .exists(post => facts.ofType(Publish)
+          .join(publish => publish.post, post)
+        )
+        .selectMany(post => facts.ofType(Comment)
+          .join(comment => comment.post, post)
+          .join(comment => comment.author, commenter)
+        )
     );
 
     const j = givenLoggedIn(commenter);
     const result = await j.query(specification, blog, commenter);
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(0);
   });
 
   it("should not permit reader to access someone else's comments", async () => {
@@ -156,6 +162,26 @@ describe("distribution rules", () => {
 
     const j = givenLoggedIn(reader);
     await expect(() => j.query(specification, blog, commenter)).rejects.toThrow("not authorized");
+  });
+
+  it("should permit access to published blogs and my own comments", async () => {
+    const specification = model.given(Blog, User).match((blog, user, facts) =>
+      facts.ofType(Post)
+        .join(post => post.blog, blog)
+        .exists(post => facts.ofType(Publish)
+          .join(publish => publish.post, post)
+        )
+        .select(post => ({
+          post,
+          comments: facts.ofType(Comment)
+            .join(comment => comment.post, post)
+            .join(comment => comment.author, user)
+        }))
+    );
+
+    const j = givenLoggedIn(commenter);
+    const result = await j.query(specification, blog, commenter);
+    expect(result).toHaveLength(0);
   });
 
   function givenLoggedIn(user: User | undefined) {

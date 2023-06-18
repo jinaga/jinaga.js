@@ -108,10 +108,13 @@ export const distribution = (r: DistributionRules) => r
         .join(user => user, blog.creator)
     )
   )
-  // A comment author can see their own comments
+  // A comment author can see their own comments on published posts
   .only(model.given(Blog, User).match((blog, author, facts) =>
     facts.ofType(Post)
       .join(post => post.blog, blog)
+      .exists(post => facts.ofType(Publish)
+        .join(publish => publish.post, post)
+      )
       .selectMany(post => facts.ofType(Comment)
         .join(comment => comment.post, post)
         .join(comment => comment.author, author)
