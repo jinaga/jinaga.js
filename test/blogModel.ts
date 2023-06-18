@@ -78,38 +78,34 @@ export const model = buildModel(b => b
 
 export const distribution = (r: DistributionRules) => r
   // Everyone can see published posts
-  .everyone(model.given(Blog).match((blog, facts) =>
+  .share(model.given(Blog).match((blog, facts) =>
     facts.ofType(Post)
       .join(post => post.blog, blog)
       .exists(post => facts.ofType(Publish)
         .join(publish => publish.post, post)
       )
-  ))
+  )).withEveryone()
   // The creator can see all posts
-  .only(model.given(Blog).match((blog, facts) =>
+  .share(model.given(Blog).match((blog, facts) =>
     facts.ofType(Post)
       .join(post => post.blog, blog)
-  ),
-    model.given(Blog).match((blog, facts) =>
+  )).with(model.given(Blog).match((blog, facts) =>
       facts.ofType(User)
         .join(user => user, blog.creator)
-    )
-  )
+  ))
   // The creator can see all comments
-  .only(model.given(Blog).match((blog, facts) =>
+  .share(model.given(Blog).match((blog, facts) =>
     facts.ofType(Post)
       .join(post => post.blog, blog)
       .selectMany(post => facts.ofType(Comment)
         .join(comment => comment.post, post)
       )
-  ),
-    model.given(Blog).match((blog, facts) =>
-      facts.ofType(User)
-        .join(user => user, blog.creator)
-    )
-  )
+  )).with(model.given(Blog).match((blog, facts) =>
+    facts.ofType(User)
+      .join(user => user, blog.creator)
+  ))
   // A comment author can see their own comments on published posts
-  .only(model.given(Blog, User).match((blog, author, facts) =>
+  .share(model.given(Blog, User).match((blog, author, facts) =>
     facts.ofType(Post)
       .join(post => post.blog, blog)
       .exists(post => facts.ofType(Publish)
@@ -119,10 +115,8 @@ export const distribution = (r: DistributionRules) => r
         .join(comment => comment.post, post)
         .join(comment => comment.author, author)
       )
-  ),
-    model.given(Blog, User).match((blog, author, facts) =>
-      facts.ofType(User)
-        .join(user => user, author)
-    )
-  )
+  )).with(model.given(Blog, User).match((blog, author, facts) =>
+    facts.ofType(User)
+      .join(user => user, author)
+  ))
   ;

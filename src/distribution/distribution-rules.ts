@@ -9,6 +9,33 @@ export interface DistributionRule {
   user: Specification | null;
 }
 
+export class ShareTarget<T, U> {
+  constructor(
+    private feeds: Feed[],
+    private rules: DistributionRule[]
+  ) { }
+
+  with(user: SpecificationOf<T, User>): DistributionRules {
+    return new DistributionRules([
+      ...this.rules,
+      {
+        feeds: this.feeds,
+        user: user.specification
+      }
+    ]);
+  }
+
+  withEveryone(): DistributionRules {
+    return new DistributionRules([
+      ...this.rules,
+      {
+        feeds: this.feeds,
+        user: null
+      }
+    ]);
+  }
+}
+
 export class DistributionRules {
   constructor(
     public rules: DistributionRule[]
@@ -18,23 +45,7 @@ export class DistributionRules {
     return rules(this);
   }
 
-  everyone<T, U>(specification: SpecificationOf<T, U>): DistributionRules {
-    return new DistributionRules([
-      ...this.rules,
-      {
-        feeds: buildFeeds(specification.specification),
-        user: null
-      }
-    ]);
-  }
-
-  only<T, U>(specification: SpecificationOf<T, U>, user: SpecificationOf<T, User>): DistributionRules {
-    return new DistributionRules([
-      ...this.rules,
-      {
-        feeds: buildFeeds(specification.specification),
-        user: user.specification
-      }
-    ]);
+  share<T, U>(specification: SpecificationOf<T, U>): ShareTarget<T, U> {
+    return new ShareTarget<T, U>(buildFeeds(specification.specification), this.rules);
   }
 }
