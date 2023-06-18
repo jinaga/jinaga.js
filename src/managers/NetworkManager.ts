@@ -49,9 +49,9 @@ export class NetworkDistribution implements Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]> {
         const feeds = buildFeeds(specification);
         const feedsByHash = feeds.reduce((map, feed) => {
-            const indexedStart = start.map((factReference, index) => ({
-                factReference,
-                index
+            const indexedStart = feed.inputs.map(input => ({
+                factReference: start[input.inputIndex],
+                index: input.inputIndex
             }));
             const feedObject = {
                 start: indexedStart,
@@ -76,15 +76,10 @@ export class NetworkDistribution implements Network {
         if (!feedObject) {
             throw new Error(`Feed ${feed} not found`);
         }
-        const maxIndex = feedObject.start.reduce((max, start) => Math.max(max, start.index), 0);
-        const start: FactReference[] = [];
-        for (let i = 0; i <= maxIndex; i++) {
-            const factReference = feedObject.start.find(start => start.index === i)?.factReference;
-            if (!factReference) {
-                throw new Error(`Feed ${feed} missing start at index ${i}`);
-            }
-            start.push(factReference);
-        }
+        const start = feedObject.start.reduce((start, input) => {
+            start[input.index] = input.factReference;
+            return start;
+        }, [] as FactReference[]);
         const canDistribute = await this.distributionEngine.canDistribute(feedObject.feed, start, this.user);
 
         if (!canDistribute) {
