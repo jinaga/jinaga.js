@@ -11,4 +11,5 @@ export interface Authorization {
     feed(userIdentity: UserIdentity | null, feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed>;
     load(userIdentity: UserIdentity | null, references: FactReference[]): Promise<FactRecord[]>;
     save(userIdentity: UserIdentity | null, facts: FactRecord[]): Promise<FactRecord[]>;
+    verifyDistribution(userIdentity: UserIdentity | null, feeds: Feed[], start: FactReference[]): Promise<void>;
 }
