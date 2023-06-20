@@ -48,6 +48,10 @@ export class NetworkDistribution implements Network {
 
     feeds(start: FactReference[], specification: Specification): Promise<string[]> {
         const feeds = buildFeeds(specification);
+        const canDistribute = this.distributionEngine.canDistributeToAll(feeds, start, this.user);
+        if (!canDistribute) {
+            throw new Error(`Not authorized`);
+        }
         const feedsByHash = feeds.reduce((map, feed) => {
             const indexedStart = feed.inputs.map(input => ({
                 factReference: start[input.inputIndex],
@@ -80,7 +84,7 @@ export class NetworkDistribution implements Network {
             start[input.index] = input.factReference;
             return start;
         }, [] as FactReference[]);
-        const canDistribute = await this.distributionEngine.canDistribute(feedObject.feed, start, this.user);
+        const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], start, this.user);
 
         if (!canDistribute) {
             throw new Error(`Feed ${feed} not authorized`);

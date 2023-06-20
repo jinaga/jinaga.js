@@ -38,4 +38,8 @@ export class AuthorizationNoOp implements Authorization {
         })));
         return envelopes.map(envelope => envelope.fact);
     }
+
+    verifyDistribution(userIdentity: UserIdentity, feeds: Feed[], start: FactReference[]): Promise<void> {
+        return Promise.resolve();
+    }
 }
