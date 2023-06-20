@@ -8,7 +8,17 @@ export class DistributionEngine {
     private store: Storage
   ) { }
 
-  async canDistribute(targetFeed: Feed, start: FactReference[], user: FactReference | null): Promise<boolean> {
+  async canDistributeToAll(targetFeeds: Feed[], start: FactReference[], user: FactReference | null): Promise<boolean> {
+    // TODO: Minimize the number hits to the database.
+    for (const targetFeed of targetFeeds) {
+      if (!await this.canDistributeTo(targetFeed, start, user)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private async canDistributeTo(targetFeed: Feed, start: FactReference[], user: FactReference | null): Promise<boolean> {
     for (const rule of this.distributionRules.rules) {
       for (const ruleFeed of rule.feeds) {
         const permutations = permutationsOf(start, ruleFeed, targetFeed);
