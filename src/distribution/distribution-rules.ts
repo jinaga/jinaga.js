@@ -4,12 +4,12 @@ import { buildFeeds } from "../specification/feed-builder";
 import { SpecificationOf } from "../specification/model";
 import { Specification } from "../specification/specification";
 
-export interface DistributionRule {
+interface DistributionRule {
   feeds: Feed[];
   user: Specification | null;
 }
 
-export class ShareTarget<T, U> {
+class ShareTarget<T, U> {
   constructor(
     private feeds: Feed[],
     private rules: DistributionRule[]
