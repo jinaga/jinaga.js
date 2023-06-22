@@ -64,7 +64,7 @@ function createWebClient(
             ? () => provider.reauthenticate()
             : () => Promise.resolve(false);
         const httpConnection = new XhrConnection(config.httpEndpoint, getHeaders, reauthenticate);
-        const httpTimeoutSeconds = config.httpTimeoutSeconds || 5;
+        const httpTimeoutSeconds = config.httpTimeoutSeconds || 30;
         const webClient = new WebClient(httpConnection, syncStatusNotifier, {
             timeoutSeconds: httpTimeoutSeconds
         });
