@@ -26,6 +26,7 @@ export {
   QueryResponse,
   SaveMessage
 } from './http/messages';
+export { parseQueryMessage, parseLoadMessage, parseSaveMessage } from './http/messageParsers';
 export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
 export { Jinaga, MakeObservable, Preposition, Profile, Template, Trace, Tracer, ensure } from './jinaga';
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
