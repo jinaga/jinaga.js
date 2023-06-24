@@ -19,8 +19,14 @@ export class SpecificationParser {
         }
     }
 
-    atEnd(): boolean {
-        return this.offset >= this.input.length;
+    expectEnd() {
+        if (this.offset < this.input.length) {
+            throw new Error(`Expected end of input but found '${this.previewText()}'`);
+        }
+    }
+
+    private previewText() {
+        return this.input.substring(this.offset, this.offset + 100);
     }
 
     continues(symbol: string) {
@@ -38,7 +44,7 @@ export class SpecificationParser {
 
     expect(symbol: string) {
         if (!this.consume(symbol)) {
-            throw new Error(`Expected '${symbol}' but found '${this.input.substring(this.offset, this.offset + 100)}'`);
+            throw new Error(`Expected '${symbol}' but found '${this.previewText()}'`);
         }
     }
 
@@ -59,7 +65,7 @@ export class SpecificationParser {
         if (result !== null) {
             return result;
         }
-        throw new Error("Expected identifier but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
+        throw new Error("Expected identifier but found '" + this.previewText() + "'");
     }
 
     parseType(): string {
@@ -68,7 +74,7 @@ export class SpecificationParser {
         if (result !== null) {
             return result;
         }
-        throw new Error("Expected type but found '" + this.input.substring(this.offset, this.offset + 100) + "'");
+        throw new Error("Expected type but found '" + this.previewText() + "'");
     }
 
     parseLabel(): Label {
