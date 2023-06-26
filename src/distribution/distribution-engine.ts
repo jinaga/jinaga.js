@@ -1,4 +1,5 @@
-import { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription, OutputDescription } from "../specification/feed";
+import { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription } from "../specification/feed";
+import { isPathCondition, specificationIsIdentity } from "../specification/specification";
 import { FactReference, Storage, factReferenceEquals } from "../storage";
 import { DistributionRules } from "./distribution-rules";
 
@@ -40,13 +41,39 @@ export class DistributionEngine {
             }
             const label = rule.user.projection.label;
 
-            // Find the set of users to whom we can distribute this feed.
-            const users = await this.store.read(permutation, rule.user);
-            const results = users.map(user => user.tuple[label])
+            // If the user specification is the identity, then pick the labeled given.
+            if (specificationIsIdentity(rule.user)) {
+              // Find the match with the unknown matching the projected label.
+              const match = rule.user.matches.find(m => m.unknown.name === label);
+              if (!match) {
+                throw new Error(`The user specification must have a match with an unknown labeled '${label}'.`);
+              }
+              // Find the right-hand side of the path condition in that match.
+              const referencedLabels = match.conditions
+                .filter(isPathCondition)
+                .map(c => c.labelRight);
+              if (referencedLabels.length !== 1) {
+                throw new Error(`The user specification must have exactly one path condition with an unknown labeled '${label}'.`);
+              }
+              const referencedLabel = referencedLabels[0];
+              // Find the given that the match references.
+              const index = rule.user.given.findIndex(g => g.name === referencedLabel);
+              if (index === -1) {
+                throw new Error(`The user specification must have a given labeled '${label}'.`);
+              }
+              const userReference = permutation[index];
+              // If the user matches the given, then we can distribute to the user.
+              return factReferenceEquals(user)(userReference);
+            }
+            else {
+              // Find the set of users to whom we can distribute this feed.
+              const users = await this.store.read(permutation, rule.user);
+              const results = users.map(user => user.tuple[label])
 
-            // If any of the results match the user, then we can distribute to the user.
-            const authorized = results.some(factReferenceEquals(user));
-            return authorized;
+              // If any of the results match the user, then we can distribute to the user.
+              const authorized = results.some(factReferenceEquals(user));
+              return authorized;
+            }
           }
         }
       }
