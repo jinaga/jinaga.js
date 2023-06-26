@@ -20,7 +20,7 @@ describe("distribution rules", () => {
     );
 
     const j = givenLoggedIn(undefined);
-    await expect(() => j.query(specification, blog)).rejects.toThrow("not authorized");
+    await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
   });
 
   it("should permit public access to publications", async () => {
@@ -66,7 +66,7 @@ describe("distribution rules", () => {
     );
 
     const j = givenLoggedIn(reader);
-    await expect(() => j.query(specification, blog)).rejects.toThrow("not authorized");
+    await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
   });
 
   it("should permit reader to access publications", async () => {
@@ -112,7 +112,7 @@ describe("distribution rules", () => {
     );
 
     const j = givenLoggedIn(undefined);
-    await expect(() => j.query(specification, blog)).rejects.toThrow("not authorized");
+    await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
   });
 
   it("should not permit reader to access all comments", async () => {
@@ -122,7 +122,7 @@ describe("distribution rules", () => {
     );
 
     const j = givenLoggedIn(reader);
-    await expect(() => j.query(specification, blog)).rejects.toThrow("not authorized");
+    await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
   });
 
   it("should not permit commenter to access all comments", async () => {
@@ -132,7 +132,7 @@ describe("distribution rules", () => {
     );
 
     const j = givenLoggedIn(commenter);
-    await expect(() => j.query(specification, blog)).rejects.toThrow("not authorized");
+    await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
   });
 
   it("should permit commenter to access their own comments", async () => {
@@ -161,7 +161,7 @@ describe("distribution rules", () => {
     );
 
     const j = givenLoggedIn(reader);
-    await expect(() => j.query(specification, blog, commenter)).rejects.toThrow("not authorized");
+    await expect(() => j.query(specification, blog, commenter)).rejects.toThrow("Not authorized");
   });
 
   it("should permit access to published blogs and my own comments", async () => {

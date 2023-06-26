@@ -46,11 +46,11 @@ export class NetworkDistribution implements Network {
         private readonly user: FactReference | null
     ) { }
 
-    feeds(start: FactReference[], specification: Specification): Promise<string[]> {
+    async feeds(start: FactReference[], specification: Specification): Promise<string[]> {
         const feeds = buildFeeds(specification);
-        const canDistribute = this.distributionEngine.canDistributeToAll(feeds, start, this.user);
-        if (!canDistribute) {
-            throw new Error(`Not authorized`);
+        const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, start, this.user);
+        if (canDistribute.type === 'failure') {
+            throw new Error(`Not authorized: ${canDistribute.reason}`);
         }
         const feedsByHash = feeds.reduce((map, feed) => {
             const indexedStart = feed.inputs.map(input => ({
@@ -72,7 +72,7 @@ export class NetworkDistribution implements Network {
             ...this.feedCache,
             ...feedsByHash
         };
-        return Promise.resolve(feedHashes);
+        return feedHashes;
     }
 
     async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
@@ -86,8 +86,8 @@ export class NetworkDistribution implements Network {
         }, [] as FactReference[]);
         const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], start, this.user);
 
-        if (!canDistribute) {
-            throw new Error(`Feed ${feed} not authorized`);
+        if (canDistribute.type === 'failure') {
+            throw new Error(`Not authorized: ${canDistribute.reason}`);
         }
 
         // Pretend that we are at the end of the feed.

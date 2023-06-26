@@ -1,7 +1,19 @@
-import { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription } from "../specification/feed";
+import { describeSpecification } from "../specification/description";
+import { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription, describeFeed } from "../specification/feed";
 import { isPathCondition, specificationIsIdentity } from "../specification/specification";
 import { FactReference, Storage, factReferenceEquals } from "../storage";
 import { DistributionRules } from "./distribution-rules";
+
+export interface DistributionSuccess {
+  type: 'success';
+}
+
+export interface DistributionFailure {
+  type: 'failure';
+  reason: string;
+}
+
+export type DistributionResult = DistributionSuccess | DistributionFailure;
 
 export class DistributionEngine {
   constructor(
@@ -9,17 +21,30 @@ export class DistributionEngine {
     private store: Storage
   ) { }
 
-  async canDistributeToAll(targetFeeds: Feed[], start: FactReference[], user: FactReference | null): Promise<boolean> {
+  async canDistributeToAll(targetFeeds: Feed[], start: FactReference[], user: FactReference | null): Promise<DistributionResult> {
     // TODO: Minimize the number hits to the database.
+    const reasons: string[] = [];
     for (const targetFeed of targetFeeds) {
-      if (!await this.canDistributeTo(targetFeed, start, user)) {
-        return false;
+      const feedResult = await this.canDistributeTo(targetFeed, start, user);
+      if (feedResult.type === 'failure') {
+        reasons.push(feedResult.reason);
       }
     }
-    return true;
+    if (reasons.length > 0) {
+      return {
+        type: 'failure',
+        reason: reasons.join('\n')
+      };
+    }
+    else {
+      return {
+        type: 'success'
+      };
+    }
   }
 
-  private async canDistributeTo(targetFeed: Feed, start: FactReference[], user: FactReference | null): Promise<boolean> {
+  private async canDistributeTo(targetFeed: Feed, start: FactReference[], user: FactReference | null): Promise<DistributionResult> {
+    const reasons: string[] = [];
     for (const rule of this.distributionRules.rules) {
       for (const ruleFeed of rule.feeds) {
         const permutations = permutationsOf(start, ruleFeed, targetFeed);
@@ -27,12 +52,17 @@ export class DistributionEngine {
           if (feedsEqual(ruleFeed, targetFeed)) {
             // If this rule applies to any user, then we can distribute.
             if (rule.user === null) {
-              return true;
+              return {
+                type: 'success'
+              };
             }
 
             // If there is no user logged in, then we cannot distribute.
             if (user === null) {
-              return false;
+              if (reasons.length === 0) {
+                reasons.push(`User is not logged in.`);
+              }
+              continue;
             }
 
             // The projection must be a singular label.
@@ -63,7 +93,16 @@ export class DistributionEngine {
               }
               const userReference = permutation[index];
               // If the user matches the given, then we can distribute to the user.
-              return factReferenceEquals(user)(userReference);
+              const authorized = factReferenceEquals(user)(userReference);
+              if (!authorized) {
+                reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
+                continue;
+              }
+              else {
+                return {
+                  type: 'success'
+                };
+              }
             }
             else {
               // Find the set of users to whom we can distribute this feed.
@@ -72,14 +111,28 @@ export class DistributionEngine {
 
               // If any of the results match the user, then we can distribute to the user.
               const authorized = results.some(factReferenceEquals(user));
-              return authorized;
+              if (!authorized) {
+                reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
+                continue;
+              }
+              else {
+                return {
+                  type: 'success'
+                };
+              }
             }
           }
         }
       }
     }
 
-    return false;
+    if (reasons.length === 0) {
+      reasons.push("No rules apply to this feed.");
+    }
+    return {
+      type: 'failure',
+      reason: `Cannot distribute to ${describeFeed(targetFeed)}\n${reasons.join('\n')}`
+    };
   }
 }
 
