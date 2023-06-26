@@ -23,6 +23,14 @@ export interface ExistentialCondition {
 
 export type Condition = PathCondition | ExistentialCondition;
 
+export function isPathCondition(condition: Condition): condition is PathCondition {
+    return condition.type === "path";
+}
+
+export function isExistentialCondition(condition: Condition): condition is ExistentialCondition {
+    return condition.type === "existential";
+}
+
 export interface SpecificationProjection {
     type: "specification",
     matches: Match[],
@@ -337,3 +345,15 @@ function labelsInCondition(condition: Condition): string[] {
         throw new Error(`Unexpected condition type ${(condition as any).type}`);
     }
 }
+
+
+export function specificationIsIdentity(specification: Specification) {
+    return specification.matches.every(match =>
+        match.conditions.every(condition =>
+            condition.type === "path" &&
+            condition.rolesLeft.length === 0 &&
+            condition.rolesRight.length === 0
+        )
+    );
+}
+  

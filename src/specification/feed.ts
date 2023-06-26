@@ -197,3 +197,36 @@ export function getAllRolesFromFeed(feed: Feed): RoleDescription[] {
     const conditionRoles = getAllRolesFromConditions(feed, feed.notExistsConditions);
     return [...edgeRoles, ...conditionRoles];
 }
+
+export function describeFeed(feed: Feed): string {
+    const inputs = feed.inputs.map(input => describeInput(input, feed)).join(", ");
+    const edges = feed.edges.map(edge => describeEdge(edge, feed)).join("");
+    const conditions = feed.notExistsConditions.map(condition => describeNotExistsCondition(condition, feed)).join("");
+    return `(${inputs}) {\n${edges}${conditions}}\n`;
+}
+
+function describeInput(input: InputDescription, feed: Feed): string {
+    const fact = feed.facts.find(f => f.factIndex === input.factIndex);
+    if (!fact) {
+        throw new Error(`Fact with index ${input.factIndex} not found`);
+    }
+    return `f${fact.factIndex}: ${fact.factType}`;
+}
+
+function describeEdge(edge: EdgeDescription, feed: Feed): string {
+    const predecessor = feed.facts.find(f => f.factIndex === edge.predecessorFactIndex);
+    if (!predecessor) {
+        throw new Error(`Fact with index ${edge.predecessorFactIndex} not found`);
+    }
+    const successor = feed.facts.find(f => f.factIndex === edge.successorFactIndex);
+    if (!successor) {
+        throw new Error(`Fact with index ${edge.successorFactIndex} not found`);
+    }
+    return `  f${successor.factIndex}: ${successor.factType}->${edge.roleName} = f${predecessor.factIndex}:${predecessor.factType}\n`;
+}
+
+function describeNotExistsCondition(condition: NotExistsConditionDescription, feed: Feed): string {
+    const edges = condition.edges.map(edge => describeEdge(edge, feed)).join("");
+    const conditions = condition.notExistsConditions.map(condition => describeNotExistsCondition(condition, feed)).join("");
+    return `!E {\n${edges}${conditions}}\n`;
+}
