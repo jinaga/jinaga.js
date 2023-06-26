@@ -33,7 +33,7 @@ export class DistributionEngine {
     if (reasons.length > 0) {
       return {
         type: 'failure',
-        reason: reasons.join('\n')
+        reason: reasons.join('\n\n')
       };
     }
     else {
@@ -131,7 +131,7 @@ export class DistributionEngine {
     }
     return {
       type: 'failure',
-      reason: `Cannot distribute to ${describeFeed(targetFeed)}\n${reasons.join('\n')}`
+      reason: `Cannot distribute to ${describeFeed(targetFeed)}${reasons.join('\n')}`
     };
   }
 }

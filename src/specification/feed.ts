@@ -200,8 +200,8 @@ export function getAllRolesFromFeed(feed: Feed): RoleDescription[] {
 
 export function describeFeed(feed: Feed): string {
     const inputs = feed.inputs.map(input => describeInput(input, feed)).join(", ");
-    const edges = feed.edges.map(edge => describeEdge(edge, feed)).join("");
-    const conditions = feed.notExistsConditions.map(condition => describeNotExistsCondition(condition, feed)).join("");
+    const edges = feed.edges.map(edge => describeEdge(edge, feed, 1)).join("");
+    const conditions = feed.notExistsConditions.map(condition => describeNotExistsCondition(condition, feed, 1)).join("");
     return `(${inputs}) {\n${edges}${conditions}}\n`;
 }
 
@@ -213,7 +213,7 @@ function describeInput(input: InputDescription, feed: Feed): string {
     return `f${fact.factIndex}: ${fact.factType}`;
 }
 
-function describeEdge(edge: EdgeDescription, feed: Feed): string {
+function describeEdge(edge: EdgeDescription, feed: Feed, depth: number): string {
     const predecessor = feed.facts.find(f => f.factIndex === edge.predecessorFactIndex);
     if (!predecessor) {
         throw new Error(`Fact with index ${edge.predecessorFactIndex} not found`);
@@ -222,11 +222,13 @@ function describeEdge(edge: EdgeDescription, feed: Feed): string {
     if (!successor) {
         throw new Error(`Fact with index ${edge.successorFactIndex} not found`);
     }
-    return `  f${successor.factIndex}: ${successor.factType}->${edge.roleName} = f${predecessor.factIndex}:${predecessor.factType}\n`;
+    const indent = "  ".repeat(depth);
+    return `${indent}f${successor.factIndex}: ${successor.factType}->${edge.roleName} = f${predecessor.factIndex}:${predecessor.factType}\n`;
 }
 
-function describeNotExistsCondition(condition: NotExistsConditionDescription, feed: Feed): string {
-    const edges = condition.edges.map(edge => describeEdge(edge, feed)).join("");
-    const conditions = condition.notExistsConditions.map(condition => describeNotExistsCondition(condition, feed)).join("");
-    return `!E {\n${edges}${conditions}}\n`;
+function describeNotExistsCondition(condition: NotExistsConditionDescription, feed: Feed, depth: number): string {
+    const edges = condition.edges.map(edge => describeEdge(edge, feed, depth + 1)).join("");
+    const conditions = condition.notExistsConditions.map(condition => describeNotExistsCondition(condition, feed, depth + 1)).join("");
+    const indent = "  ".repeat(depth);
+    return `${indent}!E {\n${edges}${conditions}}\n`;
 }
