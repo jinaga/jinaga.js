@@ -137,6 +137,21 @@ describe("Feedback authorization from specification", () => {
   });
 });
 
+describe("Authorization rules description", () => {
+  it("should be able to save authorization rules", () => {
+    const rules = authorization(new AuthorizationRules(model));
+    const description = rules.saveToDescription();
+    expect(description).not.toBeNull();
+  });
+
+  it.todo("should be able to load authorization rules", () => {
+    const rules = authorization(new AuthorizationRules(model));
+    const description = rules.saveToDescription();
+    const loaded = AuthorizationRules.loadFromDescription(description);
+    expect(loaded.hasRule(Content.Type)).toBeTruthy();
+  });
+});
+
 class User {
   static Type = "Jinaga.User" as const;
   type = User.Type;
