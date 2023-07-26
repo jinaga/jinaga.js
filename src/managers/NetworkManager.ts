@@ -1,10 +1,12 @@
 import { DistributionEngine } from "../distribution/distribution-engine";
 import { computeObjectHash } from "../fact/hash";
 import { FeedResponse } from "../http/messages";
+import { describeDeclaration, describeSpecification } from "../specification/description";
 import { Feed } from "../specification/feed";
 import { buildFeeds } from "../specification/feed-builder";
-import { reduceSpecification, Specification } from "../specification/specification";
-import { FactEnvelope, FactReference, factReferenceEquals, Storage } from "../storage";
+import { Specification, reduceSpecification } from "../specification/specification";
+import { FactEnvelope, FactReference, Storage, factReferenceEquals } from "../storage";
+import { computeStringHash } from "../util/encoding";
 
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
@@ -158,7 +160,8 @@ class LoadBatch {
 }
 
 export class NetworkManager {
-    private activeFeeds = new Map<string, Promise<void>>();
+    private readonly feedsCache = new Map<string, string[]>();
+    private readonly activeFeeds = new Map<string, Promise<void>>();
     private fectchCount = 0;
     private currentBatch: LoadBatch | null = null;
 
@@ -170,7 +173,7 @@ export class NetworkManager {
 
     async fetch(start: FactReference[], specification: Specification) {
         const reducedSpecification = reduceSpecification(specification);
-        const feeds: string[] = await this.network.feeds(start, reducedSpecification);
+        const feeds: string[] = await this.getFeedsFromCache(start, reducedSpecification);
 
         // Fork to fetch from each feed.
         const promises = feeds.map(feed => {
@@ -183,7 +186,30 @@ export class NetworkManager {
                 return promise;
             }
         });
-        await Promise.all(promises);
+        try {
+            await Promise.all(promises);
+        }
+        catch (e) {
+            // If any feed fails, then remove the specification from the cache.
+            this.removeFeedsFromCache(start, reducedSpecification);
+            throw e;
+        }
+    }
+
+    private async getFeedsFromCache(start: FactReference[], specification: Specification): Promise<string[]> {
+        const hash = getSpecificationHash(start, specification);
+        const cached = this.feedsCache.get(hash);
+        if (cached) {
+            return cached;
+        }
+        const feeds = await this.network.feeds(start, specification);
+        this.feedsCache.set(hash, feeds);
+        return feeds;
+    }
+
+    private removeFeedsFromCache(start: FactReference[], specification: Specification) {
+        const hash = getSpecificationHash(start, specification);
+        this.feedsCache.delete(hash);
     }
 
     private async processFeed(feed: string) {
@@ -238,4 +264,12 @@ export class NetworkManager {
 
         this.activeFeeds.delete(feed);
     }
+}
+
+function getSpecificationHash(start: FactReference[], specification: Specification) {
+    const declarationString = describeDeclaration(start, specification.given);
+    const specificationString = describeSpecification(specification, 0);
+    const request = `${declarationString}\n${specificationString}`;
+    const hash = computeStringHash(request);
+    return hash;
 }
