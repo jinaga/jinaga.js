@@ -3,7 +3,7 @@ export { AuthenticationNoOp } from './authentication/authentication-noop';
 export { Authorization } from './authorization/authorization';
 export { AuthorizationEngine, Forbidden } from './authorization/authorization-engine';
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
-export { AuthorizationRules } from "./authorization/authorizationRules";
+export { AuthorizationRules, describeAuthorizationRules } from "./authorization/authorizationRules";
 export { DistributionEngine } from './distribution/distribution-engine';
 export { DistributionRules } from './distribution/distribution-rules';
 export { canonicalPredecessors, canonicalizeFact, computeHash, computeObjectHash } from './fact/hash';

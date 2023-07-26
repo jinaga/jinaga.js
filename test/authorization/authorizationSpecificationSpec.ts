@@ -1,4 +1,4 @@
-import { AuthorizationRules, buildModel, Jinaga, JinagaTest } from '../../src';
+import { AuthorizationRules, buildModel, Jinaga, JinagaTest, describeAuthorizationRules } from '../../src';
 
 describe("Feedback authorization from specification", () => {
   describe("as a user", () => {
@@ -139,14 +139,12 @@ describe("Feedback authorization from specification", () => {
 
 describe("Authorization rules description", () => {
   it("should be able to save authorization rules", () => {
-    const rules = authorization(new AuthorizationRules(model));
-    const description = rules.saveToDescription();
+    const description = describeAuthorizationRules(model, authorization);
     expect(description).not.toBeNull();
   });
 
   it.todo("should be able to load authorization rules", () => {
-    const rules = authorization(new AuthorizationRules(model));
-    const description = rules.saveToDescription();
+    const description = describeAuthorizationRules(model, authorization);
     const loaded = AuthorizationRules.loadFromDescription(description);
     expect(loaded.hasRule(Content.Type)).toBeTruthy();
   });

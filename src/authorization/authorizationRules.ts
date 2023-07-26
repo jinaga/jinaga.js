@@ -444,3 +444,8 @@ export class AuthorizationRules {
         throw new Error('Not implemented.');
     }
 }
+
+export function describeAuthorizationRules(model: Model, authorization: (a: AuthorizationRules) => AuthorizationRules) {
+    const rules = authorization(new AuthorizationRules(model));
+    return rules.saveToDescription();
+}
