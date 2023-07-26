@@ -399,8 +399,12 @@ export class AuthorizationRules {
         }
 
         const graph = new FactGraph(factRecords);
-        const results = await mapAsync(rules, async r =>
-            await r.isAuthorized(userFact, fact, graph, store));
-        return results.some(b => b);
+        for (const rule of rules) {
+            const authorized = await rule.isAuthorized(userFact, fact, graph, store);
+            if (authorized) {
+                return true;
+            }
+        }
+        return false;
     }
 }
