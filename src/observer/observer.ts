@@ -170,7 +170,6 @@ export class ObserverImpl<T> implements Observer<T> {
             // Don't call result added if we have already called it for this tuple.
             if (resultAdded && this.notifiedTuples.has(tupleHash) === false) {
                 const types = Object.values(pr.tuple).map(t => t.type).join(', ');
-                Trace.info(`Observer: Added ${types} ${path}`);
 
                 const promiseMaybe = resultAdded(result);
                 this.notifiedTuples.add(tupleHash);
@@ -209,7 +208,6 @@ export class ObserverImpl<T> implements Observer<T> {
             const removal = this.removalsByTuple[resultTupleHash];
             if (removal !== undefined) {
                 const types = Object.values(pr.tuple).map(t => t.type).join(', ');
-                Trace.info(`Observer: Removed ${types}`);
                 await removal();
                 delete this.removalsByTuple[resultTupleHash];
 

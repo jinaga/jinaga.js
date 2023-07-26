@@ -121,7 +121,6 @@ class LoadBatch {
             this.reject = reject;
         });
         this.timeout = setTimeout(() => {
-            Trace.info('Trigger batch on timeout');
             this.run();
             this.onRun();
         }, 100);
@@ -198,7 +197,6 @@ export class NetworkManager {
                 const { references: factReferences, bookmark: nextBookmark } = await this.network.fetchFeed(feed, bookmark);
 
                 if (factReferences.length === 0) {
-                    Trace.info('End of feed');
                     break;
                 }
 
@@ -208,7 +206,6 @@ export class NetworkManager {
                     let batch = this.currentBatch;
                     if (batch === null) {
                         // Begin a new batch.
-                        Trace.info('Begin batch');
                         batch = new LoadBatch(this.network, this.store, this.notifyFactsAdded, () => {
                             if (this.currentBatch === batch) {
                                 this.currentBatch = null;
@@ -222,7 +219,6 @@ export class NetworkManager {
                     decremented = true;
                     if (this.fectchCount === 0) {
                         // This is the last fetch, so trigger the batch.
-                        Trace.info('Trigger batch on last fetch');
                         batch.trigger();
                     }
                     await batch.completed;
@@ -237,7 +233,6 @@ export class NetworkManager {
                     Trace.metric('Fetch aborted', { fectchCount: this.fectchCount });
                     if (this.fectchCount === 0 && this.currentBatch !== null) {
                         // This is the last fetch, so trigger the batch.
-                        Trace.info('Trigger batch on last fetch');
                         this.currentBatch.trigger();
                     }
                 }
