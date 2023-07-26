@@ -191,7 +191,6 @@ export class NetworkManager {
 
         while (true) {
             this.fectchCount++;
-            Trace.metric('Fetch begin', { fectchCount: this.fectchCount });
             let decremented = false;
             try {
                 const { references: factReferences, bookmark: nextBookmark } = await this.network.fetchFeed(feed, bookmark);
@@ -215,7 +214,6 @@ export class NetworkManager {
                     }
                     batch.add(unknownFactReferences);
                     this.fectchCount--;
-                    Trace.metric('Fetch end', { fectchCount: this.fectchCount });
                     decremented = true;
                     if (this.fectchCount === 0) {
                         // This is the last fetch, so trigger the batch.
@@ -230,7 +228,6 @@ export class NetworkManager {
             finally {
                 if (!decremented) {
                     this.fectchCount--;
-                    Trace.metric('Fetch aborted', { fectchCount: this.fectchCount });
                     if (this.fectchCount === 0 && this.currentBatch !== null) {
                         // This is the last fetch, so trigger the batch.
                         this.currentBatch.trigger();
