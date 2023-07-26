@@ -3,9 +3,8 @@ import { computeObjectHash } from "../fact/hash";
 import { FeedResponse } from "../http/messages";
 import { Feed } from "../specification/feed";
 import { buildFeeds } from "../specification/feed-builder";
-import { Specification } from "../specification/specification";
+import { reduceSpecification, Specification } from "../specification/specification";
 import { FactEnvelope, FactReference, factReferenceEquals, Storage } from "../storage";
-import { Trace } from "../util/trace";
 
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
@@ -170,7 +169,8 @@ export class NetworkManager {
     ) { }
 
     async fetch(start: FactReference[], specification: Specification) {
-        const feeds: string[] = await this.network.feeds(start, specification);
+        const reducedSpecification = reduceSpecification(specification);
+        const feeds: string[] = await this.network.feeds(start, reducedSpecification);
 
         // Fork to fetch from each feed.
         const promises = feeds.map(feed => {

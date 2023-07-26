@@ -356,4 +356,44 @@ export function specificationIsIdentity(specification: Specification) {
         )
     );
 }
-  
+
+export function reduceSpecification(specification: Specification): Specification {
+    // Remove all projections except for specification projections.
+    return {
+        given: specification.given,
+        matches: specification.matches,
+        projection: reduceProjection(specification.projection)
+    };
+}
+
+function reduceProjection(projection: Projection): Projection {
+    if (projection.type === "composite") {
+        const reducedComponents = projection.components
+            .map(reduceComponent)
+            .filter((component): component is NamedComponentProjection => component !== null);
+        return {
+            type: "composite",
+            components: reducedComponents
+        };
+    }
+    else {
+        return {
+            type: "composite",
+            components: []
+        };
+    }
+}
+
+function reduceComponent(component: NamedComponentProjection): NamedComponentProjection | null {
+    if (component.type === "specification") {
+        return {
+            type: "specification",
+            name: component.name,
+            matches: component.matches,
+            projection: reduceProjection(component.projection)
+        };
+    }
+    else {
+        return null;
+    }
+}
