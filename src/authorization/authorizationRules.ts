@@ -1,12 +1,13 @@
 import { getPredecessors } from '../memory/memory-store';
-import { User, Device } from '../model/user';
+import { Device, User } from '../model/user';
 import { Query } from '../query/query';
 import { Preposition } from '../query/query-parser';
 import { Direction, Join, PropertyCondition, Step } from '../query/steps';
+import { describeSpecification } from '../specification/description';
 import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
-import { FactRecord, FactReference, factReferenceEquals, ReferencesByName, Storage } from '../storage';
-import { findIndex, flatten, flattenAsync, mapAsync } from '../util/fn';
+import { FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
+import { findIndex, flatten, flattenAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 
 class FactGraph {
@@ -157,16 +158,25 @@ function headStep(step: Step) {
 }
 
 interface AuthorizationRule {
+    describe(type: string): string;
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
 }
 
 class AuthorizationRuleAny implements AuthorizationRule {
+    describe(type: string) {
+        return `    any ${type}\n`;
+    }
+
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage) {
         return Promise.resolve(true);
     }
 }
 
 class AuthorizationRuleNone implements AuthorizationRule {
+    describe(type: string) {
+        return `    no ${type}\n`;
+    }
+
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
         Trace.warn(`No fact of type ${fact.type} is authorized.`);
         return Promise.resolve(false);
@@ -179,6 +189,10 @@ class AuthorizationRuleQuery implements AuthorizationRule {
         private tail: Query | null
     ) {
 
+    }
+
+    describe(type: string): string {
+        throw new Error("Authorization rules must be based on specifications, not template functions.");
     }
 
     async isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage) {
@@ -216,6 +230,11 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
     constructor(
         private specification: Specification
     ) { }
+
+    describe(type: string): string {
+        const description = describeSpecification(this.specification, 1);
+        return description;
+    }
 
     async isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
         if (!userFact) {
@@ -399,8 +418,34 @@ export class AuthorizationRules {
         }
 
         const graph = new FactGraph(factRecords);
-        const results = await mapAsync(rules, async r =>
-            await r.isAuthorized(userFact, fact, graph, store));
-        return results.some(b => b);
+        for (const rule of rules) {
+            const authorized = await rule.isAuthorized(userFact, fact, graph, store);
+            if (authorized) {
+                return true;
+            }
+        }
+        return false;
     }
+
+    saveToDescription(): string {
+        var description = 'authorization {\n';
+        for (const type in this.rulesByType) {
+            const rules = this.rulesByType[type];
+            for (const rule of rules) {
+                const ruleDescription = rule.describe(type);
+                description += ruleDescription;
+            }
+        }
+        description += '}\n';
+        return description;
+    }
+
+    static loadFromDescription(description: string): AuthorizationRules {
+        throw new Error('Not implemented.');
+    }
+}
+
+export function describeAuthorizationRules(model: Model, authorization: (a: AuthorizationRules) => AuthorizationRules) {
+    const rules = authorization(new AuthorizationRules(model));
+    return rules.saveToDescription();
 }
