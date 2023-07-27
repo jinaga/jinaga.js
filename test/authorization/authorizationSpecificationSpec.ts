@@ -143,7 +143,7 @@ describe("Authorization rules description", () => {
     expect(description).not.toBeNull();
   });
 
-  it.todo("should be able to load authorization rules", () => {
+  it.skip("should be able to load authorization rules", () => {
     const description = describeAuthorizationRules(model, authorization);
     const loaded = AuthorizationRules.loadFromDescription(description);
     expect(loaded.hasRule(Content.Type)).toBeTruthy();
