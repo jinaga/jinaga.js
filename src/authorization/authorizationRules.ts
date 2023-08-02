@@ -6,6 +6,7 @@ import { Direction, Join, PropertyCondition, Step } from '../query/steps';
 import { describeSpecification } from '../specification/description';
 import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
+import { SpecificationParser } from '../specification/specification-parser';
 import { FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
 import { findIndex, flatten, flattenAsync } from '../util/fn';
 import { Trace } from '../util/trace';
@@ -441,7 +442,18 @@ export class AuthorizationRules {
     }
 
     static loadFromDescription(description: string): AuthorizationRules {
-        throw new Error('Not implemented.');
+        const parser = new SpecificationParser(description);
+        parser.skipWhitespace();
+        var authorizationRules = new AuthorizationRules(undefined);
+        parser.parseAuthorizationRules({
+            any: (type: string) =>
+                authorizationRules = authorizationRules.withRule(type, new AuthorizationRuleAny()),
+            no: (type: string) =>
+                authorizationRules = authorizationRules.withRule(type, new AuthorizationRuleNone()),
+            type: (type: string, specification: Specification) =>
+                authorizationRules = authorizationRules.withRule(type, new AuthorizationRuleSpecification(specification))
+        });
+        return authorizationRules;
     }
 }
 

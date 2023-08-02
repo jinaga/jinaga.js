@@ -5,6 +5,12 @@ import { Condition, ExistentialCondition, Label, Match, NamedComponentProjection
 
 type FieldValue = string | number | boolean;
 
+interface AuthorizationRulesVisitor {
+    any(type: string): void;
+    no(type: string): void;
+    type(type: string, specification: Specification): void;
+}
+
 export class SpecificationParser {
     private offset: number = 0;
 
@@ -428,5 +434,28 @@ export class SpecificationParser {
             result = [ ...result, { name, declared: value } ];
         }
         return result;
+    }
+
+    parseAuthorizationRules(visitor: AuthorizationRulesVisitor) {
+        this.expect("authorization");
+        this.expect("{");
+        while (!this.consume("}")) {
+            if (this.consume("any")) {
+                const type = this.parseType();
+                visitor.any(type);
+            }
+            else if (this.consume("no")) {
+                const type = this.parseType();
+                visitor.no(type);
+            }
+            else {
+                const specification = this.parseSpecification();
+                if (specification.given.length !== 1) {
+                    throw new Error("A specification in an authorization rule must have exactly one given label");
+                }
+                const type = specification.given[0].type;
+                visitor.type(type, specification);
+            }
+        }
     }
 }
