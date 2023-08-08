@@ -5,7 +5,7 @@ export { AuthorizationEngine, Forbidden } from './authorization/authorization-en
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
 export { AuthorizationRules, describeAuthorizationRules } from "./authorization/authorizationRules";
 export { DistributionEngine } from './distribution/distribution-engine';
-export { DistributionRules } from './distribution/distribution-rules';
+export { DistributionRules, describeDistributionRules } from './distribution/distribution-rules';
 export { canonicalPredecessors, canonicalizeFact, computeHash, computeObjectHash } from './fact/hash';
 export { dehydrateFact, dehydrateReference, hydrate, hydrateFromTree } from "./fact/hydrate";
 export { TopologicalSorter } from './fact/sorter';
@@ -15,6 +15,7 @@ export { PassThroughFork } from "./fork/pass-through-fork";
 export { TransientFork } from './fork/transient-fork';
 export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvider";
 export { HttpNetwork } from "./http/httpNetwork";
+export { parseLoadMessage, parseQueryMessage, parseSaveMessage } from './http/messageParsers';
 export {
   FeedResponse,
   FeedsResponse,
@@ -26,7 +27,6 @@ export {
   QueryResponse,
   SaveMessage
 } from './http/messages';
-export { parseQueryMessage, parseLoadMessage, parseSaveMessage } from './http/messageParsers';
 export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
 export { Jinaga, MakeObservable, Preposition, Profile, Template, Trace, Tracer, ensure } from './jinaga';
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
