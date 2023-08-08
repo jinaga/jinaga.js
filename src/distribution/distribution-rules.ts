@@ -4,6 +4,7 @@ import { Feed } from "../specification/feed";
 import { buildFeeds } from "../specification/feed-builder";
 import { SpecificationOf } from "../specification/model";
 import { Specification } from "../specification/specification";
+import { SpecificationParser } from "../specification/specification-parser";
 
 interface DistributionRule {
   specification: Specification;
@@ -62,6 +63,22 @@ export class DistributionRules {
     }
     description += "}\n";
     return description;
+  }
+
+  static loadFromDescription(description: string): DistributionRules {
+    const parser = new SpecificationParser(description);
+    parser.skipWhitespace();
+    var distributionRules: DistributionRule[] = [];
+    parser.parseDistributionRules({
+      share: (specification: Specification, user: Specification | null) => {
+        distributionRules.push({
+          specification,
+          feeds: buildFeeds(specification),
+          user
+        });
+      }
+    });
+    return new DistributionRules(distributionRules);
   }
 }
 

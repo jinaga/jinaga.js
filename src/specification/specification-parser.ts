@@ -11,6 +11,10 @@ interface AuthorizationRulesVisitor {
     type(type: string, specification: Specification): void;
 }
 
+interface DistributionRulesVisitor {
+    share(specification: Specification, user: Specification | null): void;
+}
+
 export class SpecificationParser {
     private offset: number = 0;
 
@@ -456,6 +460,21 @@ export class SpecificationParser {
                 const type = specification.given[0].type;
                 visitor.type(type, specification);
             }
+        }
+    }
+
+    parseDistributionRules(visitor: DistributionRulesVisitor) {
+        this.expect("distribution");
+        this.expect("{");
+        while (!this.consume("}")) {
+            this.expect("share");
+            const specification = this.parseSpecification();
+            this.expect("with");
+            let user: Specification | null = null;
+            if (!this.consume("everyone")) {
+                user = this.parseSpecification();
+            }
+            visitor.share(specification, user);
         }
     }
 }
