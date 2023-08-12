@@ -22,7 +22,7 @@ export interface ObservableCollection<T> {
 export interface Observer<T> {
     cached(): Promise<boolean>;
     loaded(): Promise<void>;
-    stop(): Promise<void>;
+    stop(): void;
 }
 
 export class ObserverImpl<T> implements Observer<T> {
@@ -122,7 +122,7 @@ export class ObserverImpl<T> implements Observer<T> {
         return this.loadedPromise;
     }
 
-    public stop(): Promise<void> {
+    public stop() {
         for (const listener of this.listeners) {
             this.factManager.removeSpecificationListener(listener);
         }
