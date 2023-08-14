@@ -126,7 +126,6 @@ export class ObserverImpl<T> implements Observer<T> {
         for (const listener of this.listeners) {
             this.factManager.removeSpecificationListener(listener);
         }
-        return Promise.resolve();
     }
 
     private async fetch() {
