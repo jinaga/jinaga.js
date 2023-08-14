@@ -100,7 +100,7 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private addSpecificationListeners() {
-        const inverses: SpecificationInverse[] = invertSpecification(this.specification);
+        const inverses = invertSpecification(this.specification);
         const listeners = inverses.map(inverse => this.factManager.addSpecificationListener(
             inverse.inverseSpecification,
             (results) => this.onResult(inverse, results)
@@ -169,8 +169,6 @@ export class ObserverImpl<T> implements Observer<T> {
             const tupleHash = computeObjectHash(pr.tuple);
             // Don't call result added if we have already called it for this tuple.
             if (resultAdded && this.notifiedTuples.has(tupleHash) === false) {
-                const types = Object.values(pr.tuple).map(t => t.type).join(', ');
-
                 const promiseMaybe = resultAdded(result);
                 this.notifiedTuples.add(tupleHash);
                 if (promiseMaybe instanceof Promise) {
@@ -207,7 +205,6 @@ export class ObserverImpl<T> implements Observer<T> {
             const resultTupleHash = computeTupleSubsetHash(pr.tuple, resultSubset);
             const removal = this.removalsByTuple[resultTupleHash];
             if (removal !== undefined) {
-                const types = Object.values(pr.tuple).map(t => t.type).join(', ');
                 await removal();
                 delete this.removalsByTuple[resultTupleHash];
 
