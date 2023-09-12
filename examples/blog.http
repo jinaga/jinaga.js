@@ -1,0 +1,9 @@
+POST {{replicatorUrl}}/write HTTP/1.1
+Authorization: oauth2 authorization_code
+Content-Type: text/plain
+
+let creator: Jinaga.User = me
+let site: Blog.Site = {creator, domain: "michaelperry.net"}
+
+let post: Blog.Post = { site, author: creator, createdAt: "2023-06-22T13:36:00.000Z" }
+let publish: Blog.Post.Publish = { post, date: "2023-06-22T13:37:00.000Z" }
