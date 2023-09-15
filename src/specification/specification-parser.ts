@@ -425,16 +425,16 @@ export class SpecificationParser {
     }
 
     parseDeclaration(knownFacts: Declaration): Declaration {
-        let result: Declaration = [];
+        let result: Declaration = knownFacts;
         while (this.consume("let")) {
             const name = this.parseIdentifier();
-            if (result.some(r => r.name === name) || knownFacts.some(r => r.name === name)) {
+            if (result.some(r => r.name === name)) {
                 throw new Error(`The name '${name}' has already been used`);
             }
             this.expect(":");
             const type = this.parseType();
             this.expect("=");
-            const value = this.parseFact(type, [ ...knownFacts, ...result ]);
+            const value = this.parseFact(type, result);
             result = [ ...result, { name, declared: value } ];
         }
         return result;
