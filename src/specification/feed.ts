@@ -1,4 +1,5 @@
 import { distinct } from "../util/fn";
+import { Specification } from "./specification";
 
 export interface FactDescription {
     factType: string;
@@ -28,6 +29,8 @@ export interface Feed {
     edges: EdgeDescription[];
     notExistsConditions: NotExistsConditionDescription[];
     outputs: OutputDescription[];
+
+    specification: Specification;
 }
 
 export const emptyFeed: Feed = {
@@ -35,7 +38,16 @@ export const emptyFeed: Feed = {
     inputs: [],
     edges: [],
     notExistsConditions: [],
-    outputs: []
+    outputs: [],
+
+    specification: {
+        given: [],
+        matches: [],
+        projection: {
+            type: "composite",
+            components: []
+        }
+    }
 };
 
 export function withFact(feed: Feed, factType: string): { feed: Feed, factIndex: number } {
@@ -52,15 +64,20 @@ export function withFact(feed: Feed, factType: string): { feed: Feed, factIndex:
     return { feed, factIndex };
 }
 
-export function withInput(feed: Feed, factType: string, inputIndex: number): Feed {
+export function withInput(feed: Feed, factName: string, factType: string, inputIndex: number): Feed {
     const { feed: feedWithFact, factIndex } = withFact(feed, factType);
     const input: InputDescription = {
         factIndex,
         inputIndex
     };
+    const specification: Specification = {
+        ...feedWithFact.specification,
+        given: [...feedWithFact.specification.given, { name: factName, type: factType }]
+    }
     return {
         ...feedWithFact,
-        inputs: [...feedWithFact.inputs, input]
+        inputs: [...feedWithFact.inputs, input],
+        specification
     };
 }
 

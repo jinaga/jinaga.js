@@ -43,7 +43,14 @@ describe("feed generator", () => {
                     {
                         factIndex: 2
                     }
-                ]
+                ],
+
+                specification: getSpecification(`
+                    (root: Root) {
+                        child: Child [
+                            child->root:Root = root
+                        ]
+                    }`)
             }
         ];
 
@@ -115,7 +122,16 @@ describe("feed generator", () => {
                     {
                         factIndex: 2
                     }
-                ]
+                ],
+
+                specification: getSpecification(`
+                    (user: Jinaga.User, root: Root) {
+                        assignment: MyApp.Assignment [
+                            assignment->user:Jinaga.User = user
+                            assignment->project:MyApp.Project->root:Root = root
+                        ]
+                    }
+                `)
             }
         ];
 
@@ -204,7 +220,18 @@ describe("feed generator", () => {
                     {
                         factIndex: 5
                     }
-                ]
+                ],
+
+                specification: getSpecification(`
+                    (user: Jinaga.User, root: Root) {
+                        assignment: MyApp.Assignment [
+                            assignment->user:Jinaga.User = user
+                            assignment->project:MyApp.Project->root:Root = root
+                        ]
+                        revoked: MyApp.Assignment.Revoked [
+                            revoked->assignment:MyApp.Assignment = assignment
+                        ]
+                    }`)
             },
             {
                 facts: [
@@ -276,7 +303,20 @@ describe("feed generator", () => {
                     {
                         factIndex: 2
                     }
-                ]
+                ],
+
+                specification: getSpecification(`
+                    (user: Jinaga.User, root: Root) {
+                        assignment: MyApp.Assignment [
+                            assignment->user:Jinaga.User = user
+                            assignment->project:MyApp.Project->root:Root = root
+                            !E {
+                                revoked: MyApp.Assignment.Revoked [
+                                    revoked->assignment:MyApp.Assignment = assignment
+                                ]
+                            }
+                        ]
+                    }`)
             }
         ];
 
@@ -351,7 +391,14 @@ describe("feed generator", () => {
                     {
                         factIndex: 2
                     }
-                ]
+                ],
+
+                specification: getSpecification(`
+                    (root: Root) {
+                        project: MyApplication.Project [
+                            project->root: Root = root
+                        ]
+                    }`)
             },
             {
                 facts: [
@@ -396,7 +443,17 @@ describe("feed generator", () => {
                     {
                         factIndex: 3
                     }
-                ]
+                ],
+
+                specification: getSpecification(`
+                    (root: Root) {
+                        project: MyApplication.Project [
+                            project->root: Root = root
+                        ]
+                        name: MyApplication.Project.Name [
+                            name->project: MyApplication.Project = project
+                        ]
+                    }`)
             }
         ];
 
@@ -407,10 +464,15 @@ describe("feed generator", () => {
 const root = dehydrateReference({ type: 'Root' });
 const user = dehydrateReference({ type: "Jinaga.User", publicKey: "PUBLIC KEY"});
 
-function getFeeds(input: string): Feed[] {
+function getSpecification(input: string) {
     const parser = new SpecificationParser(input);
     parser.skipWhitespace();
     const specification = parser.parseSpecification();
+    return specification;
+}
+
+function getFeeds(input: string): Feed[] {
+    const specification = getSpecification(input);
 
     const feeds = buildFeeds(specification);
     return feeds;

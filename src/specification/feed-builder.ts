@@ -1,6 +1,5 @@
-import { FactReference } from "../storage";
 import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput, withNotExistsCondition, withOutput } from "./feed";
-import { ComponentProjection, Label, Match, PathCondition, Specification } from "./specification";
+import { ComponentProjection, ExistentialCondition, Label, Match, PathCondition, Specification } from "./specification";
 
 type FactByIdentifier = {
     [identifier: string]: FactDescription;
@@ -43,6 +42,9 @@ export function buildFeeds(specification: Specification): Feed[] {
 function addEdges(feed: Feed, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, path: number[], matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
     const feeds: Feed[] = [];
     for (const match of matches) {
+        if (path.length === 0) {
+            feed = withMatch(feed, match);
+        }
         for (const condition of match.conditions) {
             if (condition.type === "path") {
                 ({feed, knownFacts} = addPathCondition(feed, givenFacts, knownFacts, path, match.unknown, condition));
@@ -66,7 +68,8 @@ function addEdges(feed: Feed, givenFacts: InputByIdentifier, knownFacts: FactByI
                     // The path describes which not-exists condition we are currently building on.
                     // Because the path is not empty, labeled facts will be included in the output.
                     const { feed: feedWithNotExist, path: conditionalPath } = withNotExistsCondition(feed, path);
-                    const { feeds: newFeedsWithNotExists } = addEdges(feedWithNotExist, givenFacts, knownFacts, conditionalPath, condition.matches);
+                    const feedWithCondition = specificationWithNotExistsCondition(feedWithNotExist, condition);
+                    const { feeds: newFeedsWithNotExists } = addEdges(feedWithCondition, givenFacts, knownFacts, conditionalPath, condition.matches);
                     const last = newFeedsWithNotExists.length - 1;
                     const feedConditional = newFeedsWithNotExists[last];
 
@@ -87,7 +90,7 @@ function addPathCondition(feed: Feed, givenFacts: InputByIdentifier, knownFacts:
         // If the right-hand side is a given, and not yet a known fact,
         // then add it to the feed.
         if (!knownFacts[condition.labelRight]) {
-            feed = withInput(feed, given.type, given.inputIndex);
+            feed = withInput(feed, condition.labelRight, given.type, given.inputIndex);
             knownFacts = {
                 ...knownFacts,
                 [condition.labelRight]: {
@@ -188,4 +191,41 @@ function addProjections(feed: Feed, givenFacts: InputByIdentifier, knownFacts: F
         }
     });
     return feeds;
+}
+
+function withMatch(feed: Feed, match: Match): Feed {
+    const pathConditions = match.conditions.filter(condition => condition.type === "path");
+    return {
+        ...feed,
+        specification: {
+            ...feed.specification,
+            matches: [...feed.specification.matches, {
+                ...match,
+                conditions: pathConditions
+            }]
+        }
+    };
+}
+
+function specificationWithNotExistsCondition(feedWithNotExist: Feed, condition: ExistentialCondition) {
+    const lastMatch = feedWithNotExist.specification.matches[feedWithNotExist.specification.matches.length - 1];
+    const lastMatchWithExistential = {
+        ...lastMatch,
+        conditions: [
+            ...lastMatch.conditions,
+            condition
+        ]
+    };
+    const replacedLastMatch = [
+        ...feedWithNotExist.specification.matches.slice(0, feedWithNotExist.specification.matches.length - 1),
+        lastMatchWithExistential
+    ];
+    const feedWithCondition: Feed = {
+        ...feedWithNotExist,
+        specification: {
+            ...feedWithNotExist.specification,
+            matches: replacedLastMatch
+        }
+    };
+    return feedWithCondition;
 }
