@@ -244,7 +244,7 @@ export class ObserverImpl<T> implements Observer<T> {
 
 function computeTupleSubsetHash(tuple: ReferencesByName, subset: string[]) {
     const parentTuple = Object.getOwnPropertyNames(tuple)
-        .filter(name => subset.includes(name))
+        .filter(name => subset.some(s => s === name))
         .reduce((t, name) => ({
             ...t,
             [name]: tuple[name]
