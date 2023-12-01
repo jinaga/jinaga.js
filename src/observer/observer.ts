@@ -4,7 +4,7 @@ import { SpecificationListener } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
 import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Projection, Specification } from "../specification/specification";
-import { FactReference, ProjectedResult, ReferencesByName } from "../storage";
+import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
 import { computeStringHash } from "../util/encoding";
 import { Trace } from "../util/trace";
 
@@ -241,16 +241,3 @@ export class ObserverImpl<T> implements Observer<T> {
         }
     }
 }
-
-function computeTupleSubsetHash(tuple: ReferencesByName, subset: string[]) {
-    const parentTuple = Object.getOwnPropertyNames(tuple)
-        .filter(name => subset.some(s => s === name))
-        .reduce((t, name) => ({
-            ...t,
-            [name]: tuple[name]
-        }),
-            {} as ReferencesByName);
-    const parentTupleHash = computeObjectHash(parentTuple);
-    return parentTupleHash;
-}
-

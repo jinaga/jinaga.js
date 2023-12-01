@@ -1,3 +1,4 @@
+import { computeObjectHash } from "./fact/hash";
 import { Query } from './query/query';
 import { Feed } from "./specification/feed";
 import { Specification } from "./specification/specification";
@@ -78,4 +79,16 @@ export function uniqueFactReferences(references: FactReference[]): FactReference
     return references.filter((value, index, array) => {
         return findIndex(array, factReferenceEquals(value)) === index;
     });
+}
+
+export function computeTupleSubsetHash(tuple: ReferencesByName, subset: string[]) {
+    const parentTuple = Object.getOwnPropertyNames(tuple)
+        .filter(name => subset.some(s => s === name))
+        .reduce((t, name) => ({
+            ...t,
+            [name]: tuple[name]
+        }),
+            {} as ReferencesByName);
+    const parentTupleHash = computeObjectHash(parentTuple);
+    return parentTupleHash;
 }
