@@ -49,7 +49,7 @@ export { SpecificationInverse, invertSpecification } from "./specification/inver
 export { FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf, buildModel } from './specification/model';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection, getAllFactTypes, getAllRoles } from './specification/specification';
 export { SpecificationParser } from './specification/specification-parser';
-export { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, ReferencesByName, Storage, computeTupleSubsetHash, factReferenceEquals } from './storage';
+export { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, ReferencesByName, Storage, computeTupleSubsetHash, factReferenceEquals, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
 export { Watch } from "./watch/watch";
 
