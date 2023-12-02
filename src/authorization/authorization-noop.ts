@@ -1,3 +1,4 @@
+import { FactManager } from "../managers/factManager";
 import { Query } from '../query/query';
 import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
@@ -8,6 +9,7 @@ import { Forbidden } from './authorization-engine';
 
 export class AuthorizationNoOp implements Authorization {
     constructor(
+        private factManager: FactManager,
         private store: Storage
     ) { }
 
@@ -16,15 +18,15 @@ export class AuthorizationNoOp implements Authorization {
     }
 
     query(userIdentity: UserIdentity, start: FactReference, query: Query): Promise<any[]> {
-        return this.store.query(start, query);
+        return this.factManager.query(start, query);
     }
 
     read(userIdentity: UserIdentity, start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        return this.store.read(start, specification);
+        return this.factManager.read(start, specification);
     }
 
     load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactRecord[]> {
-        return this.store.load(references);
+        return this.factManager.load(references);
     }
 
     feed(userIdentity: UserIdentity, feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed> {
@@ -32,7 +34,7 @@ export class AuthorizationNoOp implements Authorization {
     }
 
     async save(userIdentity: UserIdentity, facts: FactRecord[]): Promise<FactRecord[]> {
-        const envelopes = await this.store.save(facts.map(fact => ({
+        const envelopes = await this.factManager.save(facts.map(fact => ({
             fact,
             signatures: []
         })));
