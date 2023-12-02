@@ -1,4 +1,5 @@
 import { distinct } from "../util/fn";
+import { describeSpecification } from "./description";
 import { Specification } from "./specification";
 
 export interface FactDescription {
@@ -216,36 +217,5 @@ export function getAllRolesFromFeed(feed: Feed): RoleDescription[] {
 }
 
 export function describeFeed(feed: Feed): string {
-    const inputs = feed.inputs.map(input => describeInput(input, feed)).join(", ");
-    const edges = feed.edges.map(edge => describeEdge(edge, feed, 1)).join("");
-    const conditions = feed.notExistsConditions.map(condition => describeNotExistsCondition(condition, feed, 1)).join("");
-    return `(${inputs}) {\n${edges}${conditions}}\n`;
-}
-
-function describeInput(input: InputDescription, feed: Feed): string {
-    const fact = feed.facts.find(f => f.factIndex === input.factIndex);
-    if (!fact) {
-        throw new Error(`Fact with index ${input.factIndex} not found`);
-    }
-    return `f${fact.factIndex}: ${fact.factType}`;
-}
-
-function describeEdge(edge: EdgeDescription, feed: Feed, depth: number): string {
-    const predecessor = feed.facts.find(f => f.factIndex === edge.predecessorFactIndex);
-    if (!predecessor) {
-        throw new Error(`Fact with index ${edge.predecessorFactIndex} not found`);
-    }
-    const successor = feed.facts.find(f => f.factIndex === edge.successorFactIndex);
-    if (!successor) {
-        throw new Error(`Fact with index ${edge.successorFactIndex} not found`);
-    }
-    const indent = "  ".repeat(depth);
-    return `${indent}f${successor.factIndex}: ${successor.factType}->${edge.roleName} = f${predecessor.factIndex}:${predecessor.factType}\n`;
-}
-
-function describeNotExistsCondition(condition: NotExistsConditionDescription, feed: Feed, depth: number): string {
-    const edges = condition.edges.map(edge => describeEdge(edge, feed, depth + 1)).join("");
-    const conditions = condition.notExistsConditions.map(condition => describeNotExistsCondition(condition, feed, depth + 1)).join("");
-    const indent = "  ".repeat(depth);
-    return `${indent}!E {\n${edges}${conditions}}\n`;
+    return describeSpecification(feed.specification, 0);
 }
