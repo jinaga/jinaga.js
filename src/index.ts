@@ -45,7 +45,7 @@ export { Declaration } from './specification/declaration';
 export { describeDeclaration, describeSpecification } from './specification/description';
 export { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription, OutputDescription, getAllFactTypesFromFeed, getAllRolesFromFeed } from './specification/feed';
 export { buildFeeds } from './specification/feed-builder';
-export { invertSpecification } from "./specification/inverse";
+export { SpecificationInverse, invertSpecification } from "./specification/inverse";
 export { FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf, buildModel } from './specification/model';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection, getAllFactTypes, getAllRoles } from './specification/specification';
 export { SpecificationParser } from './specification/specification-parser';
