@@ -1,6 +1,5 @@
 import { User } from "../model/user";
 import { describeSpecification } from "../specification/description";
-import { Feed } from "../specification/feed";
 import { buildFeeds } from "../specification/feed-builder";
 import { SpecificationOf } from "../specification/model";
 import { Specification } from "../specification/specification";
@@ -8,7 +7,7 @@ import { SpecificationParser } from "../specification/specification-parser";
 
 interface DistributionRule {
   specification: Specification;
-  feeds: Feed[];
+  feeds: Specification[];
   user: Specification | null;
 }
 

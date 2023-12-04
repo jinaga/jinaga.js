@@ -43,10 +43,10 @@ export { SpecificationOf as TemplateSpecificationOf } from "./query/query-parser
 export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from './query/steps';
 export { Declaration } from './specification/declaration';
 export { describeDeclaration, describeSpecification } from './specification/description';
-export { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription, OutputDescription, getAllFactTypesFromFeed, getAllRolesFromFeed } from './specification/feed';
 export { buildFeeds } from './specification/feed-builder';
 export { SpecificationInverse, invertSpecification } from "./specification/inverse";
 export { FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf, buildModel } from './specification/model';
+export { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, emptySkeleton, skeletonOfSpecification } from './specification/skeleton';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection, getAllFactTypes, getAllRoles } from './specification/specification';
 export { SpecificationParser } from './specification/specification-parser';
 export { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, ReferencesByName, Storage, computeTupleSubsetHash, factReferenceEquals, validateGiven } from './storage';

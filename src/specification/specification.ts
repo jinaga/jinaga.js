@@ -74,6 +74,12 @@ export interface Specification {
     projection: Projection;
 }
 
+export const emptySpecification: Specification = {
+    given: [],
+    matches: [],
+    projection: { type: "composite", components: [] }
+};
+
 export function getAllFactTypes(specification: Specification): string[] {
     const factTypes: string[] = [];
     for (const given of specification.given) {

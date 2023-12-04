@@ -1,6 +1,5 @@
 import { computeObjectHash } from "./fact/hash";
 import { Query } from './query/query';
-import { Feed } from "./specification/feed";
 import { Specification } from "./specification/specification";
 import { findIndex } from './util/fn';
 
@@ -54,7 +53,7 @@ export interface Storage {
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     query(start: FactReference, query: Query): Promise<FactPath[]>;
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
-    feed(feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed>;
+    feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;
 

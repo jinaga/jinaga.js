@@ -2,8 +2,8 @@ import { DistributionEngine } from "../distribution/distribution-engine";
 import { computeObjectHash } from "../fact/hash";
 import { FeedResponse } from "../http/messages";
 import { describeDeclaration, describeSpecification } from "../specification/description";
-import { Feed } from "../specification/feed";
 import { buildFeeds } from "../specification/feed-builder";
+import { Skeleton, skeletonOfSpecification } from "../specification/skeleton";
 import { Specification, reduceSpecification } from "../specification/specification";
 import { FactEnvelope, FactReference, Storage, factReferenceEquals } from "../storage";
 import { computeStringHash } from "../util/encoding";
@@ -29,14 +29,24 @@ export class NetworkNoOp implements Network {
     }
 }
 
+interface FeedIdentifier {
+    start: {
+        factReference: FactReference,
+        index: number
+    }[],
+    skeleton: Skeleton
+}
+
+interface FeedObject {
+    start: {
+        factReference: FactReference;
+        index: number;
+    }[];
+    feed: Specification;
+}
+
 type FeedByHash = {
-    [hash: string]: {
-        start: {
-            factReference: FactReference,
-            index: number
-        }[],
-        feed: Feed
-    }
+    [hash: string]: FeedObject
 }
 
 export class NetworkDistribution implements Network {
@@ -54,15 +64,20 @@ export class NetworkDistribution implements Network {
             throw new Error(`Not authorized: ${canDistribute.reason}`);
         }
         const feedsByHash = feeds.reduce((map, feed) => {
-            const indexedStart = feed.inputs.map(input => ({
+            const skeleton = skeletonOfSpecification(feed);
+            const indexedStart = skeleton.inputs.map(input => ({
                 factReference: start[input.inputIndex],
                 index: input.inputIndex
             }));
-            const feedObject = {
+            const feedIdentifier: FeedIdentifier = {
+                start: indexedStart,
+                skeleton
+            };
+            const feedObject: FeedObject = {
                 start: indexedStart,
                 feed
             };
-            const hash = computeObjectHash(feedObject);
+            const hash = computeObjectHash(feedIdentifier);
             return ({
                 ...map,
                 [hash]: feedObject

@@ -1,6 +1,6 @@
 import { describeSpecification } from "../specification/description";
-import { EdgeDescription, FactDescription, Feed, InputDescription, NotExistsConditionDescription, describeFeed } from "../specification/feed";
-import { isPathCondition, specificationIsIdentity } from "../specification/specification";
+import { EdgeDescription, FactDescription, Skeleton, InputDescription, NotExistsConditionDescription, skeletonOfSpecification } from "../specification/skeleton";
+import { Specification, isPathCondition, specificationIsIdentity } from "../specification/specification";
 import { FactReference, Storage, factReferenceEquals } from "../storage";
 import { DistributionRules } from "./distribution-rules";
 
@@ -21,7 +21,7 @@ export class DistributionEngine {
     private store: Storage
   ) { }
 
-  async canDistributeToAll(targetFeeds: Feed[], start: FactReference[], user: FactReference | null): Promise<DistributionResult> {
+  async canDistributeToAll(targetFeeds: Specification[], start: FactReference[], user: FactReference | null): Promise<DistributionResult> {
     // TODO: Minimize the number hits to the database.
     const reasons: string[] = [];
     for (const targetFeed of targetFeeds) {
@@ -43,13 +43,15 @@ export class DistributionEngine {
     }
   }
 
-  private async canDistributeTo(targetFeed: Feed, start: FactReference[], user: FactReference | null): Promise<DistributionResult> {
+  private async canDistributeTo(targetFeed: Specification, start: FactReference[], user: FactReference | null): Promise<DistributionResult> {
+    const targetSkeleton = skeletonOfSpecification(targetFeed);
     const reasons: string[] = [];
     for (const rule of this.distributionRules.rules) {
       for (const ruleFeed of rule.feeds) {
-        const permutations = permutationsOf(start, ruleFeed, targetFeed);
+        const ruleSkeleton = skeletonOfSpecification(ruleFeed);
+        const permutations = permutationsOf(start, ruleSkeleton, targetSkeleton);
         for (const permutation of permutations) {
-          if (feedsEqual(ruleFeed, targetFeed)) {
+          if (skeletonsEqual(ruleSkeleton, targetSkeleton)) {
             // If this rule applies to any user, then we can distribute.
             if (rule.user === null) {
               return {
@@ -131,14 +133,14 @@ export class DistributionEngine {
     }
     return {
       type: 'failure',
-      reason: `Cannot distribute to ${describeFeed(targetFeed)}${reasons.join('\n')}`
+      reason: `Cannot distribute to ${describeSpecification(targetFeed, 0)}${reasons.join('\n')}`
     };
   }
 }
 
-function feedsEqual(ruleFeed: Feed, targetFeed: Feed): boolean {
+function skeletonsEqual(ruleSkeleton: Skeleton, targetSkeleton: Skeleton): boolean {
   // Compare the sets of facts.
-  if (!compareSets(ruleFeed.facts, targetFeed.facts, factsEqual)) {
+  if (!compareSets(ruleSkeleton.facts, targetSkeleton.facts, factsEqual)) {
     return false;
   }
 
@@ -146,12 +148,12 @@ function feedsEqual(ruleFeed: Feed, targetFeed: Feed): boolean {
   // The matching permutation has already been calculated.
 
   // Compare the sets of edges.
-  if (!compareSets(ruleFeed.edges, targetFeed.edges, edgesEqual)) {
+  if (!compareSets(ruleSkeleton.edges, targetSkeleton.edges, edgesEqual)) {
     return false;
   }
 
   // Compare the sets of not-exists conditions.
-  if (!compareSets(ruleFeed.notExistsConditions, targetFeed.notExistsConditions, notExistsConditionsEqual)) {
+  if (!compareSets(ruleSkeleton.notExistsConditions, targetSkeleton.notExistsConditions, notExistsConditionsEqual)) {
     return false;
   }
 
@@ -208,7 +210,7 @@ function compareSets<T>(a: T[], b: T[], equals: (a: T, b: T) => boolean): boolea
   return true;
 }
 
-function permutationsOf(start: FactReference[], ruleFeed: Feed, targetFeed: Feed): FactReference[][] {
+function permutationsOf(start: FactReference[], ruleSkeleton: Skeleton, targetSkeleton: Skeleton): FactReference[][] {
   function permute(
     ruleInputs: InputDescription[],
     targetInputs: InputDescription[]
@@ -220,13 +222,13 @@ function permutationsOf(start: FactReference[], ruleFeed: Feed, targetFeed: Feed
     }
 
     const [ ruleInput, ...remainingRuleInputs ] = ruleInputs;
-    const ruleFact = ruleFeed.facts.find(f => f.factIndex === ruleInput.factIndex);
+    const ruleFact = ruleSkeleton.facts.find(f => f.factIndex === ruleInput.factIndex);
     if (!ruleFact) {
       throw new Error(`Rule fact index ${ruleInput.factIndex} was not found.`);
     }
     // Find all of the target inputs that match the first rule input.
     return targetInputs.flatMap((targetInput, targetIndex) => {
-      const targetFact = targetFeed.facts.find(f => f.factIndex === targetInput.factIndex);
+      const targetFact = targetSkeleton.facts.find(f => f.factIndex === targetInput.factIndex);
       if (!targetFact) {
         throw new Error(`Target fact index ${targetInput.factIndex} was not found.`);
       }
@@ -247,6 +249,6 @@ function permutationsOf(start: FactReference[], ruleFeed: Feed, targetFeed: Feed
     });
   }
 
-  const permutations = permute(ruleFeed.inputs, targetFeed.inputs);
+  const permutations = permute(ruleSkeleton.inputs, targetSkeleton.inputs);
   return permutations;
 }

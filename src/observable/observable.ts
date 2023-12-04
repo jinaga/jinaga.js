@@ -1,9 +1,8 @@
 import { Inverse, invertQuery } from '../query/inverter';
 import { Query } from '../query/query';
 import { describeSpecification } from '../specification/description';
-import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
+import { FactEnvelope, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
 import { computeStringHash } from '../util/encoding';
 import { mapAsync } from '../util/fn';
 
