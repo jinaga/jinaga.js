@@ -1,5 +1,5 @@
+import { Specification, describeSpecification } from "../../src";
 import { dehydrateReference } from "../../src/fact/hydrate";
-import { Feed } from "../../src/specification/feed";
 import { buildFeeds } from "../../src/specification/feed-builder";
 import { SpecificationParser } from "../../src/specification/specification-parser";
 
@@ -12,46 +12,12 @@ describe("feed generator", () => {
                 ]
             }`);
 
-        const expectedFeeds: Feed[] = [
-            {
-                facts: [
-                    {
-                        factIndex: 1,
-                        factType: "Root"
-                    },
-                    {
-                        factIndex: 2,
-                        factType: "Child"
-                    }
-                ],
-                inputs: [
-                    {
-                        factIndex: 1,
-                        inputIndex: 0
-                    }
-                ],
-                edges: [
-                    {
-                        edgeIndex: 1,
-                        predecessorFactIndex: 1,
-                        successorFactIndex: 2,
-                        roleName: "root"
-                    }
-                ],
-                notExistsConditions: [],
-                outputs: [
-                    {
-                        factIndex: 2
-                    }
-                ],
-
-                specification: getSpecification(`
-                    (root: Root) {
-                        child: Child [
-                            child->root:Root = root
-                        ]
-                    }`)
-            }
+        const expectedFeeds: string[] = [
+            `(root: Root) {
+                child: Child [
+                    child->root: Root = root
+                ]
+            }`
         ];
 
         expect(feeds).toEqual(expectedFeeds);
@@ -67,72 +33,13 @@ describe("feed generator", () => {
             }
         `);
 
-        const expectedFeeds: Feed[] = [
-            {
-                facts: [
-                    {
-                        factIndex: 1,
-                        factType: "Jinaga.User"
-                    },
-                    {
-                        factIndex: 2,
-                        factType: "MyApp.Assignment"
-                    },
-                    {
-                        factIndex: 3,
-                        factType: "Root"
-                    },
-                    {
-                        factIndex: 4,
-                        factType: "MyApp.Project"
-                    }
-                ],
-                inputs: [
-                    {
-                        factIndex: 1,
-                        inputIndex: 0
-                    },
-                    {
-                        factIndex: 3,
-                        inputIndex: 1
-                    }
-                ],
-                edges: [
-                    {
-                        edgeIndex: 1,
-                        predecessorFactIndex: 1,
-                        successorFactIndex: 2,
-                        roleName: "user"
-                    },
-                    {
-                        edgeIndex: 2,
-                        predecessorFactIndex: 3,
-                        successorFactIndex: 4,
-                        roleName: "root"
-                    },
-                    {
-                        edgeIndex: 3,
-                        predecessorFactIndex: 4,
-                        successorFactIndex: 2,
-                        roleName: "project"
-                    }
-                ],
-                notExistsConditions: [],
-                outputs: [
-                    {
-                        factIndex: 2
-                    }
-                ],
-
-                specification: getSpecification(`
-                    (user: Jinaga.User, root: Root) {
-                        assignment: MyApp.Assignment [
-                            assignment->user:Jinaga.User = user
-                            assignment->project:MyApp.Project->root:Root = root
-                        ]
-                    }
-                `)
-            }
+        const expectedFeeds: string[] = [
+            `(user: Jinaga.User, root: Root) {
+                assignment: MyApp.Assignment [
+                    assignment->user: Jinaga.User = user
+                    assignment->project: MyApp.Project->root:Root = root
+                ]
+            }`
         ];
 
         expect(feeds).toEqual(expectedFeeds);
@@ -143,7 +50,7 @@ describe("feed generator", () => {
             (user: Jinaga.User, root: Root) {
                 assignment: MyApp.Assignment [
                     assignment->user:Jinaga.User = user
-                    assignment->project:MyApp.Project->root:Root = root
+                    assignment->project:MyApp.Project->root: Root = root
                     !E {
                         revoked: MyApp.Assignment.Revoked [
                             revoked->assignment:MyApp.Assignment = assignment
@@ -152,172 +59,27 @@ describe("feed generator", () => {
                 ]
             }`);
 
-        const expectedFeeds: Feed[] = [
-            {
-                facts: [
-                    {
-                        factIndex: 1,
-                        factType: "Jinaga.User"
-                    },
-                    {
-                        factIndex: 2,
-                        factType: "MyApp.Assignment"
-                    },
-                    {
-                        factIndex: 3,
-                        factType: "Root"
-                    },
-                    {
-                        factIndex: 4,
-                        factType: "MyApp.Project"
-                    },
-                    {
-                        factIndex: 5,
-                        factType: "MyApp.Assignment.Revoked"
-                    }
-                ],
-                inputs: [
-                    {
-                        factIndex: 1,
-                        inputIndex: 0
-                    },
-                    {
-                        factIndex: 3,
-                        inputIndex: 1
-                    }
-                ],
-                edges: [
-                    {
-                        edgeIndex: 1,
-                        predecessorFactIndex: 1,
-                        successorFactIndex: 2,
-                        roleName: "user"
-                    },
-                    {
-                        edgeIndex: 2,
-                        predecessorFactIndex: 3,
-                        successorFactIndex: 4,
-                        roleName: "root"
-                    },
-                    {
-                        edgeIndex: 3,
-                        predecessorFactIndex: 4,
-                        successorFactIndex: 2,
-                        roleName: "project"
-                    },
-                    {
-                        edgeIndex: 4,
-                        predecessorFactIndex: 2,
-                        successorFactIndex: 5,
-                        roleName: "assignment"
-                    }
-                ],
-                notExistsConditions: [],
-                outputs: [
-                    {
-                        factIndex: 2
-                    },
-                    {
-                        factIndex: 5
-                    }
-                ],
-
-                specification: getSpecification(`
-                    (user: Jinaga.User, root: Root) {
-                        assignment: MyApp.Assignment [
-                            assignment->user:Jinaga.User = user
-                            assignment->project:MyApp.Project->root:Root = root
-                        ]
+        const expectedFeeds: string[] = [
+            `(user: Jinaga.User, root: Root) {
+                assignment: MyApp.Assignment [
+                    assignment->user: Jinaga.User = user
+                    assignment->project: MyApp.Project->root: Root = root
+                ]
+                revoked: MyApp.Assignment.Revoked [
+                    revoked->assignment: MyApp.Assignment = assignment
+                ]
+            }`,
+            `(user: Jinaga.User, root: Root) {
+                assignment: MyApp.Assignment [
+                    assignment->user: Jinaga.User = user
+                    assignment->project: MyApp.Project->root: Root = root
+                    !E {
                         revoked: MyApp.Assignment.Revoked [
-                            revoked->assignment:MyApp.Assignment = assignment
+                            revoked->assignment: MyApp.Assignment = assignment
                         ]
-                    }`)
-            },
-            {
-                facts: [
-                    {
-                        factIndex: 1,
-                        factType: "Jinaga.User"
-                    },
-                    {
-                        factIndex: 2,
-                        factType: "MyApp.Assignment"
-                    },
-                    {
-                        factIndex: 3,
-                        factType: "Root"
-                    },
-                    {
-                        factIndex: 4,
-                        factType: "MyApp.Project"
-                    },
-                    {
-                        factIndex: 5,
-                        factType: "MyApp.Assignment.Revoked"
                     }
-                ],
-                inputs: [
-                    {
-                        factIndex: 1,
-                        inputIndex: 0
-                    },
-                    {
-                        factIndex: 3,
-                        inputIndex: 1
-                    }
-                ],
-                edges: [
-                    {
-                        edgeIndex: 1,
-                        predecessorFactIndex: 1,
-                        successorFactIndex: 2,
-                        roleName: "user"
-                    },
-                    {
-                        edgeIndex: 2,
-                        predecessorFactIndex: 3,
-                        successorFactIndex: 4,
-                        roleName: "root"
-                    },
-                    {
-                        edgeIndex: 3,
-                        predecessorFactIndex: 4,
-                        successorFactIndex: 2,
-                        roleName: "project"
-                    }
-                ],
-                notExistsConditions: [
-                    {
-                        edges: [
-                            {
-                                edgeIndex: 4,
-                                predecessorFactIndex: 2,
-                                successorFactIndex: 5,
-                                roleName: "assignment"
-                            }
-                        ],
-                        notExistsConditions: []
-                    }
-                ],
-                outputs: [
-                    {
-                        factIndex: 2
-                    }
-                ],
-
-                specification: getSpecification(`
-                    (user: Jinaga.User, root: Root) {
-                        assignment: MyApp.Assignment [
-                            assignment->user:Jinaga.User = user
-                            assignment->project:MyApp.Project->root:Root = root
-                            !E {
-                                revoked: MyApp.Assignment.Revoked [
-                                    revoked->assignment:MyApp.Assignment = assignment
-                                ]
-                            }
-                        ]
-                    }`)
-            }
+                ]
+            }`
         ];
 
         expect(feeds).toEqual(expectedFeeds);
@@ -342,8 +104,35 @@ describe("feed generator", () => {
                     }
                 }
             }`);
-        expect(feeds.length).toBe(3);
-        expect(feeds[2].outputs.length).toBe(3);
+
+        const expectedFeeds: string[] = [
+            `(root: Root) {
+                parent: Parent [
+                    parent->root: Root = root
+                ]
+            }`,
+            `(root: Root) {
+                parent: Parent [
+                    parent->root: Root = root
+                ]
+                child: Child [
+                    child->parent: Parent = parent
+                ]
+            }`,
+            `(root: Root) {
+                parent: Parent [
+                    parent->root: Root = root
+                ]
+                child: Child [
+                    child->parent: Parent = parent
+                ]
+                grandchild: Grandchild [
+                    grandchild->child: Child = child
+                ]
+            }`
+        ];
+
+        expect(feeds).toEqual(expectedFeeds);
     });
 
     it("should accept a projection", () => {
@@ -360,109 +149,25 @@ describe("feed generator", () => {
                 }
             }`);
 
-        const expectedFeeds: Feed[] = [
-            {
-                facts: [
-                    {
-                        factIndex: 1,
-                        factType: "Root"
-                    },
-                    {
-                        factIndex: 2,
-                        factType: "MyApplication.Project"
-                    }
-                ],
-                inputs: [
-                    {
-                        factIndex: 1,
-                        inputIndex: 0
-                    }
-                ],
-                edges: [
-                    {
-                        edgeIndex: 1,
-                        predecessorFactIndex: 1,
-                        successorFactIndex: 2,
-                        roleName: "root"
-                    }
-                ],
-                notExistsConditions: [],
-                outputs: [
-                    {
-                        factIndex: 2
-                    }
-                ],
-
-                specification: getSpecification(`
-                    (root: Root) {
-                        project: MyApplication.Project [
-                            project->root: Root = root
-                        ]
-                    }`)
-            },
-            {
-                facts: [
-                    {
-                        factIndex: 1,
-                        factType: "Root"
-                    },
-                    {
-                        factIndex: 2,
-                        factType: "MyApplication.Project"
-                    },
-                    {
-                        factIndex: 3,
-                        factType: "MyApplication.Project.Name"
-                    }
-                ],
-                inputs: [
-                    {
-                        factIndex: 1,
-                        inputIndex: 0
-                    }
-                ],
-                edges: [
-                    {
-                        edgeIndex: 1,
-                        predecessorFactIndex: 1,
-                        successorFactIndex: 2,
-                        roleName: "root"
-                    },
-                    {
-                        edgeIndex: 2,
-                        predecessorFactIndex: 2,
-                        successorFactIndex: 3,
-                        roleName: "project"
-                    }
-                ],
-                notExistsConditions: [],
-                outputs: [
-                    {
-                        factIndex: 2
-                    },
-                    {
-                        factIndex: 3
-                    }
-                ],
-
-                specification: getSpecification(`
-                    (root: Root) {
-                        project: MyApplication.Project [
-                            project->root: Root = root
-                        ]
-                        name: MyApplication.Project.Name [
-                            name->project: MyApplication.Project = project
-                        ]
-                    }`)
-            }
+        const expectedFeeds: string[] = [
+            `(root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                ]
+            }`,
+            `(root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                ]
+                name: MyApplication.Project.Name [
+                    name->project: MyApplication.Project = project
+                ]
+            }`
         ];
 
         expect(feeds).toEqual(expectedFeeds);
     });
 });
-
-const root = dehydrateReference({ type: 'Root' });
-const user = dehydrateReference({ type: "Jinaga.User", publicKey: "PUBLIC KEY"});
 
 function getSpecification(input: string) {
     const parser = new SpecificationParser(input);
@@ -471,9 +176,10 @@ function getSpecification(input: string) {
     return specification;
 }
 
-function getFeeds(input: string): Feed[] {
+function getFeeds(input: string): string[] {
     const specification = getSpecification(input);
 
     const feeds = buildFeeds(specification);
-    return feeds;
+    const descriptions = feeds.map(feed => describeSpecification(feed, 3).trim());
+    return descriptions;
 }
