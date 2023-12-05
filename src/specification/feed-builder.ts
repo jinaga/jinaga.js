@@ -15,7 +15,7 @@ type InputByIdentifier = {
     };
 };
 
-function withInput(specification: Specification, factName: string, factType: string, inputIndex: number): Specification {
+function withGiven(specification: Specification, factName: string, factType: string): Specification {
     return {
         ...specification,
         given: [...specification.given, { name: factName, type: factType }]
@@ -54,7 +54,10 @@ function addEdges(specification: Specification, givenFacts: InputByIdentifier, k
             specification = withMatch(specification, match);
         }
         for (const condition of match.conditions) {
-            if (condition.type === "existential") {
+            if (condition.type === "path") {
+                ({specification, knownFacts} = addPathCondition(specification, givenFacts, knownFacts, path, match.unknown, condition));
+            }
+            else if (condition.type === "existential") {
                 if (condition.exists) {
                     // Include the edges of the existential condition into the current feed.
                     const { specifications: newSpecifications } = addEdges(specification, givenFacts, knownFacts, path, condition.matches);
@@ -85,6 +88,24 @@ function addEdges(specification: Specification, givenFacts: InputByIdentifier, k
     }
     specifications.push(specification);
     return { specifications: specifications, knownFacts };
+}
+
+function addPathCondition(specification: Specification, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, path: number[], unknown: Label, condition: PathCondition): { specification: Specification; knownFacts: FactByIdentifier; } {
+    const given = givenFacts[condition.labelRight];
+    if (given) {
+        // If the right-hand side is a given, and not yet a known fact,
+        // then add it to the feed.
+        if (!knownFacts[condition.labelRight]) {
+            specification = withGiven(specification, condition.labelRight, given.type);
+            knownFacts = {
+                ...knownFacts,
+                [condition.labelRight]: {
+                    factType: given.type
+                }
+            };
+        }
+    }
+    return { specification, knownFacts };
 }
 
 function addProjections(specification: Specification, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, components: ComponentProjection[]): Specification[] {
