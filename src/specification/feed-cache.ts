@@ -11,7 +11,7 @@ interface FeedIdentifier {
     skeleton: Skeleton;
 }
 
-interface FeedObject {
+export interface FeedObject {
     namedStart: ReferencesByName;
     feed: Specification;
 }

@@ -44,7 +44,7 @@ export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, S
 export { Declaration } from './specification/declaration';
 export { describeDeclaration, describeSpecification } from './specification/description';
 export { buildFeeds } from './specification/feed-builder';
-export { FeedCache } from "./specification/feed-cache";
+export { FeedCache, FeedObject } from "./specification/feed-cache";
 export { SpecificationInverse, invertSpecification } from "./specification/inverse";
 export { FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf, buildModel } from './specification/model';
 export { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, emptySkeleton, skeletonOfSpecification } from './specification/skeleton';
