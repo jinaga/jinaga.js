@@ -1,3 +1,4 @@
+import { FactReferenceByName } from "../distribution/distribution-engine";
 import { FactManager } from "../managers/factManager";
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
@@ -40,7 +41,7 @@ export class AuthorizationNoOp implements Authorization {
         return envelopes.map(envelope => envelope.fact);
     }
 
-    verifyDistribution(userIdentity: UserIdentity, feeds: Specification[], start: FactReference[]): Promise<void> {
+    verifyDistribution(userIdentity: UserIdentity, feeds: Specification[], namedStart: FactReferenceByName): Promise<void> {
         return Promise.resolve();
     }
 }
