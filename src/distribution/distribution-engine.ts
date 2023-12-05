@@ -15,17 +15,19 @@ export interface DistributionFailure {
 
 export type DistributionResult = DistributionSuccess | DistributionFailure;
 
+export type FactReferenceByName = { [name: string]: FactReference };
+
 export class DistributionEngine {
   constructor(
     private distributionRules: DistributionRules,
     private store: Storage
   ) { }
 
-  async canDistributeToAll(targetFeeds: Specification[], start: FactReference[], user: FactReference | null): Promise<DistributionResult> {
+  async canDistributeToAll(targetFeeds: Specification[], namedStart: FactReferenceByName, user: FactReference | null): Promise<DistributionResult> {
     // TODO: Minimize the number hits to the database.
     const reasons: string[] = [];
     for (const targetFeed of targetFeeds) {
-      const feedResult = await this.canDistributeTo(targetFeed, start, user);
+      const feedResult = await this.canDistributeTo(targetFeed, namedStart, user);
       if (feedResult.type === 'failure') {
         reasons.push(feedResult.reason);
       }
@@ -43,7 +45,8 @@ export class DistributionEngine {
     }
   }
 
-  private async canDistributeTo(targetFeed: Specification, start: FactReference[], user: FactReference | null): Promise<DistributionResult> {
+  private async canDistributeTo(targetFeed: Specification, namedStart: FactReferenceByName, user: FactReference | null): Promise<DistributionResult> {
+    const start = targetFeed.given.map(g => namedStart[g.name]);
     const targetSkeleton = skeletonOfSpecification(targetFeed);
     const reasons: string[] = [];
     for (const rule of this.distributionRules.rules) {

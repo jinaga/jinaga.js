@@ -1,4 +1,4 @@
-import { DistributionEngine } from "../distribution/distribution-engine";
+import { DistributionEngine, FactReferenceByName } from "../distribution/distribution-engine";
 import { computeObjectHash } from "../fact/hash";
 import { FeedResponse } from "../http/messages";
 import { describeDeclaration, describeSpecification } from "../specification/description";
@@ -38,10 +38,7 @@ interface FeedIdentifier {
 }
 
 interface FeedObject {
-    start: {
-        factReference: FactReference;
-        index: number;
-    }[];
+    namedStart: FactReferenceByName;
     feed: Specification;
 }
 
@@ -59,7 +56,11 @@ export class NetworkDistribution implements Network {
 
     async feeds(start: FactReference[], specification: Specification): Promise<string[]> {
         const feeds = buildFeeds(specification);
-        const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, start, this.user);
+        const namedStart = specification.given.reduce((map, label, index) => ({
+            ...map,
+            [label.name]: start[index]
+        }), {} as FactReferenceByName);
+        const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
         if (canDistribute.type === 'failure') {
             throw new Error(`Not authorized: ${canDistribute.reason}`);
         }
@@ -74,7 +75,7 @@ export class NetworkDistribution implements Network {
                 skeleton
             };
             const feedObject: FeedObject = {
-                start: indexedStart,
+                namedStart,
                 feed
             };
             const hash = computeObjectHash(feedIdentifier);
@@ -96,11 +97,7 @@ export class NetworkDistribution implements Network {
         if (!feedObject) {
             throw new Error(`Feed ${feed} not found`);
         }
-        const start = feedObject.start.reduce((start, input) => {
-            start[input.index] = input.factReference;
-            return start;
-        }, [] as FactReference[]);
-        const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], start, this.user);
+        const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user);
 
         if (canDistribute.type === 'failure') {
             throw new Error(`Not authorized: ${canDistribute.reason}`);
