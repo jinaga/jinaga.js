@@ -38,7 +38,7 @@ export class FeedCache {
                 namedStart,
                 feed
             };
-            const hash = computeObjectHash(feedIdentifier);
+            const hash = urlSafe(computeObjectHash(feedIdentifier));
             return ({
                 ...map,
                 [hash]: feedObject
@@ -55,4 +55,8 @@ export class FeedCache {
     getFeed(feed: string): FeedObject | undefined {
         return this.feedByHash[feed];
     }
+}
+
+function urlSafe(hash: string): string {
+    return hash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
