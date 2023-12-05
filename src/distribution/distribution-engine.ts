@@ -1,7 +1,7 @@
 import { describeSpecification } from "../specification/description";
-import { EdgeDescription, FactDescription, Skeleton, InputDescription, NotExistsConditionDescription, skeletonOfSpecification } from "../specification/skeleton";
+import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
 import { Specification, isPathCondition, specificationIsIdentity } from "../specification/specification";
-import { FactReference, Storage, factReferenceEquals } from "../storage";
+import { FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { DistributionRules } from "./distribution-rules";
 
 export interface DistributionSuccess {
@@ -15,15 +15,13 @@ export interface DistributionFailure {
 
 export type DistributionResult = DistributionSuccess | DistributionFailure;
 
-export type FactReferenceByName = { [name: string]: FactReference };
-
 export class DistributionEngine {
   constructor(
     private distributionRules: DistributionRules,
     private store: Storage
   ) { }
 
-  async canDistributeToAll(targetFeeds: Specification[], namedStart: FactReferenceByName, user: FactReference | null): Promise<DistributionResult> {
+  async canDistributeToAll(targetFeeds: Specification[], namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
     // TODO: Minimize the number hits to the database.
     const reasons: string[] = [];
     for (const targetFeed of targetFeeds) {
@@ -45,7 +43,7 @@ export class DistributionEngine {
     }
   }
 
-  private async canDistributeTo(targetFeed: Specification, namedStart: FactReferenceByName, user: FactReference | null): Promise<DistributionResult> {
+  private async canDistributeTo(targetFeed: Specification, namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
     const start = targetFeed.given.map(g => namedStart[g.name]);
     const targetSkeleton = skeletonOfSpecification(targetFeed);
     const reasons: string[] = [];

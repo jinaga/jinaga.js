@@ -4,7 +4,7 @@ export { Authorization } from './authorization/authorization';
 export { AuthorizationEngine, Forbidden } from './authorization/authorization-engine';
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
 export { AuthorizationRules, describeAuthorizationRules } from "./authorization/authorizationRules";
-export { DistributionEngine, FactReferenceByName } from './distribution/distribution-engine';
+export { DistributionEngine } from './distribution/distribution-engine';
 export { DistributionRules, describeDistributionRules } from './distribution/distribution-rules';
 export { canonicalPredecessors, canonicalizeFact, computeHash, computeObjectHash } from './fact/hash';
 export { dehydrateFact, dehydrateReference, hydrate, hydrateFromTree } from "./fact/hydrate";
@@ -44,6 +44,7 @@ export { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, S
 export { Declaration } from './specification/declaration';
 export { describeDeclaration, describeSpecification } from './specification/description';
 export { buildFeeds } from './specification/feed-builder';
+export { FeedCache } from "./specification/feed-cache";
 export { SpecificationInverse, invertSpecification } from "./specification/inverse";
 export { FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf, buildModel } from './specification/model';
 export { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, emptySkeleton, skeletonOfSpecification } from './specification/skeleton';

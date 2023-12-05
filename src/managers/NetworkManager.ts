@@ -1,11 +1,10 @@
-import { DistributionEngine, FactReferenceByName } from "../distribution/distribution-engine";
-import { computeObjectHash } from "../fact/hash";
+import { DistributionEngine } from "../distribution/distribution-engine";
 import { FeedResponse } from "../http/messages";
 import { describeDeclaration, describeSpecification } from "../specification/description";
 import { buildFeeds } from "../specification/feed-builder";
-import { Skeleton, skeletonOfSpecification } from "../specification/skeleton";
+import { FeedCache } from "../specification/feed-cache";
 import { Specification, reduceSpecification } from "../specification/specification";
-import { FactEnvelope, FactReference, Storage, factReferenceEquals } from "../storage";
+import { FactEnvelope, FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { computeStringHash } from "../util/encoding";
 
 export interface Network {
@@ -29,25 +28,8 @@ export class NetworkNoOp implements Network {
     }
 }
 
-interface FeedIdentifier {
-    start: {
-        factReference: FactReference,
-        index: number
-    }[],
-    skeleton: Skeleton
-}
-
-interface FeedObject {
-    namedStart: FactReferenceByName;
-    feed: Specification;
-}
-
-type FeedByHash = {
-    [hash: string]: FeedObject
-}
-
 export class NetworkDistribution implements Network {
-    private feedCache: FeedByHash = {};
+    private feedCache = new FeedCache();
 
     constructor(
         private readonly distributionEngine: DistributionEngine,
@@ -59,41 +41,16 @@ export class NetworkDistribution implements Network {
         const namedStart = specification.given.reduce((map, label, index) => ({
             ...map,
             [label.name]: start[index]
-        }), {} as FactReferenceByName);
+        }), {} as ReferencesByName);
         const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
         if (canDistribute.type === 'failure') {
             throw new Error(`Not authorized: ${canDistribute.reason}`);
         }
-        const feedsByHash = feeds.reduce((map, feed) => {
-            const skeleton = skeletonOfSpecification(feed);
-            const indexedStart = skeleton.inputs.map(input => ({
-                factReference: start[input.inputIndex],
-                index: input.inputIndex
-            }));
-            const feedIdentifier: FeedIdentifier = {
-                start: indexedStart,
-                skeleton
-            };
-            const feedObject: FeedObject = {
-                namedStart,
-                feed
-            };
-            const hash = computeObjectHash(feedIdentifier);
-            return ({
-                ...map,
-                [hash]: feedObject
-            });
-        }, {} as FeedByHash);
-        const feedHashes = Object.keys(feedsByHash);
-        this.feedCache = {
-            ...this.feedCache,
-            ...feedsByHash
-        };
-        return feedHashes;
+        return this.feedCache.addFeeds(feeds, namedStart);
     }
 
     async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
-        const feedObject = this.feedCache[feed];
+        const feedObject = this.feedCache.getFeed(feed);
         if (!feedObject) {
             throw new Error(`Feed ${feed} not found`);
         }

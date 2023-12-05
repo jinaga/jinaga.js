@@ -1,8 +1,7 @@
-import { FactReferenceByName } from "../distribution/distribution-engine";
 import { FactManager } from "../managers/factManager";
 import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
-import { FactFeed, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
+import { FactFeed, FactRecord, FactReference, ProjectedResult, ReferencesByName, Storage } from "../storage";
 import { UserIdentity } from "../user-identity";
 import { Authorization } from './authorization';
 import { Forbidden } from './authorization-engine';
@@ -41,7 +40,7 @@ export class AuthorizationNoOp implements Authorization {
         return envelopes.map(envelope => envelope.fact);
     }
 
-    verifyDistribution(userIdentity: UserIdentity, feeds: Specification[], namedStart: FactReferenceByName): Promise<void> {
+    verifyDistribution(userIdentity: UserIdentity, feeds: Specification[], namedStart: ReferencesByName): Promise<void> {
         return Promise.resolve();
     }
 }
