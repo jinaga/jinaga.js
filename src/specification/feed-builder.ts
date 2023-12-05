@@ -33,7 +33,7 @@ export function buildFeeds(specification: Specification): Specification[] {
 
     // The feed builder will branch at various points, and
     // build on the current specification along each branch.
-    const { specifications: feeds, knownFacts } = addEdges(emptySpecification, givenFacts, {}, [], specification.matches);
+    const { specifications: feeds, knownFacts } = addEdges(emptySpecification, givenFacts, {}, specification.matches);
 
     // The final feed represents the complete tuple.
     // Build projections onto that one.
@@ -47,20 +47,18 @@ export function buildFeeds(specification: Specification): Specification[] {
     }
 }
 
-function addEdges(specification: Specification, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, path: number[], matches: Match[]): { specifications: Specification[]; knownFacts: FactByIdentifier; } {
+function addEdges(specification: Specification, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, matches: Match[]): { specifications: Specification[]; knownFacts: FactByIdentifier; } {
     const specifications: Specification[] = [];
     for (const match of matches) {
-        if (path.length === 0) {
-            specification = withMatch(specification, match);
-        }
+        specification = withMatch(specification, match);
         for (const condition of match.conditions) {
             if (condition.type === "path") {
-                ({specification, knownFacts} = addPathCondition(specification, givenFacts, knownFacts, path, match.unknown, condition));
+                ({specification, knownFacts} = addPathCondition(specification, givenFacts, knownFacts, match.unknown, condition));
             }
             else if (condition.type === "existential") {
                 if (condition.exists) {
                     // Include the edges of the existential condition into the current feed.
-                    const { specifications: newSpecifications } = addEdges(specification, givenFacts, knownFacts, path, condition.matches);
+                    const { specifications: newSpecifications } = addEdges(specification, givenFacts, knownFacts, condition.matches);
                     const last = newSpecifications.length - 1;
                     specifications.push(...newSpecifications.slice(0, last));
                     specification = newSpecifications[last];
@@ -69,13 +67,11 @@ function addEdges(specification: Specification, givenFacts: InputByIdentifier, k
                     // Branch from the current feed and follow the
                     // edges of the existential condition.
                     // This will produce tuples that prove the condition false.
-                    const { specifications: newSpecifications } = addEdges(specification, givenFacts, knownFacts, path, condition.matches);
+                    const { specifications: newSpecifications } = addEdges(specification, givenFacts, knownFacts, condition.matches);
                     
-                    // Then apply the where clause and continue with the tuple where it is true.
-                    // The path describes which not-exists condition we are currently building on.
-                    // Because the path is not empty, labeled facts will be included in the output.
+                    // Then apply the existential condition and continue with the tuple where it is true.
                     const specificationWithCondition = specificationWithNotExistsCondition(specification, condition);
-                    const { specifications: newSpecificationsWithNotExists } = addEdges(specificationWithCondition, givenFacts, knownFacts, path, condition.matches);
+                    const { specifications: newSpecificationsWithNotExists } = addEdges(specificationWithCondition, givenFacts, knownFacts, condition.matches);
                     const last = newSpecificationsWithNotExists.length - 1;
                     const specificationConditional = newSpecificationsWithNotExists[last];
 
@@ -90,7 +86,7 @@ function addEdges(specification: Specification, givenFacts: InputByIdentifier, k
     return { specifications: specifications, knownFacts };
 }
 
-function addPathCondition(specification: Specification, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, path: number[], unknown: Label, condition: PathCondition): { specification: Specification; knownFacts: FactByIdentifier; } {
+function addPathCondition(specification: Specification, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, unknown: Label, condition: PathCondition): { specification: Specification; knownFacts: FactByIdentifier; } {
     const given = givenFacts[condition.labelRight];
     if (given) {
         // If the right-hand side is a given, and not yet a known fact,
@@ -113,7 +109,7 @@ function addProjections(specification: Specification, givenFacts: InputByIdentif
     components.forEach(component => {
         if (component.type === "specification") {
             // Produce more facts in the tuple.
-            const { specifications: feedsWithEdges, knownFacts: knownFactsWithEdges } = addEdges(specification, givenFacts, knownFacts, [], component.matches);
+            const { specifications: feedsWithEdges, knownFacts: knownFactsWithEdges } = addEdges(specification, givenFacts, knownFacts, component.matches);
             specifications.push(...feedsWithEdges);
 
             // Recursively build child projections.
