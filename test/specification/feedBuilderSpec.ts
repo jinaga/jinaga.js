@@ -37,7 +37,7 @@ describe("feed generator", () => {
             `(user: Jinaga.User, root: Root) {
                 assignment: MyApp.Assignment [
                     assignment->user: Jinaga.User = user
-                    assignment->project: MyApp.Project->root:Root = root
+                    assignment->project: MyApp.Project->root: Root = root
                 ]
             }`
         ];
