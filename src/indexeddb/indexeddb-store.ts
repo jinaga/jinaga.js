@@ -2,7 +2,6 @@ import { hydrateFromTree } from '../fact/hydrate';
 import { TopologicalSorter } from '../fact/sorter';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
-import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
@@ -209,7 +208,7 @@ export class IndexedDBStore implements Storage {
     });
   }
 
-  feed(feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed> {
+  feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed> {
     throw new Error('Method not implemented.');
   }
 

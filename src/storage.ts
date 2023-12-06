@@ -1,5 +1,5 @@
+import { computeObjectHash } from "./fact/hash";
 import { Query } from './query/query';
-import { Feed } from "./specification/feed";
 import { Specification } from "./specification/specification";
 import { findIndex } from './util/fn';
 
@@ -53,7 +53,7 @@ export interface Storage {
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     query(start: FactReference, query: Query): Promise<FactPath[]>;
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
-    feed(feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed>;
+    feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactRecord[]>;
 
@@ -78,4 +78,29 @@ export function uniqueFactReferences(references: FactReference[]): FactReference
     return references.filter((value, index, array) => {
         return findIndex(array, factReferenceEquals(value)) === index;
     });
+}
+
+export function computeTupleSubsetHash(tuple: ReferencesByName, subset: string[]) {
+    const parentTuple = Object.getOwnPropertyNames(tuple)
+        .filter(name => subset.some(s => s === name))
+        .reduce((t, name) => ({
+            ...t,
+            [name]: tuple[name]
+        }),
+            {} as ReferencesByName);
+    const parentTupleHash = computeObjectHash(parentTuple);
+    return parentTupleHash;
+}
+
+export function validateGiven(start: FactReference[], specification: Specification) {
+    // Verify that the number of start facts equals the number of inputs
+    if (start.length !== specification.given.length) {
+        throw new Error(`The number of start facts (${start.length}) does not equal the number of inputs (${specification.given.length})`);
+    }
+    // Verify that the input type matches the start fact type
+    for (let i = 0; i < start.length; i++) {
+        if (start[i].type !== specification.given[i].type) {
+            throw new Error(`The type of start fact ${i} (${start[i].type}) does not match the type of input ${i} (${specification.given[i].type})`);
+        }
+    }
 }

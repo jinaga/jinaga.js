@@ -1,9 +1,8 @@
 import { Inverse, invertQuery } from '../query/inverter';
 import { Query } from '../query/query';
 import { describeSpecification } from '../specification/description';
-import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
+import { FactEnvelope, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
 import { computeStringHash } from '../util/encoding';
 import { mapAsync } from '../util/fn';
 
@@ -97,7 +96,7 @@ export class ObservableSource {
             [queryKey: string]: Listener[]
         }
     };
-    private listentersByTypeAndSpecification: {
+    private listenersByTypeAndSpecification: {
         [appliedToType: string]: {
             [specificationKey: string]: {
                 specification: Specification,
@@ -164,10 +163,10 @@ export class ObservableSource {
         const givenType = specification.given[0].type;
         const specificationKey = computeStringHash(describeSpecification(specification, 0));
 
-        let listenersBySpecification = this.listentersByTypeAndSpecification[givenType];
+        let listenersBySpecification = this.listenersByTypeAndSpecification[givenType];
         if (!listenersBySpecification) {
             listenersBySpecification = {};
-            this.listentersByTypeAndSpecification[givenType] = listenersBySpecification;
+            this.listenersByTypeAndSpecification[givenType] = listenersBySpecification;
         }
 
         let listeners = listenersBySpecification[specificationKey];
@@ -187,8 +186,8 @@ export class ObservableSource {
     }
 
     public removeSpecificationListener(specificationListener: SpecificationListener) {
-        for (const givenType in this.listentersByTypeAndSpecification) {
-            const listenersBySpecification = this.listentersByTypeAndSpecification[givenType];
+        for (const givenType in this.listenersByTypeAndSpecification) {
+            const listenersBySpecification = this.listenersByTypeAndSpecification[givenType];
             for (const specificationKey in listenersBySpecification) {
                 const listeners = listenersBySpecification[specificationKey];
                 const index = listeners.listeners.indexOf(specificationListener);
@@ -199,7 +198,7 @@ export class ObservableSource {
                         delete listenersBySpecification[specificationKey];
 
                         if (Object.keys(listenersBySpecification).length === 0) {
-                            delete this.listentersByTypeAndSpecification[givenType];
+                            delete this.listenersByTypeAndSpecification[givenType];
                         }
                     }
                 }
@@ -231,7 +230,7 @@ export class ObservableSource {
             }
         }
 
-        const listenersBySpecification = this.listentersByTypeAndSpecification[fact.type];
+        const listenersBySpecification = this.listenersByTypeAndSpecification[fact.type];
         if (listenersBySpecification) {
             for (const specificationKey in listenersBySpecification) {
                 const listeners = listenersBySpecification[specificationKey];

@@ -1,191 +1,137 @@
-import { FactReference } from "../storage";
-import { emptyFeed, FactDescription, Feed, withEdge, withFact, withInput, withNotExistsCondition, withOutput } from "./feed";
-import { ComponentProjection, Label, Match, PathCondition, Specification } from "./specification";
+import { ComponentProjection, ExistentialCondition, Label, Match, Specification, emptySpecification, isExistentialCondition, isPathCondition } from "./specification";
 
-type FactByIdentifier = {
-    [identifier: string]: FactDescription;
-};
-
-type InputByIdentifier = {
-    [identifier: string]: {
-        type: string;
-        inputIndex: number;
-    };
-};
-
-export function buildFeeds(specification: Specification): Feed[] {
-    const givenFacts: InputByIdentifier = specification.given.reduce((acc, label, i) => ({
-        ...acc,
-        [label.name]: {
-            type: label.type,
-            inputIndex: i
-        }
-    }), {} as InputByIdentifier);
-
-    // The Feed is an immutable data type.
-    // The FeedBuilder will branch at various points, and
-    // build on the current feed along each branch.
-    const initialFeed = emptyFeed;
-    const { feeds, knownFacts } = addEdges(initialFeed, givenFacts, {}, [], specification.matches);
+export function buildFeeds(specification: Specification): Specification[] {
+    const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given, specification.matches);
 
     // The final feed represents the complete tuple.
     // Build projections onto that one.
-    const finalFeed = feeds[feeds.length - 1];
+    const finalFeed = specifications[specifications.length - 1];
     if (specification.projection.type === "composite") {
-        const feedsWithProjections = addProjections(finalFeed, givenFacts, knownFacts, specification.projection.components);
-        return [ ...feeds, ...feedsWithProjections ];
+        const feedsWithProjections = addProjections(finalFeed, unusedGivens, specification.projection.components);
+        return [ ...specifications, ...feedsWithProjections ];
     }
     else {
-        return feeds;
+        return specifications;
     }
 }
 
-function addEdges(feed: Feed, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, path: number[], matches: Match[]): { feeds: Feed[]; knownFacts: FactByIdentifier; } {
-    const feeds: Feed[] = [];
+function addMatches(specification: Specification, unusedGivens: Label[], matches: Match[]): { specifications: Specification[]; unusedGivens: Label[]; } {
+    const specifications: Specification[] = [];
     for (const match of matches) {
-        for (const condition of match.conditions) {
-            if (condition.type === "path") {
-                ({feed, knownFacts} = addPathCondition(feed, givenFacts, knownFacts, path, match.unknown, condition));
-            }
-            else if (condition.type === "existential") {
-                if (condition.exists) {
-                    // Include the edges of the existential condition into the current
-                    // query description.
-                    const { feeds: newFeeds } = addEdges(feed, givenFacts, knownFacts, path, condition.matches);
-                    const last = newFeeds.length - 1;
-                    feeds.push(...newFeeds.slice(0, last));
-                    feed = newFeeds[last];
-                }
-                else {
-                    // Branch from the current query description and follow the
-                    // edges of the existential condition.
-                    // This will produce tuples that prove the condition false.
-                    const { feeds: newQueryDescriptions } = addEdges(feed, givenFacts, knownFacts, path, condition.matches);
-                    
-                    // Then apply the where clause and continue with the tuple where it is true.
-                    // The path describes which not-exists condition we are currently building on.
-                    // Because the path is not empty, labeled facts will be included in the output.
-                    const { feed: feedWithNotExist, path: conditionalPath } = withNotExistsCondition(feed, path);
-                    const { feeds: newFeedsWithNotExists } = addEdges(feedWithNotExist, givenFacts, knownFacts, conditionalPath, condition.matches);
-                    const last = newFeedsWithNotExists.length - 1;
-                    const feedConditional = newFeedsWithNotExists[last];
-
-                    feeds.push(...newQueryDescriptions);
-                    feeds.push(...newFeedsWithNotExists.slice(0, last));
-                    feed = feedConditional;
-                }
+        specification = withMatch(specification, match);
+        for (const pathCondition of match.conditions.filter(isPathCondition)) {
+            // If the right-hand side is a given, then add it to the feed parameters.
+            const reference = unusedGivens.find(given => given.name === pathCondition.labelRight);
+            if (reference) {
+                specification = withGiven(specification, reference);
+                unusedGivens = unusedGivens.filter(given => given.name !== reference.name);
             }
         }
+        for (const existentialCondition of match.conditions.filter(isExistentialCondition)) {
+            if (existentialCondition.exists) {
+                // Include the matches of the existential condition into the current feed.
+                const { specifications: newSpecifications, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches);
+                const last = newSpecifications.length - 1;
+                specifications.push(...newSpecifications.slice(0, last));
+                specification = newSpecifications[last];
+                unusedGivens = newUnusedGivens;
+            }
+            else {
+                // Branch from the current feed and follow the matches of the existential condition.
+                // This will produce tuples that prove the condition false.
+                const { specifications: negatingSpecifications } = addMatches(specification, unusedGivens, existentialCondition.matches);
+                specifications.push(...negatingSpecifications);
+
+                // Then apply the existential condition and continue with the tuple.
+                const { existentialCondition: newExistentialCondition, givens: newGivens, unusedGivens: newUnusedGivens } = buildExistentialCondition({
+                    type: "existential",
+                    exists: false,
+                    matches: []
+                }, existentialCondition.matches, specification.given, unusedGivens);
+                specification = withCondition(specification, newGivens, newExistentialCondition);
+                unusedGivens = newUnusedGivens;
+            }
+        }
     }
-    feeds.push(feed);
-    return { feeds, knownFacts };
+    specifications.push(specification);
+    return { specifications, unusedGivens };
 }
 
-function addPathCondition(feed: Feed, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, path: number[], unknown: Label, condition: PathCondition): { feed: Feed; knownFacts: FactByIdentifier; } {
-    const given = givenFacts[condition.labelRight];
-    if (given) {
-        // If the right-hand side is a given, and not yet a known fact,
-        // then add it to the feed.
-        if (!knownFacts[condition.labelRight]) {
-            feed = withInput(feed, given.type, given.inputIndex);
-            knownFacts = {
-                ...knownFacts,
-                [condition.labelRight]: {
-                    factIndex: feed.facts.length,
-                    factType: given.type
-                }
-            };
+function buildExistentialCondition(existentialCondition: ExistentialCondition, matches: Match[], givens: Label[], unusedGivens: Label[]): { existentialCondition: ExistentialCondition, givens: Label[], unusedGivens: Label[] } {
+    for (const match of matches) {
+        existentialCondition = {
+            ...existentialCondition,
+            matches: [...existentialCondition.matches, {
+                ...match,
+                conditions: match.conditions.filter(isPathCondition)
+            }]
+        };
+        for (const pathCondition of match.conditions.filter(isPathCondition)) {
+            // If the right-hand side is a given, then add it to the feed parameters.
+            const reference = unusedGivens.find(given => given.name === pathCondition.labelRight);
+            if (reference) {
+                givens = [...givens, reference];
+                unusedGivens = unusedGivens.filter(given => given.name !== reference.name);
+            }
+        }
+        for (const innerExistentialCondition of match.conditions.filter(isExistentialCondition)) {
+            if (innerExistentialCondition.exists) {
+                // Include the matches of the existential condition into the current condition.
+                const { existentialCondition: newExistentialCondition, givens: newGivens, unusedGivens: newUnusedGivens } = buildExistentialCondition(innerExistentialCondition, innerExistentialCondition.matches, givens, unusedGivens);
+                existentialCondition = newExistentialCondition;
+                givens = newGivens;
+                unusedGivens = newUnusedGivens;
+            }
         }
     }
-
-    // Determine whether we have already written the output.
-    const knownFact = knownFacts[unknown.name];
-    const roleCount = condition.rolesLeft.length + condition.rolesRight.length;
-
-    // Walk up the right-hand side.
-    // This generates predecessor joins from a given or prior label.
-    let fact = knownFacts[condition.labelRight];
-    if (!fact) {
-        throw new Error(`Label ${condition.labelRight} not found. Known labels: ${Object.keys(knownFacts).join(", ")}`);
-    }
-    let factType = fact.factType;
-    let factIndex = fact.factIndex;
-    for (const [i, role] of condition.rolesRight.entries()) {
-        if (i === roleCount - 1 && knownFact) {
-            // If we have already written the output, we can use the fact index.
-            feed = withEdge(feed, knownFact.factIndex, factIndex, role.name, path);
-            factIndex = knownFact.factIndex;
-        }
-        else {
-            // If we have not written the fact, we need to write it now.
-            const { feed: feedWithFact, factIndex: predecessorFactIndex } = withFact(feed, role.predecessorType);
-            feed = withEdge(feedWithFact, predecessorFactIndex, factIndex, role.name, path);
-            factIndex = predecessorFactIndex;
-        }
-        factType = role.predecessorType;
-    }
-
-    const rightType = factType;
-
-    // Walk up the left-hand side.
-    // We will need to reverse this walk to generate successor joins.
-    factType = unknown.type;
-    const newEdges: {
-        roleName: string;
-        successorType: string;
-    }[] = [];
-    for (const role of condition.rolesLeft) {
-        newEdges.push({
-            roleName: role.name,
-            successorType: factType
-        });
-        factType = role.predecessorType;
-    }
-
-    if (factType !== rightType) {
-        throw new Error(`Type mismatch: ${factType} is compared to ${rightType}`);
-    }
-
-    newEdges.reverse().forEach(({ roleName, successorType }, i) => {
-        if (condition.rolesRight.length + i === roleCount - 1 && knownFact) {
-            feed = withEdge(feed, factIndex, knownFact.factIndex, roleName, path);
-            factIndex = knownFact.factIndex;
-        }
-        else {
-            const { feed: feedWithFact, factIndex: successorFactIndex } = withFact(feed, successorType);
-            feed = withEdge(feedWithFact, factIndex, successorFactIndex, roleName, path);
-            factIndex = successorFactIndex;
-        }
-    });
-
-    // If we have not captured the known fact, add it now.
-    if (!knownFact) {
-        knownFacts = { ...knownFacts, [unknown.name]: { factIndex, factType: unknown.type } };
-        // If we have not written the output, write it now.
-        // Only write the output if we are not inside of an existential condition.
-        if (path.length === 0) {
-            feed = withOutput(feed, factIndex);
-        }
-    }
-
-    return { feed, knownFacts };
+    return { existentialCondition, givens, unusedGivens };
 }
 
-function addProjections(feed: Feed, givenFacts: InputByIdentifier, knownFacts: FactByIdentifier, components: ComponentProjection[]): Feed[] {
-    const feeds: Feed[] = [];
+function addProjections(specification: Specification, unusedGivens: Label[], components: ComponentProjection[]): Specification[] {
+    const specifications: Specification[] = [];
     components.forEach(component => {
         if (component.type === "specification") {
             // Produce more facts in the tuple.
-            const { feeds: feedsWithEdges, knownFacts: knownFactsWithEdges } = addEdges(feed, givenFacts, knownFacts, [], component.matches);
-            feeds.push(...feedsWithEdges);
+            const { specifications: feedsWithMatches, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, component.matches);
+            specifications.push(...feedsWithMatches);
+            unusedGivens = newUnusedGivens;
 
             // Recursively build child projections.
-            const finalFeed = feedsWithEdges[feedsWithEdges.length - 1];
+            const finalFeed = feedsWithMatches[feedsWithMatches.length - 1];
             if (component.projection.type === "composite") {
-                const feedsWithProjections = addProjections(finalFeed, givenFacts, knownFactsWithEdges, component.projection.components);
-                feeds.push(...feedsWithProjections);
+                const feedsWithProjections = addProjections(finalFeed, unusedGivens, component.projection.components);
+                specifications.push(...feedsWithProjections);
             }
         }
     });
-    return feeds;
+    return specifications;
+}
+
+function withMatch(specification: Specification, match: Match): Specification {
+    const pathConditions = match.conditions.filter(isPathCondition);
+    return {
+        ...specification,
+        matches: [...specification.matches, {
+            ...match,
+            conditions: pathConditions
+        }]
+    };
+}
+
+function withGiven(specification: Specification, label: Label): Specification {
+    return {
+        ...specification,
+        given: [...specification.given, label]
+    };
+}
+
+function withCondition(specification: Specification, newGivens: Label[], newExistentialCondition: ExistentialCondition) {
+    return {
+        ...specification,
+        given: newGivens,
+        matches: [...specification.matches.slice(0, specification.matches.length - 1), {
+            ...specification.matches[specification.matches.length - 1],
+            conditions: [...specification.matches[specification.matches.length - 1].conditions, newExistentialCondition]
+        }]
+    };
 }

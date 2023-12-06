@@ -1,11 +1,10 @@
 import { DistributionEngine } from "../distribution/distribution-engine";
-import { computeObjectHash } from "../fact/hash";
 import { FeedResponse } from "../http/messages";
 import { describeDeclaration, describeSpecification } from "../specification/description";
-import { Feed } from "../specification/feed";
 import { buildFeeds } from "../specification/feed-builder";
+import { FeedCache } from "../specification/feed-cache";
 import { Specification, reduceSpecification } from "../specification/specification";
-import { FactEnvelope, FactReference, Storage, factReferenceEquals } from "../storage";
+import { FactEnvelope, FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { computeStringHash } from "../util/encoding";
 
 export interface Network {
@@ -29,18 +28,8 @@ export class NetworkNoOp implements Network {
     }
 }
 
-type FeedByHash = {
-    [hash: string]: {
-        start: {
-            factReference: FactReference,
-            index: number
-        }[],
-        feed: Feed
-    }
-}
-
 export class NetworkDistribution implements Network {
-    private feedCache: FeedByHash = {};
+    private feedCache = new FeedCache();
 
     constructor(
         private readonly distributionEngine: DistributionEngine,
@@ -49,43 +38,23 @@ export class NetworkDistribution implements Network {
 
     async feeds(start: FactReference[], specification: Specification): Promise<string[]> {
         const feeds = buildFeeds(specification);
-        const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, start, this.user);
+        const namedStart = specification.given.reduce((map, label, index) => ({
+            ...map,
+            [label.name]: start[index]
+        }), {} as ReferencesByName);
+        const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
         if (canDistribute.type === 'failure') {
             throw new Error(`Not authorized: ${canDistribute.reason}`);
         }
-        const feedsByHash = feeds.reduce((map, feed) => {
-            const indexedStart = feed.inputs.map(input => ({
-                factReference: start[input.inputIndex],
-                index: input.inputIndex
-            }));
-            const feedObject = {
-                start: indexedStart,
-                feed
-            };
-            const hash = computeObjectHash(feedObject);
-            return ({
-                ...map,
-                [hash]: feedObject
-            });
-        }, {} as FeedByHash);
-        const feedHashes = Object.keys(feedsByHash);
-        this.feedCache = {
-            ...this.feedCache,
-            ...feedsByHash
-        };
-        return feedHashes;
+        return this.feedCache.addFeeds(feeds, namedStart);
     }
 
     async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
-        const feedObject = this.feedCache[feed];
+        const feedObject = this.feedCache.getFeed(feed);
         if (!feedObject) {
             throw new Error(`Feed ${feed} not found`);
         }
-        const start = feedObject.start.reduce((start, input) => {
-            start[input.index] = input.factReference;
-            return start;
-        }, [] as FactReference[]);
-        const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], start, this.user);
+        const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user);
 
         if (canDistribute.type === 'failure') {
             throw new Error(`Not authorized: ${canDistribute.reason}`);

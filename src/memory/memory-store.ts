@@ -1,10 +1,9 @@
 import { hydrateFromTree } from '../fact/hydrate';
 import { Query } from '../query/query';
 import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
-import { Feed } from "../specification/feed";
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
-import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, factReferenceEquals, ProjectedResult, Storage } from '../storage';
+import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage, factReferenceEquals } from '../storage';
 import { flatten } from '../util/fn';
 
 export function getPredecessors(fact: FactRecord | null, role: string) {
@@ -81,7 +80,7 @@ export class MemoryStore implements Storage {
         return this.runner.read(start, specification);
     }
 
-    feed(feed: Feed, start: FactReference[], bookmark: string): Promise<FactFeed> {
+    feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed> {
         throw new Error('Method not implemented.');
     }
 
