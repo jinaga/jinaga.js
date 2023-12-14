@@ -75,8 +75,8 @@ export class FactManager {
         return await this.store.read(start, specification);
     }
 
-    async fetch(start: FactReference[], specification: Specification) {
-        await this.networkManager.fetch(start, specification);
+    async fetch(start: FactReference[], specification: Specification, keepAlive: boolean) {
+        await this.networkManager.fetch(start, specification, keepAlive);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {
@@ -91,9 +91,9 @@ export class FactManager {
         return this.store.setMruDate(specificationHash, mruDate);
     }
 
-    startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>): Observer<U> {
+    startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>, keepAlive: boolean): Observer<U> {
         const observer = new ObserverImpl<U>(this, references, specification, resultAdded);
-        observer.start();
+        observer.start(keepAlive);
         return observer;
     }
 }

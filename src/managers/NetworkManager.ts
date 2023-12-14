@@ -10,6 +10,7 @@ import { computeStringHash } from "../util/encoding";
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>;
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): void;
     load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
 
 }
@@ -21,6 +22,10 @@ export class NetworkNoOp implements Network {
 
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
         return Promise.resolve({ references: [], bookmark });
+    }
+
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): void {
+        // Do nothing.
     }
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
@@ -65,6 +70,26 @@ export class NetworkDistribution implements Network {
             references: [],
             bookmark
         };
+    }
+
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): void {
+        const feedObject = this.feedCache.getFeed(feed);
+        if (!feedObject) {
+            onError(new Error(`Feed ${feed} not found`));
+            return;
+        }
+        this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user)
+            .then(canDistribute => {
+                if (canDistribute.type === 'failure') {
+                    onError(new Error(`Not authorized: ${canDistribute.reason}`));
+                    return;
+                }
+                // Pretend that we are at the end of the feed.
+                onResponse([], bookmark);
+            })
+            .catch(err => {
+                onError(err);
+            });
     }
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
@@ -140,7 +165,7 @@ export class NetworkManager {
         private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>
     ) { }
 
-    async fetch(start: FactReference[], specification: Specification) {
+    async fetch(start: FactReference[], specification: Specification, keepAlive: boolean) {
         const reducedSpecification = reduceSpecification(specification);
         const feeds: string[] = await this.getFeedsFromCache(start, reducedSpecification);
 
@@ -150,7 +175,9 @@ export class NetworkManager {
                 return this.activeFeeds.get(feed);
             }
             else {
-                const promise = this.processFeed(feed);
+                const promise = keepAlive
+                    ? this.processStream(feed)
+                    : this.processFeed(feed);
                 this.activeFeeds.set(feed, promise);
                 return promise;
             }
@@ -182,7 +209,7 @@ export class NetworkManager {
     }
 
     private async processFeed(feed: string) {
-        let bookmark: string = await this.store.loadBookmark(feed);
+        let bookmark = await this.store.loadBookmark(feed);
 
         while (true) {
             this.fectchCount++;
@@ -232,6 +259,32 @@ export class NetworkManager {
         }
 
         this.activeFeeds.delete(feed);
+    }
+
+    private async processStream(feed: string) {
+        let bookmark = await this.store.loadBookmark(feed);
+        await new Promise<void>((resolve, reject) => {
+            let resolved = false;
+            this.network.streamFeed(feed, bookmark, async (factReferences, nextBookmark) => {
+                const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
+                const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
+                if (unknownFactReferences.length > 0) {
+                    const graph = await this.network.load(unknownFactReferences);
+                    await this.store.save(graph);
+                    await this.store.saveBookmark(feed, nextBookmark);
+                    await this.notifyFactsAdded(graph);
+                }
+                if (!resolved) {
+                    resolved = true;
+                    resolve();
+                }
+            }, err => {
+                if (!resolved) {
+                    resolved = true;
+                    reject(err);
+                }
+            });
+        });
     }
 }
 

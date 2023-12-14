@@ -68,7 +68,7 @@ export class ObserverImpl<T> implements Observer<T> {
         this.specificationHash = computeStringHash(request);
     }
 
-    public start() {
+    public start(keepAlive: boolean) {
         this.cachedPromise = new Promise((cacheResolve, _) => {
             this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
                 try {
@@ -77,7 +77,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         // The data is not yet cached.
                         cacheResolve(false);
                         // Fetch from the server and then read from local storage.
-                        await this.fetch();
+                        await this.fetch(keepAlive);
                         await this.read();
                         loadResolve();
                     }
@@ -86,7 +86,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         await this.read();
                         cacheResolve(true);
                         // Then fetch from the server to update the cache.
-                        await this.fetch();
+                        await this.fetch(keepAlive);
                         loadResolve();
                     }
                     await this.factManager.setMruDate(this.specificationHash, new Date());
@@ -128,8 +128,8 @@ export class ObserverImpl<T> implements Observer<T> {
         }
     }
 
-    private async fetch() {
-        await this.factManager.fetch(this.given, this.specification);
+    private async fetch(keepAlive: boolean) {
+        await this.factManager.fetch(this.given, this.specification, keepAlive);
     }
 
     private async read() {
