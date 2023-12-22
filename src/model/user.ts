@@ -2,7 +2,7 @@ import { Jinaga as j } from "../jinaga";
 import { ensure } from "../query/query-parser";
 
 export class User {
-  static Type = "Jinaga.User";
+  static Type = "Jinaga.User" as const;
   type = User.Type;
 
   constructor(
@@ -11,7 +11,7 @@ export class User {
 }
 
 export class UserName {
-  static Type = "Jinaga.User.Name";
+  static Type = "Jinaga.User.Name" as const;
   public type = UserName.Type;
 
   constructor(
@@ -41,7 +41,7 @@ export class UserName {
 }
 
 export class Device {
-  static Type = "Jinaga.Device";
+  static Type = "Jinaga.Device" as const;
   public type = Device.Type;
 
   constructor(

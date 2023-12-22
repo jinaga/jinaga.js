@@ -308,7 +308,7 @@ export class Jinaga {
      * @param given The fact or facts from which to begin the subscription
      * @returns A subscription, which remains running until you call stop
      */
-    subscribe<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Subscription;
+    subscribe<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U>;
     subscribe(first: any, ...rest: any[]): Subscription {
         if (rest.length === 1 && rest[0] instanceof Preposition) {
             return this.oldSubscribe(first, rest[0]);
