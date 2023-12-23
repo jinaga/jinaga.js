@@ -40,8 +40,7 @@ export class AuthenticationTest implements Authentication {
   
   async authorize(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
     if (this.authorizationEngine) {
-      const facts = envelopes.map(e => e.fact);
-      const authorizedFacts = await this.authorizationEngine.authorizeFacts(facts, this.userFact);
+      const authorizedFacts = await this.authorizationEngine.authorizeFacts(envelopes, this.userFact);
       const authorizedEnvelopes: FactEnvelope[] = authorizedFacts.map(f => ({
         fact: f,
         signatures: []

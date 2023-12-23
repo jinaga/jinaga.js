@@ -1,6 +1,6 @@
 import { computeHash, verifyHash } from '../fact/hash';
 import { TopologicalSorter } from '../fact/sorter';
-import { FactRecord, FactReference, Storage } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, FactSignature, Storage } from '../storage';
 import { distinct, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 import { AuthorizationRules } from './authorizationRules';
@@ -28,10 +28,18 @@ export class AuthorizationEngine {
         private store: Storage
     ) { }
 
-    async authorizeFacts(facts: FactRecord[], userFact: FactRecord | null) {
+    async authorizeFacts(envelopes: FactEnvelope[], userFact: FactRecord | null) {
+        const facts = envelopes.map(e => e.fact);
         const existing = await this.store.whichExist(facts);
         const sorter = new TopologicalSorter<Promise<AuthorizationResult>>();
-        const results = await mapAsync(sorter.sort(facts, (p, f) => this.visit(p, f, userFact, facts, existing)), x => x);
+        const results = await mapAsync(sorter.sort(facts, (p, f) => {
+            const envelope = envelopes.find(e => e.fact.hash === f.hash && e.fact.type === f.type);
+            if (!envelope) {
+                throw new Error(`The envelope for ${f.type} is missing.`);
+            }
+            const signatures = envelope.signatures;
+            return this.visit(p, f, signatures, facts, existing);
+        }), x => x);
         const rejected = results.filter(r => r.verdict === "Forbidden");
         if (rejected.length > 0) {
             const distinctTypes = rejected
@@ -49,13 +57,13 @@ export class AuthorizationEngine {
     }
 
 
-    private async visit(predecessors: Promise<AuthorizationResult>[], fact: FactRecord, userFact: FactRecord | null, factRecords: FactRecord[], existing: FactReference[]): Promise<AuthorizationResult> {
+    private async visit(predecessors: Promise<AuthorizationResult>[], fact: FactRecord, signatures: FactSignature[], factRecords: FactRecord[], existing: FactReference[]): Promise<AuthorizationResult> {
         const predecessorResults = await mapAsync(predecessors, p => p);
-        const verdict = await this.authorize(predecessorResults, userFact, fact, factRecords, existing);
+        const verdict = await this.authorize(predecessorResults, signatures, fact, factRecords, existing);
         return { fact, verdict };
     }
 
-    private async authorize(predecessors: AuthorizationResult[], userFact: FactRecord | null, fact: FactRecord, factRecords: FactRecord[], existing: FactReference[]) : Promise<AuthorizationVerdict> {
+    private async authorize(predecessors: AuthorizationResult[], signatures: FactSignature[], fact: FactRecord, factRecords: FactRecord[], existing: FactReference[]) : Promise<AuthorizationVerdict> {
         if (predecessors.some(p => p.verdict === "Forbidden")) {
             const predecessor = predecessors
                 .filter(p => p.verdict === 'Forbidden')
@@ -71,7 +79,7 @@ export class AuthorizationEngine {
             return "Forbidden";
         }
 
-        const isAuthorized = await this.authorizationRules.isAuthorized(userFact, fact, factRecords, this.store);
+        const isAuthorized = await this.authorizationRules.isAuthorized(signatures, fact, factRecords, this.store);
         if (predecessors.some(p => p.verdict === "New") || !existing.some(f => f.hash === fact.hash && f.type === fact.type)) {
             if (!isAuthorized) {
                 if (this.authorizationRules.hasRule(fact.type)) {

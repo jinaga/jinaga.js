@@ -7,7 +7,7 @@ import { describeSpecification } from '../specification/description';
 import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { SpecificationParser } from '../specification/specification-parser';
-import { FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, FactSignature, ReferencesByName, Storage, factReferenceEquals } from '../storage';
 import { findIndex, flatten, flattenAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 
@@ -141,7 +141,7 @@ class FactGraph {
         }
     }
 
-    private findFact(reference: FactReference): FactRecord | null {
+    public findFact(reference: FactReference): FactRecord | null {
         return this.factRecords.find(factReferenceEquals(reference)) ?? null;
     }
 }
@@ -160,7 +160,7 @@ function headStep(step: Step) {
 
 interface AuthorizationRule {
     describe(type: string): string;
-    isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
+    isAuthorized(signatures: FactSignature[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
 }
 
 class AuthorizationRuleAny implements AuthorizationRule {
@@ -168,7 +168,7 @@ class AuthorizationRuleAny implements AuthorizationRule {
         return `    any ${type}\n`;
     }
 
-    isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage) {
+    isAuthorized(signatures: FactSignature[], fact: FactRecord, graph: FactGraph, store: Storage) {
         return Promise.resolve(true);
     }
 }
@@ -178,7 +178,7 @@ class AuthorizationRuleNone implements AuthorizationRule {
         return `    no ${type}\n`;
     }
 
-    isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
+    isAuthorized(signatures: FactSignature[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
         Trace.warn(`No fact of type ${fact.type} is authorized.`);
         return Promise.resolve(false);
     }
@@ -196,15 +196,17 @@ class AuthorizationRuleQuery implements AuthorizationRule {
         throw new Error("Authorization rules must be based on specifications, not template functions.");
     }
 
-    async isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage) {
-        if (!userFact) {
+    async isAuthorized(signatures: FactSignature[], fact: FactRecord, graph: FactGraph, store: Storage) {
+        if (signatures.length === 0) {
             Trace.warn(`No user is logged in while attempting to authorize ${fact.type}.`);
             return false;
         }
         const predecessors = graph.query(fact, this.head);
         const results = await flattenAsync(predecessors, async p =>
             await this.executeQuery(store, p));
-        const authorized = results.some(factReferenceEquals(userFact));
+        const users = await store.load(results);
+        const publicKeys = users.map(user => user.fields.publicKey);
+        const authorized = signatures.some(signature => publicKeys.includes(signature.publicKey));
         if (!authorized) {
             if (results.length === 0) {
                 Trace.warn(`The authorization rule for ${fact.type} returned no authorized users.`);
@@ -237,8 +239,8 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
         return description;
     }
 
-    async isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
-        if (!userFact) {
+    async isAuthorized(signatures: FactSignature[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
+        if (signatures.length === 0) {
             Trace.warn(`No user is logged in while attempting to authorize ${fact.type}.`);
             return false;
         }
@@ -252,7 +254,6 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
         if (this.specification.projection.type !== 'fact') {
             throw new Error('The projection must be a singular label.');
         }
-        const label = this.specification.projection.label;
 
         // Split the specification.
         // The head is deterministic, and can be run on the graph.
@@ -268,7 +269,8 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
         if (head.projection.type !== 'fact') {
             throw new Error('The head of the specification must project a fact.');
         }
-        let results = graph.executeSpecification(
+        let publicKeys: string[] = [];
+        const results = graph.executeSpecification(
             head.given[0].name,
             head.matches,
             head.projection.label,
@@ -279,16 +281,18 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
             if (tail.given.length !== 1) {
                 throw new Error('The tail of the specification must be given a single fact.');
             }
-            const tailResults: FactReference[] = [];
-            for (const result of results) {
-                const users = await store.read([result], tail);
-                tailResults.push(...users.map(user => user.tuple[label]));
-            }
-            results = tailResults;
+            const users = await store.read(results, tail);
+            publicKeys = users.map(user => user.result.publicKey);
+        }
+        else {
+            // The fact references are in the graph.
+            publicKeys = results
+                .map(result => graph.findFact(result)?.fields.publicKey ?? '')
+                .filter(publicKey => publicKey !== '');
         }
 
-        // If any of the results match the user, then the user is authorized.
-        const authorized = results.some(factReferenceEquals(userFact));
+        // If any of the public keys match any of the signatures, then the fact is authorized.
+        const authorized = signatures.some(signature => publicKeys.includes(signature.publicKey));
         return authorized;
     }
 }
@@ -412,7 +416,7 @@ export class AuthorizationRules {
         return !!this.rulesByType[type];
     }
 
-    async isAuthorized(userFact: FactReference | null, fact: FactRecord, factRecords: FactRecord[], store: Storage) {
+    async isAuthorized(signatures: FactSignature[], fact: FactRecord, factRecords: FactRecord[], store: Storage) {
         const rules = this.rulesByType[fact.type];
         if (!rules) {
             return false;
@@ -420,7 +424,7 @@ export class AuthorizationRules {
 
         const graph = new FactGraph(factRecords);
         for (const rule of rules) {
-            const authorized = await rule.isAuthorized(userFact, fact, graph, store);
+            const authorized = await rule.isAuthorized(signatures, fact, graph, store);
             if (authorized) {
                 return true;
             }

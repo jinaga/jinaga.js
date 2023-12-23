@@ -89,8 +89,9 @@ function givenAuthorizationRules(builder: (a: AuthorizationRules) => Authorizati
 async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactReference | null, fact: FactRecord) {
     const store = new MemoryStore();
     const facts = [ ...givenGroupMember(), givenUserFact('unauthorized-user') ];
-    await store.save(facts.map(f => ({ fact: f, signatures: [] })));
-    return await authorizationRules.isAuthorized(userFact, fact, [fact], store);
+    const envelopes = facts.map(f => ({ fact: f, signatures: [] }));
+    await store.save(envelopes);
+    return await authorizationRules.isAuthorized([], fact, [fact], store);
 }
 
 class User {
