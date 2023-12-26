@@ -85,9 +85,9 @@ export class XhrConnection implements HttpConnection {
         this.getHeaders().then(headers => {
             const xhr = new XMLHttpRequest();
             let receivedBytes = 0;
+            xhr.open("GET", this.url + path, true);
             xhr.setRequestHeader('Accept', 'application/x-jinaga-feed-stream');
             setHeaders(headers, xhr);
-            xhr.open("GET", this.url + path, true);
             // As data comes in, parse non-blank lines to JSON and pass to onResponse.
             // Skip blank lines.
             // If an error occurs, call onError.
