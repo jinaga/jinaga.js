@@ -75,8 +75,16 @@ export class FactManager {
         return await this.store.read(start, specification);
     }
 
-    async fetch(start: FactReference[], specification: Specification, keepAlive: boolean) {
-        await this.networkManager.fetch(start, specification, keepAlive);
+    async fetch(start: FactReference[], specification: Specification) {
+        await this.networkManager.fetch(start, specification);
+    }
+
+    async subscribe(start: FactReference[], specification: Specification) {
+        return await this.networkManager.subscribe(start, specification);
+    }
+
+    unsubscribe(feeds: string[]) {
+        this.networkManager.unsubscribe(feeds);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {

@@ -81,12 +81,16 @@ export class XhrConnection implements HttpConnection {
         });
     }
 
-    getStream(path: string, onResponse: (response: {}) => Promise<void>, onError: (err: Error) => void): void {
+    getStream(path: string, onResponse: (response: {}) => Promise<void>, onError: (err: Error) => void): () => void {
+        const xhr = new XMLHttpRequest();
+        let receivedBytes = 0;
+        xhr.open("GET", this.url + path, true);
+        xhr.setRequestHeader('Accept', 'application/x-jinaga-feed-stream');
+        let closed = false;
         this.getHeaders().then(headers => {
-            const xhr = new XMLHttpRequest();
-            let receivedBytes = 0;
-            xhr.open("GET", this.url + path, true);
-            xhr.setRequestHeader('Accept', 'application/x-jinaga-feed-stream');
+            if (closed) {
+                return;
+            }
             setHeaders(headers, xhr);
             // As data comes in, parse non-blank lines to JSON and pass to onResponse.
             // Skip blank lines.
@@ -128,6 +132,10 @@ export class XhrConnection implements HttpConnection {
             };
             xhr.send();
         });
+        return () => {
+            closed = true;
+            xhr.abort();
+        }
     }
 
     post(path: string, body: {} | string, timeoutSeconds: number): Promise<HttpResponse> {

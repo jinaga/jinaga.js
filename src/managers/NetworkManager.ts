@@ -1,5 +1,6 @@
 import { DistributionEngine } from "../distribution/distribution-engine";
 import { FeedResponse } from "../http/messages";
+import { Subscriber } from "../observer/subscriber";
 import { describeDeclaration, describeSpecification } from "../specification/description";
 import { buildFeeds } from "../specification/feed-builder";
 import { FeedCache } from "../specification/feed-cache";
@@ -10,7 +11,7 @@ import { computeStringHash } from "../util/encoding";
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>;
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): void;
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void;
     load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
 
 }
@@ -24,8 +25,9 @@ export class NetworkNoOp implements Network {
         return Promise.resolve({ references: [], bookmark });
     }
 
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): void {
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
         // Do nothing.
+        return () => { };
     }
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
@@ -72,11 +74,11 @@ export class NetworkDistribution implements Network {
         };
     }
 
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): void {
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
         const feedObject = this.feedCache.getFeed(feed);
         if (!feedObject) {
             onError(new Error(`Feed ${feed} not found`));
-            return;
+            return () => { };
         }
         this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user)
             .then(canDistribute => {
@@ -90,6 +92,7 @@ export class NetworkDistribution implements Network {
             .catch(err => {
                 onError(err);
             });
+        return () => { };
     }
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
@@ -158,6 +161,7 @@ export class NetworkManager {
     private readonly activeFeeds = new Map<string, Promise<void>>();
     private fectchCount = 0;
     private currentBatch: LoadBatch | null = null;
+    private subscribers: Map<string, Subscriber> = new Map();
 
     constructor(
         private readonly network: Network,
@@ -165,7 +169,7 @@ export class NetworkManager {
         private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>
     ) { }
 
-    async fetch(start: FactReference[], specification: Specification, keepAlive: boolean) {
+    async fetch(start: FactReference[], specification: Specification) {
         const reducedSpecification = reduceSpecification(specification);
         const feeds: string[] = await this.getFeedsFromCache(start, reducedSpecification);
 
@@ -175,9 +179,7 @@ export class NetworkManager {
                 return this.activeFeeds.get(feed);
             }
             else {
-                const promise = keepAlive
-                    ? this.processStream(feed)
-                    : this.processFeed(feed);
+                const promise = this.processFeed(feed);
                 this.activeFeeds.set(feed, promise);
                 return promise;
             }
@@ -189,6 +191,49 @@ export class NetworkManager {
             // If any feed fails, then remove the specification from the cache.
             this.removeFeedsFromCache(start, reducedSpecification);
             throw e;
+        }
+    }
+
+    async subscribe(start: FactReference[], specification: Specification): Promise<string[]> {
+        const reducedSpecification = reduceSpecification(specification);
+        const feeds: string[] = await this.getFeedsFromCache(start, reducedSpecification);
+
+        const subscribers = feeds.map(feed => {
+            let subscriber = this.subscribers.get(feed);
+            if (!subscriber) {
+                subscriber = new Subscriber(feed, this.network, this.store, this.notifyFactsAdded);
+                this.subscribers.set(feed, subscriber);
+            }
+            return subscriber;
+        });
+        const promises = subscribers.map(async subscriber => {
+            if (subscriber.addRef()) {
+                await subscriber.start();
+            }
+        });
+
+        try {
+            await Promise.all(promises);
+        }
+        catch (e) {
+            // If any feed fails, then remove the specification from the cache.
+            this.removeFeedsFromCache(start, reducedSpecification);
+            this.unsubscribe(feeds);
+            throw e;
+        }
+        return feeds;
+    }
+
+    unsubscribe(feeds: string[]) {
+        for (const feed of feeds) {
+            const subscriber = this.subscribers.get(feed);
+            if (!subscriber) {
+                throw new Error(`Subscriber not found for feed ${feed}`);
+            }
+            if (subscriber.release()) {
+                subscriber.stop();
+                this.subscribers.delete(feed);
+            }
         }
     }
 
@@ -259,32 +304,6 @@ export class NetworkManager {
         }
 
         this.activeFeeds.delete(feed);
-    }
-
-    private async processStream(feed: string) {
-        let bookmark = await this.store.loadBookmark(feed);
-        await new Promise<void>((resolve, reject) => {
-            let resolved = false;
-            this.network.streamFeed(feed, bookmark, async (factReferences, nextBookmark) => {
-                const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
-                const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
-                if (unknownFactReferences.length > 0) {
-                    const graph = await this.network.load(unknownFactReferences);
-                    await this.store.save(graph);
-                    await this.store.saveBookmark(feed, nextBookmark);
-                    await this.notifyFactsAdded(graph);
-                }
-                if (!resolved) {
-                    resolved = true;
-                    resolve();
-                }
-            }, err => {
-                if (!resolved) {
-                    resolved = true;
-                    reject(err);
-                }
-            });
-        });
     }
 }
 
