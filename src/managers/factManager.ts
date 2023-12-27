@@ -79,6 +79,14 @@ export class FactManager {
         await this.networkManager.fetch(start, specification);
     }
 
+    async subscribe(start: FactReference[], specification: Specification) {
+        return await this.networkManager.subscribe(start, specification);
+    }
+
+    unsubscribe(feeds: string[]) {
+        this.networkManager.unsubscribe(feeds);
+    }
+
     load(references: FactReference[]): Promise<FactRecord[]> {
         return this.fork.load(references);
     }
@@ -91,9 +99,9 @@ export class FactManager {
         return this.store.setMruDate(specificationHash, mruDate);
     }
 
-    startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>): Observer<U> {
+    startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>, keepAlive: boolean): Observer<U> {
         const observer = new ObserverImpl<U>(this, references, specification, resultAdded);
-        observer.start();
+        observer.start(keepAlive);
         return observer;
     }
 }

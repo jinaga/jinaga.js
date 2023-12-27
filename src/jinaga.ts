@@ -286,7 +286,7 @@ export class Jinaga {
             return dehydrateReference(fact);
         });
 
-        return this.factManager.startObserver<U>(references, innerSpecification, resultAdded);
+        return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, false);
     }
 
     /**
@@ -298,7 +298,27 @@ export class Jinaga {
      * @param preposition A template function passed into j.for
      * @returns A subscription, which remains running until you call stop
      */
-    subscribe<T, U>(
+    subscribe<T, U>(start: T, preposition: Preposition<T, U>): Subscription;
+    /**
+     * Request server-sent events when a fact affects query results.
+     * While the subscription is active, the server will push matching facts
+     * to the client. Call Subscription.stop() to stop receiving events.
+     * 
+     * @param specification Use Model.given().match() to create a specification
+     * @param given The fact or facts from which to begin the subscription
+     * @returns A subscription, which remains running until you call stop
+     */
+    subscribe<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U>;
+    subscribe(first: any, ...rest: any[]): Subscription {
+        if (rest.length === 1 && rest[0] instanceof Preposition) {
+            return this.oldSubscribe(first, rest[0]);
+        }
+        else {
+            return this.newSubscribe(first, ...rest as any);
+        }
+    }
+
+    private oldSubscribe<T, U>(
         start: T,
         preposition: Preposition<T, U>
     ): Subscription {
@@ -312,6 +332,33 @@ export class Jinaga {
         const channel = this.factManager.addChannel(reference, query);
         const subscription = new SubscriptionImpl(channel, this.factManager);
         return subscription;
+    }
+
+    private newSubscribe<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...args: WatchArgs<T, U>): Observer<U> {
+        const given: T = args.slice(0, args.length - 1) as T;
+        const resultAdded = args[args.length - 1] as ResultAddedFunc<U>;
+        const innerSpecification = specification.specification;
+
+        if (!given) {
+            throw new Error("No given facts provided.");
+        }
+        if (given.some(g => !g)) {
+            throw new Error("One or more given facts are null.");
+        }
+        if (!resultAdded || typeof resultAdded !== "function") {
+            throw new Error("No resultAdded function provided.");
+        }
+        if (given.length !== innerSpecification.given.length) {
+            throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
+        }
+
+        const references = given.map(g => {
+            const fact = JSON.parse(JSON.stringify(g));
+            this.validateFact(fact);
+            return dehydrateReference(fact);
+        });
+
+        return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true);
     }
 
     service<T, U>(

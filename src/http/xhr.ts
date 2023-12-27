@@ -81,6 +81,63 @@ export class XhrConnection implements HttpConnection {
         });
     }
 
+    getStream(path: string, onResponse: (response: {}) => Promise<void>, onError: (err: Error) => void): () => void {
+        const xhr = new XMLHttpRequest();
+        let receivedBytes = 0;
+        xhr.open("GET", this.url + path, true);
+        xhr.setRequestHeader('Accept', 'application/x-jinaga-feed-stream');
+        let closed = false;
+        this.getHeaders().then(headers => {
+            if (closed) {
+                return;
+            }
+            setHeaders(headers, xhr);
+            // As data comes in, parse non-blank lines to JSON and pass to onResponse.
+            // Skip blank lines.
+            // If an error occurs, call onError.
+            // If the connection is closed, exit.
+            xhr.onprogress = (event) => {
+                const response = xhr.response;
+                const text = response.substring(receivedBytes);
+                // Receive only up to the last newline.
+                const lastNewline = text.lastIndexOf('\n');
+                if (lastNewline >= 0) {
+                    const jsonText = text.substring(0, lastNewline);
+                    receivedBytes += jsonText.length + 1;
+                    const lines = jsonText.split(/\r?\n/);
+                    for (const line of lines) {
+                        if (line.length > 0) {
+                            try {
+                                const json = JSON.parse(line);
+                                onResponse(json);
+                            }
+                            catch (err) {
+                                onError(err as Error);
+                            }
+                        }
+                    }
+                }
+            };
+            xhr.onerror = (event) => {
+                onError(new Error('Network request failed.'));
+            };
+            xhr.onload = (event) => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    // The connection was closed.
+                    // Do nothing.
+                }
+                else {
+                    onError(new Error(`Unexpected status code ${xhr.status}: ${xhr.statusText}`));
+                }
+            };
+            xhr.send();
+        });
+        return () => {
+            closed = true;
+            xhr.abort();
+        }
+    }
+
     post(path: string, body: {} | string, timeoutSeconds: number): Promise<HttpResponse> {
         return Trace.dependency('POST', path, async () => {
             let headers = await this.getHeaders();

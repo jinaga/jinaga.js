@@ -2,11 +2,10 @@ import { computeObjectHash } from "../fact/hash";
 import { FactManager } from "../managers/factManager";
 import { SpecificationListener } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
-import { invertSpecification, SpecificationInverse } from "../specification/inverse";
+import { SpecificationInverse, invertSpecification } from "../specification/inverse";
 import { Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
 import { computeStringHash } from "../util/encoding";
-import { Trace } from "../util/trace";
 
 export type ResultAddedFunc<U> = (value: U) =>
     Promise<() => Promise<void>> |  // Asynchronous with removal function
@@ -40,6 +39,7 @@ export class ObserverImpl<T> implements Observer<T> {
         handler: ResultAddedFunc<any>;
     }[] = [];
     private specificationHash: string;
+    private feeds: string[] = [];
 
     constructor(
         private factManager: FactManager,
@@ -68,7 +68,7 @@ export class ObserverImpl<T> implements Observer<T> {
         this.specificationHash = computeStringHash(request);
     }
 
-    public start() {
+    public start(keepAlive: boolean) {
         this.cachedPromise = new Promise((cacheResolve, _) => {
             this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
                 try {
@@ -77,7 +77,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         // The data is not yet cached.
                         cacheResolve(false);
                         // Fetch from the server and then read from local storage.
-                        await this.fetch();
+                        await this.fetch(keepAlive);
                         await this.read();
                         loadResolve();
                     }
@@ -86,7 +86,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         await this.read();
                         cacheResolve(true);
                         // Then fetch from the server to update the cache.
-                        await this.fetch();
+                        await this.fetch(keepAlive);
                         loadResolve();
                     }
                     await this.factManager.setMruDate(this.specificationHash, new Date());
@@ -126,10 +126,18 @@ export class ObserverImpl<T> implements Observer<T> {
         for (const listener of this.listeners) {
             this.factManager.removeSpecificationListener(listener);
         }
+        if (this.feeds.length > 0) {
+            this.factManager.unsubscribe(this.feeds);
+        }
     }
 
-    private async fetch() {
-        await this.factManager.fetch(this.given, this.specification);
+    private async fetch(keepAlive: boolean) {
+        if (keepAlive) {
+            this.feeds = await this.factManager.subscribe(this.given, this.specification);
+        }
+        else {
+            await this.factManager.fetch(this.given, this.specification);
+        }
     }
 
     private async read() {

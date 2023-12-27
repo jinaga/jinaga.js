@@ -293,9 +293,9 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
     }
 }
 
-type UserSpecificationDefinition<T> = (fact: LabelOf<T>, facts: FactRepository) => (Traversal<User> | Traversal<Device>);
+type UserSpecificationDefinition<T> = (fact: LabelOf<T>, facts: FactRepository) => (Traversal<User | Device>);
 
-type UserPredecessorSelector<T> = (fact: LabelOf<T>) => (LabelOf<User> | LabelOf<Device>);
+type UserPredecessorSelector<T> = (fact: LabelOf<T>) => (LabelOf<User | Device>);
 
 export class AuthorizationRules {
     private rulesByType: {[type: string]: AuthorizationRule[]} = {};
@@ -385,12 +385,14 @@ export class AuthorizationRules {
                 throw new Error('Authorization rules must select facts.');
             }
             if (payload.factType === User.Type) {
-                return facts.ofType(User)
+                const userTraversal: Traversal<LabelOf<User | Device>> = facts.ofType(User)
                     .join(user => user, label);
+                return userTraversal;
             }
             else if (payload.factType === Device.Type) {
-                return facts.ofType(Device)
+                const deviceTraversal: Traversal<LabelOf<User | Device>> = facts.ofType(Device)
                     .join(device => device, label);
+                return deviceTraversal;
             }
             else {
                 throw new Error(`Authorization rules must select users or devices.`);

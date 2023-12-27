@@ -1,5 +1,6 @@
 import { DistributionEngine } from "../distribution/distribution-engine";
 import { FeedResponse } from "../http/messages";
+import { Subscriber } from "../observer/subscriber";
 import { describeDeclaration, describeSpecification } from "../specification/description";
 import { buildFeeds } from "../specification/feed-builder";
 import { FeedCache } from "../specification/feed-cache";
@@ -10,6 +11,7 @@ import { computeStringHash } from "../util/encoding";
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>;
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void;
     load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
 
 }
@@ -21,6 +23,11 @@ export class NetworkNoOp implements Network {
 
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
         return Promise.resolve({ references: [], bookmark });
+    }
+
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
+        // Do nothing.
+        return () => { };
     }
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
@@ -65,6 +72,27 @@ export class NetworkDistribution implements Network {
             references: [],
             bookmark
         };
+    }
+
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
+        const feedObject = this.feedCache.getFeed(feed);
+        if (!feedObject) {
+            onError(new Error(`Feed ${feed} not found`));
+            return () => { };
+        }
+        this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user)
+            .then(canDistribute => {
+                if (canDistribute.type === 'failure') {
+                    onError(new Error(`Not authorized: ${canDistribute.reason}`));
+                    return;
+                }
+                // Pretend that we are at the end of the feed.
+                onResponse([], bookmark);
+            })
+            .catch(err => {
+                onError(err);
+            });
+        return () => { };
     }
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
@@ -133,6 +161,7 @@ export class NetworkManager {
     private readonly activeFeeds = new Map<string, Promise<void>>();
     private fectchCount = 0;
     private currentBatch: LoadBatch | null = null;
+    private subscribers: Map<string, Subscriber> = new Map();
 
     constructor(
         private readonly network: Network,
@@ -165,6 +194,49 @@ export class NetworkManager {
         }
     }
 
+    async subscribe(start: FactReference[], specification: Specification): Promise<string[]> {
+        const reducedSpecification = reduceSpecification(specification);
+        const feeds: string[] = await this.getFeedsFromCache(start, reducedSpecification);
+
+        const subscribers = feeds.map(feed => {
+            let subscriber = this.subscribers.get(feed);
+            if (!subscriber) {
+                subscriber = new Subscriber(feed, this.network, this.store, this.notifyFactsAdded);
+                this.subscribers.set(feed, subscriber);
+            }
+            return subscriber;
+        });
+        const promises = subscribers.map(async subscriber => {
+            if (subscriber.addRef()) {
+                await subscriber.start();
+            }
+        });
+
+        try {
+            await Promise.all(promises);
+        }
+        catch (e) {
+            // If any feed fails, then remove the specification from the cache.
+            this.removeFeedsFromCache(start, reducedSpecification);
+            this.unsubscribe(feeds);
+            throw e;
+        }
+        return feeds;
+    }
+
+    unsubscribe(feeds: string[]) {
+        for (const feed of feeds) {
+            const subscriber = this.subscribers.get(feed);
+            if (!subscriber) {
+                throw new Error(`Subscriber not found for feed ${feed}`);
+            }
+            if (subscriber.release()) {
+                subscriber.stop();
+                this.subscribers.delete(feed);
+            }
+        }
+    }
+
     private async getFeedsFromCache(start: FactReference[], specification: Specification): Promise<string[]> {
         const hash = getSpecificationHash(start, specification);
         const cached = this.feedsCache.get(hash);
@@ -182,7 +254,7 @@ export class NetworkManager {
     }
 
     private async processFeed(feed: string) {
-        let bookmark: string = await this.store.loadBookmark(feed);
+        let bookmark = await this.store.loadBookmark(feed);
 
         while (true) {
             this.fectchCount++;
