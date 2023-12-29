@@ -16,6 +16,14 @@ class FactGraph {
         private factRecords: FactRecord[]
     ) { }
 
+    getField(reference: FactReference, name: string) {
+        const record = this.findFact(reference);
+        if (record === null) {
+            throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
+        }
+        return record.fields[name];
+    }
+
     query(start: FactReference, query: Query): FactReference[] {
         const results = this.executeQuery(start, query.steps);
         return results;
@@ -161,6 +169,7 @@ function headStep(step: Step) {
 interface AuthorizationRule {
     describe(type: string): string;
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
+    getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation>;
 }
 
 class AuthorizationRuleAny implements AuthorizationRule {
@@ -170,6 +179,12 @@ class AuthorizationRuleAny implements AuthorizationRule {
 
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage) {
         return Promise.resolve(true);
+    }
+
+    getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+        return Promise.resolve({
+            quantifier: 'everyone'
+        });
     }
 }
 
@@ -181,6 +196,12 @@ class AuthorizationRuleNone implements AuthorizationRule {
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
         Trace.warn(`No fact of type ${fact.type} is authorized.`);
         return Promise.resolve(false);
+    }
+
+    getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+        return Promise.resolve({
+            quantifier: 'none'
+        });
     }
 }
 
@@ -215,6 +236,10 @@ class AuthorizationRuleQuery implements AuthorizationRule {
             }
         }
         return authorized;
+    }
+
+    getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+        throw new Error("Authorization with template functions is no longer supported.");
     }
 
     private async executeQuery(store: Storage, predecessors: FactReference) {
@@ -291,11 +316,93 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
         const authorized = results.some(factReferenceEquals(userFact));
         return authorized;
     }
+
+    async getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+        if (candidateKeys.length === 0) {
+            Trace.warn(`No candidate keys were given while attempting to authorize ${fact.type}.`);
+            return {
+                quantifier: 'none'
+            };
+        }
+
+        // The specification must be given a single fact.
+        if (this.specification.given.length !== 1) {
+            throw new Error('The specification must be given a single fact.');
+        }
+
+        // The projection must be a singular label.
+        if (this.specification.projection.type !== 'fact') {
+            throw new Error('The projection must be a singular label.');
+        }
+
+        // Split the specification.
+        // The head is deterministic, and can be run on the graph.
+        // The tail is non-deterministic, and must be run on the store.
+        const { head, tail } = splitBeforeFirstSuccessor(this.specification);
+
+        // If there is no head, then the specification is unsatisfiable.
+        if (head === undefined) {
+            throw new Error('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
+        }
+
+        // Execute the head on the graph.
+        if (head.projection.type !== 'fact') {
+            throw new Error('The head of the specification must project a fact.');
+        }
+        let results = graph.executeSpecification(
+            head.given[0].name,
+            head.matches,
+            head.projection.label,
+            fact);
+
+        const publicKeys: string[] = [];
+        // If there is a tail, execute it on the store.
+        if (tail !== undefined) {
+            if (tail.given.length !== 1) {
+                throw new Error('The tail of the specification must be given a single fact.');
+            }
+            for (const result of results) {
+                const users = await store.read([result], tail);
+                publicKeys.push(...users.map(user => user.result.publicKey));
+            }
+        }
+        else {
+            publicKeys.push(...results.map(result => graph.getField(result, 'publicKey')));
+        }
+
+        // Find the intersection between the candidate keys and the public keys.
+        const authorizedKeys = candidateKeys.filter(key => publicKeys.some(publicKey => publicKey === key));
+
+        // If any are left, then those are the authorized keys.
+        if (authorizedKeys.length > 0) {
+            return {
+                quantifier: 'some',
+                authorizedKeys
+            };
+        }
+        else {
+            return {
+                quantifier: 'none'
+            };
+        }
+    }
 }
 
 type UserSpecificationDefinition<T> = (fact: LabelOf<T>, facts: FactRepository) => (Traversal<User | Device>);
 
 type UserPredecessorSelector<T> = (fact: LabelOf<T>) => (LabelOf<User | Device>);
+
+type AuthorizationPopulationEveryone = {
+    quantifier: "everyone";
+};
+type AuthorizationPopulationSome = {
+    quantifier: "some";
+    authorizedKeys: string[];
+};
+type AuthorizationPopulationNone = {
+    quantifier: "none";
+};
+export type AuthorizationPopulation = AuthorizationPopulationEveryone | AuthorizationPopulationSome | AuthorizationPopulationNone;
 
 export class AuthorizationRules {
     private rulesByType: {[type: string]: AuthorizationRule[]} = {};
@@ -428,6 +535,30 @@ export class AuthorizationRules {
             }
         }
         return false;
+    }
+
+    async getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, factRecords: FactRecord[], store: Storage): Promise<AuthorizationPopulation> {
+        const rules = this.rulesByType[fact.type];
+        if (!rules) {
+            return {
+                quantifier: 'none'
+            };
+        }
+
+        const graph = new FactGraph(factRecords);
+        for (const rule of rules) {
+            const population = await rule.getAuthorizedPopulation(candidateKeys, fact, graph, store);
+            if (population.quantifier === 'everyone') {
+                return population;
+            }
+            else if (population.quantifier === 'some') {
+                // TODO: Union the authorized keys.
+                return population;
+            }
+        }
+        return {
+            quantifier: 'none'
+        }
     }
 
     saveToDescription(): string {
