@@ -3,7 +3,7 @@ import { AuthorizationRules } from '../../src/authorization/authorizationRules';
 import { dehydrateFact } from '../../src/fact/hydrate';
 import { ensure, Jinaga as j } from '../../src/jinaga';
 import { MemoryStore } from '../../src/memory/memory-store';
-import { FactRecord } from '../../src/storage';
+import { FactRecord, FactReference, factReferenceEquals } from '../../src/storage';
 import { Trace } from '../../src/util/trace';
 
 
@@ -95,9 +95,31 @@ async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: F
         ? userFact.fields.publicKey : null;
     const candidateKeys = userPublicKey
         ? [ userPublicKey ] : [];
-    const authorized = await authorizationRules.getAuthorizedPopulation(candidateKeys, fact, facts, store);
+    const allFacts = [ ...facts, fact ];
+    const allReferences = ancestors(fact, [...facts, fact]);
+    const transitiveClosure = allReferences
+        .map(reference => allFacts.find(factReferenceEquals(reference))!);
+    const authorized = await authorizationRules.getAuthorizedPopulation(candidateKeys, fact, transitiveClosure, store);
     return authorized.quantifier === "everyone" ||
         (authorized.quantifier === "some" && userPublicKey && authorized.authorizedKeys.indexOf(userPublicKey) >= 0);
+}
+
+function ancestors(reference: FactReference, facts: FactRecord[]): FactReference[] {
+    const fact = facts.find(factReferenceEquals(reference));
+    if (!fact) {
+        throw new Error(`Fact ${reference.type}:${reference.hash} not found.`);
+    }
+    const allPredecessors: FactReference[] = [];
+    for (const predecessor of Object.values(fact.predecessors)) {
+        if (Array.isArray(predecessor)) {
+            allPredecessors.push(...predecessor);
+        }
+        else if (predecessor) {
+            allPredecessors.push(predecessor);
+        }
+    }
+    return [ reference, ...allPredecessors
+        .flatMap(p => ancestors(p, facts))];
 }
 
 class Group {
