@@ -1,4 +1,4 @@
-import { AuthorizationRules, ensure, Jinaga, JinagaTest } from '../../src';
+import { AuthorizationRules, buildModel, ensure, Jinaga, JinagaTest } from '../../src';
 
 describe("Feedback authorization", () => {
   let j: Jinaga;
@@ -8,6 +8,7 @@ describe("Feedback authorization", () => {
     site = new Site(new User("Site creator"), "site identifier");
 
     j = JinagaTest.create({
+      model,
       authorization,
       user: new User("Logged in user"),
       initialState: [
@@ -119,11 +120,25 @@ class Comment {
   }
 }
 
+const model = buildModel(b => b
+  .type(User)
+  .type(Site, m => m
+    .predecessor("creator", User)
+  )
+  .type(Content, m => m
+    .predecessor("site", Site)
+  )
+  .type(Comment, m => m
+    .predecessor("content", Content)
+    .predecessor("author", User)
+  )
+);
+
 function authorization(a: AuthorizationRules) {
   return a
-    .any(User.Type)
-    .type(Site.Type, j.for(Site.creator))
-    .any(Content.Type)
-    .type(Comment.Type, j.for(Comment.author))
+    .any(User)
+    .type(Site, site => site.creator)
+    .any(Content)
+    .type(Comment, comment => comment.author)
     ;
 }

@@ -71,7 +71,10 @@ export class AuthorizationEngine {
             return "Forbidden";
         }
 
-        const isAuthorized = await this.authorizationRules.isAuthorized(userFact, fact, factRecords, this.store);
+        const candidateKeys : string[]= (userFact && userFact.fields.hasOwnProperty("publicKey")) ? [ userFact.fields.publicKey ] : [];
+        const population = await this.authorizationRules.getAuthorizedPopulation(candidateKeys, fact, factRecords, this.store);
+        const isAuthorized = population.quantifier === "everyone" ||
+            population.quantifier === "some" && population.authorizedKeys.length > 0;
         if (predecessors.some(p => p.verdict === "New") || !existing.some(f => f.hash === fact.hash && f.type === fact.type)) {
             if (!isAuthorized) {
                 if (this.authorizationRules.hasRule(fact.type)) {
