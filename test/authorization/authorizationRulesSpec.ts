@@ -1,8 +1,8 @@
 import { AuthorizationRules } from '../../src/authorization/authorizationRules';
 import { dehydrateFact } from '../../src/fact/hydrate';
-import { Jinaga as j, ensure } from '../../src/jinaga';
+import { ensure, Jinaga as j } from '../../src/jinaga';
 import { MemoryStore } from '../../src/memory/memory-store';
-import { FactRecord, FactReference } from '../../src/storage';
+import { FactRecord } from '../../src/storage';
 import { Trace } from '../../src/util/trace';
 
 
@@ -86,11 +86,17 @@ function givenAuthorizationRules(builder: (a: AuthorizationRules) => Authorizati
     return builder(new AuthorizationRules(undefined));
 }
 
-async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactReference | null, fact: FactRecord) {
+async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactRecord | null, fact: FactRecord) {
     const store = new MemoryStore();
     const facts = [ ...givenGroupMember(), givenUserFact('unauthorized-user') ];
     await store.save(facts.map(f => ({ fact: f, signatures: [] })));
-    return await authorizationRules.isAuthorized(userFact, fact, [fact], store);
+    const userPublicKey = userFact && userFact.fields.hasOwnProperty("publicKey")
+        ? userFact.fields.publicKey : null;
+    const candidateKeys = userPublicKey
+        ? [ userPublicKey ] : [];
+    const authorized = await authorizationRules.getAuthorizedPopulation(candidateKeys, fact, facts, store);
+    return authorized.quantifier === "everyone" ||
+        (authorized.quantifier === "some" && userPublicKey && authorized.authorizedKeys.indexOf(userPublicKey) >= 0);
 }
 
 class User {
