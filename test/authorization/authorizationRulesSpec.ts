@@ -1,4 +1,4 @@
-import { User, buildModel } from "../../src";
+import { FactRepository, LabelOf, User, buildModel } from "../../src";
 import { AuthorizationRules } from '../../src/authorization/authorizationRules';
 import { dehydrateFact } from '../../src/fact/hydrate';
 import { ensure, Jinaga as j } from '../../src/jinaga';
@@ -216,6 +216,13 @@ const model = buildModel(b => b
     )
 );
 
+const membersOfGroup = (message: LabelOf<Message>, facts: FactRepository) =>
+    facts.ofType(Member)
+        .join(member => member.group, message.group)
+        .selectMany(member => facts.ofType(User)
+            .join(user => user, member.user)
+        );
+
 function emptyQuery(m: Message) {
     return j.match(m);
 }
@@ -306,7 +313,7 @@ describe('Authorization rules', () => {
 
     it('should accept known fact from multiple users', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact();
         const fact = givenMessageFromMultipleAuthors();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -316,7 +323,7 @@ describe('Authorization rules', () => {
 
     it('should reject fact from multiple users when authorized is not in list', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact();
         const fact = givenUnauthorizedMessageFromPotentiallyMultipleAuthors();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -326,7 +333,7 @@ describe('Authorization rules', () => {
 
     it('should accept fact from a member of a group', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.group).then(Group.members).then(Member.user)));
+            .type(Message, membersOfGroup));
         const userFact = givenUserFact();
         const fact = givenMessageInGroup();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -336,7 +343,7 @@ describe('Authorization rules', () => {
 
     it('should reject fact from a non-member of a group', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.group).then(Group.members).then(Member.user)));
+            .type(Message, membersOfGroup));
         const userFact = givenUserFact('unauthorized-user');
         const fact = givenMessageInGroup();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
