@@ -1,3 +1,4 @@
+import { User, buildModel } from "../../src";
 import { AuthorizationRules } from '../../src/authorization/authorizationRules';
 import { dehydrateFact } from '../../src/fact/hydrate';
 import { ensure, Jinaga as j } from '../../src/jinaga';
@@ -9,7 +10,7 @@ import { Trace } from '../../src/util/trace';
 function givenUserFact(identity = 'authorized-user') {
     return dehydrateFact({
         type: 'Jinaga.User',
-        identity: identity
+        publicKey: identity
     })[0];
 }
 
@@ -22,7 +23,7 @@ function givenGroupMember() {
         },
         user: {
             type: 'Jinaga.User',
-            identity: 'authorized-user'
+            publicKey: 'authorized-user'
         }
     });
 }
@@ -32,7 +33,7 @@ function givenMessage(sender = 'authorized-user') {
         type: 'Message',
         author: {
             type: 'Jinaga.User',
-            identity: sender
+            publicKey: sender
         }
     })[1];
 }
@@ -50,10 +51,10 @@ function givenMessageFromMultipleAuthors() {
         author: [
             {
                 type: 'Jinaga.User',
-                identity: 'authorized-user'
+                publicKey: 'authorized-user'
             },{
                 type: 'Jinaga.User',
-                identity: 'unauthorized-user'
+                publicKey: 'unauthorized-user'
             }
         ]
     })[2];
@@ -65,7 +66,7 @@ function givenUnauthorizedMessageFromPotentiallyMultipleAuthors() {
         author: [
             {
                 type: 'Jinaga.User',
-                identity: 'unauthorized-user'
+                publicKey: 'unauthorized-user'
             }
         ]
     })[1];
@@ -83,7 +84,7 @@ function givenMessageInGroup() {
 
 function givenAuthorizationRules(builder: (a: AuthorizationRules) => AuthorizationRules =
         a => a) {
-    return builder(new AuthorizationRules(undefined));
+    return builder(new AuthorizationRules(model));
 }
 
 async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactRecord | null, fact: FactRecord) {
@@ -97,13 +98,6 @@ async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: F
     const authorized = await authorizationRules.getAuthorizedPopulation(candidateKeys, fact, facts, store);
     return authorized.quantifier === "everyone" ||
         (authorized.quantifier === "some" && userPublicKey && authorized.authorizedKeys.indexOf(userPublicKey) >= 0);
-}
-
-class User {
-    static Type = "Jinaga.User" as const;
-    constructor(
-        public publicKey: string
-    ) {}
 }
 
 class Group {
@@ -183,6 +177,23 @@ class Approval {
     }
 }
 
+const model = buildModel(b => b
+    .type(User)
+    .type(Group)
+    .type(Member, m => m
+        .predecessor("group", Group)
+        .predecessor("user", User)
+    )
+    .type(Message, m => m
+        .predecessor("author", User)
+        .predecessor("group", Group)
+    )
+    .type(Approval, m => m
+        .predecessor("message", Message)
+        .predecessor("approver", User)
+    )
+);
+
 function emptyQuery(m: Message) {
     return j.match(m);
 }
@@ -225,7 +236,7 @@ describe('Authorization rules', () => {
 
     it('should reject known fact when not logged in', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, null, fact);
 
@@ -243,7 +254,7 @@ describe('Authorization rules', () => {
 
     it('should reject known fact from no user', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact();
         const fact = givenAnonymousMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -253,7 +264,7 @@ describe('Authorization rules', () => {
 
     it('should reject known fact from unauthorized user', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact('unauthorized-user');
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -263,7 +274,7 @@ describe('Authorization rules', () => {
 
     it('should accept known fact from authorized user', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact();
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
