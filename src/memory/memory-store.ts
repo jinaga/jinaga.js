@@ -25,15 +25,15 @@ export function getPredecessors(fact: FactRecord | null, role: string) {
     }
 }
 
-function loadAll(references: FactReference[], source: FactRecord[], target: FactRecord[]) {
+function loadAll(references: FactReference[], source: FactEnvelope[], target: FactRecord[]) {
     references.forEach(reference => {
         const predicate = factReferenceEquals(reference);
         if (!target.some(predicate)) {
-            const record = source.find(predicate);
+            const record = source.find(e => predicate(e.fact));
             if (record) {
-                target.push(record);
-                for (const role in record.predecessors) {
-                    const predecessors = getPredecessors(record, role);
+                target.push(record.fact);
+                for (const role in record.fact.predecessors) {
+                    const predecessors = getPredecessors(record.fact, role);
                     loadAll(predecessors, source, target);
                 }
             }
@@ -42,7 +42,7 @@ function loadAll(references: FactReference[], source: FactRecord[], target: Fact
 }
 
 export class MemoryStore implements Storage {
-    private factRecords: FactRecord[] = [];
+    private factEnvelopes: FactEnvelope[] = [];
     private bookmarksByFeed: { [feed: string]: string } = {};
     private runner: SpecificationRunner;
     private mruDateBySpecificationHash: { [specificationHash: string]: Date } = {};
@@ -62,12 +62,21 @@ export class MemoryStore implements Storage {
 
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const added: FactEnvelope[] = [];
-        envelopes.forEach(envelope => {
-            if (!this.factRecords.some(factReferenceEquals(envelope.fact))) {
-                this.factRecords.push(envelope.fact);
+        for (const envelope of envelopes) {
+            const isFact = factReferenceEquals(envelope.fact);
+            const existing = this.factEnvelopes.find(e => isFact(e.fact));
+            if (!existing) {
+                this.factEnvelopes.push(envelope);
                 added.push(envelope);
             }
-        });
+            else {
+                const newSignatures = envelope.signatures.filter(s =>
+                    !existing.signatures.some(s2 => s2.publicKey === s.publicKey));
+                if (newSignatures.length > 0) {
+                    existing.signatures = [ ...existing.signatures, ...newSignatures ];
+                }
+            }
+        }
         return Promise.resolve(added);
     }
 
@@ -85,14 +94,16 @@ export class MemoryStore implements Storage {
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
-        const existing = references.filter(reference =>
-            this.factRecords.some(factReferenceEquals(reference)));
+        const existing = references.filter(reference => {
+            const isFact = factReferenceEquals(reference);
+            return this.factEnvelopes.some(e => isFact(e.fact));
+        });
         return Promise.resolve(existing);
     }
 
     load(references: FactReference[]): Promise<FactRecord[]> {
         let target: FactRecord[] = [];
-        loadAll(references, this.factRecords, target);
+        loadAll(references, this.factEnvelopes, target);
         return Promise.resolve(target);
     }
 
@@ -135,8 +146,9 @@ export class MemoryStore implements Storage {
             if (step.direction === Direction.Predecessor) {
                 return flatten(paths, path => {
                     const fact = path[path.length - 1];
-                    const record = this.factRecords.find(factReferenceEquals(fact)) ?? null;
-                    return getPredecessors(record, step.role).map(predecessor =>
+                    const isFact = factReferenceEquals(fact);
+                    const record = this.factEnvelopes.find(e => isFact(e.fact)) ?? null;
+                    return getPredecessors(record?.fact ?? null, step.role).map(predecessor =>
                         path.concat([predecessor])
                     );
                 });
@@ -144,14 +156,15 @@ export class MemoryStore implements Storage {
             else {
                 return flatten(paths, path => {
                     const fact = path[path.length - 1];
-                    const successors = this.factRecords.filter(record => {
-                        const predecessors = getPredecessors(record, step.role);
-                        return predecessors.some(factReferenceEquals(fact));
+                    const isFact = factReferenceEquals(fact);
+                    const successors = this.factEnvelopes.filter(envelope => {
+                        const predecessors = getPredecessors(envelope.fact, step.role);
+                        return predecessors.some(isFact);
                     });
                     return successors.map(successor =>
                         path.concat([{
-                            type: successor.type,
-                            hash: successor.hash
+                            type: successor.fact.type,
+                            hash: successor.fact.hash
                         }])
                     );
                 });
@@ -171,28 +184,31 @@ export class MemoryStore implements Storage {
     }
 
     private findFact(reference: FactReference): Promise<FactRecord | null> {
-        const fact = this.factRecords.find(factReferenceEquals(reference)) ?? null;
-        return Promise.resolve(fact);
+        const isFact = factReferenceEquals(reference);
+        const envelope = this.factEnvelopes.find(e => isFact(e.fact)) ?? null;
+        return Promise.resolve(envelope?.fact ?? null);
     }
 
     private getPredecessors(reference: FactReference, name: string, predecessorType: string): Promise<FactReference[]> {
-        const record = this.factRecords.find(factReferenceEquals(reference)) ?? null;
+        const isFact = factReferenceEquals(reference);
+        const record = this.factEnvelopes.find(e => isFact(e.fact)) ?? null;
         if (record === null) {
             throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
         }
-        const predecessors = getPredecessors(record, name);
+        const predecessors = getPredecessors(record.fact, name);
         const matching = predecessors.filter(predecessor => predecessor.type === predecessorType);
         return Promise.resolve(matching);
     }
     
     private getSuccessors(reference: FactReference, name: string, successorType: string): Promise<FactReference[]> {
-        const successors = this.factRecords.filter(record => record.type === successorType &&
-            getPredecessors(record, name).some(factReferenceEquals(reference)));
+        const successors = this.factEnvelopes.filter(record => record.fact.type === successorType &&
+            getPredecessors(record.fact, name).some(factReferenceEquals(reference)))
+            .map(e => e.fact);
         return Promise.resolve(successors);
     }
 
     private hydrate(reference: FactReference) {
-        const fact = hydrateFromTree([reference], this.factRecords);
+        const fact = hydrateFromTree([reference], this.factEnvelopes.map(e => e.fact));
         if (fact.length === 0) {
             throw new Error(`The fact ${reference} is not defined.`);
         }
