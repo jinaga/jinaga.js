@@ -45,7 +45,7 @@ export class AuthorizationEngine {
         private store: Storage
     ) { }
 
-    async authorizeFacts(facts: FactRecord[], userFact: FactRecord | null) {
+    async authorizeFacts(facts: FactRecord[], userFact: FactRecord | null): Promise<FactRecord[]> {
         const existing = await this.store.whichExist(facts);
         const sorter = new TopologicalSorter<Promise<AuthorizationResultOld>>();
         const results = await mapAsync(sorter.sort(facts, (p, f) => this.visitOld(p, f, userFact, facts, existing)), x => x);
@@ -65,7 +65,7 @@ export class AuthorizationEngine {
         return authorizedFacts;
     }
 
-    async authorizedFactsNew(factEnvelopes: FactEnvelope[], userFact: FactRecord | null) {
+    async authorizeFactsNew(factEnvelopes: FactEnvelope[], userFact: FactRecord | null): Promise<AuthorizationResult[]> {
         const facts = factEnvelopes.map(e => e.fact);
         const existing = await this.store.whichExist(facts);
         const sorter = new TopologicalSorter<Promise<AuthorizationResult>>();

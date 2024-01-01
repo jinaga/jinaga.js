@@ -2,7 +2,7 @@ import { Authentication } from '../authentication/authentication';
 import { AuthorizationEngine } from '../authorization/authorization-engine';
 import { AuthorizationRules } from '../authorization/authorizationRules';
 import { LoginResponse } from '../http/messages';
-import { FactEnvelope, FactRecord, Storage } from '../storage';
+import { FactEnvelope, FactRecord, Storage, factReferenceEquals } from '../storage';
 
 export class AuthenticationTest implements Authentication {
   private authorizationEngine: AuthorizationEngine | null;
@@ -40,12 +40,27 @@ export class AuthenticationTest implements Authentication {
   
   async authorize(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
     if (this.authorizationEngine) {
-      const facts = envelopes.map(e => e.fact);
-      const authorizedFacts = await this.authorizationEngine.authorizeFacts(facts, this.userFact);
-      const authorizedEnvelopes: FactEnvelope[] = authorizedFacts.map(f => ({
-        fact: f,
-        signatures: []
-      }));
+      const results = await this.authorizationEngine.authorizeFactsNew(envelopes, this.userFact);
+      const authorizedEnvelopes: FactEnvelope[] = results.map(r => {
+        const isFact = factReferenceEquals(r.fact);
+        const envelope = envelopes.find(e => isFact(e.fact));
+        if (!envelope) {
+          throw new Error("Fact not found in envelopes.");
+        }
+        if (r.verdict === "Accept") {
+          return {
+            fact: r.fact,
+            signatures: envelope.signatures
+              .filter(s => r.newPublicKeys.includes(s.publicKey))
+          };
+        }
+        else if (r.verdict === "Existing") {
+          return envelope;
+        }
+        else {
+          throw new Error("Unexpected verdict.");
+        }
+      });
       return authorizedEnvelopes;
     }
     else {
