@@ -40,7 +40,7 @@ export class AuthenticationTest implements Authentication {
   
   async authorize(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
     if (this.authorizationEngine) {
-      const results = await this.authorizationEngine.authorizeFactsNew(envelopes, this.userFact);
+      const results = await this.authorizationEngine.authorizeFacts(envelopes, this.userFact);
       const authorizedEnvelopes: FactEnvelope[] = results.map(r => {
         const isFact = factReferenceEquals(r.fact);
         const envelope = envelopes.find(e => isFact(e.fact));
