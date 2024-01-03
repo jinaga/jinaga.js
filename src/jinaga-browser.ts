@@ -37,8 +37,8 @@ export class JinagaBrowser {
         const fork = createFork(config, store, webClient);
         const authentication = createAuthentication(config, webClient);
         const network = createNetwork(webClient);
-        const factManager = new FactManager(authentication, fork, observableSource, store, network);
-        return new Jinaga(factManager, syncStatusNotifier);
+        const factManager = new FactManager(fork, observableSource, store, network);
+        return new Jinaga(authentication, factManager, syncStatusNotifier);
     }
 }
 

@@ -1,3 +1,4 @@
+import { Authentication } from "./authentication/authentication";
 import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { FactManager } from './managers/factManager';
@@ -23,7 +24,7 @@ export interface Profile {
     displayName: string;
 }
 
-export { Trace, Tracer, Preposition, FactDescription, ensure, Template };
+export { ensure, FactDescription, Preposition, Template, Trace, Tracer };
 
 export type MakeObservable<T> =
     T extends Array<infer U> ? ObservableCollection<MakeObservable<U>> :
@@ -39,6 +40,7 @@ export class Jinaga {
     private serviceRunner = new ServiceRunner(exception => this.error(exception));
     
     constructor(
+        private authentication: Authentication,
         private factManager: FactManager,
         private syncStatusNotifier: SyncStatusNotifier | null
     ) { }
@@ -82,7 +84,7 @@ export class Jinaga {
      * @returns A promise that resolves to a fact that represents the user's identity, and the user's profile as reported by the configured Passport strategy
      */
     async login<U>(): Promise<{ userFact: U, profile: Profile }> {
-        const { userFact, profile } = await this.factManager.login();
+        const { userFact, profile } = await this.authentication.login();
         return {
             userFact: hydrate<U>(userFact),
             profile
@@ -97,7 +99,7 @@ export class Jinaga {
      * @returns A promise that resolves to the local machine's identity
      */
     async local<D>(): Promise<D> {
-        const deviceFact = await this.factManager.local();
+        const deviceFact = await this.authentication.local();
         return hydrate<D>(deviceFact);
     }
     
@@ -125,7 +127,8 @@ export class Jinaga {
                     signatures: []
                 };
             });
-            const saved = await this.factManager.save(envelopes);
+            const authorized = await this.authentication.authorize(envelopes);
+            const saved = await this.factManager.save(authorized);
             return hydrated as T;
         } catch (error) {
             this.error(error);

@@ -14,8 +14,8 @@ describe('Query parser', () => {
 
     const memory = new MemoryStore();
     const network = new NetworkNoOp();
-    const factManager = new FactManager(new AuthenticationNoOp(), new ForkNoOp(), new ObservableSource(memory), memory, network);
-    const j = new Jinaga(factManager, null);
+    const factManager = new FactManager(new ForkNoOp(), new ObservableSource(memory), memory, network);
+    const j = new Jinaga(new AuthenticationNoOp(), factManager, null);
 
     function tasksInList(l: List): SpecificationOf<Task> {
         return j.match({

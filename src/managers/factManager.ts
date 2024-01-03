@@ -1,7 +1,5 @@
-import { Authentication } from "../authentication/authentication";
 import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
-import { LoginResponse } from "../http/messages";
 import { Observable, ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { Query } from "../query/query";
@@ -13,7 +11,6 @@ export class FactManager {
     private networkManager: NetworkManager;
 
     constructor(
-        private readonly authentication: Authentication,
         private readonly fork: Fork,
         private readonly observableSource: ObservableSource,
         private readonly store: Storage,
@@ -21,14 +18,6 @@ export class FactManager {
     ) {
         this.networkManager = new NetworkManager(network, store,
             factsAdded => this.observableSource.notify(factsAdded));
-    }
-
-    login(): Promise<LoginResponse> {
-        return this.authentication.login();
-    }
-
-    local(): Promise<FactRecord> {
-        return this.authentication.local();
     }
 
     addChannel(fact: FactReference, query: Query): Channel 
@@ -59,9 +48,8 @@ export class FactManager {
     }
 
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
-        const authorized = await this.authentication.authorize(envelopes);
-        await this.fork.save(authorized);
-        const saved = await this.store.save(authorized);
+        await this.fork.save(envelopes);
+        const saved = await this.store.save(envelopes);
         await this.observableSource.notify(saved);
         return saved;
     }

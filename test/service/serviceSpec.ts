@@ -1,13 +1,12 @@
 import { dehydrateFact, dehydrateReference } from "../../src/fact/hydrate";
 import { PassThroughFork } from "../../src/fork/pass-through-fork";
 import { FactManager } from "../../src/managers/factManager";
-import { NetworkManager, NetworkNoOp } from "../../src/managers/NetworkManager";
+import { NetworkNoOp } from "../../src/managers/NetworkManager";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { ObservableSource } from "../../src/observable/observable";
 import { runService } from "../../src/observable/service";
 import { fromDescriptiveString } from "../../src/query/descriptive-string";
 import { ServiceRunner } from "../../src/util/serviceRunner";
-import { AuthenticationNoOp } from "../query/AuthenticationNoOp";
 
 class TestContext {
     private factManager: FactManager;
@@ -18,9 +17,8 @@ class TestContext {
         const memory = new MemoryStore();
         const observableSource = new ObservableSource(memory);
         const fork = new PassThroughFork(memory);
-        const authentication = new AuthenticationNoOp();
         const network = new NetworkNoOp();
-        this.factManager = new FactManager(authentication, fork, observableSource, memory, network);
+        this.factManager = new FactManager(fork, observableSource, memory, network);
     }
 
     async fact(fact: {}) {

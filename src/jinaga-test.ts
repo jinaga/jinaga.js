@@ -32,8 +32,8 @@ export class JinagaTest {
     const fork = new PassThroughFork(store);
     const authentication = this.createAuthentication(config, store);
     const network = this.createNetwork(config, store);
-    const factManager = new FactManager(authentication, fork, observableSource, store, network);
-    return new Jinaga(factManager, syncStatusNotifier);
+    const factManager = new FactManager(fork, observableSource, store, network);
+    return new Jinaga(authentication, factManager, syncStatusNotifier);
   }
 
   static saveInitialState(config: JinagaTestConfig, store: MemoryStore) {
