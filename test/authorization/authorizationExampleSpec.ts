@@ -1,4 +1,4 @@
-import { AuthorizationRules, buildModel, ensure, Jinaga, JinagaTest } from '../../src';
+import { AuthorizationRules, buildModel, Jinaga, JinagaTest } from '../../src';
 
 describe("Feedback authorization", () => {
   let j: Jinaga;
@@ -82,11 +82,6 @@ class Site {
     public creator: User,
     public identifier: string
   ) { }
-
-  static creator(site: Site) {
-    ensure(site).has("creator", User);
-    return j.match(site.creator);
-  }
 }
 
 class Content {
@@ -97,11 +92,6 @@ class Content {
     public site: Site,
     public path: string
   ) { }
-
-  static site(content: Content) {
-    ensure(content).has("site", Site);
-    return j.match(content.site);
-  }
 }
 
 class Comment {
@@ -113,11 +103,6 @@ class Comment {
     public content: Content,
     public author: User
   ) { }
-
-  static author(comment: Comment) {
-    ensure(comment).has("author", User);
-    return j.match(comment.author);
-  }
 }
 
 const model = buildModel(b => b

@@ -1,5 +1,4 @@
 import { FactManager } from "../managers/factManager";
-import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, ReferencesByName, Storage } from "../storage";
 import { UserIdentity } from "../user-identity";
@@ -14,10 +13,6 @@ export class AuthorizationNoOp implements Authorization {
 
     getOrCreateUserFact(userIdentity: UserIdentity): Promise<FactRecord> {
         throw new Forbidden();
-    }
-
-    query(userIdentity: UserIdentity, start: FactReference, query: Query): Promise<any[]> {
-        return this.factManager.query(start, query);
     }
 
     read(userIdentity: UserIdentity, start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {

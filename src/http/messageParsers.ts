@@ -1,5 +1,5 @@
 import { FactRecord, FactReference, PredecessorCollection } from "../storage";
-import { LoadMessage, QueryMessage, SaveMessage } from "./messages";
+import { LoadMessage, SaveMessage } from "./messages";
 
 function parseFactReference(factReference: any): FactReference {
   if (typeof factReference !== 'object') throw new Error("Expected FactReference to be an object.");
@@ -38,15 +38,6 @@ function parseFactRecord(factRecord: any): FactRecord {
     hash: factRecord.hash,
     predecessors: parsePredecessorCollection(factRecord.predecessors),
     fields: factRecord.fields
-  };
-}
-
-export function parseQueryMessage(message: any): QueryMessage {
-  if (typeof message !== 'object') throw new Error("Expected an object. Check the content type of the request.");
-  if (typeof message.query !== 'string') throw new Error("Expected a string 'query' property.");
-  return {
-    start: parseFactReference(message.start),
-    query: message.query
   };
 }
 

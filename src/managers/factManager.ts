@@ -1,10 +1,8 @@
-import { Channel } from "../fork/channel";
 import { Fork } from "../fork/fork";
-import { Observable, ObservableSource, SpecificationListener } from "../observable/observable";
+import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
-import { Query } from "../query/query";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactPath, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
+import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
 import { Network, NetworkManager } from "./NetworkManager";
 
 export class FactManager {
@@ -18,20 +16,6 @@ export class FactManager {
     ) {
         this.networkManager = new NetworkManager(network, store,
             factsAdded => this.observableSource.notify(factsAdded));
-    }
-
-    addChannel(fact: FactReference, query: Query): Channel 
-    {
-        return this.fork.addChannel(fact, query);
-    }
-
-    removeChannel(channel: Channel): void {
-        this.fork.removeChannel(channel);
-    }
-
-    from(fact: FactReference, query: Query): Observable {
-        const observable = this.observableSource.from(fact, query);
-        return this.fork.decorateObservable(fact, query, observable);
     }
 
     addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
@@ -52,11 +36,6 @@ export class FactManager {
         const saved = await this.store.save(envelopes);
         await this.observableSource.notify(saved);
         return saved;
-    }
-
-    async query(start: FactReference, query: Query): Promise<FactPath[]> {
-        const results = await this.fork.query(start, query);
-        return results;
     }
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {

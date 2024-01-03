@@ -1,5 +1,5 @@
 import { Trace } from "../util/trace";
-import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse, QueryMessage, QueryResponse, SaveMessage } from "./messages";
+import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse, SaveMessage } from "./messages";
 
 export type SyncStatus = {
     sending: boolean;
@@ -64,14 +64,6 @@ export class WebClient {
 
     async login() {
         return <LoginResponse> await this.httpConnection.get('/login');
-    }
-
-    async query(query: QueryMessage) {
-        return <QueryResponse> await this.post('/query', query);
-    }
-
-    async queryWithRetry(query: QueryMessage) {
-        return <QueryResponse> await this.postWithLimitedRetry('/query', query);
     }
 
     async save(save: SaveMessage) {

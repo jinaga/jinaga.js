@@ -1,7 +1,6 @@
 import { FactRepository, LabelOf, User, buildModel } from "../../src";
 import { AuthorizationRules } from '../../src/authorization/authorizationRules';
 import { dehydrateFact } from '../../src/fact/hydrate';
-import { ensure, Jinaga as j } from '../../src/jinaga';
 import { MemoryStore } from '../../src/memory/memory-store';
 import { FactRecord, FactReference, factReferenceEquals } from '../../src/storage';
 import { Trace } from '../../src/util/trace';
@@ -129,13 +128,6 @@ class Group {
     constructor(
         public identity: string
     ) {}
-
-    static members(g: Group) {
-        return j.match<Member>({
-            type: Member.Type,
-            group: g
-        });
-    }
 }
 
 class Member {
@@ -146,12 +138,6 @@ class Member {
         public group: Group,
         public user: User
     ) {}
-
-    static user(m: Member) {
-        ensure(m).has("user", User);
-
-        return j.match(m.user);
-    }
 }
 
 class Message {
@@ -162,18 +148,6 @@ class Message {
         public author: User,
         public group: Group
     ) {}
-
-    static authorOf(m: Message) {
-        ensure(m).has("author", User);
-
-        return j.match(m.author);
-    }
-
-    static group(m: Message) {
-        ensure(m).has("group", Group);
-
-        return j.match(m.group);
-    }
 }
 
 class Approval {
@@ -184,19 +158,6 @@ class Approval {
         public message: Message,
         public approver: User
     ) {}
-
-    static of(m: Message) {
-        return j.match<Approval>({
-            type: Approval.Type,
-            message: m
-        });
-    }
-
-    static by(a: Approval) {
-        ensure(a).has("approver", User);
-
-        return j.match(a.approver);
-    }
 }
 
 const model = buildModel(b => b
@@ -222,17 +183,6 @@ const membersOfGroup = (message: LabelOf<Message>, facts: FactRepository) =>
         .selectMany(member => facts.ofType(User)
             .join(user => user, member.user)
         );
-
-function emptyQuery(m: Message) {
-    return j.match(m);
-}
-
-function typeQuery(m: Message) {
-    ensure(m).has("author", User);
-    m.type = Message.Type;
-
-    return j.match(m.author);
-}
 
 describe('Authorization rules', () => {
     Trace.off();
@@ -349,26 +299,5 @@ describe('Authorization rules', () => {
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
         expect(authorized).toBeFalsy();
-    });
-
-    it('should throw on empty query', async () => {
-        expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(emptyQuery)))).toThrow(
-                'Invalid authorization rule for type Message: the query matches the fact itself.'
-            );
-    });
-
-    it('should throw on successor query', async () => {
-        expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Approval.of).then(Approval.by)))).toThrow(
-                'Invalid authorization rule for type Message: the query expects successors.'
-            );
-    });
-
-    it('should throw on query that doesn\'t start with a join', async () => {
-        expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(typeQuery)))).toThrow(
-                'Invalid authorization rule for type Message: the query does not begin with a predecessor.'
-            );
     });
 });
