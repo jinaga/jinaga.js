@@ -30,21 +30,21 @@ export class PersistentFork implements Fork {
         this.sendAndDequeue(envelopes);
     }
 
-    async load(references: FactReference[]): Promise<FactRecord[]> {
+    async load(references: FactReference[]): Promise<FactEnvelope[]> {
         const known = await this.storage.load(references);
-        const remaining = references.filter(reference => !known.some(factReferenceEquals(reference)));
+        const remaining = references.filter(reference => !known.some(e => factReferenceEquals(reference)(e.fact)));
         if (remaining.length === 0) {
             return known;
         }
         else {
-            const records = await this.loadRecords(remaining);
+            const records = await this.loadEnvelopes(remaining);
             return records.concat(known);
         }
     }
 
-    private async loadRecords(references: FactReference[]) {
+    private async loadEnvelopes(references: FactReference[]) {
         const sorter = new TopologicalSorter<FactRecord>();
-        let records: FactRecord[] = [];
+        let loaded: FactEnvelope[] = [];
         for (let start = 0; start < references.length; start += 300) {
             const chunk = references.slice(start, start + 300);
             const response = await this.client.loadWithRetry(serializeLoad(chunk));
@@ -56,9 +56,9 @@ export class PersistentFork implements Fork {
                 };
             });
             await this.storage.save(envelopes);
-            records = records.concat(facts);
+            loaded = loaded.concat(envelopes);
         }
-        return records;
+        return loaded;
     }
 
     private sendAndDequeue(envelopes: FactEnvelope[]) {

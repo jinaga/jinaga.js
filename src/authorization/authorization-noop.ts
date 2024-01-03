@@ -19,7 +19,7 @@ export class AuthorizationNoOp implements Authorization {
         return this.factManager.read(start, specification);
     }
 
-    load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactRecord[]> {
+    load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactEnvelope[]> {
         return this.factManager.load(references);
     }
 

@@ -51,7 +51,7 @@ export interface Storage {
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
     feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
-    load(references: FactReference[]): Promise<FactRecord[]>;
+    load(references: FactReference[]): Promise<FactEnvelope[]>;
 
     loadBookmark(feed: string): Promise<string>;
     saveBookmark(feed: string, bookmark: string): Promise<void>;

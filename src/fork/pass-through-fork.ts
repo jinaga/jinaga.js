@@ -14,7 +14,7 @@ export class PassThroughFork implements Fork {
         return Promise.resolve();
     }
 
-    load(references: FactReference[]): Promise<FactRecord[]> {
+    load(references: FactReference[]): Promise<FactEnvelope[]> {
         return this.storage.load(references);
     }
 }

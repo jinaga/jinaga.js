@@ -54,7 +54,7 @@ export class FactManager {
         this.networkManager.unsubscribe(feeds);
     }
 
-    load(references: FactReference[]): Promise<FactRecord[]> {
+    load(references: FactReference[]): Promise<FactEnvelope[]> {
         return this.fork.load(references);
     }
 

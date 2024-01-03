@@ -166,7 +166,7 @@ export class IndexedDBStore implements Storage {
     });
   }
 
-  load(references: FactReference[]): Promise<FactRecord[]> {
+  load(references: FactReference[]): Promise<FactEnvelope[]> {
     return withDatabase(this.indexName, db => {
       return withTransaction(db, ['fact', 'ancestor'], 'readonly', async tx => {
         const factObjectStore = tx.objectStore('fact');
@@ -175,8 +175,10 @@ export class IndexedDBStore implements Storage {
           execRequest<string[]>(ancestorObjectStore.get(factKey(reference))));
         const distinctAncestors = allAncestors
           .filter(distinct);
-        const factRecords = await Promise.all(distinctAncestors.map(key =>
-          execRequest<FactRecord>(factObjectStore.get(key))));
+        const factRecords = await Promise.all(distinctAncestors.map<Promise<FactEnvelope>>(async key => ({
+          fact: await execRequest<FactRecord>(factObjectStore.get(key)),
+          signatures: []
+        })));
         return factRecords;
       });
     });
