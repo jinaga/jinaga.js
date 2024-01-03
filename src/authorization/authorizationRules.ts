@@ -5,7 +5,7 @@ import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload 
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { SpecificationParser } from '../specification/specification-parser';
 import { FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
-import { flatten } from '../util/fn';
+import { distinct, flatten } from '../util/fn';
 import { Trace } from '../util/trace';
 
 class FactGraph {
@@ -410,15 +410,22 @@ export class AuthorizationRules {
         }
 
         const graph = new FactGraph(factRecords);
+        let authorizedKeys: string[] = [];
         for (const rule of rules) {
             const population = await rule.getAuthorizedPopulation(candidateKeys, fact, graph, store);
             if (population.quantifier === 'everyone') {
                 return population;
             }
             else if (population.quantifier === 'some') {
-                // TODO: Union the authorized keys.
-                return population;
+                authorizedKeys = [...authorizedKeys, ...population.authorizedKeys]
+                    .filter(distinct);
             }
+        }
+        if (authorizedKeys.length > 0) {
+            return {
+                quantifier: 'some',
+                authorizedKeys
+            };
         }
         return {
             quantifier: 'none'
