@@ -162,8 +162,8 @@ export class ObserverImpl<T> implements Observer<T> {
             return await this.notifyRemoved(inverse.resultSubset, matchingResults);
         }
         else {
-            const _: never = inverse.operation;
-            throw new Error(`Inverse operation ${inverse.operation} not implemented.`);
+            const _exhaustiveCheck: never = inverse.operation;
+            throw new Error(`Inverse operation ${_exhaustiveCheck} not implemented.`);
         }
     }
 

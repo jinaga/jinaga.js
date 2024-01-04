@@ -215,7 +215,7 @@ function inferOperation(parentOperation: InverseOperation, exists: boolean): Inv
     }
     else {
         const _exhaustiveCheck: never = parentOperation;
-        throw new Error(`Cannot infer operation from ${parentOperation}, ${exists ? "exists" : "not exists"}`);
+        throw new Error(`Cannot infer operation from ${_exhaustiveCheck}, ${exists ? "exists" : "not exists"}`);
     }
 }
 

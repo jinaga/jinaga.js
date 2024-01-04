@@ -212,7 +212,7 @@ export class Traversal<T> {
             }
             else {
                 const _exhaustiveCheck: never = payload;
-                throw new Error(`Unexpected payload type: ${(payload as any).type}`);
+                throw new Error(`Unexpected payload type: ${(_exhaustiveCheck as any).type}`);
             }
         }
         else {
@@ -252,7 +252,7 @@ export class Traversal<T> {
                     }
                     else {
                         const _exhaustiveCheck: never = payload;
-                        throw new Error(`Unexpected payload type: ${(payload as any).type}`);
+                        throw new Error(`Unexpected payload type: ${(_exhaustiveCheck as any).type}`);
                     }
                 }
                 else if (child instanceof Traversal) {

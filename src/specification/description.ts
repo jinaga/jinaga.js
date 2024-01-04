@@ -65,7 +65,7 @@ function describeProjection(projection: Projection, depth: number): string {
     }
     else {
         const _exhaustiveCheck: never = projection;
-        throw new Error(`Unknown projection type: ${(projection as any).type}`);
+        throw new Error(`Unknown projection type: ${(_exhaustiveCheck as any).type}`);
     }
 }
 
@@ -84,7 +84,7 @@ function describeComponentProjection(projection: ComponentProjection, depth: num
     }
     else {
         const _exhaustiveCheck: never = projection;
-        throw new Error(`Unknown projection type: ${(projection as any).type}`);
+        throw new Error(`Unknown projection type: ${(_exhaustiveCheck as any).type}`);
     }
 }
 

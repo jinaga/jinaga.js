@@ -114,7 +114,7 @@ export class SpecificationRunner {
     }
     else {
       const _exhaustiveCheck: never = condition;
-      throw new Error(`Unknown condition type: ${(condition as any).type}`);
+      throw new Error(`Unknown condition type: ${(_exhaustiveCheck as any).type}`);
     }
   }
 
