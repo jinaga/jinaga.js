@@ -70,6 +70,10 @@ export function factReferenceEquals(a: FactReference) {
     return (r: FactReference) => r.hash === a.hash && r.type === a.type;
 }
 
+export function factEnvelopeEquals(r: FactReference) {
+    return (e: FactEnvelope) => e.fact.hash === r.hash && e.fact.type === r.type;
+}
+
 export function uniqueFactReferences(references: FactReference[]): FactReference[] {
     return references.filter((value, index, array) => {
         return findIndex(array, factReferenceEquals(value)) === index;

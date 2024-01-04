@@ -2,7 +2,7 @@ import { Authentication } from '../authentication/authentication';
 import { AuthorizationEngine } from '../authorization/authorization-engine';
 import { AuthorizationRules } from '../authorization/authorizationRules';
 import { LoginResponse } from '../http/messages';
-import { FactEnvelope, FactRecord, Storage, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactRecord, Storage, factEnvelopeEquals } from '../storage';
 
 export class AuthenticationTest implements Authentication {
   private authorizationEngine: AuthorizationEngine | null;
@@ -42,8 +42,7 @@ export class AuthenticationTest implements Authentication {
     if (this.authorizationEngine) {
       const results = await this.authorizationEngine.authorizeFacts(envelopes, this.userFact);
       const authorizedEnvelopes: FactEnvelope[] = results.map(r => {
-        const isFact = factReferenceEquals(r.fact);
-        const envelope = envelopes.find(e => isFact(e.fact));
+        const envelope = envelopes.find(factEnvelopeEquals(r.fact));
         if (!envelope) {
           throw new Error("Fact not found in envelopes.");
         }

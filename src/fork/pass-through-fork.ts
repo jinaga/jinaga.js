@@ -1,4 +1,4 @@
-import { FactEnvelope, FactRecord, FactReference, Storage } from "../storage";
+import { FactEnvelope, FactReference, Storage } from "../storage";
 import { Fork } from "./fork";
 
 export class PassThroughFork implements Fork {

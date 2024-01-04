@@ -1,7 +1,7 @@
 import { hydrateFromTree } from '../fact/hydrate';
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
-import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals } from '../storage';
 
 export function getPredecessors(fact: FactRecord | null, role: string) {
     if (!fact) {
@@ -24,9 +24,9 @@ export function getPredecessors(fact: FactRecord | null, role: string) {
 
 function loadAll(references: FactReference[], source: FactEnvelope[], target: FactEnvelope[]) {
     references.forEach(reference => {
-        const predicate = factReferenceEquals(reference);
-        if (!target.some(e => predicate(e.fact))) {
-            const record = source.find(e => predicate(e.fact));
+        const predicate = factEnvelopeEquals(reference);
+        if (!target.some(predicate)) {
+            const record = source.find(predicate);
             if (record) {
                 target.push(record);
                 for (const role in record.fact.predecessors) {
@@ -87,8 +87,7 @@ export class MemoryStore implements Storage {
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
         const existing = references.filter(reference => {
-            const isFact = factReferenceEquals(reference);
-            return this.factEnvelopes.some(e => isFact(e.fact));
+            return this.factEnvelopes.some(factEnvelopeEquals(reference));
         });
         return Promise.resolve(existing);
     }
@@ -120,14 +119,12 @@ export class MemoryStore implements Storage {
     }
 
     private findFact(reference: FactReference): Promise<FactRecord | null> {
-        const isFact = factReferenceEquals(reference);
-        const envelope = this.factEnvelopes.find(e => isFact(e.fact)) ?? null;
+        const envelope = this.factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
         return Promise.resolve(envelope?.fact ?? null);
     }
 
     private getPredecessors(reference: FactReference, name: string, predecessorType: string): Promise<FactReference[]> {
-        const isFact = factReferenceEquals(reference);
-        const record = this.factEnvelopes.find(e => isFact(e.fact)) ?? null;
+        const record = this.factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
         if (record === null) {
             throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
         }

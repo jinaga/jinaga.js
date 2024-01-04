@@ -1,6 +1,6 @@
 import { TopologicalSorter } from '../fact/sorter';
 import { WebClient } from '../http/web-client';
-import { FactEnvelope, FactRecord, FactReference, factReferenceEquals, Storage } from '../storage';
+import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Storage } from '../storage';
 import { Fork } from "./fork";
 import { serializeLoad, serializeSave } from './serialize';
 
@@ -22,7 +22,7 @@ export class TransientFork implements Fork {
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
         const known = await this.storage.load(references);
-        const remaining = references.filter(reference => !known.some(e => factReferenceEquals(reference)(e.fact)));
+        const remaining = references.filter(reference => !known.some(factEnvelopeEquals(reference)));
         if (remaining.length === 0) {
             return known;
         }

@@ -1,4 +1,4 @@
-import { FactEnvelope, FactRecord, FactReference } from "../storage";
+import { FactEnvelope, FactReference } from "../storage";
 
 export interface Fork {
     save(envelopes: FactEnvelope[]): Promise<void>;

@@ -1,6 +1,6 @@
 import { computeHash, verifyHash } from '../fact/hash';
 import { TopologicalSorter } from '../fact/sorter';
-import { FactEnvelope, FactRecord, FactReference, Storage, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, Storage, factEnvelopeEquals, factReferenceEquals } from '../storage';
 import { distinct, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 import { AuthorizationRules } from './authorizationRules';
@@ -76,12 +76,11 @@ export class AuthorizationEngine {
             return { fact, verdict: "Reject" };
         }
 
-        const isFact = factReferenceEquals(fact);
-        if (existing.some(isFact)) {
+        if (existing.some(factReferenceEquals(fact))) {
             return { fact, verdict: "Existing" };
         }
 
-        const envelope = factEnvelopes.find(e => isFact(e.fact));
+        const envelope = factEnvelopes.find(factEnvelopeEquals(fact));
         const envelopeKeys = envelope ? envelope.signatures.map(s => s.publicKey) : [];
         const candidateKeys = envelopeKeys.concat(userKeys);
 
