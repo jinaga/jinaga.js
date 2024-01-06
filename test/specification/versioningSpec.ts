@@ -42,7 +42,12 @@ const model = buildModel(b => b
   )
 );
 
-const childrenOfParent = model.given(Parent).match((parent, facts) =>
+const childrenOfParentAsFacts = model.given(Parent).match((parent, facts) =>
+  facts.ofType(ChildVersion2)
+    .join(child => child.parent, parent)
+);
+
+const childrenOfParentWithFields = model.given(Parent).match((parent, facts) =>
   facts.ofType(ChildVersion2)
     .join(child => child.parent, parent)
     .select(child => ({
@@ -62,10 +67,28 @@ describe("versioning", () => {
     });
 
     const parent = await j.fact(new Parent("parent"));
-    const children = await j.query(childrenOfParent, parent);
+    const children = await j.query(childrenOfParentWithFields, parent);
 
     expect(children).toHaveLength(1);
     expect(children[0].name).toEqual("child");
     expect(children[0].age).toBeUndefined();
+  });
+
+  it("should have the same hash", async () => {
+    const j = JinagaTest.create({
+      model,
+      initialState: [
+        new Parent("parent"),
+        new ChildVersion1(new Parent("parent"), "child")
+      ]
+    });
+
+    const parent = await j.fact(new Parent("parent"));
+    const children = await j.query(childrenOfParentAsFacts, parent);
+
+    expect(children).toHaveLength(1);
+    expect(j.hash(children[0])).toEqual(
+      j.hash(new ChildVersion1(new Parent("parent"), "child"))
+    );
   });
 });
