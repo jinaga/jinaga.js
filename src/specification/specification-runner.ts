@@ -168,9 +168,6 @@ export class SpecificationRunner {
         throw new Error(`The fact ${reference} is not defined.`);
       }
       const value: any = fact.fields[projection.field];
-      if (value === undefined) {
-        throw new Error(`The fact ${reference} does not have a field named ${projection.field}.`);
-      }
       return value;
     }
     else if (projection.type === "hash") {
