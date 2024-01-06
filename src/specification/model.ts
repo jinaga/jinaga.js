@@ -118,10 +118,17 @@ class Given<T extends any[]> {
 
 export type LabelOf<T> = { _label: "Label" } & {
     [ R in keyof T ]:
-        T[R] extends string ? T[R] :
-        T[R] extends number ? T[R] :
-        T[R] extends Date ? T[R] :
-        T[R] extends boolean ? T[R] :
+        T[R] extends string ? string :
+        T[R] extends number ? number :
+        T[R] extends bigint ? bigint :
+        T[R] extends Date ? string :
+        T[R] extends Date | string ? string :
+        T[R] extends boolean ? boolean :
+        T[R] extends string | undefined ? string | undefined :
+        T[R] extends number | undefined ? number | undefined :
+        T[R] extends bigint | undefined ? bigint | undefined :
+        T[R] extends Date | undefined ? string | undefined :
+        T[R] extends Date | string | undefined ? string | undefined :
         T[R] extends Array<infer U> ? LabelOf<U> :
         T[R] extends infer U | undefined ? LabelOf<U> :
         LabelOf<T[R]>;

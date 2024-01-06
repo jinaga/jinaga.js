@@ -295,9 +295,13 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
     }
 }
 
-type UserSpecificationDefinition<T> = (fact: LabelOf<T>, facts: FactRepository) => (Traversal<User | Device>);
+type UserSpecificationDefinition<T> =
+    ((fact: LabelOf<T>, facts: FactRepository) => (Traversal<LabelOf<User>>)) |
+    ((fact: LabelOf<T>, facts: FactRepository) => (Traversal<LabelOf<Device>>));
 
-type UserPredecessorSelector<T> = (fact: LabelOf<T>) => (LabelOf<User | Device>);
+type UserPredecessorSelector<T> =
+    ((fact: LabelOf<T>) => (LabelOf<User>)) |
+    ((fact: LabelOf<T>) => (LabelOf<Device>));
 
 type AuthorizationPopulationEveryone = {
     quantifier: "everyone";
@@ -356,7 +360,7 @@ export class AuthorizationRules {
         if (this.model === undefined) {
             throw new Error('The model must be given to define a rule using a specification.');
         }
-        const specification = this.model.given(factConstructor).match(definition);
+        const specification = this.model.given(factConstructor).match<unknown>(definition);
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
     }
 
@@ -365,19 +369,19 @@ export class AuthorizationRules {
         if (this.model === undefined) {
             throw new Error('The model must be given to define a rule using a specification.');
         }
-        const specification = this.model.given(factConstructor).match((fact, facts) => {
+        const specification = this.model.given(factConstructor).match<unknown>((fact, facts) => {
             const label = predecessorSelector(fact);
             const payload = getPayload(label);
             if (payload.type !== 'fact') {
                 throw new Error('Authorization rules must select facts.');
             }
             if (payload.factType === User.Type) {
-                const userTraversal: Traversal<LabelOf<User | Device>> = facts.ofType(User)
+                const userTraversal = facts.ofType(User)
                     .join(user => user, label);
                 return userTraversal;
             }
             else if (payload.factType === Device.Type) {
-                const deviceTraversal: Traversal<LabelOf<User | Device>> = facts.ofType(Device)
+                const deviceTraversal = facts.ofType(Device)
                     .join(device => device, label);
                 return deviceTraversal;
             }
