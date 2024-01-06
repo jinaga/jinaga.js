@@ -1,15 +1,15 @@
+import { FactRepository, LabelOf, User, buildModel } from "../../src";
 import { AuthorizationRules } from '../../src/authorization/authorizationRules';
 import { dehydrateFact } from '../../src/fact/hydrate';
-import { Jinaga as j, ensure } from '../../src/jinaga';
 import { MemoryStore } from '../../src/memory/memory-store';
-import { FactRecord, FactReference } from '../../src/storage';
+import { FactRecord, FactReference, factReferenceEquals } from '../../src/storage';
 import { Trace } from '../../src/util/trace';
 
 
 function givenUserFact(identity = 'authorized-user') {
     return dehydrateFact({
         type: 'Jinaga.User',
-        identity: identity
+        publicKey: identity
     })[0];
 }
 
@@ -22,7 +22,7 @@ function givenGroupMember() {
         },
         user: {
             type: 'Jinaga.User',
-            identity: 'authorized-user'
+            publicKey: 'authorized-user'
         }
     });
 }
@@ -32,7 +32,7 @@ function givenMessage(sender = 'authorized-user') {
         type: 'Message',
         author: {
             type: 'Jinaga.User',
-            identity: sender
+            publicKey: sender
         }
     })[1];
 }
@@ -50,10 +50,10 @@ function givenMessageFromMultipleAuthors() {
         author: [
             {
                 type: 'Jinaga.User',
-                identity: 'authorized-user'
+                publicKey: 'authorized-user'
             },{
                 type: 'Jinaga.User',
-                identity: 'unauthorized-user'
+                publicKey: 'unauthorized-user'
             }
         ]
     })[2];
@@ -65,7 +65,7 @@ function givenUnauthorizedMessageFromPotentiallyMultipleAuthors() {
         author: [
             {
                 type: 'Jinaga.User',
-                identity: 'unauthorized-user'
+                publicKey: 'unauthorized-user'
             }
         ]
     })[1];
@@ -83,21 +83,42 @@ function givenMessageInGroup() {
 
 function givenAuthorizationRules(builder: (a: AuthorizationRules) => AuthorizationRules =
         a => a) {
-    return builder(new AuthorizationRules(undefined));
+    return builder(new AuthorizationRules(model));
 }
 
-async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactReference | null, fact: FactRecord) {
+async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: FactRecord | null, fact: FactRecord) {
     const store = new MemoryStore();
     const facts = [ ...givenGroupMember(), givenUserFact('unauthorized-user') ];
     await store.save(facts.map(f => ({ fact: f, signatures: [] })));
-    return await authorizationRules.isAuthorized(userFact, fact, [fact], store);
+    const userPublicKey = userFact && userFact.fields.hasOwnProperty("publicKey")
+        ? userFact.fields.publicKey : null;
+    const candidateKeys = userPublicKey
+        ? [ userPublicKey ] : [];
+    const allFacts = [ ...facts, fact ];
+    const allReferences = ancestors(fact, [...facts, fact]);
+    const transitiveClosure = allReferences
+        .map(reference => allFacts.find(factReferenceEquals(reference))!);
+    const authorized = await authorizationRules.getAuthorizedPopulation(candidateKeys, fact, transitiveClosure, store);
+    return authorized.quantifier === "everyone" ||
+        (authorized.quantifier === "some" && userPublicKey && authorized.authorizedKeys.indexOf(userPublicKey) >= 0);
 }
 
-class User {
-    static Type = "Jinaga.User" as const;
-    constructor(
-        public publicKey: string
-    ) {}
+function ancestors(reference: FactReference, facts: FactRecord[]): FactReference[] {
+    const fact = facts.find(factReferenceEquals(reference));
+    if (!fact) {
+        throw new Error(`Fact ${reference.type}:${reference.hash} not found.`);
+    }
+    const allPredecessors: FactReference[] = [];
+    for (const predecessor of Object.values(fact.predecessors)) {
+        if (Array.isArray(predecessor)) {
+            allPredecessors.push(...predecessor);
+        }
+        else if (predecessor) {
+            allPredecessors.push(predecessor);
+        }
+    }
+    return [ reference, ...allPredecessors
+        .flatMap(p => ancestors(p, facts))];
 }
 
 class Group {
@@ -107,13 +128,6 @@ class Group {
     constructor(
         public identity: string
     ) {}
-
-    static members(g: Group) {
-        return j.match<Member>({
-            type: Member.Type,
-            group: g
-        });
-    }
 }
 
 class Member {
@@ -124,12 +138,6 @@ class Member {
         public group: Group,
         public user: User
     ) {}
-
-    static user(m: Member) {
-        ensure(m).has("user", User);
-
-        return j.match(m.user);
-    }
 }
 
 class Message {
@@ -140,18 +148,6 @@ class Message {
         public author: User,
         public group: Group
     ) {}
-
-    static authorOf(m: Message) {
-        ensure(m).has("author", User);
-
-        return j.match(m.author);
-    }
-
-    static group(m: Message) {
-        ensure(m).has("group", Group);
-
-        return j.match(m.group);
-    }
 }
 
 class Approval {
@@ -162,31 +158,31 @@ class Approval {
         public message: Message,
         public approver: User
     ) {}
-
-    static of(m: Message) {
-        return j.match<Approval>({
-            type: Approval.Type,
-            message: m
-        });
-    }
-
-    static by(a: Approval) {
-        ensure(a).has("approver", User);
-
-        return j.match(a.approver);
-    }
 }
 
-function emptyQuery(m: Message) {
-    return j.match(m);
-}
+const model = buildModel(b => b
+    .type(User)
+    .type(Group)
+    .type(Member, m => m
+        .predecessor("group", Group)
+        .predecessor("user", User)
+    )
+    .type(Message, m => m
+        .predecessor("author", User)
+        .predecessor("group", Group)
+    )
+    .type(Approval, m => m
+        .predecessor("message", Message)
+        .predecessor("approver", User)
+    )
+);
 
-function typeQuery(m: Message) {
-    ensure(m).has("author", User);
-    m.type = Message.Type;
-
-    return j.match(m.author);
-}
+const membersOfGroup = (message: LabelOf<Message>, facts: FactRepository) =>
+    facts.ofType(Member)
+        .join(member => member.group, message.group)
+        .selectMany(member => facts.ofType(User)
+            .join(user => user, member.user)
+        );
 
 describe('Authorization rules', () => {
     Trace.off();
@@ -219,7 +215,7 @@ describe('Authorization rules', () => {
 
     it('should reject known fact when not logged in', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, null, fact);
 
@@ -237,7 +233,7 @@ describe('Authorization rules', () => {
 
     it('should reject known fact from no user', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact();
         const fact = givenAnonymousMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -247,7 +243,7 @@ describe('Authorization rules', () => {
 
     it('should reject known fact from unauthorized user', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact('unauthorized-user');
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -257,7 +253,7 @@ describe('Authorization rules', () => {
 
     it('should accept known fact from authorized user', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact();
         const fact = givenMessage();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -267,7 +263,7 @@ describe('Authorization rules', () => {
 
     it('should accept known fact from multiple users', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact();
         const fact = givenMessageFromMultipleAuthors();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -277,7 +273,7 @@ describe('Authorization rules', () => {
 
     it('should reject fact from multiple users when authorized is not in list', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.authorOf)));
+            .type(Message, m => m.author));
         const userFact = givenUserFact();
         const fact = givenUnauthorizedMessageFromPotentiallyMultipleAuthors();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -287,7 +283,7 @@ describe('Authorization rules', () => {
 
     it('should accept fact from a member of a group', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.group).then(Group.members).then(Member.user)));
+            .type(Message, membersOfGroup));
         const userFact = givenUserFact();
         const fact = givenMessageInGroup();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
@@ -297,32 +293,11 @@ describe('Authorization rules', () => {
 
     it('should reject fact from a non-member of a group', async () => {
         const authorizationRules = givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Message.group).then(Group.members).then(Member.user)));
+            .type(Message, membersOfGroup));
         const userFact = givenUserFact('unauthorized-user');
         const fact = givenMessageInGroup();
         const authorized = await whenAuthorize(authorizationRules, userFact, fact);
 
         expect(authorized).toBeFalsy();
-    });
-
-    it('should throw on empty query', async () => {
-        expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(emptyQuery)))).toThrow(
-                'Invalid authorization rule for type Message: the query matches the fact itself.'
-            );
-    });
-
-    it('should throw on successor query', async () => {
-        expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(Approval.of).then(Approval.by)))).toThrow(
-                'Invalid authorization rule for type Message: the query expects successors.'
-            );
-    });
-
-    it('should throw on query that doesn\'t start with a join', async () => {
-        expect(() => givenAuthorizationRules(a => a
-            .type(Message.Type, j.for(typeQuery)))).toThrow(
-                'Invalid authorization rule for type Message: the query does not begin with a predecessor.'
-            );
     });
 });

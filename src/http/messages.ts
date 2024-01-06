@@ -1,4 +1,4 @@
-import { FactPath, FactRecord, FactReference } from '../storage';
+import { FactRecord, FactReference } from '../storage';
 
 export interface ProfileMessage {
     displayName: string;
@@ -7,15 +7,6 @@ export interface ProfileMessage {
 export interface LoginResponse {
     userFact: FactRecord,
     profile: ProfileMessage
-};
-
-export interface QueryMessage {
-    start: FactReference,
-    query: string
-};
-
-export interface QueryResponse {
-    results: FactPath[]
 };
 
 export interface SaveMessage {

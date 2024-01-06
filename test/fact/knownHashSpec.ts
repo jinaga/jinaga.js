@@ -84,7 +84,7 @@ describe("Known hash", () => {
         expect(hash).toEqual("BYLtR7XddbhchlyBdGdrnRHGkPsDecynDjLHFvqtKH7zug46ymxNDpPC4QNb+T14Bhzs8M1F3VfCnlgzinNHPg==");
     });
 
-    it.only("Multiple predecessor list", () => {
+    it("Multiple predecessor list", () => {
         const passenger = {
             type: "Skylane.Passenger",
             airline: {

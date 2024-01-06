@@ -1,4 +1,4 @@
-import { AuthorizationRules, ensure, Jinaga, JinagaTest } from '../../src';
+import { AuthorizationRules, buildModel, Jinaga, JinagaTest } from '../../src';
 
 describe("Feedback authorization", () => {
   let j: Jinaga;
@@ -8,6 +8,7 @@ describe("Feedback authorization", () => {
     site = new Site(new User("Site creator"), "site identifier");
 
     j = JinagaTest.create({
+      model,
       authorization,
       user: new User("Logged in user"),
       initialState: [
@@ -81,11 +82,6 @@ class Site {
     public creator: User,
     public identifier: string
   ) { }
-
-  static creator(site: Site) {
-    ensure(site).has("creator", User);
-    return j.match(site.creator);
-  }
 }
 
 class Content {
@@ -96,11 +92,6 @@ class Content {
     public site: Site,
     public path: string
   ) { }
-
-  static site(content: Content) {
-    ensure(content).has("site", Site);
-    return j.match(content.site);
-  }
 }
 
 class Comment {
@@ -112,18 +103,27 @@ class Comment {
     public content: Content,
     public author: User
   ) { }
-
-  static author(comment: Comment) {
-    ensure(comment).has("author", User);
-    return j.match(comment.author);
-  }
 }
+
+const model = buildModel(b => b
+  .type(User)
+  .type(Site, m => m
+    .predecessor("creator", User)
+  )
+  .type(Content, m => m
+    .predecessor("site", Site)
+  )
+  .type(Comment, m => m
+    .predecessor("content", Content)
+    .predecessor("author", User)
+  )
+);
 
 function authorization(a: AuthorizationRules) {
   return a
-    .any(User.Type)
-    .type(Site.Type, j.for(Site.creator))
-    .any(Content.Type)
-    .type(Comment.Type, j.for(Comment.author))
+    .any(User)
+    .type(Site, site => site.creator)
+    .any(Content)
+    .type(Comment, comment => comment.author)
     ;
 }

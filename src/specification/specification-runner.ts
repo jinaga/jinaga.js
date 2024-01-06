@@ -114,7 +114,7 @@ export class SpecificationRunner {
     }
     else {
       const _exhaustiveCheck: never = condition;
-      throw new Error(`Unknown condition type: ${(condition as any).type}`);
+      throw new Error(`Unknown condition type: ${(_exhaustiveCheck as any).type}`);
     }
   }
 
@@ -168,9 +168,6 @@ export class SpecificationRunner {
         throw new Error(`The fact ${reference} is not defined.`);
       }
       const value: any = fact.fields[projection.field];
-      if (value === undefined) {
-        throw new Error(`The fact ${reference} does not have a field named ${projection.field}.`);
-      }
       return value;
     }
     else if (projection.type === "hash") {

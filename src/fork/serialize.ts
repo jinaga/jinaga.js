@@ -1,17 +1,9 @@
-import { LoadMessage, QueryMessage, SaveMessage } from '../http/messages';
-import { Query } from '../query/query';
+import { LoadMessage, SaveMessage } from '../http/messages';
 import { FactEnvelope, FactReference } from '../storage';
 
 export function serializeSave(envelopes: FactEnvelope[]) : SaveMessage {
     return {
         facts: envelopes.map(e => e.fact)
-    };
-}
-
-export function serializeQuery(start: FactReference, query: Query) : QueryMessage {
-    return {
-        start: start,
-        query: query.toDescriptiveString()
     };
 }
 

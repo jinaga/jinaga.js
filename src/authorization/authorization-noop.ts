@@ -1,7 +1,6 @@
 import { FactManager } from "../managers/factManager";
-import { Query } from '../query/query';
 import { Specification } from "../specification/specification";
-import { FactFeed, FactRecord, FactReference, ProjectedResult, ReferencesByName, Storage } from "../storage";
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, ReferencesByName, Storage } from "../storage";
 import { UserIdentity } from "../user-identity";
 import { Authorization } from './authorization';
 import { Forbidden } from './authorization-engine';
@@ -16,15 +15,11 @@ export class AuthorizationNoOp implements Authorization {
         throw new Forbidden();
     }
 
-    query(userIdentity: UserIdentity, start: FactReference, query: Query): Promise<any[]> {
-        return this.factManager.query(start, query);
-    }
-
     read(userIdentity: UserIdentity, start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         return this.factManager.read(start, specification);
     }
 
-    load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactRecord[]> {
+    load(userIdentity: UserIdentity, references: FactReference[]): Promise<FactEnvelope[]> {
         return this.factManager.load(references);
     }
 
@@ -32,12 +27,8 @@ export class AuthorizationNoOp implements Authorization {
         return this.store.feed(specification, start, bookmark);
     }
 
-    async save(userIdentity: UserIdentity, facts: FactRecord[]): Promise<FactRecord[]> {
-        const envelopes = await this.factManager.save(facts.map(fact => ({
-            fact,
-            signatures: []
-        })));
-        return envelopes.map(envelope => envelope.fact);
+    async save(userIdentity: UserIdentity, envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+        return envelopes;
     }
 
     verifyDistribution(userIdentity: UserIdentity, feeds: Specification[], namedStart: ReferencesByName): Promise<void> {

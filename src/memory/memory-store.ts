@@ -1,10 +1,7 @@
 import { hydrateFromTree } from '../fact/hydrate';
-import { Query } from '../query/query';
-import { Direction, ExistentialCondition, Join, PropertyCondition, Quantifier, Step } from '../query/steps';
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
-import { FactEnvelope, FactFeed, FactPath, FactRecord, FactReference, ProjectedResult, Storage, factReferenceEquals } from '../storage';
-import { flatten } from '../util/fn';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals } from '../storage';
 
 export function getPredecessors(fact: FactRecord | null, role: string) {
     if (!fact) {
@@ -25,15 +22,15 @@ export function getPredecessors(fact: FactRecord | null, role: string) {
     }
 }
 
-function loadAll(references: FactReference[], source: FactRecord[], target: FactRecord[]) {
+function loadAll(references: FactReference[], source: FactEnvelope[], target: FactEnvelope[]) {
     references.forEach(reference => {
-        const predicate = factReferenceEquals(reference);
+        const predicate = factEnvelopeEquals(reference);
         if (!target.some(predicate)) {
             const record = source.find(predicate);
             if (record) {
                 target.push(record);
-                for (const role in record.predecessors) {
-                    const predecessors = getPredecessors(record, role);
+                for (const role in record.fact.predecessors) {
+                    const predecessors = getPredecessors(record.fact, role);
                     loadAll(predecessors, source, target);
                 }
             }
@@ -42,7 +39,7 @@ function loadAll(references: FactReference[], source: FactRecord[], target: Fact
 }
 
 export class MemoryStore implements Storage {
-    private factRecords: FactRecord[] = [];
+    private factEnvelopes: FactEnvelope[] = [];
     private bookmarksByFeed: { [feed: string]: string } = {};
     private runner: SpecificationRunner;
     private mruDateBySpecificationHash: { [specificationHash: string]: Date } = {};
@@ -62,18 +59,22 @@ export class MemoryStore implements Storage {
 
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const added: FactEnvelope[] = [];
-        envelopes.forEach(envelope => {
-            if (!this.factRecords.some(factReferenceEquals(envelope.fact))) {
-                this.factRecords.push(envelope.fact);
+        for (const envelope of envelopes) {
+            const isFact = factReferenceEquals(envelope.fact);
+            const existing = this.factEnvelopes.find(e => isFact(e.fact));
+            if (!existing) {
+                this.factEnvelopes.push(envelope);
                 added.push(envelope);
             }
-        });
+            else {
+                const newSignatures = envelope.signatures.filter(s =>
+                    !existing.signatures.some(s2 => s2.publicKey === s.publicKey));
+                if (newSignatures.length > 0) {
+                    existing.signatures = [ ...existing.signatures, ...newSignatures ];
+                }
+            }
+        }
         return Promise.resolve(added);
-    }
-
-    query(start: FactReference, query: Query): Promise<FactPath[]> {
-        const results = this.executeQuery(start, query.steps).map(path => path.slice(1));
-        return Promise.resolve(results);
     }
 
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
@@ -85,14 +86,15 @@ export class MemoryStore implements Storage {
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
-        const existing = references.filter(reference =>
-            this.factRecords.some(factReferenceEquals(reference)));
+        const existing = references.filter(reference => {
+            return this.factEnvelopes.some(factEnvelopeEquals(reference));
+        });
         return Promise.resolve(existing);
     }
 
-    load(references: FactReference[]): Promise<FactRecord[]> {
-        let target: FactRecord[] = [];
-        loadAll(references, this.factRecords, target);
+    load(references: FactReference[]): Promise<FactEnvelope[]> {
+        let target: FactEnvelope[] = [];
+        loadAll(references, this.factEnvelopes, target);
         return Promise.resolve(target);
     }
 
@@ -116,83 +118,30 @@ export class MemoryStore implements Storage {
         return Promise.resolve();
     }
 
-    private executeQuery(start: FactReference, steps: Step[]) {
-        return steps.reduce((paths, step) => {
-            return this.executeStep(paths, step);
-        }, [[start]]);
-    }
-
-    private executeStep(paths: FactPath[], step: Step): FactPath[] {
-        if (step instanceof PropertyCondition) {
-            if (step.name === 'type') {
-                return paths.filter(path => {
-                    const fact = path[path.length - 1];
-                    return fact.type === step.value;
-                });
-            }
-        }
-        else if (step instanceof Join) {
-            if (step.direction === Direction.Predecessor) {
-                return flatten(paths, path => {
-                    const fact = path[path.length - 1];
-                    const record = this.factRecords.find(factReferenceEquals(fact)) ?? null;
-                    return getPredecessors(record, step.role).map(predecessor =>
-                        path.concat([predecessor])
-                    );
-                });
-            }
-            else {
-                return flatten(paths, path => {
-                    const fact = path[path.length - 1];
-                    const successors = this.factRecords.filter(record => {
-                        const predecessors = getPredecessors(record, step.role);
-                        return predecessors.some(factReferenceEquals(fact));
-                    });
-                    return successors.map(successor =>
-                        path.concat([{
-                            type: successor.type,
-                            hash: successor.hash
-                        }])
-                    );
-                });
-            }
-        }
-        else if (step instanceof ExistentialCondition) {
-            return paths.filter(path => {
-                const fact = path[path.length - 1];
-                const results = this.executeQuery(fact, step.steps);
-                return step.quantifier === Quantifier.Exists ?
-                    results.length > 0 :
-                    results.length === 0;
-            });
-        }
-
-        throw new Error('Cannot yet handle this type of step: ' + step);
-    }
-
     private findFact(reference: FactReference): Promise<FactRecord | null> {
-        const fact = this.factRecords.find(factReferenceEquals(reference)) ?? null;
-        return Promise.resolve(fact);
+        const envelope = this.factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
+        return Promise.resolve(envelope?.fact ?? null);
     }
 
     private getPredecessors(reference: FactReference, name: string, predecessorType: string): Promise<FactReference[]> {
-        const record = this.factRecords.find(factReferenceEquals(reference)) ?? null;
+        const record = this.factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
         if (record === null) {
             throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
         }
-        const predecessors = getPredecessors(record, name);
+        const predecessors = getPredecessors(record.fact, name);
         const matching = predecessors.filter(predecessor => predecessor.type === predecessorType);
         return Promise.resolve(matching);
     }
     
     private getSuccessors(reference: FactReference, name: string, successorType: string): Promise<FactReference[]> {
-        const successors = this.factRecords.filter(record => record.type === successorType &&
-            getPredecessors(record, name).some(factReferenceEquals(reference)));
+        const successors = this.factEnvelopes.filter(record => record.fact.type === successorType &&
+            getPredecessors(record.fact, name).some(factReferenceEquals(reference)))
+            .map(e => e.fact);
         return Promise.resolve(successors);
     }
 
     private hydrate(reference: FactReference) {
-        const fact = hydrateFromTree([reference], this.factRecords);
+        const fact = hydrateFromTree([reference], this.factEnvelopes.map(e => e.fact));
         if (fact.length === 0) {
             throw new Error(`The fact ${reference} is not defined.`);
         }

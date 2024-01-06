@@ -1,5 +1,4 @@
 import { computeObjectHash } from "./fact/hash";
-import { Query } from './query/query';
 import { Specification } from "./specification/specification";
 import { findIndex } from './util/fn';
 
@@ -7,8 +6,6 @@ export type FactReference = {
     type: string;
     hash: string;
 };
-
-export type FactPath = FactReference[];
 
 export interface FactTuple {
     facts: FactReference[];
@@ -51,11 +48,10 @@ export interface ProjectedResult {
 export interface Storage {
     close(): Promise<void>;
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
-    query(start: FactReference, query: Query): Promise<FactPath[]>;
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
     feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
-    load(references: FactReference[]): Promise<FactRecord[]>;
+    load(references: FactReference[]): Promise<FactEnvelope[]>;
 
     loadBookmark(feed: string): Promise<string>;
     saveBookmark(feed: string, bookmark: string): Promise<void>;
@@ -72,6 +68,10 @@ export interface Queue {
 
 export function factReferenceEquals(a: FactReference) {
     return (r: FactReference) => r.hash === a.hash && r.type === a.type;
+}
+
+export function factEnvelopeEquals(r: FactReference) {
+    return (e: FactEnvelope) => e.fact.hash === r.hash && e.fact.type === r.type;
 }
 
 export function uniqueFactReferences(references: FactReference[]): FactReference[] {

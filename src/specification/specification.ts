@@ -348,7 +348,7 @@ function labelsInCondition(condition: Condition): string[] {
     }
     else {
         const _exhaustiveCheck: never = condition;
-        throw new Error(`Unexpected condition type ${(condition as any).type}`);
+        throw new Error(`Unexpected condition type ${(_exhaustiveCheck as any).type}`);
     }
 }
 
