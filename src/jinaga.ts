@@ -230,6 +230,10 @@ export class Jinaga {
         if (hash) {
             return hash;
         }
+        const error = this.getFactError(fact);
+        if (error) {
+            throw new Error(`Cannot hash the object. It is not a fact. ${error}: ${JSON.stringify(fact)}`);
+        }
         const reference = dehydrateReference(fact);
         return reference.hash;
     }
@@ -239,26 +243,39 @@ export class Jinaga {
     }
 
     private validateFact(prototype: HashMap) {
+        const error = Jinaga.getFactError(prototype);
+        if (error) {
+            throw new Error(error);
+        }
+    }
+
+    private static getFactError(prototype: HashMap): string | undefined {
         if (!prototype) {
-            throw new Error('A fact or any of its predecessors cannot be null.')
+            return 'A fact or any of its predecessors cannot be null.';
         }
         if (!('type' in prototype)) {
-            throw new Error('Specify the type of the fact and all of its predecessors.');
+            return 'Specify the type of the fact and all of its predecessors.';
         }
         for (const field in prototype) {
             const value = toJSON(prototype[field]);
             if (typeof(value) === 'object') {
                 if (Array.isArray(value)) {
-                    value
-                        .filter(element => element)
-                        .forEach(element => this.validateFact(element));
+                    for (const element of value) {
+                        const error = this.getFactError(element);
+                        if (error) {
+                            return error;
+                        }
+                    }
                 }
                 else {
-                    this.validateFact(value);
+                    const error = this.getFactError(value);
+                    if (error) {
+                        return error;
+                    }
                 }
             }
             else if (typeof(value) === 'function') {
-                throw new Error(`A fact may not have any methods: ${field} in ${prototype.type} is a function.`);
+                return `A fact may not have any methods: ${field} in ${prototype.type} is a function.`;
             }
         }
     }
