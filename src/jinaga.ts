@@ -22,6 +22,8 @@ export type MakeObservable<T> =
 
 type WatchArgs<T extends unknown[], U> = [...T, ResultAddedFunc<MakeObservable<U>>];
 
+export type Fact = { type: string } & HashMap;
+
 export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
     private loadingHandlers: ((loading: boolean) => void)[] = [];
@@ -71,7 +73,7 @@ export class Jinaga {
      * 
      * @returns A promise that resolves to a fact that represents the user's identity, and the user's profile as reported by the configured Passport strategy
      */
-    async login<U>(): Promise<{ userFact: U, profile: Profile }> {
+    async login<U extends Fact>(): Promise<{ userFact: U, profile: Profile }> {
         const { userFact, profile } = await this.authentication.login();
         return {
             userFact: hydrate<U>(userFact),
@@ -86,7 +88,7 @@ export class Jinaga {
      * 
      * @returns A promise that resolves to the local machine's identity
      */
-    async local<D>(): Promise<D> {
+    async local<D extends Fact>(): Promise<D> {
         const deviceFact = await this.authentication.local();
         return hydrate<D>(deviceFact);
     }
@@ -99,7 +101,7 @@ export class Jinaga {
      * @param prototype The fact to save and share
      * @returns The fact that was just created
      */
-    async fact<T>(prototype: T) : Promise<T> {
+    async fact<T extends Fact>(prototype: T) : Promise<T> {
         if (!prototype) {
             return prototype;
         }
@@ -225,7 +227,7 @@ export class Jinaga {
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true);
     }
 
-    static hash<T extends Object>(fact: T) {
+    static hash<T extends Fact>(fact: T) {
         const hash = lookupHash(fact);
         if (hash) {
             return hash;
@@ -238,18 +240,18 @@ export class Jinaga {
         return reference.hash;
     }
 
-    hash<T extends Object>(fact: T) {
+    hash<T extends Fact>(fact: T) {
         return Jinaga.hash(fact);
     }
 
-    private validateFact(prototype: HashMap) {
+    private validateFact(prototype: Fact) {
         const error = Jinaga.getFactError(prototype);
         if (error) {
             throw new Error(error);
         }
     }
 
-    private static getFactError(prototype: HashMap): string | undefined {
+    private static getFactError(prototype: Fact): string | undefined {
         if (!prototype) {
             return 'A fact or any of its predecessors cannot be null.';
         }
