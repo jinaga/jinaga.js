@@ -28,7 +28,7 @@ export class AuthorizationNoOp implements Authorization {
     }
 
     async save(userIdentity: UserIdentity, envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
-        return envelopes;
+        return await this.factManager.save(envelopes);
     }
 
     verifyDistribution(userIdentity: UserIdentity, feeds: Specification[], namedStart: ReferencesByName): Promise<void> {
