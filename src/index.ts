@@ -25,7 +25,7 @@ export {
   SaveMessage
 } from './http/messages';
 export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
-export { Jinaga, MakeObservable, Profile, Trace } from './jinaga';
+export { Fact, Jinaga, MakeObservable, Profile, Trace } from './jinaga';
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
