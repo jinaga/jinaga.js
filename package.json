@@ -12,11 +12,11 @@
   ],
   "homepage": "http://jinaga.com",
   "bugs": {
-    "url": "https://github.com/michaellperry/jinaga/issues"
+    "url": "https://github.com/jinaga/jinaga.js/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/michaellperry/jinaga.git"
+    "url": "https://github.com/jinaga/jinaga.js.git"
   },
   "license": "MIT",
   "author": "Michael L Perry",
