@@ -13,6 +13,7 @@ export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
 export { TransientFork } from './fork/transient-fork';
 export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvider";
+export { GraphDeserializer } from "./http/deserializer";
 export { HttpNetwork } from "./http/httpNetwork";
 export { parseLoadMessage, parseSaveMessage } from './http/messageParsers';
 export {
@@ -24,6 +25,7 @@ export {
   ProfileMessage,
   SaveMessage
 } from './http/messages';
+export { GraphSerializer } from "./http/serializer";
 export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
 export { Fact, Jinaga, MakeObservable, Profile, Trace } from './jinaga';
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
@@ -45,4 +47,3 @@ export { ComponentProjection, CompositeProjection, FactProjection, FieldProjecti
 export { SpecificationParser } from './specification/specification-parser';
 export { FactEnvelope, FactFeed, FactRecord, FactReference, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, ReferencesByName, Storage, computeTupleSubsetHash, factEnvelopeEquals, factReferenceEquals, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
-
