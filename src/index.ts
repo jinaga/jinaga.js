@@ -13,7 +13,7 @@ export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
 export { TransientFork } from './fork/transient-fork';
 export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvider";
-export { GraphDeserializer } from "./http/deserializer";
+export { GraphDeserializer, GraphSource } from "./http/deserializer";
 export { HttpNetwork } from "./http/httpNetwork";
 export { parseLoadMessage, parseSaveMessage } from './http/messageParsers';
 export {
