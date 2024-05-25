@@ -1,4 +1,4 @@
-import { AuthorizationRules, FactRecord, FactReference, FactRepository, LabelOf, MemoryStore, Trace, User, buildModel, dehydrateFact, factReferenceEquals } from "@src";
+import { AuthorizationRules, FactRecord, FactReference, FactRepository, KeyPair, LabelOf, MemoryStore, Trace, User, buildModel, dehydrateFact, factReferenceEquals, generateKeyPair, signFacts } from "@src";
 
 
 function givenUserFact(identity = 'authorized-user') {
@@ -30,6 +30,19 @@ function givenMessage(sender = 'authorized-user') {
             publicKey: sender
         }
     })[1];
+}
+
+function givenSignedMessage(): FactEnvelope[] {
+    const keyPair: KeyPair = generateKeyPair();
+    const factRecords: FactRecord[] = dehydrateFact({
+        type: 'Message',
+        author: {
+            type: 'Jinaga.User',
+            publicKey: keyPair.publicPem
+        }
+    });
+    const envelopes: FactEnvelope[] = signFacts(keyPair, factRecords);
+    return envelopes;
 }
 
 function givenAnonymousMessage() {
@@ -96,6 +109,19 @@ async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: F
     const authorized = await authorizationRules.getAuthorizedPopulation(candidateKeys, fact, transitiveClosure, store);
     return authorized.quantifier === "everyone" ||
         (authorized.quantifier === "some" && userPublicKey && authorized.authorizedKeys.indexOf(userPublicKey) >= 0);
+}
+
+async function whenAuthorizeEnvelopes(authorizationRules: AuthorizationRules, envelopes: FactEnvelope[]): Promise<boolean> {
+    const store = new MemoryStore();
+    await store.save(envelopes);
+    for (const envelope of envelopes) {
+        const authorized = await authorizationRules.getAuthorizedPopulationForEnvelope([], envelope, envelopes, store);
+        if (authorized.quantifier !== "everyone" &&
+            (authorized.quantifier !== "some" || authorized.authorizedKeys.length === 0)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function ancestors(reference: FactReference, facts: FactRecord[]): FactReference[] {
@@ -215,6 +241,16 @@ describe('Authorization rules', () => {
         const authorized = await whenAuthorize(authorizationRules, null, fact);
 
         expect(authorized).toBeFalsy();
+    });
+
+    it('should accept a signed fact when not logged in', async () => {
+        const authorizationRules = givenAuthorizationRules(a => a
+            .any(User)
+            .type(Message, m => m.author));
+        const envelopes: FactEnvelope[] = givenSignedMessage();
+        const authorized = await whenAuthorizeEnvelopes(authorizationRules, envelopes);
+
+        expect(authorized).toBeTruthy();
     });
 
     it('should accept permissive fact when not logged in', async () => {

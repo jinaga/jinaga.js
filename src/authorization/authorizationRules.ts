@@ -4,7 +4,7 @@ import { describeSpecification } from '../specification/description';
 import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { SpecificationParser } from '../specification/specification-parser';
-import { FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
 import { distinct, flatten } from '../util/fn';
 import { Trace } from '../util/trace';
 
@@ -484,6 +484,11 @@ export class AuthorizationRules {
         return {
             quantifier: 'none'
         }
+    }
+
+    async getAuthorizedPopulationForEnvelope(candidateKeys: string[], envelope: FactEnvelope, factEnvelopes: FactEnvelope[], store: Storage): Promise<AuthorizationPopulation> {
+        const factRecords = factEnvelopes.map(e => e.fact);
+        return this.getAuthorizedPopulation(candidateKeys, envelope.fact, factRecords, store);
     }
 
     saveToDescription(): string {
