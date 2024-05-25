@@ -105,8 +105,10 @@ async function whenAuthorize(authorizationRules: AuthorizationRules, userFact: F
     const allFacts = [ ...facts, fact ];
     const allReferences = ancestors(fact, [...facts, fact]);
     const transitiveClosure = allReferences
-        .map(reference => allFacts.find(factReferenceEquals(reference))!);
-    const authorized = await authorizationRules.getAuthorizedPopulation(candidateKeys, fact, transitiveClosure, store);
+        .map(reference => allFacts.find(factReferenceEquals(reference))!)
+        .map(fact => ({ fact, signatures: [] }));
+    const envelope = { fact, signatures: [] };
+    const authorized = await authorizationRules.getAuthorizedPopulationForEnvelope(candidateKeys, envelope, transitiveClosure, store);
     return authorized.quantifier === "everyone" ||
         (authorized.quantifier === "some" && userPublicKey && authorized.authorizedKeys.indexOf(userPublicKey) >= 0);
 }
