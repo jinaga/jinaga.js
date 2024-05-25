@@ -4,6 +4,8 @@ export { Authorization } from './authorization/authorization';
 export { AuthorizationEngine, Forbidden } from './authorization/authorization-engine';
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
 export { AuthorizationRules, describeAuthorizationRules } from "./authorization/authorizationRules";
+export { KeyPair, generateKeyPair, signFacts } from "./cryptography/key-pair";
+export { verifyEnvelopes } from "./cryptography/verify";
 export { DistributionEngine } from './distribution/distribution-engine';
 export { DistributionRules, describeDistributionRules } from './distribution/distribution-rules';
 export { canonicalPredecessors, canonicalizeFact, computeHash, computeObjectHash } from './fact/hash';
