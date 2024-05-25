@@ -124,6 +124,7 @@ interface AuthorizationRule {
     describe(type: string): string;
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
     getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation>;
+    getAuthorizedPopulationForEnvelope(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation>;
 }
 
 export class AuthorizationRuleAny implements AuthorizationRule {
@@ -136,6 +137,12 @@ export class AuthorizationRuleAny implements AuthorizationRule {
     }
 
     getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+        return Promise.resolve({
+            quantifier: 'everyone'
+        });
+    }
+
+    getAuthorizedPopulationForEnvelope(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
         return Promise.resolve({
             quantifier: 'everyone'
         });
@@ -153,6 +160,12 @@ export class AuthorizationRuleNone implements AuthorizationRule {
     }
 
     getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+        return Promise.resolve({
+            quantifier: 'none'
+        });
+    }
+
+    getAuthorizedPopulationForEnvelope(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
         return Promise.resolve({
             quantifier: 'none'
         });
@@ -279,6 +292,77 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
 
         // Find the intersection between the candidate keys and the public keys.
         const authorizedKeys = candidateKeys.filter(key => publicKeys.some(publicKey => publicKey === key));
+
+        // If any are left, then those are the authorized keys.
+        if (authorizedKeys.length > 0) {
+            return {
+                quantifier: 'some',
+                authorizedKeys
+            };
+        }
+        else {
+            return {
+                quantifier: 'none'
+            };
+        }
+    }
+
+    async getAuthorizedPopulationForEnvelope(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+        if (candidateKeys.length === 0 && envelope.signatures.length === 0) {
+            Trace.warn(`No candidate keys or signatures were given while attempting to authorize ${envelope.fact.type}.`);
+            return {
+                quantifier: 'none'
+            };
+        }
+
+        // The specification must be given a single fact.
+        if (this.specification.given.length !== 1) {
+            throw new Error('The specification must be given a single fact.');
+        }
+
+        // The projection must be a singular label.
+        if (this.specification.projection.type !== 'fact') {
+            throw new Error('The projection must be a singular label.');
+        }
+
+        // Split the specification.
+        // The head is deterministic, and can be run on the graph.
+        // The tail is non-deterministic, and must be run on the store.
+        const { head, tail } = splitBeforeFirstSuccessor(this.specification);
+
+        // If there is no head, then the specification is unsatisfiable.
+        if (head === undefined) {
+            throw new Error('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
+        }
+
+        // Execute the head on the graph.
+        if (head.projection.type !== 'fact') {
+            throw new Error('The head of the specification must project a fact.');
+        }
+        let results = graph.executeSpecification(
+            head.given[0].name,
+            head.matches,
+            head.projection.label,
+            envelope.fact);
+
+        const publicKeys: string[] = [];
+        // If there is a tail, execute it on the store.
+        if (tail !== undefined) {
+            if (tail.given.length !== 1) {
+                throw new Error('The tail of the specification must be given a single fact.');
+            }
+            for (const result of results) {
+                const users = await store.read([result], tail);
+                publicKeys.push(...users.map(user => user.result.publicKey));
+            }
+        }
+        else {
+            publicKeys.push(...results.map(result => graph.getField(result, 'publicKey')));
+        }
+
+        // Find the intersection between the available keys and the public keys.
+        const availableKeys = candidateKeys.concat(envelope.signatures.map(s => s.publicKey));
+        const authorizedKeys = availableKeys.filter(key => publicKeys.some(publicKey => publicKey === key));
 
         // If any are left, then those are the authorized keys.
         if (authorizedKeys.length > 0) {
@@ -487,8 +571,34 @@ export class AuthorizationRules {
     }
 
     async getAuthorizedPopulationForEnvelope(candidateKeys: string[], envelope: FactEnvelope, factEnvelopes: FactEnvelope[], store: Storage): Promise<AuthorizationPopulation> {
-        const factRecords = factEnvelopes.map(e => e.fact);
-        return this.getAuthorizedPopulation(candidateKeys, envelope.fact, factRecords, store);
+        const rules = this.rulesByType[envelope.fact.type];
+        if (!rules) {
+            return {
+                quantifier: 'none'
+            };
+        }
+
+        const graph = new FactGraph(factEnvelopes.map(e => e.fact));
+        let authorizedKeys: string[] = [];
+        for (const rule of rules) {
+            const population = await rule.getAuthorizedPopulationForEnvelope(candidateKeys, envelope, graph, store);
+            if (population.quantifier === 'everyone') {
+                return population;
+            }
+            else if (population.quantifier === 'some') {
+                authorizedKeys = [...authorizedKeys, ...population.authorizedKeys]
+                    .filter(distinct);
+            }
+        }
+        if (authorizedKeys.length > 0) {
+            return {
+                quantifier: 'some',
+                authorizedKeys
+            };
+        }
+        return {
+            quantifier: 'none'
+        }
     }
 
     saveToDescription(): string {
