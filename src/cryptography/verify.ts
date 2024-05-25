@@ -24,12 +24,12 @@ function verifySignatures(envelope: FactEnvelope, publicKeyCache: PublicKeyCache
     const canonicalString = canonicalizeFact(envelope.fact.fields, envelope.fact.predecessors);
     const encodedString = util.encodeUtf8(canonicalString);
     const digest = md.sha512.create().update(encodedString);
-    const hash = util.encode64(digest.digest().getBytes());
+    const digestBytes = digest.digest().getBytes();
+    const hash = util.encode64(digestBytes);
     if (envelope.fact.hash !== hash) {
         Trace.error(`Hash does not match. "${envelope.fact.hash}" !== "${hash}"\nFact: ${canonicalString}`);
         return false;
     }
-    const digestBytes = digest.digest().getBytes();
     return envelope.signatures.every(s => verifySignature(s, digestBytes, publicKeyCache));
 }
 
