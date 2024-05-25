@@ -16,14 +16,15 @@ function verifySignatures(envelope: FactEnvelope): boolean {
         Trace.error(`Hash does not match. "${envelope.fact.hash}" !== "${hash}"\nFact: ${canonicalString}`);
         return false;
     }
-    return envelope.signatures.every(s => verifySignature(s, digest));
+    const digestBytes = digest.digest().getBytes();
+    return envelope.signatures.every(s => verifySignature(s, digestBytes));
 }
 
-function verifySignature(signature: FactSignature, digest: md.sha512.Sha512MessageDigest) {
+function verifySignature(signature: FactSignature, digestBytes: string) {
     const publicKey = pki.publicKeyFromPem(signature.publicKey);
     const signatureBytes = util.decode64(signature.signature);
     try {
-        return publicKey.verify(digest.digest().getBytes(), signatureBytes);
+        return publicKey.verify(digestBytes, signatureBytes);
     }
     catch (e) {
         Trace.error(`Failed to verify signature. ${e}`);
