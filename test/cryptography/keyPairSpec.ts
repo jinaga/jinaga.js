@@ -1,6 +1,6 @@
 import { FactEnvelope, FactRecord, KeyPair, dehydrateFact, signFacts } from "../../src";
 
-describe("signFacts", () => {
+describe("keyPair", () => {
     it("should generate consistent signature", async () => {
         var keyPair: KeyPair = {
             publicPem: "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4wP7IyUZICcZ5JC+UUxB\r\nZZOo8mE7R2zj8Zba5krMAqDMFbQ8bWS+nTbFVHgun1Z+5HUCZ9HHv7d7KPLu+zuI\r\nfBi5CuiJy4LJkIUuL2eRBvy8VJPeyDfvRuZ6Dc5r+vp25omx5bWbPtjPczatUphl\r\nQ83GXvITQ4ZQN/C8w7/cewq4/qVrT+TfwvIiynBSFbU5NXE6dmbE1PbJFjtBlJJ+\r\nM2uiTKMKgrC7hpluEdO3oz1itV3CTHo4DGChARLia/ZRGTUlheunbSOnFupl/Rts\r\ny/wfvEh+CBt2MduUFBo2pLCe6NMTlhEpC+/jOhQnIaU8NWy5aUh6D6pIDGwond9Y\r\nCwIDAQAB\r\n-----END PUBLIC KEY-----\r\n",
