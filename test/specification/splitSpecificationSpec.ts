@@ -74,7 +74,7 @@ describe('Split specification', () => {
     });
 
     it('should split path when existential condition exists', () => {
-        var specification = model.given(Administrator).match((admin, facts) =>
+        const specification = model.given(Administrator).match((admin, facts) =>
             facts.ofType(Administrator)
                 .join(admin2 => admin2.company, admin.company)
                 .notExists(admin2 => facts.ofType(AdministratorRevoked)
@@ -100,6 +100,37 @@ describe('Split specification', () => {
                     }
                 ]
             } => u1`);
+    });
+
+    it('should split when existential appears with only successor joins', () => {
+        const specification = model.given(Administrator).match((admin, facts) =>
+            facts.ofType(Company)
+                .join(company => company, admin.company)
+                .selectMany(company => facts.ofType(Administrator)
+                    .join(admin2 => admin2.company, company)
+                    .notExists(admin2 => facts.ofType(AdministratorRevoked)
+                        .join(revoked => revoked.administrator, admin2))));
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Administrator) {
+                u1: Company [
+                    u1 = p1->company: Company
+                ]
+            } => u1`);
+        expect(tail).toBeDefined();
+        expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
+            (u1: Company) {
+                u2: Administrator [
+                    u2->company: Company = u1
+                    !E {
+                        u3: Administrator.Revoked [
+                            u3->administrator: Administrator = u2
+                        ]
+                    }
+                ]
+            } => u2`);
     });
 });
 
