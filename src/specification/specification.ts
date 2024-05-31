@@ -216,7 +216,11 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
         // If there is only a single path condition, then split that path.
         const pivot = specification.matches[firstMatchWithSuccessor];
         if (pivot.conditions.length !== 1) {
-            throw new Error('Expected a single condition');
+            // Fall back to running the entire specification in the tail
+            return {
+                head: undefined,
+                tail: specification
+            };
         }
 
         const condition = pivot.conditions[0];
