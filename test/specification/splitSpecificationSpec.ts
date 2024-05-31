@@ -1,6 +1,6 @@
 import { describeSpecification } from "../../src/specification/description";
 import { Specification, splitBeforeFirstSuccessor } from "../../src/specification/specification";
-import { Company, Employee, Office, President, model } from "../companyModel";
+import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
 
 describe('Split specification', () => {
     it('should put all in head if only predecessor joins', () => {
@@ -69,6 +69,35 @@ describe('Split specification', () => {
             (s1: Office) {
                 u1: President [
                     u1->office: Office = s1
+                ]
+            } => u1`);
+    });
+
+    it('should split path when existential condition exists', () => {
+        var specification = model.given(Administrator).match((admin, facts) =>
+            facts.ofType(Administrator)
+                .join(admin2 => admin2.company, admin.company)
+                .notExists(admin2 => facts.ofType(AdministratorRevoked)
+                    .join(revoked => revoked.administrator, admin2)));
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Administrator) {
+                s1: Company [
+                    s1 = p1->company: Company
+                ]
+            } => s1`);
+        expect(tail).toBeDefined();
+        expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
+            (s1: Company) {
+                u1: Administrator [
+                    u1->company: Company = s1
+                    !E {
+                        u2: Administrator.Revoked [
+                            u2->administrator: Administrator = u1
+                        ]
+                    }
                 ]
             } => u1`);
     });

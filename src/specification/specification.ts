@@ -215,7 +215,8 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
     else {
         // If there is only a single path condition, then split that path.
         const pivot = specification.matches[firstMatchWithSuccessor];
-        if (pivot.conditions.length !== 1) {
+        const pathConditions = pivot.conditions.filter(isPathCondition);
+        if (pathConditions.length !== 1) {
             // Fall back to running the entire specification in the tail
             return {
                 head: undefined,
@@ -223,10 +224,8 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
             };
         }
 
-        const condition = pivot.conditions[0];
-        if (condition.type !== "path") {
-            throw new Error('Expected a path condition');
-        }
+        const existentialConditions = pivot.conditions.filter(isExistentialCondition);
+        const condition = pathConditions[0];
 
         if (condition.rolesRight.length === 0) {
             // The path contains only successor joins.
@@ -294,7 +293,7 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
             };
             const tailMatch: Match = {
                 unknown: pivot.unknown,
-                conditions: [tailCondition]
+                conditions: [tailCondition, ...existentialConditions]
             };
 
             // Assemble the head and tail matches

@@ -27,6 +27,24 @@ export class Company {
     ) { }
 }
 
+export class Administrator {
+    static Type = "Administrator" as const;
+    type = Administrator.Type;
+    constructor(
+        public company: Company,
+        public user: User,
+        public date: Date | string
+    ) { }
+}
+
+export class AdministratorRevoked {
+    static Type = "Administrator.Revoked" as const;
+    type = AdministratorRevoked.Type;
+    constructor(
+        public administrator: Administrator
+    ) { }
+}
+
 export class Office {
     static Type = "Office" as const;
     type = Office.Type;
@@ -118,6 +136,13 @@ const officeFacts = (m: ModelBuilder) => m
     )
     .type(Company, f => f
         .predecessor("creator", User)
+    )
+    .type(Administrator, f => f
+        .predecessor("company", Company)
+        .predecessor("user", User)
+    )
+    .type(AdministratorRevoked, f => f
+        .predecessor("administrator", Administrator)
     )
     .type(Office, f => f
         .predecessor("company", Company)
