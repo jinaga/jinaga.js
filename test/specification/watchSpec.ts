@@ -103,6 +103,27 @@ describe("specification watch", () => {
         expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
     });
 
+    it("should not notify if stopped before load finishes", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+        );
+
+        const offices: string[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            offices.push(j.hash(office));
+        });
+
+        officeObserver.stop();
+
+        const newOffice = new Office(company, "NewOffice");
+        await j.fact(newOffice);
+
+        await officeObserver.loaded();
+
+        expect(offices).toEqual([]);
+    });
+
     it("should not notify results related to a different starting point", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
