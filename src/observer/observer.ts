@@ -40,6 +40,7 @@ export class ObserverImpl<T> implements Observer<T> {
     }[] = [];
     private specificationHash: string;
     private feeds: string[] = [];
+    private stopped: boolean = false;
 
     constructor(
         private factManager: FactManager,
@@ -123,6 +124,7 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     public stop() {
+        this.stopped = true;
         for (const listener of this.listeners) {
             this.factManager.removeSpecificationListener(listener);
         }
@@ -142,6 +144,11 @@ export class ObserverImpl<T> implements Observer<T> {
 
     private async read() {
         const projectedResults = await this.factManager.read(this.given, this.specification);
+        if (this.stopped) {
+            // The observer was stopped before the read completed.
+            return;
+        }
+
         this.addSpecificationListeners();
         const givenSubset = this.specification.given.map(g => g.name);
         await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);

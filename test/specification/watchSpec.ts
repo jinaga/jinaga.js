@@ -41,7 +41,7 @@ describe("specification watch", () => {
         });
 
         await officeObserver.loaded();
-        await officeObserver.stop();
+        officeObserver.stop();
 
         expect(offices).toEqual([]);
     });
@@ -58,7 +58,7 @@ describe("specification watch", () => {
         });
 
         await officeObserver.loaded();
-        await officeObserver.stop();
+        officeObserver.stop();
 
         expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
     });
@@ -78,9 +78,50 @@ describe("specification watch", () => {
         const newOffice = new Office(company, "NewOffice");
         await j.fact(newOffice);
         
-        await officeObserver.stop();
+        officeObserver.stop();
 
         expect(offices).toEqual([j.hash(office), j.hash(closedOffice), j.hash(newOffice)]);
+    });
+
+    it("should stop notifying results when stopped", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+        );
+
+        const offices: string[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            offices.push(j.hash(office));
+        });
+
+        await officeObserver.loaded();
+        officeObserver.stop();
+
+        const newOffice = new Office(company, "NewOffice");
+        await j.fact(newOffice);
+
+        expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
+    });
+
+    it("should not notify if stopped before load finishes", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+        );
+
+        const offices: string[] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            offices.push(j.hash(office));
+        });
+
+        officeObserver.stop();
+
+        const newOffice = new Office(company, "NewOffice");
+        await j.fact(newOffice);
+
+        await officeObserver.loaded();
+
+        expect(offices).toEqual([]);
     });
 
     it("should not notify results related to a different starting point", async () => {
@@ -98,7 +139,7 @@ describe("specification watch", () => {
         const newOfficeInOtherCompany = new Office(emptyCompany, "OfficeInOtherCompany");
         await j.fact(newOfficeInOtherCompany);
 
-        await officeObserver.stop();
+        officeObserver.stop();
 
         // The array does not contain the new office.
         expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
@@ -126,7 +167,7 @@ describe("specification watch", () => {
         await officeObserver.loaded();
         await j.fact(new OfficeClosed(office, new Date()));
         
-        await officeObserver.stop();
+        officeObserver.stop();
 
         expect(offices).toEqual([]);
     });
@@ -156,7 +197,7 @@ describe("specification watch", () => {
 
         await officeObserver.loaded();
 
-        await officeObserver.stop();
+        officeObserver.stop();
 
         expect(offices).toEqual([j.hash(office)]);
     });
@@ -187,7 +228,7 @@ describe("specification watch", () => {
         await officeObserver.loaded();
         await j.fact(new OfficeReopened(closure));
 
-        await officeObserver.stop();
+        officeObserver.stop();
 
         expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
     });
@@ -236,7 +277,7 @@ describe("specification watch", () => {
 
         const newPresident = new President(office, new User("--- PRESIDENT PUBLIC KEY ---"));
         await j.fact(newPresident);
-        await officeObserver.stop();
+        officeObserver.stop();
 
         expect(offices).toEqual([
             {
@@ -292,7 +333,7 @@ describe("specification watch", () => {
             }
         ]);
 
-        await officeObserver.stop();
+        officeObserver.stop();
     });
 
     it("should notify grandchild results when existing", async () => {
@@ -358,7 +399,7 @@ describe("specification watch", () => {
             }
         ]);
 
-        await officeObserver.stop();
+        officeObserver.stop();
     });
 
     it("should notify when manager and name added", async () => {
@@ -450,6 +491,6 @@ describe("specification watch", () => {
             }
         ]);
 
-        await officeObserver.stop();
+        officeObserver.stop();
     });
 });
