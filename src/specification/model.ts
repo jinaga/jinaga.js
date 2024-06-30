@@ -95,13 +95,13 @@ class Given<T extends any[]> {
         private factTypeMap: FactTypeMap
     ) { }
 
-    match<U>(definition: (...parameters: MatchParameters<T>) => Traversal<U>): SpecificationOf<T, SpecificationResult<U>> {
+    match<U>(definition: (...parameters: MatchParameters<T>) => Traversal<U> | U): SpecificationOf<T, SpecificationResult<U>> {
         const labels = this.factTypes.map((factType, i) => {
             const name = `p${i + 1}`;
             return createFactProxy(this.factTypeMap, name, [], factType);
         });
         const result = (definition as any)(...labels, new FactRepository(this.factTypeMap));
-        const matches = result.matches;
+        const matches = result.matches ?? [];
         const projection = result.projection;
         const given = this.factTypes.map((type, i) => {
             const name = `p${i + 1}`;
