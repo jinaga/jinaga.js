@@ -1,4 +1,4 @@
-import { ComponentProjection, ExistentialCondition, Label, Match, Specification, emptySpecification, isExistentialCondition, isPathCondition } from "./specification";
+import { ComponentProjection, ExistentialCondition, Label, Match, Specification, emptySpecification, isExistentialCondition, isPathCondition, specificationIsNotDeterministic } from "./specification";
 
 export function buildFeeds(specification: Specification): Specification[] {
     const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given, specification.matches);
@@ -8,10 +8,10 @@ export function buildFeeds(specification: Specification): Specification[] {
     const finalFeed = specifications[specifications.length - 1];
     if (specification.projection.type === "composite") {
         const feedsWithProjections = addProjections(finalFeed, unusedGivens, specification.projection.components);
-        return [ ...specifications, ...feedsWithProjections ];
+        return [ ...specifications, ...feedsWithProjections ].filter(specificationIsNotDeterministic);
     }
     else {
-        return specifications;
+        return specifications.filter(specificationIsNotDeterministic);
     }
 }
 
