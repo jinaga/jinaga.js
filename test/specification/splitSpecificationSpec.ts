@@ -1,8 +1,18 @@
-import { describeSpecification } from "../../src/specification/description";
-import { Specification, splitBeforeFirstSuccessor } from "../../src/specification/specification";
+import { Specification, describeSpecification, splitBeforeFirstSuccessor } from "../../src";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
 
 describe('Split specification', () => {
+    it('should put all in head if identity specification', () => {
+        const specification = model.given(Company).select((company, facts) =>
+            company
+        );
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(tail).toBeUndefined();
+        expect(head).toBeDefined();
+        expect(describeSpecification(head as Specification, 0)).toEqual(describeSpecification(specification.specification, 0));
+    });
+
     it('should put all in head if only predecessor joins', () => {
         const specification = model.given(Office).match((office, facts) =>
             facts.ofType(Company)
