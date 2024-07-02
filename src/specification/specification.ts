@@ -199,6 +199,24 @@ function getAllRolesFromComponents(labels: TypeByLabel, components: ComponentPro
     return roles;
 }
 
+export function specificationIsDeterministic(specification: Specification): boolean {
+    return specification.matches.every(match =>
+        match.conditions.every(condition =>
+            condition.type === "path" &&
+            condition.rolesLeft.length === 0
+        )
+    );
+}
+
+export function specificationIsNotDeterministic(specification: Specification): boolean {
+    return specification.matches.some(match =>
+        match.conditions.some(condition =>
+            condition.type === "path" &&
+            condition.rolesLeft.length > 0
+        )
+    );
+}
+
 export function splitBeforeFirstSuccessor(specification: Specification): { head: Specification | undefined, tail: Specification | undefined } {
     // Find the first match (if any) that seeks successors or has an existential condition
     const firstMatchWithSuccessor = specification.matches.findIndex(match =>

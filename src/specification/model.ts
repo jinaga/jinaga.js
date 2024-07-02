@@ -95,13 +95,13 @@ class Given<T extends any[]> {
         private factTypeMap: FactTypeMap
     ) { }
 
-    match<U>(definition: (...parameters: MatchParameters<T>) => Traversal<U>): SpecificationOf<T, SpecificationResult<U>> {
+    match<U>(definition: (...parameters: MatchParameters<T>) => Traversal<U> | U): SpecificationOf<T, SpecificationResult<U>> {
         const labels = this.factTypes.map((factType, i) => {
             const name = `p${i + 1}`;
             return createFactProxy(this.factTypeMap, name, [], factType);
         });
         const result = (definition as any)(...labels, new FactRepository(this.factTypeMap));
-        const matches = result.matches;
+        const matches = result.matches ?? [];
         const projection = result.projection;
         const given = this.factTypes.map((type, i) => {
             const name = `p${i + 1}`;
@@ -113,6 +113,27 @@ class Given<T extends any[]> {
             projection
         };
         return new SpecificationOf<T, SpecificationResult<U>>(specification);
+    }
+
+    select<U>(selector: (...parameters: MatchParameters<T>) => U): SpecificationOf<T, U> {
+        const labels = this.factTypes.map((factType, i) => {
+            const name = `p${i + 1}`;
+            return createFactProxy(this.factTypeMap, name, [], factType);
+        });
+        const result = (selector as any)(...labels, new FactRepository(this.factTypeMap));
+        const matches: Match[] = [];
+        const traversal = traversalFromDefinition(result, matches);
+        const projection = traversal.projection;
+        const given = this.factTypes.map((type, i) => {
+            const name = `p${i + 1}`;
+            return { name, type };
+        });
+        const specification: Specification = {
+            given,
+            matches,
+            projection
+        };
+        return new SpecificationOf<T, U>(specification);
     }
 }
 
@@ -190,97 +211,8 @@ export class Traversal<T> {
 
     select<U>(selector: (input: T) => U): Traversal<U> {
         const definition = selector(this.input);
-        if (isLabel<U>(definition)) {
-            const payload = getPayload<U>(definition);
-            if (payload.type === "field") {
-                const fieldProjection: FieldProjection = {
-                    type: "field",
-                    label: payload.root,
-                    field: payload.fieldName
-                };
-                return new Traversal<U>(definition, this.matches, fieldProjection);
-            }
-            else if (payload.type === "fact") {
-                if (payload.path.length > 0) {
-                    throw new Error(`Cannot select ${payload.root}.${payload.path.join(".")} directly. Give the fact a label first.`);
-                }
-                const factProjection: FactProjection = {
-                    type: "fact",
-                    label: payload.root,
-                };
-                return new Traversal<U>(definition, this.matches, factProjection);
-            }
-            else if (payload.type === "hash") {
-                const hashProjection: HashProjection = {
-                    type: "hash",
-                    label: payload.root
-                };
-                return new Traversal<U>(definition, this.matches, hashProjection);
-            }
-            else {
-                const _exhaustiveCheck: never = payload;
-                throw new Error(`Unexpected payload type: ${(_exhaustiveCheck as any).type}`);
-            }
-        }
-        else {
-            const components = Object.getOwnPropertyNames(definition).map((key) => {
-                const child = (definition as any)[key];
-                if (isLabel(child)) {
-                    const payload = getPayload(child);
-                    if (payload.type === "field") {
-                        const projection: NamedComponentProjection = {
-                            type: "field",
-                            name: key,
-                            label: payload.root,
-                            field: payload.fieldName
-                        };
-                        return projection;
-                    }
-                    else if (payload.type === "fact") {
-                        if (payload.path.length > 0) {
-                            throw new Error(
-                                `You cannot project the fact "${payload.path[payload.path.length - 1].name}" directly. ` +
-                                `You must label it first.`);
-                        }
-                        const projection: NamedComponentProjection = {
-                            type: "fact",
-                            name: key,
-                            label: payload.root
-                        };
-                        return projection;
-                    }
-                    else if (payload.type === "hash") {
-                        const projection: NamedComponentProjection = {
-                            type: "hash",
-                            name: key,
-                            label: payload.root
-                        };
-                        return projection;
-                    }
-                    else {
-                        const _exhaustiveCheck: never = payload;
-                        throw new Error(`Unexpected payload type: ${(_exhaustiveCheck as any).type}`);
-                    }
-                }
-                else if (child instanceof Traversal) {
-                    const projection: NamedComponentProjection = {
-                        type: "specification",
-                        name: key,
-                        matches: child.matches,
-                        projection: child.projection
-                    };
-                    return projection;
-                }
-                else {
-                    throw new Error(`Unexpected type for property ${key}: ${typeof child}`);
-                }
-            });
-            const compositeProjection: CompositeProjection = {
-                type: "composite",
-                components
-            }
-            return new Traversal<U>(definition, this.matches, compositeProjection);
-        }
+        const matches = this.matches;
+        return traversalFromDefinition(definition, matches);
     }
 
     selectMany<U>(selector: (input: T) => Traversal<U>): Traversal<U> {
@@ -495,3 +427,96 @@ function lookupRoleType(factTypeMap: FactTypeMap, factType: string, role: string
     return roleType;
 }
 
+function traversalFromDefinition<U>(definition: U, matches: Match[]): Traversal<U> {
+    if (isLabel<U>(definition)) {
+        const payload = getPayload<U>(definition);
+        if (payload.type === "field") {
+            const fieldProjection: FieldProjection = {
+                type: "field",
+                label: payload.root,
+                field: payload.fieldName
+            };
+            return new Traversal<U>(definition, matches, fieldProjection);
+        }
+        else if (payload.type === "fact") {
+            if (payload.path.length > 0) {
+                throw new Error(`Cannot select ${payload.root}.${payload.path.join(".")} directly. Give the fact a label first.`);
+            }
+            const factProjection: FactProjection = {
+                type: "fact",
+                label: payload.root,
+            };
+            return new Traversal<U>(definition, matches, factProjection);
+        }
+        else if (payload.type === "hash") {
+            const hashProjection: HashProjection = {
+                type: "hash",
+                label: payload.root
+            };
+            return new Traversal<U>(definition, matches, hashProjection);
+        }
+        else {
+            const _exhaustiveCheck: never = payload;
+            throw new Error(`Unexpected payload type: ${(_exhaustiveCheck as any).type}`);
+        }
+    }
+    else {
+        const components = Object.getOwnPropertyNames(definition).map((key) => {
+            const child = (definition as any)[key];
+            if (isLabel(child)) {
+                const payload = getPayload(child);
+                if (payload.type === "field") {
+                    const projection: NamedComponentProjection = {
+                        type: "field",
+                        name: key,
+                        label: payload.root,
+                        field: payload.fieldName
+                    };
+                    return projection;
+                }
+                else if (payload.type === "fact") {
+                    if (payload.path.length > 0) {
+                        throw new Error(
+                            `You cannot project the fact "${payload.path[payload.path.length - 1].name}" directly. ` +
+                            `You must label it first.`);
+                    }
+                    const projection: NamedComponentProjection = {
+                        type: "fact",
+                        name: key,
+                        label: payload.root
+                    };
+                    return projection;
+                }
+                else if (payload.type === "hash") {
+                    const projection: NamedComponentProjection = {
+                        type: "hash",
+                        name: key,
+                        label: payload.root
+                    };
+                    return projection;
+                }
+                else {
+                    const _exhaustiveCheck: never = payload;
+                    throw new Error(`Unexpected payload type: ${(_exhaustiveCheck as any).type}`);
+                }
+            }
+            else if (child instanceof Traversal) {
+                const projection: NamedComponentProjection = {
+                    type: "specification",
+                    name: key,
+                    matches: child.matches,
+                    projection: child.projection
+                };
+                return projection;
+            }
+            else {
+                throw new Error(`Unexpected type for property ${key}: ${typeof child}`);
+            }
+        });
+        const compositeProjection: CompositeProjection = {
+            type: "composite",
+            components
+        }
+        return new Traversal<U>(definition, matches, compositeProjection);
+    }
+}

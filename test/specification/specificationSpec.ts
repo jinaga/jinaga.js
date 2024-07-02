@@ -1,5 +1,4 @@
-import { Specification } from "../../src/specification/specification"
-import { SpecificationParser } from "../../src/specification/specification-parser"
+import { Specification, SpecificationParser } from "../../src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
@@ -8,6 +7,24 @@ function parseSpecification(input: string): Specification {
 }
 
 describe("Specification parser", () => {
+    it("parses an identity specification", () => {
+        const specification = parseSpecification(`(root: Root) { }`);
+        const expected: Specification = {
+            given: [
+                {
+                    name: "root",
+                    type: "Root"
+                }
+            ],
+            matches: [],
+            projection: {
+                type: "composite",
+                components: []
+            }
+        };
+        expect(specification).toEqual(expected);
+    });
+
     it("parses a simple specification", () => {
         const specification = parseSpecification(`
             (parent: MyApp.Parent) {
@@ -54,12 +71,6 @@ describe("Specification parser", () => {
     it("requires at least one given", () => {
         expect(() => parseSpecification("() { }")).toThrowError(
             /The specification must contain at least one given label/
-        );
-    });
-
-    it("requires at least one match", () => {
-        expect(() => parseSpecification("(parent: MyApp.Parent) { }")).toThrowError(
-            /The specification must contain at least one match/
         );
     });
 

@@ -1,7 +1,15 @@
-import { SpecificationOf } from "../../src/specification/model";
+import { SpecificationOf } from "../../src";
 import { Company, Office, OfficeClosed, President, User, UserName, model } from "../companyModel";
 
 describe("given", () => {
+    it("should parse an identity specification", () => {
+        const specification = model.given(Company).select((company, facts) => company);
+
+        expectSpecification(specification, `
+            (p1: Company) {
+            } => p1`);
+    });
+
     it("should parse a successor join", () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)

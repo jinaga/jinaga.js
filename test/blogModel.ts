@@ -1,6 +1,4 @@
-import { DistributionRules } from "../src/distribution/distribution-rules";
-import { User } from "../src/model/user";
-import { buildModel } from "../src/specification/model";
+import { DistributionRules, User, buildModel } from "../src";
 
 export class Blog {
   static Type = "Blog" as const;
@@ -115,8 +113,7 @@ export const distribution = (r: DistributionRules) => r
         .join(comment => comment.post, post)
         .join(comment => comment.author, author)
       )
-  )).with(model.given(Blog, User).match((blog, author, facts) =>
-    facts.ofType(User)
-      .join(user => user, author)
+  )).with(model.given(Blog, User).select((blog, author, facts) =>
+    author
   ))
   ;

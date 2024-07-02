@@ -1,6 +1,21 @@
 import { Skeleton, SpecificationParser, skeletonOfSpecification } from "../../src";
 
 describe("skeleton", () => {
+    it("should produce an empty skeleton for an identity specification", () => {
+        const skeleton = getSkeleton(`
+            (root: Root) { }`);
+
+        const expectedSkeleton: Skeleton = {
+            facts: [],
+            inputs: [],
+            edges: [],
+            notExistsConditions: [],
+            outputs: []
+        };
+
+        expect(skeleton).toEqual(expectedSkeleton);
+    });
+
     it("should produce a skeleton for a simple specification", () => {
         const skeleton = getSkeleton(`
             (root: Root) {

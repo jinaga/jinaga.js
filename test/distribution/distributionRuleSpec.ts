@@ -1,6 +1,4 @@
-import { Trace } from "../../src/jinaga";
-import { JinagaTest } from "../../src/jinaga-test";
-import { User } from "../../src/model/user";
+import { JinagaTest, Trace, User } from "../../src";
 import { Blog, Comment, Post, Publish, distribution, model } from "../blogModel";
 
 describe("distribution rules", () => {

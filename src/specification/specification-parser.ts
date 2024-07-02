@@ -192,9 +192,6 @@ export class SpecificationParser {
     parseMatches(labels: Label[]): { matches: Match[], labels: Label[] } {
         const matches: Match[] = [];
         this.expect("{");
-        if (this.continues("}")) {
-            throw new Error("The specification must contain at least one match");
-        }
         while (!this.consume("}")) {
             const match = this.parseMatch(labels);
             labels = [ ...labels, match.unknown ];

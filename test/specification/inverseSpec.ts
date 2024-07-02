@@ -1,6 +1,4 @@
-import { describeSpecification } from "../../src/specification/description";
-import { invertSpecification, SpecificationInverse } from "../../src/specification/inverse";
-import { SpecificationOf } from "../../src/specification/model";
+import { describeSpecification, invertSpecification, SpecificationInverse, SpecificationOf } from "../../src";
 import { Company, model, Office, OfficeClosed, OfficeReopened, President, User } from "../companyModel";
 
 describe("specification inverse", () => {

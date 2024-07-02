@@ -1,9 +1,15 @@
-import { Specification, describeSpecification } from "../../src";
-import { dehydrateReference } from "../../src/fact/hydrate";
-import { buildFeeds } from "../../src/specification/feed-builder";
-import { SpecificationParser } from "../../src/specification/specification-parser";
+import { SpecificationParser, buildFeeds, describeSpecification } from "../../src";
 
 describe("feed generator", () => {
+    it("should produce no feeds for an identity specification", () => {
+        const feeds = getFeeds(`
+            (root: Root) { }`);
+
+        const expectedFeeds: string[] = [ ];
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
+
     it("should produce a single feed for a simple specification", () => {
         const feeds = getFeeds(`
             (root: Root) {
