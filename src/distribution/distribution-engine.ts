@@ -65,46 +65,40 @@ export class DistributionEngine {
               if (reasons.length === 0) {
                 reasons.push(`User is not logged in.`);
               }
-              continue;
-            }
-
-            // The projection must be a singular label.
-            if (rule.user.projection.type !== 'fact') {
-              throw new Error('The projection must be a singular label.');
-            }
-            const label = rule.user.projection.label;
-
-            // If the user specification is deterministic, then pick the labeled given.
-            if (specificationIsIdentity(rule.user)) {
-              const userReference = executeDeterministicSpecification(rule.user, label, permutation);
-              // If the user matches the given, then we can distribute to the user.
-              const authorized = factReferenceEquals(user)(userReference);
-              if (!authorized) {
-                reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
-                continue;
-              }
-              else {
-                return {
-                  type: 'success'
-                };
-              }
             }
             else {
-              // Find the set of users to whom we can distribute this feed.
-              const users = await this.store.read(permutation, rule.user);
-              const results = users.map(user => user.tuple[label])
+              // The projection must be a singular label.
+              if (rule.user.projection.type !== 'fact') {
+                throw new Error('The projection must be a singular label.');
+              }
+              const label = rule.user.projection.label;
 
-              // If any of the results match the user, then we can distribute to the user.
-              const authorized = results.some(factReferenceEquals(user));
-              if (!authorized) {
-                reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
-                continue;
+              // If the user specification is deterministic, then pick the labeled given.
+              if (specificationIsIdentity(rule.user)) {
+                const userReference = executeDeterministicSpecification(rule.user, label, permutation);
+                // If the user matches the given, then we can distribute to the user.
+                const authorized = factReferenceEquals(user)(userReference);
+                if (authorized) {
+                  return {
+                    type: 'success'
+                  };
+                }
               }
               else {
-                return {
-                  type: 'success'
-                };
+                // Find the set of users to whom we can distribute this feed.
+                const users = await this.store.read(permutation, rule.user);
+                const results = users.map(user => user.tuple[label])
+
+                // If any of the results match the user, then we can distribute to the user.
+                const authorized = results.some(factReferenceEquals(user));
+                if (authorized) {
+                  return {
+                    type: 'success'
+                  };
+                }
               }
+
+              reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
             }
           }
         }
