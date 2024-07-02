@@ -94,7 +94,6 @@ function addProjections(specification: Specification, unusedGivens: Label[], com
             // Produce more facts in the tuple.
             const { specifications: feedsWithMatches, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, component.matches);
             specifications.push(...feedsWithMatches);
-            unusedGivens = newUnusedGivens;
 
             // Recursively build child projections.
             const finalFeed = feedsWithMatches[feedsWithMatches.length - 1];

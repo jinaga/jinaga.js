@@ -29,6 +29,59 @@ describe("feed generator", () => {
         expect(feeds).toEqual(expectedFeeds);
     });
 
+    it("should produce a single feed for projection of identity", () => {
+        const feeds = getFeeds(`
+            (root: Root) {} => {
+                children = {
+                    child: Child [
+                        child->root:Root = root
+                    ]
+                }
+            }`);
+
+        const expectedFeeds: string[] = [
+            `(root: Root) {
+                child: Child [
+                    child->root: Root = root
+                ]
+            }`
+        ];
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
+
+    it("should produce two feeds for a projection with two properties", () => {
+        const feeds = getFeeds(`
+            (root: Root) {
+            } => {
+                children1 = {
+                    c1: Child1 [
+                        c1->root: Root = root
+                    ]
+                }
+                children2 = {
+                    c2: Child2 [
+                        c2->root: Root = root
+                    ]
+                }
+            }`);
+
+        const expectedFeeds: string[] = [
+            `(root: Root) {
+                c1: Child1 [
+                    c1->root: Root = root
+                ]
+            }`,
+            `(root: Root) {
+                c2: Child2 [
+                    c2->root: Root = root
+                ]
+            }`
+        ]
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
+
     it("should accept multiple givens", () => {
         const feeds = getFeeds(`
             (user: Jinaga.User, root: Root) {
