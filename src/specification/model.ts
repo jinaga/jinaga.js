@@ -115,7 +115,7 @@ class Given<T extends any[]> {
         return new SpecificationOf<T, SpecificationResult<U>>(specification);
     }
 
-    select<U>(selector: (...parameters: MatchParameters<T>) => U): SpecificationOf<T, U> {
+    select<U>(selector: (...parameters: MatchParameters<T>) => U): SpecificationOf<T, SpecificationResult<U>> {
         const labels = this.factTypes.map((factType, i) => {
             const name = `p${i + 1}`;
             return createFactProxy(this.factTypeMap, name, [], factType);
