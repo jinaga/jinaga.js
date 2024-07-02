@@ -74,27 +74,9 @@ export class DistributionEngine {
             }
             const label = rule.user.projection.label;
 
-            // If the user specification is the identity, then pick the labeled given.
+            // If the user specification is deterministic, then pick the labeled given.
             if (specificationIsIdentity(rule.user)) {
-              // Find the match with the unknown matching the projected label.
-              const match = rule.user.matches.find(m => m.unknown.name === label);
-              if (!match) {
-                throw new Error(`The user specification must have a match with an unknown labeled '${label}'.`);
-              }
-              // Find the right-hand side of the path condition in that match.
-              const referencedLabels = match.conditions
-                .filter(isPathCondition)
-                .map(c => c.labelRight);
-              if (referencedLabels.length !== 1) {
-                throw new Error(`The user specification must have exactly one path condition with an unknown labeled '${label}'.`);
-              }
-              const referencedLabel = referencedLabels[0];
-              // Find the given that the match references.
-              const index = rule.user.given.findIndex(g => g.name === referencedLabel);
-              if (index === -1) {
-                throw new Error(`The user specification must have a given labeled '${label}'.`);
-              }
-              const userReference = permutation[index];
+              const userReference = executeDeterministicSpecification(rule.user, label, permutation);
               // If the user matches the given, then we can distribute to the user.
               const authorized = factReferenceEquals(user)(userReference);
               if (!authorized) {
@@ -136,6 +118,38 @@ export class DistributionEngine {
       type: 'failure',
       reason: `Cannot distribute to ${describeSpecification(targetFeed, 0)}${reasons.join('\n')}`
     };
+
+    function executeDeterministicSpecification(specification: Specification, label: string, permutation: FactReference[]) {
+      // If the label is a given, then return the associated fact reference.
+      const givenIndex = specification.given.findIndex(g => g.name === label);
+      if (givenIndex !== -1) {
+        const userReference = permutation[givenIndex];
+        return userReference;
+      }
+
+      // Find the match with the unknown matching the projected label.
+      const match = specification.matches.find(m => m.unknown.name === label);
+      if (!match) {
+        throw new Error(`The user specification must have a match with an unknown labeled '${label}'.`);
+      }
+
+      // Find the right-hand side of the path condition in that match.
+      const referencedLabels = match.conditions
+        .filter(isPathCondition)
+        .map(c => c.labelRight);
+      if (referencedLabels.length !== 1) {
+        throw new Error(`The user specification must have exactly one path condition with an unknown labeled '${label}'.`);
+      }
+      const referencedLabel = referencedLabels[0];
+
+      // Find the given that the match references.
+      const index = specification.given.findIndex(g => g.name === referencedLabel);
+      if (index === -1) {
+        throw new Error(`The user specification must have a given labeled '${label}'.`);
+      }
+      const userReference = permutation[index];
+      return userReference;
+    }
   }
 }
 
