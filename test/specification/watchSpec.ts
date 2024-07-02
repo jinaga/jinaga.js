@@ -172,7 +172,7 @@ describe("specification watch", () => {
         expect(offices).toEqual([]);
     });
 
-    it("should execute nested existial conditions", async () => {
+    it("should execute nested existential conditions", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
@@ -492,5 +492,67 @@ describe("specification watch", () => {
         ]);
 
         officeObserver.stop();
+    });
+
+    it("should notify children of identity when added", async () => {
+        // Given an office, select an object returning both the presidents and the managers
+        const specification = model.given(Office).select((office, facts) => ({
+            id: j.hash(office),
+            presidents: facts.ofType(President)
+                .join(president => president.office, office)
+                .select(president => j.hash(president)),
+            managers: facts.ofType(Manager)
+                .join(manager => manager.office, office)
+                .select(manager => j.hash(manager))
+        }));
+
+        interface OfficeViewModel {
+            id: string;
+            presidents: string[];
+            managers: string[];
+        }
+
+        // Watch the office for changes
+        const offices: OfficeViewModel[] = [];
+
+        const officeObserver = j.watch(specification, office, projection => {
+            const model: OfficeViewModel = {
+                id: projection.id,
+                presidents: [],
+                managers: []
+            };
+            offices.push(model);
+
+            // When a president is added, add it to the list
+            projection.presidents.onAdded(president => {
+                model.presidents.push(president);
+            });
+
+            // When a manager is added, add it to the list
+            projection.managers.onAdded(manager => {
+                model.managers.push(manager);
+            });
+        });
+
+        // Wait for the initial load to complete
+        await officeObserver.loaded();
+
+        // Add a president
+        const president = await j.fact(new President(office, creator));
+
+        // Add a manager
+        const manager = await j.fact(new Manager(office, 123));
+
+        // Stop watching
+        officeObserver.stop();
+
+        // Verify that the office was loaded
+        expect(offices).toEqual([
+            {
+                id: j.hash(office),
+                presidents: [j.hash(president)],
+                managers: [j.hash(manager)]
+            }
+        ]);
     });
 });
