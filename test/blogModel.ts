@@ -83,22 +83,16 @@ export const distribution = (r: DistributionRules) => r
         .join(publish => publish.post, post)
       )
   )).withEveryone()
-  // The creator can see all posts
-  .share(model.given(Blog).match((blog, facts) =>
-    facts.ofType(Post)
-      .join(post => post.blog, blog)
-  )).with(model.given(Blog).match((blog, facts) =>
-      facts.ofType(User)
-        .join(user => user, blog.creator)
-  ))
-  // The creator can see all comments
-  .share(model.given(Blog).match((blog, facts) =>
-    facts.ofType(Post)
+  // The creator can see all posts and comments
+  .share(model.given(Blog).select((blog, facts) =>({
+    posts: facts.ofType(Post)
+      .join(post => post.blog, blog),
+    comments: facts.ofType(Post)
       .join(post => post.blog, blog)
       .selectMany(post => facts.ofType(Comment)
         .join(comment => comment.post, post)
       )
-  )).with(model.given(Blog).match((blog, facts) =>
+  }))).with(model.given(Blog).match((blog, facts) =>
     facts.ofType(User)
       .join(user => user, blog.creator)
   ))
