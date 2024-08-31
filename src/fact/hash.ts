@@ -22,7 +22,7 @@ export function verifyHash(fact: FactRecord) {
 }
 
 export function canonicalPredecessors(predecessors: PredecessorCollection) {
-    let result: PredecessorCollection = {};
+    const result: PredecessorCollection = {};
     for(const role in predecessors) {
         const referenceMessages = predecessors[role];
         if (Array.isArray(referenceMessages)) {
@@ -61,7 +61,7 @@ export function computeObjectHash(obj: {}) {
 type Pair = { key: string, value: any };
 
 function canonicalize(obj: HashMap) {
-    let pairs: Pair[] = [];
+    const pairs: Pair[] = [];
     for (const key in obj) {
         const value = obj[key];
         pairs.push({ key, value });

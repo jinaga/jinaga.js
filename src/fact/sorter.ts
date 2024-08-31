@@ -6,8 +6,8 @@ export class TopologicalSorter<T> {
     private factValue: { [key: string]: T } = {};
 
     sort(facts: FactRecord[], map: (predecessors: T[], fact: FactRecord) => T): T[] {
-        let factsReceived: T[] = [];
-        let factQueue = facts.slice(0);
+        const factsReceived: T[] = [];
+        const factQueue = facts.slice(0);
 
         while (factQueue.length > 0) {
             const fact = factQueue.shift()!;

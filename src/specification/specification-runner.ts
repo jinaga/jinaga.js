@@ -25,7 +25,7 @@ export class SpecificationRunner {
         hash: reference.hash
       }
     }), {} as ReferencesByName);
-    var products = await this.executeMatchesAndProjection(references, specification.matches, specification.projection);
+    const products = await this.executeMatchesAndProjection(references, specification.matches, specification.projection);
     return products;
   }
 
@@ -100,7 +100,7 @@ export class SpecificationRunner {
       return results.filter(result => otherResults.some(factReferenceEquals(result[unknown.name])));
     }
     else if (condition.type === "existential") {
-      let matchingReferences: ReferencesByName[] = [];
+      const matchingReferences: ReferencesByName[] = [];
       for (const result of results) {
         const matches = await this.executeMatches(result, condition.matches);
         const include = condition.exists ?

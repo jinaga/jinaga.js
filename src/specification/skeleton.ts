@@ -229,7 +229,7 @@ function addPathCondition(skeleton: Skeleton, givenFacts: InputByIdentifier, kno
 
     // Walk up the right-hand side.
     // This generates predecessor joins from a given or prior label.
-    let fact = knownFacts[condition.labelRight];
+    const fact = knownFacts[condition.labelRight];
     if (!fact) {
         throw new Error(`Label ${condition.labelRight} not found. Known labels: ${Object.keys(knownFacts).join(", ")}`);
     }

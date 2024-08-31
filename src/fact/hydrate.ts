@@ -43,9 +43,9 @@ export class Dehydration {
 
     private createFactRecord(fact: HashMap): FactRecord {
         let type: string | null = null;
-        let fields: HashMap = {};
-        let predecessors: PredecessorCollection = {};
-        for (let field in fact) {
+        const fields: HashMap = {};
+        const predecessors: PredecessorCollection = {};
+        for (const field in fact) {
             const value = toJSON(fact[field]);
             if (value === null || value === undefined) {
                 // Skip
@@ -105,7 +105,7 @@ export class Hydration {
         }
 
         const fields: HashMap = entry.record.fields;
-        let fact: HashMap = {};
+        const fact: HashMap = {};
         for (const field in fields) {
             fact[field] = fields[field];
         }
@@ -134,7 +134,7 @@ export class Hydration {
     }
 }
 
-export function lookupHash<T extends Object>(fact: T) {
+export function lookupHash<T extends object>(fact: T) {
     return hashSymbol && (fact as any)[hashSymbol] as string;
 }
 

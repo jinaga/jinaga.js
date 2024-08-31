@@ -93,7 +93,7 @@ export class MemoryStore implements Storage {
     }
 
     load(references: FactReference[]): Promise<FactEnvelope[]> {
-        let target: FactEnvelope[] = [];
+        const target: FactEnvelope[] = [];
         loadAll(references, this.factEnvelopes, target);
         return Promise.resolve(target);
     }

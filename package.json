@@ -38,12 +38,15 @@
   "devDependencies": {
     "@types/jest": "^27.5.1",
     "@types/node-forge": "^1.3.11",
+    "eslint": "^9.9.1",
+    "globals": "^15.9.0",
     "jest": "^28.1.0",
     "jest-progress-bar-reporter": "^1.0.25",
     "rimraf": "^3.0.2",
     "source-map-support": "^0.5.21",
     "ts-jest": "^28.0.3",
-    "typescript": "^4.7.2"
+    "typescript": "^4.7.2",
+    "typescript-eslint": "^8.3.0"
   },
   "engines": {
     "node": "^12.13.0 || ^14.15.0 || ^16.10.0 || >=17.0.0"

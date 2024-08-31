@@ -101,7 +101,7 @@ class FactGraph {
             return results.filter(result => otherResults.some(factReferenceEquals(result[unknown.name])));
         }
         else if (condition.type === "existential") {
-            var matchingReferences = results.filter(result => {
+            const matchingReferences = results.filter(result => {
                 const matches = this.executeMatches(result, condition.matches);
                 return condition.exists ?
                     matches.length > 0 :
@@ -256,7 +256,7 @@ class AuthorizationRuleSpecification implements AuthorizationRule {
         if (head.projection.type !== 'fact') {
             throw new Error('The head of the specification must project a fact.');
         }
-        let results = graph.executeSpecification(
+        const results = graph.executeSpecification(
             head.given[0].name,
             head.matches,
             head.projection.label,
@@ -437,7 +437,7 @@ export class AuthorizationRules {
     }
 
     saveToDescription(): string {
-        var description = 'authorization {\n';
+        let description = 'authorization {\n';
         for (const type in this.rulesByType) {
             const rules = this.rulesByType[type];
             for (const rule of rules) {
@@ -452,7 +452,7 @@ export class AuthorizationRules {
     static loadFromDescription(description: string): AuthorizationRules {
         const parser = new SpecificationParser(description);
         parser.skipWhitespace();
-        var authorizationRules = new AuthorizationRules(undefined);
+        let authorizationRules = new AuthorizationRules(undefined);
         parser.parseAuthorizationRules({
             any: (type: string) =>
                 authorizationRules = authorizationRules.withRule(type, new AuthorizationRuleAny()),
