@@ -54,7 +54,7 @@ export class DistributionRules {
   }
 
   saveToDescription(): string {
-    var description = "distribution {\n";
+    let description = "distribution {\n";
     for (const rule of this.rules) {
       const specificationDescription = describeSpecification(rule.specification, 1).trimStart();
       const userDescription = rule.user ? describeSpecification(rule.user, 1).trimStart() : "everyone\n";
@@ -67,7 +67,7 @@ export class DistributionRules {
   static loadFromDescription(description: string): DistributionRules {
     const parser = new SpecificationParser(description);
     parser.skipWhitespace();
-    var distributionRules: DistributionRule[] = [];
+    const distributionRules: DistributionRule[] = [];
     parser.parseDistributionRules({
       share: (specification: Specification, user: Specification | null) => {
         distributionRules.push({

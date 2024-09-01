@@ -9,8 +9,8 @@ export function verifyEnvelopes(envelopes: FactEnvelope[]): boolean {
     // Cache public keys to avoid parsing them multiple times
     const publicKeyCache: PublicKeyCache = {};
 
-    for (var envelope of envelopes) {
-        for (var signature of envelope.signatures) {
+    for (const envelope of envelopes) {
+        for (const signature of envelope.signatures) {
             if (!publicKeyCache[signature.publicKey]) {
                 publicKeyCache[signature.publicKey] = pki.publicKeyFromPem(signature.publicKey);
             }
