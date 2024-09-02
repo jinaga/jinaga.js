@@ -235,7 +235,8 @@ function addPathCondition(skeleton: Skeleton, givenFacts: InputByIdentifier, kno
     }
     let factType = fact.factType;
     let factIndex = fact.factIndex;
-    for (const [i, role] of condition.rolesRight.entries()) {
+    for (let i = 0; i < condition.rolesRight.length; i++) {
+        const role = condition.rolesRight[i];
         if (i === roleCount - 1 && knownFact) {
             // If we have already written the output, we can use the fact index.
             skeleton = withEdge(skeleton, knownFact.factIndex, factIndex, role.name, path);
