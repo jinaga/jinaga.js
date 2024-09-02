@@ -195,20 +195,20 @@ export class FetchConnection implements HttpConnection {
             else if (response.statusCode === 201) {
                 return {
                     result: "success",
-                    response: Object
+                    response: {}
                 };
             }
             else if (response.statusCode === 200) {
-                if (response.responseType === 'json') {
+                if (typeof response.response === 'string') {
                     return {
                         result: "success",
-                        response: response.response
+                        response: JSON.parse(response.response)
                     };
                 }
                 else {
                     return {
                         result: "success",
-                        response: JSON.parse(response.response)
+                        response: response.response
                     };
                 }
             }
