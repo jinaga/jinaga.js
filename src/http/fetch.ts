@@ -97,6 +97,10 @@ export class FetchConnection implements HttpConnection {
         const signal = controller.signal;
         let closed = false;
 
+        // Start a background task to read the stream.
+        // This function will read one chunk and pass it to onResponse.
+        // The function will then call itself to read the next chunk.
+        // If an error occurs, it will call onError.
         (async () => {
             try {
                 const headers = await this.getHeaders();
@@ -141,21 +145,25 @@ export class FetchConnection implements HttpConnection {
                             for (const line of lines) {
                                 if (line.length > 0) {
                                     try {
+                                        // As data comes in, parse non-blank lines to JSON and pass to onResponse.
                                         const json = JSON.parse(line);
                                         await onResponse(json);
                                     } catch (err) {
                                         onError(err as Error);
                                     }
                                 }
+                                // Skip blank lines.
                             }
                         }
 
+                        // Continue reading the next chunk.
                         read();
                     } catch (err) {
                         onError(err as Error);
                     }
                 };
 
+                // Start reading the first chunk.
                 read();
             } catch (err: any) {
                 if (err.name === 'AbortError') {
@@ -167,6 +175,7 @@ export class FetchConnection implements HttpConnection {
         })();
 
         return () => {
+            // If the connection is closed, exit.
             closed = true;
             controller.abort();
         };
