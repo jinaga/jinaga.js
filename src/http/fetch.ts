@@ -31,11 +31,11 @@ export class FetchConnection implements HttpConnection {
                 throw new Error(response.statusMessage);
             }
             else if (response.statusCode === 200) {
-                if (response.responseType === 'application/json') {
-                    return <object>response.response;
+                if (typeof response.response === 'string') {
+                    return JSON.parse(response.response);
                 }
                 else {
-                    return <object>JSON.parse(response.response);
+                    return <object>response.response;
                 }
             }
             else {
