@@ -7,9 +7,9 @@ import { PassThroughFork } from "./fork/pass-through-fork";
 import { PersistentFork } from "./fork/persistent-fork";
 import { TransientFork } from "./fork/transient-fork";
 import { AuthenticationProvider } from "./http/authenticationProvider";
+import { FetchConnection } from "./http/fetch";
 import { HttpNetwork } from "./http/httpNetwork";
 import { SyncStatusNotifier, WebClient } from "./http/web-client";
-import { XhrConnection } from "./http/xhr";
 import { IndexedDBLoginStore } from "./indexeddb/indexeddb-login-store";
 import { IndexedDBQueue } from "./indexeddb/indexeddb-queue";
 import { IndexedDBStore } from "./indexeddb/indexeddb-store";
@@ -63,7 +63,7 @@ function createWebClient(
         const reauthenticate = provider
             ? () => provider.reauthenticate()
             : () => Promise.resolve(false);
-        const httpConnection = new XhrConnection(config.httpEndpoint, getHeaders, reauthenticate);
+        const httpConnection = new FetchConnection(config.httpEndpoint, getHeaders, reauthenticate);
         const httpTimeoutSeconds = config.httpTimeoutSeconds || 30;
         const webClient = new WebClient(httpConnection, syncStatusNotifier, {
             timeoutSeconds: httpTimeoutSeconds

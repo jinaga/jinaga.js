@@ -50,3 +50,5 @@ export { SpecificationParser } from './specification/specification-parser';
 export { FactEnvelope, FactFeed, FactRecord, FactReference, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, ReferencesByName, Storage, computeTupleSubsetHash, factEnvelopeEquals, factReferenceEquals, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
 
+// Export the JinagaBrowser class using the alias JinagaClient
+export { JinagaBrowser as JinagaClient } from "./jinaga-browser";
