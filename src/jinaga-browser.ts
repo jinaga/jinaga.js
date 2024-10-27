@@ -18,6 +18,7 @@ import { FactManager } from "./managers/factManager";
 import { Network, NetworkNoOp } from "./managers/NetworkManager";
 import { MemoryStore } from "./memory/memory-store";
 import { ObservableSource } from "./observable/observable";
+import { PurgeConditions } from "./purge/purgeConditions";
 import { Storage } from "./storage";
 
 export type JinagaBrowserConfig = {
@@ -25,7 +26,8 @@ export type JinagaBrowserConfig = {
     wsEndpoint?: string,
     indexedDb?: string,
     httpTimeoutSeconds?: number,
-    httpAuthenticationProvider?: AuthenticationProvider
+    httpAuthenticationProvider?: AuthenticationProvider,
+    purgeConditions?: (p: PurgeConditions) => PurgeConditions
 }
 
 export class JinagaBrowser {

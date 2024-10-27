@@ -38,6 +38,7 @@ export { MemoryStore } from './memory/memory-store';
 export { Device, User, UserName } from "./model/user";
 export { ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
 export { ObservableCollection } from './observer/observer';
+export { PurgeConditions } from './purge/purgeConditions';
 export { Declaration } from './specification/declaration';
 export { describeDeclaration, describeSpecification } from './specification/description';
 export { buildFeeds } from './specification/feed-builder';
