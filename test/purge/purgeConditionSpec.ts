@@ -2,84 +2,47 @@ import { buildModel, JinagaClient, PurgeConditions } from "../../src";
 
 describe("Purge conditions", () => {
     it("should allow a specification when no purge conditions are specified", async () => {
-        var j = JinagaClient.create({
-            purgeConditions: p => p
-        });
-        var model = buildModel(b => b
-            .type(Store)
-            .type(Order, x => x
-                .predecessor("store", Store)
-            )
-            .type(Item, x => x
-                .predecessor("order", Order)
-            )
-            .type(OrderCancelled, x => x
-                .predecessor("order", Order)
-            )
-        );
-        var store = await j.fact(new Store("storeId"));
+        const j = createJinagaClient(p => p);
+        const model = createModel();
+        const store = await j.fact(new Store("storeId"));
 
-        var ordersInStore = model.given(Store).match((store, facts) =>
+        const ordersInStore = model.given(Store).match((store, facts) =>
             facts.ofType(Order)
                 .join(order => order.store, store)
         );
 
-        var orders = await j.query(ordersInStore, store);
+        const orders = await j.query(ordersInStore, store);
         expect(orders).toEqual([]);
     });
 
     it("should throw if the specification does not include the purge condition", async () => {
-        var j = JinagaClient.create({
-            purgeConditions: p => p
-                .whenExists(Order, (order, facts) =>
-                    facts.ofType(OrderCancelled)
-                        .join(orderCancelled => orderCancelled.order, order))
-        });
-        var model = buildModel(b => b
-            .type(Store)
-            .type(Order, x => x
-                .predecessor("store", Store)
-            )
-            .type(Item, x => x
-                .predecessor("order", Order)
-            )
-            .type(OrderCancelled, x => x
-                .predecessor("order", Order)
-            )
+        const j = createJinagaClient(p => p
+            .whenExists(Order, (order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order))
         );
-        var store = await j.fact(new Store("storeId"));
+        const model = createModel();
+        const store = await j.fact(new Store("storeId"));
 
-        var ordersInStore = model.given(Store).match((store, facts) =>
+        const ordersInStore = model.given(Store).match((store, facts) =>
             facts.ofType(Order)
                 .join(order => order.store, store)
         );
 
-        var orders = j.query(ordersInStore, store);
+        const orders = j.query(ordersInStore, store);
         await expect(orders).rejects.toThrow();
     });
 
     it("should allow a specification when the purge condition is included", async () => {
-        var j = JinagaClient.create({
-            purgeConditions: p => p
-                .whenExists(Order, (order, facts) =>
-                    facts.ofType(OrderCancelled)
-                        .join(orderCancelled => orderCancelled.order, order))
-        });
-        var model = buildModel(b => b
-            .type(Store)
-            .type(Order, x => x
-                .predecessor("store", Store)
-            )
-            .type(Item, x => x
-                .predecessor("order", Order)
-            )
-            .type(OrderCancelled, x => x
-                .predecessor("order", Order)
-            )
+        const j = createJinagaClient(p => p
+            .whenExists(Order, (order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order))
         );
-        var store = await j.fact(new Store("storeId"));
+        const model = createModel();
+        const store = await j.fact(new Store("storeId"));
 
-        var ordersInStore = model.given(Store).match((store, facts) =>
+        const ordersInStore = model.given(Store).match((store, facts) =>
             facts.ofType(Order)
                 .join(order => order.store, store)
                 .notExists(order =>
@@ -87,10 +50,31 @@ describe("Purge conditions", () => {
                         .join(orderCancelled => orderCancelled.order, order))
         );
 
-        var orders = await j.query(ordersInStore, store);
+        const orders = await j.query(ordersInStore, store);
         expect(orders).toEqual([]);
     });
 });
+
+function createJinagaClient(purgeConditions: (p: PurgeConditions) => PurgeConditions) {
+    return JinagaClient.create({
+        purgeConditions
+    });
+}
+
+function createModel() {
+    return buildModel(b => b
+        .type(Store)
+        .type(Order, x => x
+            .predecessor("store", Store)
+        )
+        .type(Item, x => x
+            .predecessor("order", Order)
+        )
+        .type(OrderCancelled, x => x
+            .predecessor("order", Order)
+        )
+    );
+}
 
 class Store {
     static Type = "Store" as const;
