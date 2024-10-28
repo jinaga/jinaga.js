@@ -19,6 +19,7 @@ import { Network, NetworkNoOp } from "./managers/NetworkManager";
 import { MemoryStore } from "./memory/memory-store";
 import { ObservableSource } from "./observable/observable";
 import { PurgeConditions } from "./purge/purgeConditions";
+import { Specification } from "./specification/specification";
 import { Storage } from "./storage";
 
 export type JinagaBrowserConfig = {
@@ -39,7 +40,8 @@ export class JinagaBrowser {
         const fork = createFork(config, store, webClient);
         const authentication = createAuthentication(config, webClient);
         const network = createNetwork(webClient);
-        const factManager = new FactManager(fork, observableSource, store, network);
+        const purgeConditions = createPurgeConditions(config);
+        const factManager = new FactManager(fork, observableSource, store, network, purgeConditions);
         return new Jinaga(authentication, factManager, syncStatusNotifier);
     }
 }
@@ -130,5 +132,16 @@ function createNetwork(
     }
     else {
         return new NetworkNoOp();
+    }
+}
+
+function createPurgeConditions(
+    config: JinagaBrowserConfig
+): Specification[] {
+    if (config.purgeConditions) {
+        return config.purgeConditions(new PurgeConditions([])).specifications;
+    }
+    else {
+        return [];
     }
 }

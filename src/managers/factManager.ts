@@ -12,7 +12,8 @@ export class FactManager {
         private readonly fork: Fork,
         private readonly observableSource: ObservableSource,
         private readonly store: Storage,
-        network: Network
+        network: Network,
+        private readonly purgeConditions: Specification[]
     ) {
         this.networkManager = new NetworkManager(network, store,
             factsAdded => this.observableSource.notify(factsAdded));
