@@ -16,12 +16,13 @@ describe("Purge conditions", () => {
     });
 
     it("should throw if the specification does not include the purge condition", async () => {
-        const j = createJinagaClient(p => p
-            .whenExists(Order, (order, facts) =>
-                facts.ofType(OrderCancelled)
-                    .join(orderCancelled => orderCancelled.order, order))
-        );
         const model = createModel();
+        const j = createJinagaClient(p => p
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order)
+            ))
+        );
         const store = await j.fact(new Store("storeId"));
 
         const ordersInStore = model.given(Store).match((store, facts) =>
@@ -34,12 +35,13 @@ describe("Purge conditions", () => {
     });
 
     it("should allow a specification when the purge condition is included", async () => {
-        const j = createJinagaClient(p => p
-            .whenExists(Order, (order, facts) =>
-                facts.ofType(OrderCancelled)
-                    .join(orderCancelled => orderCancelled.order, order))
-        );
         const model = createModel();
+        const j = createJinagaClient(p => p
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order)
+            ))
+        );
         const store = await j.fact(new Store("storeId"));
 
         const ordersInStore = model.given(Store).match((store, facts) =>

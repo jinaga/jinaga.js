@@ -1,7 +1,19 @@
-import { FactConstructor, FactRepository, LabelOf, Traversal } from "../specification/model";
+import { SpecificationOf } from "../specification/model";
+import { Specification } from "../specification/specification";
 
 export class PurgeConditions {
-    whenExists<T, U>(factConstructor: FactConstructor<T>, tupleDefinition: (proxy: LabelOf<T>, facts: FactRepository) => Traversal<LabelOf<U>>): PurgeConditions {
-        throw new Error("Method not implemented.");
+    constructor(
+        public specifications: Specification[]
+    ) { }
+
+    whenExists<T, U>(specification: SpecificationOf<T, U>): PurgeConditions {
+        return new PurgeConditions([
+            ...this.specifications,
+            specification.specification
+        ]);
+    }
+
+    with(fn: (p: PurgeConditions) => PurgeConditions): PurgeConditions {
+        return fn(this);
     }
 }
