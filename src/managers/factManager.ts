@@ -1,6 +1,7 @@
 import { Fork } from "../fork/fork";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
+import { isSpecificationCompliant } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
 import { Network, NetworkManager } from "./NetworkManager";
@@ -40,14 +41,23 @@ export class FactManager {
     }
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        if (!isSpecificationCompliant(specification, this.purgeConditions)) {
+            throw new Error("Specification is not compliant with purge conditions.");
+        }
         return await this.store.read(start, specification);
     }
 
     async fetch(start: FactReference[], specification: Specification) {
+        if (!isSpecificationCompliant(specification, this.purgeConditions)) {
+            throw new Error("Specification is not compliant with purge conditions.");
+        }
         await this.networkManager.fetch(start, specification);
     }
 
     async subscribe(start: FactReference[], specification: Specification) {
+        if (!isSpecificationCompliant(specification, this.purgeConditions)) {
+            throw new Error("Specification is not compliant with purge conditions.");
+        }
         return await this.networkManager.subscribe(start, specification);
     }
 
