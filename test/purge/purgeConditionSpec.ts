@@ -55,6 +55,133 @@ describe("Purge conditions", () => {
         const orders = await j.query(ordersInStore, store);
         expect(orders).toEqual([]);
     });
+
+    it("should handle nested purge conditions correctly", async () => {
+        const model = createModel();
+        const j = createJinagaClient(p => p
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order)
+                    .notExists(orderCancelled =>
+                        facts.ofType(OrderCancelledReason)
+                            .join(reason => reason.orderCancelled, orderCancelled))
+            ))
+        );
+        const store = await j.fact(new Store("storeId"));
+
+        const ordersInStore = model.given(Store).match((store, facts) =>
+            facts.ofType(Order)
+                .join(order => order.store, store)
+                .notExists(order =>
+                    facts.ofType(OrderCancelled)
+                        .join(orderCancelled => orderCancelled.order, order)
+                        .notExists(orderCancelled =>
+                            facts.ofType(OrderCancelledReason)
+                                .join(reason => reason.orderCancelled, orderCancelled)))
+        );
+
+        const orders = await j.query(ordersInStore, store);
+        expect(orders).toEqual([]);
+    });
+
+    it("should handle multiple purge conditions correctly", async () => {
+        const model = createModel();
+        const j = createJinagaClient(p => p
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order)
+            ))
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderShipped)
+                    .join(orderShipped => orderShipped.order, order)
+            ))
+        );
+        const store = await j.fact(new Store("storeId"));
+
+        const ordersInStore = model.given(Store).match((store, facts) =>
+            facts.ofType(Order)
+                .join(order => order.store, store)
+                .notExists(order =>
+                    facts.ofType(OrderCancelled)
+                        .join(orderCancelled => orderCancelled.order, order))
+                .notExists(order =>
+                    facts.ofType(OrderShipped)
+                        .join(orderShipped => orderShipped.order, order))
+        );
+
+        const orders = await j.query(ordersInStore, store);
+        expect(orders).toEqual([]);
+    });
+
+    it("should handle negative existential conditions correctly", async () => {
+        const model = createModel();
+        const j = createJinagaClient(p => p
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order)
+            ))
+        );
+        const store = await j.fact(new Store("storeId"));
+
+        const ordersInStore = model.given(Store).match((store, facts) =>
+            facts.ofType(Order)
+                .join(order => order.store, store)
+                .notExists(order =>
+                    facts.ofType(OrderCancelled)
+                        .join(orderCancelled => orderCancelled.order, order))
+        );
+
+        const orders = await j.query(ordersInStore, store);
+        expect(orders).toEqual([]);
+    });
+
+    it("should handle positive existential conditions correctly", async () => {
+        const model = createModel();
+        const j = createJinagaClient(p => p
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order)
+            ))
+        );
+        const store = await j.fact(new Store("storeId"));
+
+        const ordersInStore = model.given(Store).match((store, facts) =>
+            facts.ofType(Order)
+                .join(order => order.store, store)
+                .exists(order =>
+                    facts.ofType(OrderCancelled)
+                        .join(orderCancelled => orderCancelled.order, order))
+        );
+
+        const orders = await j.query(ordersInStore, store);
+        expect(orders).toEqual([]);
+    });
+
+    it("should handle complex joins and conditions correctly", async () => {
+        const model = createModel();
+        const j = createJinagaClient(p => p
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order)
+            ))
+        );
+        const store = await j.fact(new Store("storeId"));
+
+        const ordersInStore = model.given(Store).match((store, facts) =>
+            facts.ofType(Order)
+                .join(order => order.store, store)
+                .notExists(order =>
+                    facts.ofType(OrderCancelled)
+                        .join(orderCancelled => orderCancelled.order, order))
+                .exists(order =>
+                    facts.ofType(Item)
+                        .join(item => item.order, order)
+                        .join(item => item.product, "productA"))
+        );
+
+        const orders = await j.query(ordersInStore, store);
+        expect(orders).toEqual([]);
+    });
 });
 
 function createJinagaClient(purgeConditions: (p: PurgeConditions) => PurgeConditions) {
@@ -73,6 +200,12 @@ function createModel() {
             .predecessor("order", Order)
         )
         .type(OrderCancelled, x => x
+            .predecessor("order", Order)
+        )
+        .type(OrderCancelledReason, x => x
+            .predecessor("orderCancelled", OrderCancelled)
+        )
+        .type(OrderShipped, x => x
             .predecessor("order", Order)
         )
     );
@@ -115,5 +248,25 @@ class OrderCancelled {
     constructor(
         public order: Order,
         public cancelledAt: Date | string
+    ) { }
+}
+
+class OrderCancelledReason {
+    static Type = "Order.Cancelled.Reason" as const;
+    type = OrderCancelledReason.Type;
+
+    constructor(
+        public orderCancelled: OrderCancelled,
+        public reason: string
+    ) { }
+}
+
+class OrderShipped {
+    static Type = "Order.Shipped" as const;
+    type = OrderShipped.Type;
+
+    constructor(
+        public order: Order,
+        public shippedAt: Date | string
     ) { }
 }
