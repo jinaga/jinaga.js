@@ -166,8 +166,9 @@ describe("Purge conditions", () => {
             ))
         );
         const store = await j.fact(new Store("storeId"));
+        const productA = await j.fact(new Product(store, "productA"));
 
-        const ordersInStore = model.given(Store).match((store, facts) =>
+        const ordersInStore = model.given(Store, Product).match((store, product, facts) =>
             facts.ofType(Order)
                 .join(order => order.store, store)
                 .notExists(order =>
@@ -176,10 +177,10 @@ describe("Purge conditions", () => {
                 .exists(order =>
                     facts.ofType(Item)
                         .join(item => item.order, order)
-                        .join(item => item.product, "productA"))
+                        .join(item => item.product, product))
         );
 
-        const orders = await j.query(ordersInStore, store);
+        const orders = await j.query(ordersInStore, store, productA);
         expect(orders).toEqual([]);
     });
 });
@@ -198,6 +199,7 @@ function createModel() {
         )
         .type(Item, x => x
             .predecessor("order", Order)
+            .predecessor("product", Product)
         )
         .type(OrderCancelled, x => x
             .predecessor("order", Order)
@@ -230,13 +232,23 @@ class Order {
     ) { }
 }
 
+class Product {
+    static Type = "Product" as const;
+    type = Product.Type;
+
+    constructor(
+        public store: Store,
+        public identifier: string
+    ) { }
+}
+
 class Item {
     static Type = "Order.Item" as const;
     type = Item.Type;
 
     constructor(
         public order: Order,
-        public product: string,
+        public product: Product,
         public quantity: number
     ) { }
 }
