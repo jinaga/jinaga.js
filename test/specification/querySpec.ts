@@ -54,7 +54,7 @@ describe("specification query", () => {
     });
 
     it("should query for successors using successors", async () => {
-        const specification = model.given(Company).match((company, facts) =>
+        const specification = model.given(Company).match(company =>
             company.successors(Office, office => office.company)
         );
 
@@ -251,7 +251,7 @@ describe("specification query", () => {
     });
 
     it("should execute a field projection using successors", async () => {
-        const specification = model.given(Company).match((company, facts) =>
+        const specification = model.given(Company).match(company =>
             company.successors(Office, office => office.company)
                 .select(office => office.identifier)
         );
@@ -280,7 +280,7 @@ describe("specification query", () => {
     });
 
     it("should execute a composite projection using successors", async () => {
-        const specification = model.given(Company).match((company, facts) =>
+        const specification = model.given(Company).match(company =>
             company.successors(Office, office => office.company)
                 .select(office => ({
                     identifier: office.identifier,
@@ -315,7 +315,7 @@ describe("specification query", () => {
     });
 
     it("should execute a specification projection using successors", async () => {
-        const specification = model.given(Company).match((company, facts) =>
+        const specification = model.given(Company).match(company =>
             company.successors(Office, office => office.company)
                 .select(office => ({
                     identifier: office.identifier,
@@ -396,7 +396,7 @@ describe("specification query", () => {
     });
 
     it("should execute a hash projection using successors", async () => {
-        const specification = model.given(Company).match((company, facts) =>
+        const specification = model.given(Company).match(company =>
             company.successors(Office, office => office.company)
                 .select(office => j.hash(office))
         );
