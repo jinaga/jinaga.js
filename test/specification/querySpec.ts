@@ -39,10 +39,23 @@ describe("specification query", () => {
         });
     });
 
-    it("should query for successors", async () => {
+    it("should query for successors using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(office),
+            j.hash(closedOffice),
+            j.hash(reopenedOffice)
+        ]);
+    });
+
+    it("should query for successors using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
         );
 
         const result = await j.query(specification, company);
@@ -86,7 +99,20 @@ describe("specification query", () => {
         expect(j.hash(result[0])).toBe(j.hash(president));
     });
 
-    it("should execute negative existential condition", async () => {
+    it("should execute negative existential condition using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
+                .notExists(office => facts.ofType(OfficeClosed)
+                    .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.length).toBe(1);
+        expect(j.hash(result[0])).toBe(j.hash(office));
+    });
+
+    it("should execute negative existential condition using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
@@ -100,7 +126,22 @@ describe("specification query", () => {
         expect(j.hash(result[0])).toBe(j.hash(office));
     });
 
-    it("should execute positive existential condition", async () => {
+    it("should execute positive existential condition using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
+                .exists(office => facts.ofType(OfficeClosed)
+                    .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(closedOffice),
+            j.hash(reopenedOffice)
+        ]);
+    });
+
+    it("should execute positive existential condition using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
@@ -116,7 +157,25 @@ describe("specification query", () => {
         ]);
     });
 
-    it("should execute nested existential conditions", async () => {
+    it("should execute nested existential conditions using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
+                .notExists(office => facts.ofType(OfficeClosed)
+                    .join(officeClosed => officeClosed.office, office)
+                    .notExists(officeClosed => facts.ofType(OfficeReopened)
+                        .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                    )
+                )
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(office),
+            j.hash(reopenedOffice)
+        ]);
+    });
+
+    it("should execute nested existential conditions using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
@@ -135,7 +194,22 @@ describe("specification query", () => {
         ]);
     });
 
-    it("should match all employees", async () => {
+    it("should match all employees using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
+                .selectMany(office => facts.ofType(Employee)
+                    .join(employee => employee.office, office)
+                )
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(employee),
+            j.hash(otherEmployee)
+        ]);
+    });
+
+    it("should match all employees using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Employee)
                 .join(employee => employee.office.company, company)
@@ -148,7 +222,22 @@ describe("specification query", () => {
         ]);
     });
 
-    it("should execute multiple path conditions", async () => {
+    it("should execute multiple path conditions using successors", async () => {
+        const specification = model.given(Company, User).match((company, user, facts) =>
+            company.successors(Office, office => office.company)
+                .selectMany(office => facts.ofType(Employee)
+                    .join(employee => employee.office, office)
+                    .join(employee => employee.user, user)
+                )
+        );
+
+        const result = await j.query(specification, company, employee.user);
+        expect(result.map(r => j.hash(r))).toEqual([
+            j.hash(employee)
+        ]);
+    });
+
+    it("should execute multiple path conditions using join", async () => {
         const specification = model.given(Company, User).match((company, user, facts) =>
             facts.ofType(Employee)
                 .join(employee => employee.office.company, company)
@@ -161,7 +250,21 @@ describe("specification query", () => {
         ]);
     });
 
-    it("should execute a field projection", async () => {
+    it("should execute a field projection using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
+                .select(office => office.identifier)
+        );
+
+        const result = await j.query(specification, company);
+        expect(result).toEqual([
+            "TestOffice",
+            "ClosedOffice",
+            "ReopenedOffice"
+        ]);
+    });
+
+    it("should execute a field projection using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
@@ -176,7 +279,24 @@ describe("specification query", () => {
         ]);
     });
 
-    it("should execute a composite projection", async () => {
+    it("should execute a composite projection using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    company: company.identifier
+                }))
+        );
+
+        const result = await j.query(specification, company);
+        expect(result).toEqual([
+            { identifier: "TestOffice", company: "TestCo" },
+            { identifier: "ClosedOffice", company: "TestCo" },
+            { identifier: "ReopenedOffice", company: "TestCo" }
+        ]);
+    });
+
+    it("should execute a composite projection using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
@@ -194,7 +314,39 @@ describe("specification query", () => {
         ]);
     });
 
-    it("should execute a specification projection", async () => {
+    it("should execute a specification projection using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
+                .select(office => ({
+                    identifier: office.identifier,
+                    employees: office.successors(Employee, employee => employee.office)
+                }))
+        );
+
+        const result = await j.query(specification, company);
+        expect(result.map(result => ({
+            identifier: result.identifier,
+            employeeHashes: result.employees.map(employee => j.hash(employee))
+        }))).toEqual([
+            {
+                identifier: "TestOffice",
+                employeeHashes: [
+                    j.hash(employee),
+                    j.hash(otherEmployee)
+                ]
+            },
+            {
+                identifier: "ClosedOffice",
+                employeeHashes: []
+            },
+            {
+                identifier: "ReopenedOffice",
+                employeeHashes: []
+            }
+        ]);
+    });
+
+    it("should execute a specification projection using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
@@ -228,13 +380,27 @@ describe("specification query", () => {
         ]);
     });
 
-    it("should execute a hash projection", async () => {
+    it("should execute a hash projection using join", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
                 .select(office => j.hash(office))
         );
 
+        const result = await j.query(specification, company);
+        expect(result).toEqual([
+            j.hash(office),
+            j.hash(closedOffice),
+            j.hash(reopenedOffice)
+        ]);
+    });
+
+    it("should execute a hash projection using successors", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            company.successors(Office, office => office.company)
+                .select(office => j.hash(office))
+        );
+    
         const result = await j.query(specification, company);
         expect(result).toEqual([
             j.hash(office),
