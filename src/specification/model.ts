@@ -137,7 +137,11 @@ class Given<T extends any[]> {
     }
 }
 
-export type LabelOf<T> = { _label: "Label" } & {
+interface LabelMethods<T> {
+    successors<U>(type: FactConstructor<U>, selector: (successor: LabelOf<U>) => LabelOf<T>): Traversal<LabelOf<U>>;
+}
+
+export type LabelOf<T> = LabelMethods<T> & {
     [ R in keyof T ]:
         T[R] extends string ? string :
         T[R] extends number ? number :
@@ -350,6 +354,33 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
                         `You must label it first.`);
                 }
                 return createHashProxy(target.root);
+            }
+            if (property === "successors") {
+                return (type: FactConstructor<any>, selector: (successor: any) => any) => {
+                    const name = `u${type.Type}`;
+                    const unknown = createFactProxy(factTypeMap, name, [], type.Type);
+                    const ancestor = selector(unknown);
+                    const payloadLeft = getPayload(ancestor);
+                    const payloadRight = target;
+                    if (payloadLeft.root !== name) {
+                        throw new Error("The left side must be based on the source");
+                    }
+                    const condition = joinCondition(payloadLeft, payloadRight);
+                    const match: Match = {
+                        unknown: {
+                            name: name,
+                            type: type.Type
+                        },
+                        conditions: [
+                            condition
+                        ]
+                    };
+                    const projection: FactProjection = {
+                        type: "fact",
+                        label: name
+                    };
+                    return new Traversal<any>(unknown, [match], projection);
+                };
             }
             const role = property.toString();
             const predecessorType = lookupRoleType(factTypeMap, target.factType, role);
