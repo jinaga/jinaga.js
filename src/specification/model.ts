@@ -357,7 +357,8 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
             }
             if (property === "successors") {
                 return (type: FactConstructor<any>, selector: (successor: any) => any) => {
-                    const name = `u${type.Type}`;
+                    const typeWithOnlyAlphaNumeric = type.Type.replace(/[^a-zA-Z0-9]/g, '');
+                    const name = `u${typeWithOnlyAlphaNumeric}`;
                     const unknown = createFactProxy(factTypeMap, name, [], type.Type);
                     const ancestor = selector(unknown);
                     const payloadLeft = getPayload(ancestor);
