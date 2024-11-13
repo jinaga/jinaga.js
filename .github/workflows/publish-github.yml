@@ -1,0 +1,25 @@
+name: Publish to GitHub Registry
+on:
+  workflow_dispatch:
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16.x'
+          registry-url: 'https://npm.pkg.github.com'
+      - run: npm install
+      - name: Generate Prerelease Version
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          LAST_TAG=$(git describe --tags --abbrev=0)
+          COMMIT_COUNT=$(git rev-list --count ${LAST_TAG}..HEAD)
+          PRERELEASE_VERSION=$(node -p "require('semver').inc('$CURRENT_VERSION', 'prerelease', 'beta.' + '$COMMIT_COUNT').replace(/\.0$/, '')")
+          npm version $PRERELEASE_VERSION --no-git-tag-version
+      - run: npm publish --registry=https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
