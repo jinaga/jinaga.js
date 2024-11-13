@@ -56,9 +56,9 @@ describe("Purge conditions", () => {
         expect(orders).toEqual([]);
     });
 
-    it("should handle nested purge conditions correctly", async () => {
+    it("should disallow reversible purge conditions", async () => {
         const model = createModel();
-        const j = createJinagaClient(p => p
+        const jConstructor = () => createJinagaClient(p => p
             .whenExists(model.given(Order).match((order, facts) =>
                 facts.ofType(OrderCancelled)
                     .join(orderCancelled => orderCancelled.order, order)
@@ -67,21 +67,7 @@ describe("Purge conditions", () => {
                             .join(reason => reason.orderCancelled, orderCancelled))
             ))
         );
-        const store = await j.fact(new Store("storeId"));
-
-        const ordersInStore = model.given(Store).match((store, facts) =>
-            facts.ofType(Order)
-                .join(order => order.store, store)
-                .notExists(order =>
-                    facts.ofType(OrderCancelled)
-                        .join(orderCancelled => orderCancelled.order, order)
-                        .notExists(orderCancelled =>
-                            facts.ofType(OrderCancelledReason)
-                                .join(reason => reason.orderCancelled, orderCancelled)))
-        );
-
-        const orders = await j.query(ordersInStore, store);
-        expect(orders).toEqual([]);
+        expect(jConstructor).toThrow("A specified purge condition would reverse the purge of Order with Order.Cancelled.Reason.");
     });
 
     it("should handle multiple purge conditions correctly", async () => {
@@ -135,7 +121,7 @@ describe("Purge conditions", () => {
         expect(orders).toEqual([]);
     });
 
-    it("should handle positive existential conditions correctly", async () => {
+    it("should fail on positive existential conditions", async () => {
         const model = createModel();
         const j = createJinagaClient(p => p
             .whenExists(model.given(Order).match((order, facts) =>
@@ -153,8 +139,8 @@ describe("Purge conditions", () => {
                         .join(orderCancelled => orderCancelled.order, order))
         );
 
-        const orders = await j.query(ordersInStore, store);
-        expect(orders).toEqual([]);
+        const orders = j.query(ordersInStore, store);
+        await expect(orders).rejects.toThrow("Specification is not compliant with purge conditions.");
     });
 
     it("should handle complex joins and conditions correctly", async () => {

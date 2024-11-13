@@ -19,6 +19,7 @@ import { Network, NetworkNoOp } from "./managers/NetworkManager";
 import { MemoryStore } from "./memory/memory-store";
 import { ObservableSource } from "./observable/observable";
 import { PurgeConditions } from "./purge/purgeConditions";
+import { validatePurgeSpecification } from "./purge/validate";
 import { Specification } from "./specification/specification";
 import { Storage } from "./storage";
 
@@ -139,7 +140,13 @@ function createPurgeConditions(
     config: JinagaBrowserConfig
 ): Specification[] {
     if (config.purgeConditions) {
-        return config.purgeConditions(new PurgeConditions([])).specifications;
+        var specifications = config.purgeConditions(new PurgeConditions([])).specifications;
+        var validationFailures: string[] = specifications.map(specification =>
+            validatePurgeSpecification(specification)).flat();
+        if (validationFailures.length > 0) {
+            throw new Error(validationFailures.join("\n"));
+        }
+        return specifications;
     }
     else {
         return [];
