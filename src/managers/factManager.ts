@@ -1,9 +1,9 @@
 import { Fork } from "../fork/fork";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
-import { isSpecificationCompliant } from "../purge/purgeCompliance";
+import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
+import { FactEnvelope, FactReference, ProjectedResult, Storage } from "../storage";
 import { Network, NetworkManager } from "./NetworkManager";
 
 export class FactManager {
@@ -41,22 +41,28 @@ export class FactManager {
     }
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        if (!isSpecificationCompliant(specification, this.purgeConditions)) {
-            throw new Error("Specification is not compliant with purge conditions.");
+        var failures = testSpecificationForCompliance(specification, this.purgeConditions);
+        if (failures.length > 0) {
+            var message = failures.join("\n");
+            throw new Error(message);
         }
         return await this.store.read(start, specification);
     }
 
     async fetch(start: FactReference[], specification: Specification) {
-        if (!isSpecificationCompliant(specification, this.purgeConditions)) {
-            throw new Error("Specification is not compliant with purge conditions.");
+        var failures = testSpecificationForCompliance(specification, this.purgeConditions);
+        if (failures.length > 0) {
+            var message = failures.join("\n");
+            throw new Error(message);
         }
         await this.networkManager.fetch(start, specification);
     }
 
     async subscribe(start: FactReference[], specification: Specification) {
-        if (!isSpecificationCompliant(specification, this.purgeConditions)) {
-            throw new Error("Specification is not compliant with purge conditions.");
+        var failures = testSpecificationForCompliance(specification, this.purgeConditions);
+        if (failures.length > 0) {
+            var message = failures.join("\n");
+            throw new Error(message);
         }
         return await this.networkManager.subscribe(start, specification);
     }

@@ -1,7 +1,12 @@
+import { describeSpecification } from "../specification/description";
 import { Condition, Match, Role, Specification } from "../specification/specification";
 
 export function isSpecificationCompliant(specification: Specification, purgeConditions: Specification[]) {
     return specification.matches.every(m => isMatchCompliant(m, purgeConditions));
+}
+
+export function testSpecificationForCompliance(specification: Specification, purgeConditions: Specification[]): string[] {
+    return specification.matches.map(m => testMatchForCompliance(m, purgeConditions)).flat();
 }
 
 function isMatchCompliant(match: Match, purgeConditions: Specification[]) {
@@ -22,6 +27,27 @@ function isMatchCompliant(match: Match, purgeConditions: Specification[]) {
 
     // TODO: We need to check the existential conditions.
     return true;
+}
+
+function testMatchForCompliance(match: Match, purgeConditions: Specification[]): string[] {
+    var failedUnknownConditions = purgeConditions.filter(pc =>
+        pc.given[0].type === match.unknown.type &&
+        !hasCondition(match.conditions, pc)
+    );
+    if (failedUnknownConditions.length > 0) {
+        const specificationDescriptions = failedUnknownConditions.map(pc => describePurgeCondition(pc)).join("");
+        return [`The match for ${match.unknown.type} is missing purge conditions:\n${specificationDescriptions}`];
+    }
+
+    var failedIntermediateConditions = purgeConditions.filter(pc =>
+        match.conditions.some(c => hasIntermediateType(c, pc.given[0].type))
+    )
+    if (failedIntermediateConditions.length > 0) {
+        const specificationDescriptions = failedIntermediateConditions.map(pc => describePurgeCondition(pc)).join("");
+        return [`The match for ${match.unknown.type} passes through types that should have purge conditions:\n${specificationDescriptions}`];
+    }
+
+    return [];
 }
 
 function hasCondition(conditions: Condition[], purgeCondition: Specification) {
@@ -126,3 +152,16 @@ function hasIntermediateType(condition: Condition, type: string) {
     }
     return false;
 }
+
+function describePurgeCondition(specification: Specification): string {
+    var specificationWithoutProjection: Specification = {
+        ...specification,
+        projection: {
+            type: "composite",
+            components: []
+        }
+    };
+    var description = describeSpecification(specificationWithoutProjection, 0);
+    return `!E ${description}`;
+}
+

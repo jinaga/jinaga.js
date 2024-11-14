@@ -140,7 +140,14 @@ describe("Purge conditions", () => {
         );
 
         const orders = j.query(ordersInStore, store);
-        await expect(orders).rejects.toThrow("Specification is not compliant with purge conditions.");
+        await expect(orders).rejects.toThrow(
+`The match for Order is missing purge conditions:
+!E (p1: Order) {
+    u1: Order.Cancelled [
+        u1->order: Order = p1
+    ]
+}
+`);
     });
 
     it("should handle complex joins and conditions correctly", async () => {
