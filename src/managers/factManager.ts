@@ -33,6 +33,10 @@ export class FactManager {
         await this.store.close();
     }
 
+    testSpecificationForCompliance(specification: Specification): string[] {
+        return testSpecificationForCompliance(specification, this.purgeConditions);
+    }
+
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         await this.fork.save(envelopes);
         const saved = await this.store.save(envelopes);
