@@ -244,6 +244,10 @@ export class Jinaga {
         return Jinaga.hash(fact);
     }
 
+    purge(): Promise<void> {
+        return this.factManager.purge();
+    }
+
     private validateFact(prototype: Fact) {
         const error = Jinaga.getFactError(prototype);
         if (error) {

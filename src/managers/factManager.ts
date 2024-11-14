@@ -92,4 +92,8 @@ export class FactManager {
         observer.start(keepAlive);
         return observer;
     }
+
+    async purge(): Promise<void> {
+        await this.store.purge(this.purgeConditions);
+    }
 }
