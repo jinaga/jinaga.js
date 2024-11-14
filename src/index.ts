@@ -48,7 +48,7 @@ export { SpecificationInverse, invertSpecification } from "./specification/inver
 export { FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf, buildModel } from './specification/model';
 export { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, emptySkeleton, skeletonOfSpecification } from './specification/skeleton';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection, getAllFactTypes, getAllRoles, specificationIsDeterministic, specificationIsNotDeterministic, splitBeforeFirstSuccessor } from './specification/specification';
-export { SpecificationParser } from './specification/specification-parser';
+export { Invalid, SpecificationParser } from './specification/specification-parser';
 export { FactEnvelope, FactFeed, FactRecord, FactReference, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, ReferencesByName, Storage, computeTupleSubsetHash, factEnvelopeEquals, factReferenceEquals, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
 
