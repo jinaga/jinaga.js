@@ -45,29 +45,17 @@ export class FactManager {
     }
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        var failures = testSpecificationForCompliance(specification, this.purgeConditions);
-        if (failures.length > 0) {
-            var message = failures.join("\n");
-            throw new Error(message);
-        }
+        this.checkCompliance(specification);
         return await this.store.read(start, specification);
     }
 
     async fetch(start: FactReference[], specification: Specification) {
-        var failures = testSpecificationForCompliance(specification, this.purgeConditions);
-        if (failures.length > 0) {
-            var message = failures.join("\n");
-            throw new Error(message);
-        }
+        this.checkCompliance(specification);
         await this.networkManager.fetch(start, specification);
     }
 
     async subscribe(start: FactReference[], specification: Specification) {
-        var failures = testSpecificationForCompliance(specification, this.purgeConditions);
-        if (failures.length > 0) {
-            var message = failures.join("\n");
-            throw new Error(message);
-        }
+        this.checkCompliance(specification);
         return await this.networkManager.subscribe(start, specification);
     }
 
@@ -95,5 +83,13 @@ export class FactManager {
 
     async purge(): Promise<void> {
         await this.store.purge(this.purgeConditions);
+    }
+
+    private checkCompliance(specification: Specification): void {
+        const failures = testSpecificationForCompliance(specification, this.purgeConditions);
+        if (failures.length > 0) {
+            const message = failures.join("\n");
+            throw new Error(message);
+        }
     }
 }
