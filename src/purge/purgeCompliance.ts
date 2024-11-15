@@ -1,32 +1,8 @@
 import { describeSpecification } from "../specification/description";
 import { Condition, Match, Role, Specification } from "../specification/specification";
 
-export function isSpecificationCompliant(specification: Specification, purgeConditions: Specification[]) {
-    return specification.matches.every(m => isMatchCompliant(m, purgeConditions));
-}
-
 export function testSpecificationForCompliance(specification: Specification, purgeConditions: Specification[]): string[] {
     return specification.matches.map(m => testMatchForCompliance(m, purgeConditions)).flat();
-}
-
-function isMatchCompliant(match: Match, purgeConditions: Specification[]) {
-    var failedUnknown = purgeConditions.some(pc =>
-        pc.given[0].type === match.unknown.type &&
-        !hasCondition(match.conditions, pc)
-    );
-    if (failedUnknown) {
-        return false;
-    }
-
-    var failedIntermediate = purgeConditions.some(pc =>
-        match.conditions.some(c => hasIntermediateType(c, pc.given[0].type))
-    )
-    if (failedIntermediate) {
-        return false;
-    }
-
-    // TODO: We need to check the existential conditions.
-    return true;
 }
 
 function testMatchForCompliance(match: Match, purgeConditions: Specification[]): string[] {
