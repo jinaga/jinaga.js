@@ -1,8 +1,9 @@
 import { Fork } from "../fork/fork";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
+import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
+import { FactEnvelope, FactReference, ProjectedResult, Storage } from "../storage";
 import { Network, NetworkManager } from "./NetworkManager";
 
 export class FactManager {
@@ -12,7 +13,8 @@ export class FactManager {
         private readonly fork: Fork,
         private readonly observableSource: ObservableSource,
         private readonly store: Storage,
-        network: Network
+        network: Network,
+        private readonly purgeConditions: Specification[]
     ) {
         this.networkManager = new NetworkManager(network, store,
             factsAdded => this.observableSource.notify(factsAdded));
@@ -31,6 +33,10 @@ export class FactManager {
         await this.store.close();
     }
 
+    testSpecificationForCompliance(specification: Specification): string[] {
+        return testSpecificationForCompliance(specification, this.purgeConditions);
+    }
+
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         await this.fork.save(envelopes);
         const saved = await this.store.save(envelopes);
@@ -39,14 +45,17 @@ export class FactManager {
     }
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        this.checkCompliance(specification);
         return await this.store.read(start, specification);
     }
 
     async fetch(start: FactReference[], specification: Specification) {
+        this.checkCompliance(specification);
         await this.networkManager.fetch(start, specification);
     }
 
     async subscribe(start: FactReference[], specification: Specification) {
+        this.checkCompliance(specification);
         return await this.networkManager.subscribe(start, specification);
     }
 
@@ -70,5 +79,17 @@ export class FactManager {
         const observer = new ObserverImpl<U>(this, references, specification, resultAdded);
         observer.start(keepAlive);
         return observer;
+    }
+
+    async purge(): Promise<void> {
+        await this.store.purge(this.purgeConditions);
+    }
+
+    private checkCompliance(specification: Specification): void {
+        const failures = testSpecificationForCompliance(specification, this.purgeConditions);
+        if (failures.length > 0) {
+            const message = failures.join("\n");
+            throw new Error(message);
+        }
     }
 }

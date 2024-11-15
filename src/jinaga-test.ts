@@ -11,7 +11,9 @@ import { FactManager } from './managers/factManager';
 import { Network, NetworkDistribution, NetworkNoOp } from './managers/NetworkManager';
 import { MemoryStore } from './memory/memory-store';
 import { ObservableSource } from './observable/observable';
+import { PurgeConditions } from "./purge/purgeConditions";
 import { Model } from './specification/model';
+import { Specification } from "./specification/specification";
 import { FactEnvelope, Storage } from './storage';
 
 export type JinagaTestConfig = {
@@ -20,7 +22,8 @@ export type JinagaTestConfig = {
   distribution?: (d: DistributionRules) => DistributionRules,
   user?: {},
   device?: {},
-  initialState?: {}[]
+  initialState?: {}[],
+  purgeConditions?: (p: PurgeConditions) => PurgeConditions
 }
 
 export class JinagaTest {
@@ -32,7 +35,8 @@ export class JinagaTest {
     const fork = new PassThroughFork(store);
     const authentication = this.createAuthentication(config, store);
     const network = this.createNetwork(config, store);
-    const factManager = new FactManager(fork, observableSource, store, network);
+    const purgeConditions = this.createPurgeConditions(config);
+    const factManager = new FactManager(fork, observableSource, store, network, purgeConditions);
     return new Jinaga(authentication, factManager, syncStatusNotifier);
   }
 
@@ -64,6 +68,15 @@ export class JinagaTest {
     }
     else {
       return new NetworkNoOp();
+    }
+  }
+
+  static createPurgeConditions(config: JinagaTestConfig): Specification[] {
+    if (config.purgeConditions) {
+      return config.purgeConditions(new PurgeConditions([])).specifications;
+    }
+    else {
+      return [];
     }
   }
 

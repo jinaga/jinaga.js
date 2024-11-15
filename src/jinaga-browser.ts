@@ -18,6 +18,9 @@ import { FactManager } from "./managers/factManager";
 import { Network, NetworkNoOp } from "./managers/NetworkManager";
 import { MemoryStore } from "./memory/memory-store";
 import { ObservableSource } from "./observable/observable";
+import { PurgeConditions } from "./purge/purgeConditions";
+import { validatePurgeSpecification } from "./purge/validate";
+import { Specification } from "./specification/specification";
 import { Storage } from "./storage";
 
 export type JinagaBrowserConfig = {
@@ -25,7 +28,8 @@ export type JinagaBrowserConfig = {
     wsEndpoint?: string,
     indexedDb?: string,
     httpTimeoutSeconds?: number,
-    httpAuthenticationProvider?: AuthenticationProvider
+    httpAuthenticationProvider?: AuthenticationProvider,
+    purgeConditions?: (p: PurgeConditions) => PurgeConditions
 }
 
 export class JinagaBrowser {
@@ -37,7 +41,8 @@ export class JinagaBrowser {
         const fork = createFork(config, store, webClient);
         const authentication = createAuthentication(config, webClient);
         const network = createNetwork(webClient);
-        const factManager = new FactManager(fork, observableSource, store, network);
+        const purgeConditions = createPurgeConditions(config);
+        const factManager = new FactManager(fork, observableSource, store, network, purgeConditions);
         return new Jinaga(authentication, factManager, syncStatusNotifier);
     }
 }
@@ -128,5 +133,22 @@ function createNetwork(
     }
     else {
         return new NetworkNoOp();
+    }
+}
+
+function createPurgeConditions(
+    config: JinagaBrowserConfig
+): Specification[] {
+    if (config.purgeConditions) {
+        var specifications = config.purgeConditions(new PurgeConditions([])).specifications;
+        var validationFailures: string[] = specifications.map(specification =>
+            validatePurgeSpecification(specification)).flat();
+        if (validationFailures.length > 0) {
+            throw new Error(validationFailures.join("\n"));
+        }
+        return specifications;
+    }
+    else {
+        return [];
     }
 }

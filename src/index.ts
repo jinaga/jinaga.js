@@ -38,6 +38,8 @@ export { MemoryStore } from './memory/memory-store';
 export { Device, User, UserName } from "./model/user";
 export { ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
 export { ObservableCollection } from './observer/observer';
+export { PurgeConditions } from './purge/purgeConditions';
+export { validatePurgeSpecification } from './purge/validate';
 export { Declaration } from './specification/declaration';
 export { describeDeclaration, describeSpecification } from './specification/description';
 export { buildFeeds } from './specification/feed-builder';
@@ -46,7 +48,7 @@ export { SpecificationInverse, invertSpecification } from "./specification/inver
 export { FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf, buildModel } from './specification/model';
 export { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, emptySkeleton, skeletonOfSpecification } from './specification/skeleton';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationProjection, getAllFactTypes, getAllRoles, specificationIsDeterministic, specificationIsNotDeterministic, splitBeforeFirstSuccessor } from './specification/specification';
-export { SpecificationParser } from './specification/specification-parser';
+export { Invalid, SpecificationParser } from './specification/specification-parser';
 export { FactEnvelope, FactFeed, FactRecord, FactReference, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, ReferencesByName, Storage, computeTupleSubsetHash, factEnvelopeEquals, factReferenceEquals, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
 

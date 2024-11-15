@@ -15,6 +15,16 @@ interface DistributionRulesVisitor {
     share(specification: Specification, user: Specification | null): void;
 }
 
+export class Invalid extends Error {
+    __proto__: Error;
+    constructor(message?: string) {
+        const trueProto = new.target.prototype;
+        super(message);
+
+        this.__proto__ = trueProto;
+    }
+}
+
 export class SpecificationParser {
     private offset: number = 0;
 
@@ -31,7 +41,7 @@ export class SpecificationParser {
 
     expectEnd() {
         if (this.offset < this.input.length) {
-            throw new Error(`Expected end of input but found '${this.previewText()}'`);
+            throw new Invalid(`Expected end of input but found '${this.previewText()}'`);
         }
     }
 
@@ -54,7 +64,7 @@ export class SpecificationParser {
 
     expect(symbol: string) {
         if (!this.consume(symbol)) {
-            throw new Error(`Expected '${symbol}' but found '${this.previewText()}'`);
+            throw new Invalid(`Expected '${symbol}' but found '${this.previewText()}'`);
         }
     }
 
@@ -75,7 +85,7 @@ export class SpecificationParser {
         if (result !== null) {
             return result;
         }
-        throw new Error("Expected identifier but found '" + this.previewText() + "'");
+        throw new Invalid("Expected identifier but found '" + this.previewText() + "'");
     }
 
     parseType(): string {
@@ -84,7 +94,7 @@ export class SpecificationParser {
         if (result !== null) {
             return result;
         }
-        throw new Error("Expected type but found '" + this.previewText() + "'");
+        throw new Invalid("Expected type but found '" + this.previewText() + "'");
     }
 
     parseLabel(): Label {
@@ -104,7 +114,7 @@ export class SpecificationParser {
     parseGiven(): Label[] {
         this.expect("(");
         if (this.continues(")")) {
-            throw new Error("The specification must contain at least one given label");
+            throw new Invalid("The specification must contain at least one given label");
         }
         const labels = [];
         labels.push(this.parseLabel());
@@ -126,13 +136,13 @@ export class SpecificationParser {
     parsePathCondition(unknown: Label, labels: Label[]): PathCondition {
         const labelLeft = this.parseIdentifier();
         if (labelLeft !== unknown.name) {
-            throw new Error(`The unknown '${unknown.name}' must appear on the left side of the path`);
+            throw new Invalid(`The unknown '${unknown.name}' must appear on the left side of the path`);
         }
         const rolesLeft = this.parseRoles();
         this.expect("=");
         const labelRight = this.parseIdentifier();
         if (!labels.some(label => label.name === labelRight)) {
-            throw new Error(`The label '${labelRight}' has not been defined`);
+            throw new Invalid(`The label '${labelRight}' has not been defined`);
         }
         const rolesRight = this.parseRoles();
         return {
@@ -151,7 +161,7 @@ export class SpecificationParser {
                 condition.labelRight === unknown.name
             )
         )) {
-            throw new Error(`The existential condition must be based on the unknown '${unknown.name}'`);
+            throw new Invalid(`The existential condition must be based on the unknown '${unknown.name}'`);
         }
         return {
             type: "existential",
@@ -176,11 +186,11 @@ export class SpecificationParser {
     parseMatch(labels: Label[]): Match {
         const unknown = this.parseLabel();
         if (labels.some(label => label.name === unknown.name)) {
-            throw new Error(`The name '${unknown.name}' has already been used`);
+            throw new Invalid(`The name '${unknown.name}' has already been used`);
         }
         this.expect("[");
         if (this.continues("]")) {
-            throw new Error(`The match for '${unknown.name}' has no conditions`);
+            throw new Invalid(`The match for '${unknown.name}' has no conditions`);
         }
         const conditions: Condition[] = [];
         while (!this.consume("]")) {
@@ -299,7 +309,7 @@ export class SpecificationParser {
         const reference = this.parseIdentifier();
         const fact = knownFacts.find(fact => fact.name === reference);
         if (!fact) {
-            throw new Error(`The fact '${reference}' has not been defined`);
+            throw new Invalid(`The fact '${reference}' has not been defined`);
         }
         return fact.declared;
     }
@@ -313,7 +323,7 @@ export class SpecificationParser {
             // This is an auto-named element, which must be a predecessor
             const fact = knownFacts.find(fact => fact.name === name);
             if (!fact) {
-                throw new Error(`The fact '${name}' has not been defined`);
+                throw new Invalid(`The fact '${name}' has not been defined`);
             }
             return {
                 fields,
@@ -390,7 +400,7 @@ export class SpecificationParser {
         else if (this.consume("#")) {
             const hash = this.match(/[A-Za-z0-9+/]+={0,2}/);
             if (!hash) {
-                throw new Error("The hash must be a base64-encoded string");
+                throw new Invalid("The hash must be a base64-encoded string");
             }
             return {
                 fact: null,
@@ -404,11 +414,11 @@ export class SpecificationParser {
             const reference = this.parseIdentifier();
             const fact = knownFacts.find(fact => fact.name === reference);
             if (!fact) {
-                throw new Error(`The fact '${reference}' has not been defined`);
+                throw new Invalid(`The fact '${reference}' has not been defined`);
             }
             const knownFact = fact.declared;
             if (knownFact.reference.type !== type) {
-                throw new Error(`Cannot assign a '${knownFact.reference.type}' to a '${type}'`);
+                throw new Invalid(`Cannot assign a '${knownFact.reference.type}' to a '${type}'`);
             }
             return knownFact;
         }
@@ -426,7 +436,7 @@ export class SpecificationParser {
         while (this.consume("let")) {
             const name = this.parseIdentifier();
             if (result.some(r => r.name === name)) {
-                throw new Error(`The name '${name}' has already been used`);
+                throw new Invalid(`The name '${name}' has already been used`);
             }
             this.expect(":");
             const type = this.parseType();
@@ -452,7 +462,7 @@ export class SpecificationParser {
             else {
                 const specification = this.parseSpecification();
                 if (specification.given.length !== 1) {
-                    throw new Error("A specification in an authorization rule must have exactly one given label");
+                    throw new Invalid("A specification in an authorization rule must have exactly one given label");
                 }
                 const type = specification.given[0].type;
                 visitor.type(type, specification);
