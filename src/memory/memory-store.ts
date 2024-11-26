@@ -103,6 +103,11 @@ export class MemoryStore implements Storage {
         return Promise.resolve();
     }
 
+    purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void> {
+        // Not yet implemented
+        return Promise.resolve();
+    }
+
     loadBookmark(feed: string): Promise<string> {
         const bookmark = this.bookmarksByFeed.hasOwnProperty(feed) ? this.bookmarksByFeed[feed] : '';
         return Promise.resolve(bookmark);

@@ -189,6 +189,11 @@ export class IndexedDBStore implements Storage {
     return Promise.resolve();
   }
 
+  purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void> {
+    // Not yet implemented
+    return Promise.resolve();
+  }
+
   loadBookmark(feed: string): Promise<string> {
     return withDatabase(this.indexName, db => {
       return withTransaction(db, ['bookmark'], 'readonly', async tx => {
