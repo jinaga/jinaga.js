@@ -105,12 +105,18 @@ export class MemoryStore implements Storage {
 
     purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void> {
         // Remove all facts that are descendants of the purge root
-        // and not descendants of a trigger.
+        // and not a trigger or an ancestor of a trigger.
+        const triggersAndTheirAncestors: FactReference[] = [...triggers];
+        for (const trigger of triggers) {
+            const triggerEnvelope = this.factEnvelopes.find(factEnvelopeEquals(trigger));
+            if (triggerEnvelope) {
+                this.addAllAncestors(triggerEnvelope.fact, triggersAndTheirAncestors);
+            }
+        }
         this.factEnvelopes = this.factEnvelopes.filter(e => {
             const ancestors: FactReference[] = this.ancestorsOf(e.fact);
-            const isFact = factReferenceEquals(e.fact);
             return !ancestors.some(factReferenceEquals(purgeRoot)) ||
-                triggers.some(t => isFact(t) || ancestors.some(factReferenceEquals(t)));
+                triggersAndTheirAncestors.some(factReferenceEquals(e.fact));
         });
         return Promise.resolve();
     }
