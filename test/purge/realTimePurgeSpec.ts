@@ -1,10 +1,10 @@
 import { JinagaClient, Model, PurgeConditions } from "../../src";
-import { createModel as givenModel, Item, Order, OrderCancelled, OrderCancelledReason, Product, Store } from "../orderModel";
+import { createModel, Item, Order, OrderCancelled, OrderCancelledReason, Product, Store } from "../orderModel";
 
 describe("Real-time purge", () => {
     it("Should find descendants if purge condition is not met", async () => {
-        const model = givenModel();
-        const j = givenClient(model);
+        const model = createModel();
+        const j = givenClientWithPurgeCondition(model);
 
         const store = await j.fact(new Store("storeId"));
         const order = await j.fact(new Order(store, new Date()));
@@ -20,8 +20,8 @@ describe("Real-time purge", () => {
     });
 
     it("Should purge successors when condition is met", async () => {
-        const model = givenModel();
-        const j = givenClient(model);
+        const model = createModel();
+        const j = givenClientWithPurgeCondition(model);
 
         const store = await j.fact(new Store("storeId"));
         const order = await j.fact(new Order(store, new Date()));
@@ -38,8 +38,8 @@ describe("Real-time purge", () => {
     });
 
     it("Should not purge the trigger fact", async () => {
-        const model = givenModel();
-        const j = givenClient(model);
+        const model = createModel();
+        const j = givenClientWithPurgeCondition(model);
 
         const store = await j.fact(new Store("storeId"));
         const order = await j.fact(new Order(store, new Date()));
@@ -56,7 +56,7 @@ describe("Real-time purge", () => {
     });
 
     it("Should not purge ancestors of the trigger fact", async () => {
-        const model = givenModel();
+        const model = createModel();
         const j = createJinagaClient(p => p
             .whenExists(model.given(Order).match(order =>
                 order.successors(OrderCancelledReason, reason => reason.orderCancelled.order)
@@ -79,7 +79,7 @@ describe("Real-time purge", () => {
     });
 });
 
-function givenClient(model: Model) {
+function givenClientWithPurgeCondition(model: Model) {
     return createJinagaClient(p => p
         .whenExists(model.given(Order).match((order, facts) => facts.ofType(OrderCancelled)
             .join(orderCancelled => orderCancelled.order, order)
