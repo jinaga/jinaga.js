@@ -103,6 +103,24 @@ export class MemoryStore implements Storage {
         return Promise.resolve();
     }
 
+    purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void> {
+        // Remove all facts that are descendants of the purge root
+        // and not a trigger or an ancestor of a trigger.
+        const triggersAndTheirAncestors: FactReference[] = [...triggers];
+        for (const trigger of triggers) {
+            const triggerEnvelope = this.factEnvelopes.find(factEnvelopeEquals(trigger));
+            if (triggerEnvelope) {
+                this.addAllAncestors(triggerEnvelope.fact, triggersAndTheirAncestors);
+            }
+        }
+        this.factEnvelopes = this.factEnvelopes.filter(e => {
+            const ancestors: FactReference[] = this.ancestorsOf(e.fact);
+            return !ancestors.some(factReferenceEquals(purgeRoot)) ||
+                triggersAndTheirAncestors.some(factReferenceEquals(e.fact));
+        });
+        return Promise.resolve();
+    }
+
     loadBookmark(feed: string): Promise<string> {
         const bookmark = this.bookmarksByFeed.hasOwnProperty(feed) ? this.bookmarksByFeed[feed] : '';
         return Promise.resolve(bookmark);
@@ -143,6 +161,27 @@ export class MemoryStore implements Storage {
             getPredecessors(record.fact, name).some(factReferenceEquals(reference)))
             .map(e => e.fact);
         return Promise.resolve(successors);
+    }
+
+    private ancestorsOf(fact: FactRecord): FactReference[] {
+        const ancestors: FactReference[] = [];
+        this.addAllAncestors(fact, ancestors);
+        return ancestors;
+    }
+
+    private addAllAncestors(fact: FactRecord, ancestors: FactReference[]) {
+        for (const role in fact.predecessors) {
+            const predecessors = getPredecessors(fact, role);
+            predecessors.forEach(predecessor => {
+                if (!ancestors.some(factReferenceEquals(predecessor))) {
+                    ancestors.push(predecessor);
+                    const predecessorRecord = this.factEnvelopes.find(factEnvelopeEquals(predecessor));
+                    if (predecessorRecord) {
+                        this.addAllAncestors(predecessorRecord.fact, ancestors);
+                    }
+                }
+            });
+        }
     }
 
     private hydrate(reference: FactReference) {

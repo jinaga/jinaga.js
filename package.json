@@ -25,6 +25,7 @@
   "scripts": {
     "build": "tsc",
     "clean": "rimraf dist/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
+    "prepack": "npm run clean && npm run build && npm run test",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "test": "npx tsc --noEmit --project tsconfig.test.json && jest",
     "test:watch": "jest --watch"

@@ -53,6 +53,7 @@ export interface Storage {
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactEnvelope[]>;
     purge(purgeConditions: Specification[]): Promise<void>;
+    purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void>;
 
     loadBookmark(feed: string): Promise<string>;
     saveBookmark(feed: string, bookmark: string): Promise<void>;

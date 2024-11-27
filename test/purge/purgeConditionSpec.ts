@@ -1,4 +1,5 @@
-import { buildModel, JinagaClient, PurgeConditions } from "../../src";
+import { JinagaClient, PurgeConditions } from "../../src";
+import { createModel, Store, Order, OrderCancelled, OrderCancelledReason, OrderShipped, Product, Item } from "../orderModel";
 
 describe("Purge conditions", () => {
     it("should allow a specification when no purge conditions are specified", async () => {
@@ -182,96 +183,4 @@ function createJinagaClient(purgeConditions: (p: PurgeConditions) => PurgeCondit
     return JinagaClient.create({
         purgeConditions
     });
-}
-
-function createModel() {
-    return buildModel(b => b
-        .type(Store)
-        .type(Order, x => x
-            .predecessor("store", Store)
-        )
-        .type(Item, x => x
-            .predecessor("order", Order)
-            .predecessor("product", Product)
-        )
-        .type(OrderCancelled, x => x
-            .predecessor("order", Order)
-        )
-        .type(OrderCancelledReason, x => x
-            .predecessor("orderCancelled", OrderCancelled)
-        )
-        .type(OrderShipped, x => x
-            .predecessor("order", Order)
-        )
-    );
-}
-
-class Store {
-    static Type = "Store" as const;
-    type = Store.Type;
-
-    constructor(
-        public identifier: string
-    ) { }
-}
-
-class Order {
-    static Type = "Order" as const;
-    type = Order.Type;
-
-    constructor(
-        public store: Store,
-        public createdAt: Date | string
-    ) { }
-}
-
-class Product {
-    static Type = "Product" as const;
-    type = Product.Type;
-
-    constructor(
-        public store: Store,
-        public identifier: string
-    ) { }
-}
-
-class Item {
-    static Type = "Order.Item" as const;
-    type = Item.Type;
-
-    constructor(
-        public order: Order,
-        public product: Product,
-        public quantity: number
-    ) { }
-}
-
-class OrderCancelled {
-    static Type = "Order.Cancelled" as const;
-    type = OrderCancelled.Type;
-
-    constructor(
-        public order: Order,
-        public cancelledAt: Date | string
-    ) { }
-}
-
-class OrderCancelledReason {
-    static Type = "Order.Cancelled.Reason" as const;
-    type = OrderCancelledReason.Type;
-
-    constructor(
-        public orderCancelled: OrderCancelled,
-        public reason: string
-    ) { }
-}
-
-class OrderShipped {
-    static Type = "Order.Shipped" as const;
-    type = OrderShipped.Type;
-
-    constructor(
-        public order: Order,
-        public shippedAt: Date | string
-    ) { }
 }
