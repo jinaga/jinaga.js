@@ -104,7 +104,13 @@ export class MemoryStore implements Storage {
     }
 
     purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void> {
-        // Not yet implemented
+        // Remove all facts that are descendants of the purge root
+        // and not descendants of a trigger.
+        this.factEnvelopes = this.factEnvelopes.filter(e => {
+            const ancestors: FactReference[] = this.ancestorsOf(e.fact);
+            return !ancestors.some(factReferenceEquals(purgeRoot)) ||
+                ancestors.some(a => triggers.some(factReferenceEquals(a)));
+        });
         return Promise.resolve();
     }
 
@@ -148,6 +154,27 @@ export class MemoryStore implements Storage {
             getPredecessors(record.fact, name).some(factReferenceEquals(reference)))
             .map(e => e.fact);
         return Promise.resolve(successors);
+    }
+
+    private ancestorsOf(fact: FactRecord): FactReference[] {
+        const ancestors: FactReference[] = [];
+        this.addAllAncestors(fact, ancestors);
+        return ancestors;
+    }
+
+    private addAllAncestors(fact: FactRecord, ancestors: FactReference[]) {
+        for (const role in fact.predecessors) {
+            const predecessors = getPredecessors(fact, role);
+            predecessors.forEach(predecessor => {
+                if (!ancestors.some(factReferenceEquals(predecessor))) {
+                    ancestors.push(predecessor);
+                    const predecessorRecord = this.factEnvelopes.find(factEnvelopeEquals(predecessor));
+                    if (predecessorRecord) {
+                        this.addAllAncestors(predecessorRecord.fact, ancestors);
+                    }
+                }
+            });
+        }
     }
 
     private hydrate(reference: FactReference) {
