@@ -108,8 +108,9 @@ export class MemoryStore implements Storage {
         // and not descendants of a trigger.
         this.factEnvelopes = this.factEnvelopes.filter(e => {
             const ancestors: FactReference[] = this.ancestorsOf(e.fact);
+            const isFact = factReferenceEquals(e.fact);
             return !ancestors.some(factReferenceEquals(purgeRoot)) ||
-                ancestors.some(a => triggers.some(factReferenceEquals(a)));
+                triggers.some(t => isFact(t) || ancestors.some(factReferenceEquals(t)));
         });
         return Promise.resolve();
     }
