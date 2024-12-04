@@ -44,7 +44,7 @@ function conditionMatches(condition: Condition, purgeCondition: Specification) {
     }
 }
 
-function matchesAreEquivalent(match: Match, purgeMatch: Match): unknown {
+function matchesAreEquivalent(match: Match, purgeMatch: Match): boolean {
     if (match.unknown.type !== purgeMatch.unknown.type) {
         return false;
     }
