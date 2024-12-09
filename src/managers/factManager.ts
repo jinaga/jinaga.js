@@ -2,14 +2,14 @@ import { Fork } from "../fork/fork";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
-import { invertSpecification, SpecificationInverse } from "../specification/inverse";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactReference, ProjectedResult, Storage } from "../storage";
 import { Network, NetworkManager } from "./NetworkManager";
+import { PurgeManager } from "./PurgeManager";
 
 export class FactManager {
     private networkManager: NetworkManager;
-    private purgeInverses: SpecificationInverse[];
+    private purgeManager: PurgeManager;
 
     constructor(
         private readonly fork: Fork,
@@ -21,7 +21,7 @@ export class FactManager {
         this.networkManager = new NetworkManager(network, store,
             factsAdded => this.factsAdded(factsAdded));
 
-        this.purgeInverses = purgeConditions.map(pc => invertSpecification(pc)).flat();
+        this.purgeManager = new PurgeManager(store, purgeConditions);
     }
 
     addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
@@ -49,17 +49,17 @@ export class FactManager {
     }
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        this.checkCompliance(specification);
+        this.purgeManager.checkCompliance(specification);
         return await this.store.read(start, specification);
     }
 
     async fetch(start: FactReference[], specification: Specification) {
-        this.checkCompliance(specification);
+        this.purgeManager.checkCompliance(specification);
         await this.networkManager.fetch(start, specification);
     }
 
     async subscribe(start: FactReference[], specification: Specification) {
-        this.checkCompliance(specification);
+        this.purgeManager.checkCompliance(specification);
         return await this.networkManager.subscribe(start, specification);
     }
 
@@ -87,45 +87,10 @@ export class FactManager {
 
     private async factsAdded(factsAdded: FactEnvelope[]): Promise<void> {
         await this.observableSource.notify(factsAdded);
-
-        for (const envelope of factsAdded) {
-            const fact = envelope.fact;
-            for (const purgeInverse of this.purgeInverses) {
-                // Only run the purge inverse if the given type matches the fact type
-                if (purgeInverse.inverseSpecification.given[0].type !== fact.type) {
-                    continue;
-                }
-
-                const givenReference = {
-                    type: fact.type,
-                    hash: fact.hash
-                };
-                const results: ProjectedResult[] = await this.store.read([givenReference], purgeInverse.inverseSpecification);
-                for (const result of results) {
-                    const givenName = purgeInverse.givenSubset[0];
-                    // The given is the purge root
-                    const purgeRoot: FactReference = result.tuple[givenName];
-                    // All other members of the result tuple are triggers
-                    const triggers: FactReference[] = Object.keys(result.tuple)
-                        .filter(k => k !== givenName)
-                        .map(k => result.tuple[k]);
-
-                    // Purge all descendants of the purge root except for the triggers
-                    await this.store.purgeDescendants(purgeRoot, triggers);
-                }
-            }
-        }
+        await this.purgeManager.triggerPurge(factsAdded);
     }
 
     async purge(): Promise<void> {
-        await this.store.purge(this.purgeConditions);
-    }
-
-    private checkCompliance(specification: Specification): void {
-        const failures = testSpecificationForCompliance(specification, this.purgeConditions);
-        if (failures.length > 0) {
-            const message = failures.join("\n");
-            throw new Error(message);
-        }
+        await this.purgeManager.purge();
     }
 }

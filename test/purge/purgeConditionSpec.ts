@@ -35,6 +35,31 @@ describe("Purge conditions", () => {
         await expect(orders).rejects.toThrow();
     });
 
+    it("should throw if the specification passes through the purge root", async () => {
+        const model = createModel();
+        const j = createJinagaClient(p => p
+            .whenExists(model.given(Order).match((order, facts) =>
+                facts.ofType(OrderCancelled)
+                    .join(orderCancelled => orderCancelled.order, order)
+            ))
+        );
+        const store = await j.fact(new Store("storeId"));
+
+        const shipmentsInStore = model.given(Store).match(store =>
+            store.successors(OrderShipped, shipped => shipped.order.store)
+        );
+
+        const shipments = j.query(shipmentsInStore, store);
+        await expect(shipments).rejects.toThrow(
+`The match for Order.Shipped passes through types that should have purge conditions:
+!E (p1: Order) {
+    u1: Order.Cancelled [
+        u1->order: Order = p1
+    ]
+}
+`);
+    });
+
     it("should allow a specification when the purge condition is included", async () => {
         const model = createModel();
         const j = createJinagaClient(p => p
