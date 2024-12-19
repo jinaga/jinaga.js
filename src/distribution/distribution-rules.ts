@@ -64,20 +64,22 @@ export class DistributionRules {
     return description;
   }
 
+  public static combine(distributionRules: DistributionRules, specification: Specification, user: Specification | null) {
+    return new DistributionRules([
+      ...distributionRules.rules,
+      {
+        specification,
+        feeds: buildFeeds(specification),
+        user
+      }
+    ]);
+  }
+
   static loadFromDescription(description: string): DistributionRules {
     const parser = new SpecificationParser(description);
     parser.skipWhitespace();
-    const distributionRules: DistributionRule[] = [];
-    parser.parseDistributionRules({
-      share: (specification: Specification, user: Specification | null) => {
-        distributionRules.push({
-          specification,
-          feeds: buildFeeds(specification),
-          user
-        });
-      }
-    });
-    return new DistributionRules(distributionRules);
+    const distributionRules = parser.parseDistributionRules();
+    return distributionRules;
   }
 }
 

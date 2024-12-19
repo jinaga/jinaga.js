@@ -126,7 +126,7 @@ interface AuthorizationRule {
     getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation>;
 }
 
-class AuthorizationRuleAny implements AuthorizationRule {
+export class AuthorizationRuleAny implements AuthorizationRule {
     describe(type: string) {
         return `    any ${type}\n`;
     }
@@ -142,7 +142,7 @@ class AuthorizationRuleAny implements AuthorizationRule {
     }
 }
 
-class AuthorizationRuleNone implements AuthorizationRule {
+export class AuthorizationRuleNone implements AuthorizationRule {
     describe(type: string) {
         return `    no ${type}\n`;
     }
@@ -159,7 +159,7 @@ class AuthorizationRuleNone implements AuthorizationRule {
     }
 }
 
-class AuthorizationRuleSpecification implements AuthorizationRule {
+export class AuthorizationRuleSpecification implements AuthorizationRule {
     constructor(
         private specification: Specification
     ) { }
@@ -392,6 +392,10 @@ export class AuthorizationRules {
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
     }
 
+    public static combine(rules: AuthorizationRules, type: string, rule: AuthorizationRule): AuthorizationRules {
+        return rules.withRule(type, rule);
+    }
+
     private withRule(type: string, rule: AuthorizationRule) {
         const oldRules = this.rulesByType[type] || [];
         const newRules = [...oldRules, rule];
@@ -452,15 +456,7 @@ export class AuthorizationRules {
     static loadFromDescription(description: string): AuthorizationRules {
         const parser = new SpecificationParser(description);
         parser.skipWhitespace();
-        let authorizationRules = new AuthorizationRules(undefined);
-        parser.parseAuthorizationRules({
-            any: (type: string) =>
-                authorizationRules = authorizationRules.withRule(type, new AuthorizationRuleAny()),
-            no: (type: string) =>
-                authorizationRules = authorizationRules.withRule(type, new AuthorizationRuleNone()),
-            type: (type: string, specification: Specification) =>
-                authorizationRules = authorizationRules.withRule(type, new AuthorizationRuleSpecification(specification))
-        });
+        const authorizationRules = parser.parseAuthorizationRules();
         return authorizationRules;
     }
 }

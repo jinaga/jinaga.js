@@ -1,19 +1,11 @@
+import { AuthorizationRuleAny, AuthorizationRuleNone, AuthorizationRules, AuthorizationRuleSpecification } from "../authorization/authorizationRules";
+import { DistributionRules } from "../distribution/distribution-rules";
 import { computeHash } from "../fact/hash";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
 import { Condition, ExistentialCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 
 type FieldValue = string | number | boolean;
-
-interface AuthorizationRulesVisitor {
-    any(type: string): void;
-    no(type: string): void;
-    type(type: string, specification: Specification): void;
-}
-
-interface DistributionRulesVisitor {
-    share(specification: Specification, user: Specification | null): void;
-}
 
 export class Invalid extends Error {
     __proto__: Error;
@@ -37,6 +29,10 @@ export class SpecificationParser {
         while (whitespace.test(this.input[this.offset])) {
             this.offset++;
         }
+    }
+
+    atEnd() {
+        return this.offset >= this.input.length;
     }
 
     expectEnd() {
@@ -447,17 +443,19 @@ export class SpecificationParser {
         return result;
     }
 
-    parseAuthorizationRules(visitor: AuthorizationRulesVisitor) {
+    parseAuthorizationRules(): AuthorizationRules {
+        let authorizationRules = new AuthorizationRules(undefined);
+
         this.expect("authorization");
         this.expect("{");
         while (!this.consume("}")) {
             if (this.consume("any")) {
                 const type = this.parseType();
-                visitor.any(type);
+                authorizationRules = AuthorizationRules.combine(authorizationRules, type, new AuthorizationRuleAny());
             }
             else if (this.consume("no")) {
                 const type = this.parseType();
-                visitor.no(type);
+                authorizationRules = AuthorizationRules.combine(authorizationRules, type, new AuthorizationRuleNone());
             }
             else {
                 const specification = this.parseSpecification();
@@ -465,12 +463,16 @@ export class SpecificationParser {
                     throw new Invalid("A specification in an authorization rule must have exactly one given label");
                 }
                 const type = specification.given[0].type;
-                visitor.type(type, specification);
+                authorizationRules = AuthorizationRules.combine(authorizationRules, type, new AuthorizationRuleSpecification(specification));
             }
         }
+
+        return authorizationRules;
     }
 
-    parseDistributionRules(visitor: DistributionRulesVisitor) {
+    parseDistributionRules(): DistributionRules {
+        let distributionRules = new DistributionRules([]);
+
         this.expect("distribution");
         this.expect("{");
         while (!this.consume("}")) {
@@ -481,7 +483,9 @@ export class SpecificationParser {
             if (!this.consume("everyone")) {
                 user = this.parseSpecification();
             }
-            visitor.share(specification, user);
+            distributionRules = DistributionRules.combine(distributionRules, specification, user);
         }
+
+        return distributionRules;
     }
 }
