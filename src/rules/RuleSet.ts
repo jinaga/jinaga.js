@@ -4,6 +4,12 @@ import { PurgeConditions } from "../purge/purgeConditions";
 import { SpecificationParser } from "../specification/specification-parser";
 
 export class RuleSet {
+    static empty: RuleSet = new RuleSet(
+        AuthorizationRules.empty,
+        DistributionRules.empty,
+        PurgeConditions.empty
+    );
+
     constructor(
         public authorizationRules: AuthorizationRules,
         public distributionRules: DistributionRules,
@@ -13,9 +19,9 @@ export class RuleSet {
     public static loadFromDescription(description: string): RuleSet {
         const parser = new SpecificationParser(description);
         parser.skipWhitespace();
-        let authorizationRules: AuthorizationRules = new AuthorizationRules(undefined);
-        let distributionRules: DistributionRules = new DistributionRules([]);
-        let purgeConditions: PurgeConditions = new PurgeConditions([]);
+        let authorizationRules: AuthorizationRules = AuthorizationRules.empty;
+        let distributionRules: DistributionRules = DistributionRules.empty;
+        let purgeConditions: PurgeConditions = PurgeConditions.empty;
         while (!parser.atEnd()) {
             if (parser.continues("authorization")) {
                 authorizationRules = authorizationRules.with(a => parser.parseAuthorizationRules());
@@ -32,5 +38,13 @@ export class RuleSet {
             }
         }
         return new RuleSet(authorizationRules, distributionRules, purgeConditions);
+    }
+
+    merge(ruleSet2: RuleSet): RuleSet {
+        return new RuleSet(
+            this.authorizationRules.merge(ruleSet2.authorizationRules),
+            this.distributionRules.merge(ruleSet2.distributionRules),
+            this.purgeConditions.merge(ruleSet2.purgeConditions)
+        );
     }
 }
