@@ -316,6 +316,8 @@ type AuthorizationPopulationNone = {
 export type AuthorizationPopulation = AuthorizationPopulationEveryone | AuthorizationPopulationSome | AuthorizationPopulationNone;
 
 export class AuthorizationRules {
+    static empty: AuthorizationRules = new AuthorizationRules(undefined);
+
     private rulesByType: {[type: string]: AuthorizationRule[]} = {};
 
     constructor(
@@ -390,6 +392,34 @@ export class AuthorizationRules {
             }
         });
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
+    }
+
+    merge(authorizationRules2: AuthorizationRules): AuthorizationRules {
+        let result = new AuthorizationRules(this.model);
+        for (const type in this.rulesByType) {
+            const rules1 = this.rulesByType[type];
+            const rules2 = authorizationRules2.rulesByType[type];
+            if (rules2) {
+                const rules = [...rules1, ...rules2];
+                for (const rule of rules) {
+                    result = result.withRule(type, rule);
+                }
+            }
+            else {
+                for (const rule of rules1) {
+                    result = result.withRule(type, rule);
+                }
+            }
+        }
+        for (const type in authorizationRules2.rulesByType) {
+            if (!this.rulesByType[type]) {
+                const rules2 = authorizationRules2.rulesByType[type];
+                for (const rule of rules2) {
+                    result = result.withRule(type, rule);
+                }
+            }
+        }
+        return result
     }
 
     public static combine(rules: AuthorizationRules, type: string, rule: AuthorizationRule): AuthorizationRules {

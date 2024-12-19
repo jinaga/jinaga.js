@@ -41,6 +41,8 @@ class ShareTarget<T, U> {
 }
 
 export class DistributionRules {
+  static empty: DistributionRules = new DistributionRules([]);
+
   constructor(
     public rules: DistributionRule[]
   ) { }
@@ -62,6 +64,13 @@ export class DistributionRules {
     }
     description += "}\n";
     return description;
+  }
+
+  merge(distributionRules2: DistributionRules): DistributionRules {
+    return new DistributionRules([
+      ...this.rules,
+      ...distributionRules2.rules
+    ]);
   }
 
   public static combine(distributionRules: DistributionRules, specification: Specification, user: Specification | null) {
