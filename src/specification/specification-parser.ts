@@ -1,6 +1,7 @@
 import { AuthorizationRuleAny, AuthorizationRuleNone, AuthorizationRules, AuthorizationRuleSpecification } from "../authorization/authorizationRules";
 import { DistributionRules } from "../distribution/distribution-rules";
 import { computeHash } from "../fact/hash";
+import { PurgeConditions } from "../purge/purgeConditions";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
 import { Condition, ExistentialCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
@@ -487,5 +488,21 @@ export class SpecificationParser {
         }
 
         return distributionRules;
+    }
+
+    parsePurgeConditions(): PurgeConditions {
+        let purgeConditions = new PurgeConditions([]);
+
+        this.expect("purge");
+        this.expect("{");
+        while (!this.consume("}")) {
+            const specification = this.parseSpecification();
+            purgeConditions = new PurgeConditions([
+                ...purgeConditions.specifications,
+                specification
+            ]);
+        }
+
+        return purgeConditions
     }
 }

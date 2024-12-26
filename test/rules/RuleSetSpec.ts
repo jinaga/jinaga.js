@@ -71,6 +71,27 @@ describe("RuleSet", () => {
 `);
     });
 
+    it("should load only purge", () => {
+        const ruleSet = RuleSet.loadFromDescription(`
+            purge {
+                (channel: Channel) {
+                    purge: Channel.Purge [
+                        purge->channel: Channel = channel
+                    ]
+                }
+            }
+        `);
+        expect(ruleSet.purgeConditions.saveToDescription()).toEqual(
+`purge {
+    (channel: Channel) {
+        purge: Channel.Purge [
+            purge->channel: Channel = channel
+        ]
+    }
+}
+`);
+    });
+
     it("should load authorization then distribution", () => {
         const ruleSet = RuleSet.loadFromDescription(`
             authorization {
@@ -151,6 +172,13 @@ describe("RuleSet", () => {
                 with (user: Jinaga.User) {
                 } => user
             }
+            purge {
+                (channel: Channel) {
+                    purge: Channel.Purge [
+                        purge->channel: Channel = channel
+                    ]
+                }
+            }
         `);
         const ruleSet2 = RuleSet.loadFromDescription(`
             authorization {
@@ -163,6 +191,13 @@ describe("RuleSet", () => {
                     ]
                 }
                 with everyone
+            }
+            purge {
+                (group: Group) {
+                    purge: Group.Purge [
+                        purge->group: Group = group
+                    ]
+                }
             }
         `);
         const ruleSet = ruleSet1.merge(ruleSet2);
@@ -187,6 +222,20 @@ describe("RuleSet", () => {
         ]
     }
     with everyone
+}
+`);
+        expect(ruleSet.purgeConditions.saveToDescription()).toEqual(
+`purge {
+    (channel: Channel) {
+        purge: Channel.Purge [
+            purge->channel: Channel = channel
+        ]
+    }
+    (group: Group) {
+        purge: Group.Purge [
+            purge->group: Group = group
+        ]
+    }
 }
 `);
     });
