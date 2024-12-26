@@ -1,3 +1,4 @@
+import { describeSpecification } from "../specification/description";
 import { SpecificationOf } from "../specification/model";
 import { Specification } from "../specification/specification";
 
@@ -24,5 +25,10 @@ export class PurgeConditions {
             ...this.specifications,
             ...purgeConditions.specifications
         ]);
+    }
+
+    saveToDescription(): string {
+        const specificationDescriptions = this.specifications.map(s => describeSpecification(s, 1)).join("");
+        return `purge {\n${specificationDescriptions}}\n`;
     }
 }

@@ -30,7 +30,7 @@ export class RuleSet {
                 distributionRules = distributionRules.with(d => parser.parseDistributionRules());
             }
             else if (parser.continues("purge")) {
-                throw new Error("Purge conditions are not yet implemented");
+                purgeConditions = purgeConditions.with(p => parser.parsePurgeConditions());
             }
             else {
                 // Throws an error.
