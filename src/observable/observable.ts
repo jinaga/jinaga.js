@@ -8,14 +8,10 @@ export interface SpecificationListener {
 }
 
 export class ObservableSource {
-    private listenersByTypeAndSpecification: {
-        [appliedToType: string]: {
-            [specificationKey: string]: {
-                specification: Specification,
-                listeners: SpecificationListener[]
-            }
-        }
-    } = {};
+    private listenersByTypeAndSpecification: Map<string, Map<string, {
+        specification: Specification,
+        listeners: SpecificationListener[]
+    }>> = new Map();
 
     constructor(private store: Storage) {
     }
@@ -34,19 +30,19 @@ export class ObservableSource {
         const givenType = specification.given[0].type;
         const specificationKey = computeStringHash(describeSpecification(specification, 0));
 
-        let listenersBySpecification = this.listenersByTypeAndSpecification[givenType];
+        let listenersBySpecification = this.listenersByTypeAndSpecification.get(givenType);
         if (!listenersBySpecification) {
-            listenersBySpecification = {};
-            this.listenersByTypeAndSpecification[givenType] = listenersBySpecification;
+            listenersBySpecification = new Map();
+            this.listenersByTypeAndSpecification.set(givenType, listenersBySpecification);
         }
-
-        let listeners = listenersBySpecification[specificationKey];
+
+        let listeners = listenersBySpecification.get(specificationKey);
         if (!listeners) {
             listeners = {
                 specification,
                 listeners: []
             };
-            listenersBySpecification[specificationKey] = listeners;
+            listenersBySpecification.set(specificationKey, listeners);
         }
 
         const specificationListener = {
@@ -57,19 +53,17 @@ export class ObservableSource {
     }
 
     public removeSpecificationListener(specificationListener: SpecificationListener) {
-        for (const givenType in this.listenersByTypeAndSpecification) {
-            const listenersBySpecification = this.listenersByTypeAndSpecification[givenType];
-            for (const specificationKey in listenersBySpecification) {
-                const listeners = listenersBySpecification[specificationKey];
+        for (const [givenType, listenersBySpecification] of this.listenersByTypeAndSpecification) {
+            for (const [specificationKey, listeners] of listenersBySpecification) {
                 const index = listeners.listeners.indexOf(specificationListener);
                 if (index >= 0) {
                     listeners.listeners.splice(index, 1);
 
                     if (listeners.listeners.length === 0) {
-                        delete listenersBySpecification[specificationKey];
+                        listenersBySpecification.delete(specificationKey);
 
                         if (Object.keys(listenersBySpecification).length === 0) {
-                            delete this.listenersByTypeAndSpecification[givenType];
+                            this.listenersByTypeAndSpecification.delete(givenType);
                         }
                     }
                 }
@@ -78,10 +72,9 @@ export class ObservableSource {
     }
 
     private async notifyFactSaved(fact: FactRecord) {
-        const listenersBySpecification = this.listenersByTypeAndSpecification[fact.type];
+        const listenersBySpecification = this.listenersByTypeAndSpecification.get(fact.type);
         if (listenersBySpecification) {
-            for (const specificationKey in listenersBySpecification) {
-                const listeners = listenersBySpecification[specificationKey];
+            for (const [specificationKey, listeners] of listenersBySpecification) {
                 if (listeners && listeners.listeners.length > 0) {
                     const specification = listeners.specification;
                     const givenReference = {
