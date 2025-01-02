@@ -1,5 +1,6 @@
 import { Network } from "../managers/NetworkManager";
 import { Storage, FactEnvelope, FactReference } from "../storage";
+import { Trace } from "../util/trace";
 
 export class Subscriber {
   private refCount: number = 0;
@@ -58,6 +59,9 @@ export class Subscriber {
       if (unknownFactReferences.length > 0) {
         const graph = await this.network.load(unknownFactReferences);
         await this.store.save(graph);
+        if (graph.length > 0) {
+          Trace.counter("facts_saved", graph.length);
+        }
         await this.store.saveBookmark(this.feed, nextBookmark);
         this.bookmark = nextBookmark;
         await this.notifyFactsAdded(graph);

@@ -7,6 +7,7 @@ import { FeedCache } from "../specification/feed-cache";
 import { Specification, reduceSpecification } from "../specification/specification";
 import { FactEnvelope, FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { computeStringHash } from "../util/encoding";
+import { Trace } from "../util/trace";
 
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
@@ -151,8 +152,10 @@ class LoadBatch {
         const graph: FactEnvelope[] = await this.network.load(this.factReferences);
 
         const factsAdded = await this.store.save(graph);
-
-        await this.notifyFactsAdded(factsAdded);
+        if (factsAdded.length > 0) {
+            Trace.counter("facts_saved", factsAdded.length);
+            await this.notifyFactsAdded(factsAdded);
+        }
     }
 }
 
