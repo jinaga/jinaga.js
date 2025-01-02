@@ -52,8 +52,8 @@ export interface Storage {
     feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactEnvelope[]>;
-    purge(purgeConditions: Specification[]): Promise<void>;
-    purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void>;
+    purge(purgeConditions: Specification[]): Promise<number>;
+    purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<number>;
 
     loadBookmark(feed: string): Promise<string>;
     saveBookmark(feed: string, bookmark: string): Promise<void>;

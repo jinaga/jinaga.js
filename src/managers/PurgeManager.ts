@@ -2,6 +2,7 @@ import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { SpecificationInverse, invertSpecification } from "../specification/inverse";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactReference, ProjectedResult, Storage } from "../storage";
+import { Trace } from "../util/trace";
 
 export class PurgeManager {
     private purgeInverses: SpecificationInverse[];
@@ -11,7 +12,10 @@ export class PurgeManager {
     }
 
     async purge(): Promise<void> {
-        await this.store.purge(this.purgeConditions);
+        const count = await this.store.purge(this.purgeConditions);
+        if (count > 0) {
+            Trace.counter("facts_purged", count);
+        }
     }
 
     async triggerPurge(factsAdded: FactEnvelope[]): Promise<void> {
@@ -38,7 +42,10 @@ export class PurgeManager {
                         .map(k => result.tuple[k]);
 
                     // Purge all descendants of the purge root except for the triggers
-                    await this.store.purgeDescendants(purgeRoot, triggers);
+                    const count = await this.store.purgeDescendants(purgeRoot, triggers);
+                    if (count > 0) {
+                        Trace.counter("facts_purged", count);
+                    }
                 }
             }
         }

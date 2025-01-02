@@ -184,14 +184,14 @@ export class IndexedDBStore implements Storage {
     });
   }
 
-  purge(purgeConditions: Specification[]): Promise<void> {
+  purge(purgeConditions: Specification[]): Promise<number> {
     // Not yet implemented
-    return Promise.resolve();
+    return Promise.resolve(0);
   }
 
-  purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void> {
+  purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<number> {
     // Not yet implemented
-    return Promise.resolve();
+    return Promise.resolve(0);
   }
 
   loadBookmark(feed: string): Promise<string> {
