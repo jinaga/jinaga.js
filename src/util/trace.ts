@@ -6,7 +6,7 @@ export interface Tracer {
     metric(message: string, measurements: { [key: string]: number }): void;
 }
 
-class NoOpTracer implements Tracer {
+export class NoOpTracer implements Tracer {
     info(message: string): void {
     }
     warn(message: string): void {
@@ -20,7 +20,7 @@ class NoOpTracer implements Tracer {
     }
 }
 
-class ConsoleTracer implements Tracer {
+export class ConsoleTracer implements Tracer {
     info(message: string): void {
         console.log(message);
     }
