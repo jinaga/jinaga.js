@@ -4,9 +4,10 @@ export interface Tracer {
     error(error: any): void;
     dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T>;
     metric(message: string, measurements: { [key: string]: number }): void;
+    counter(name: string, value: number): void;
 }
 
-class NoOpTracer implements Tracer {
+export class NoOpTracer implements Tracer {
     info(message: string): void {
     }
     warn(message: string): void {
@@ -18,9 +19,12 @@ class NoOpTracer implements Tracer {
     }
     metric(message: string, measurements: { [key: string]: number }): void {
     }
+
+    counter(name: string, value: number): void {
+    }
 }
 
-class ConsoleTracer implements Tracer {
+export class ConsoleTracer implements Tracer {
     info(message: string): void {
         console.log(message);
     }
@@ -46,6 +50,10 @@ class ConsoleTracer implements Tracer {
 
     metric(message: string, measurements: { [key: string]: number }): void {
         console.log(`Metric: ${message}`, measurements);
+    }
+    
+    counter(name: string, value: number): void {
+        console.log(`Counter: ${name} = ${value}`);
     }
 }
 
@@ -78,5 +86,9 @@ export class Trace {
 
     static metric(message: string, measurements: { [key: string]: number }): void {
         this.tracer.metric(message, measurements);
+    }
+
+    static counter(name: string, value: number): void {
+        this.tracer.counter(name, value);
     }
 }

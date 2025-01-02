@@ -98,12 +98,12 @@ export class MemoryStore implements Storage {
         return Promise.resolve(target);
     }
 
-    purge(purgeConditions: Specification[]): Promise<void> {
+    purge(purgeConditions: Specification[]): Promise<number> {
         // Not yet implemented
-        return Promise.resolve();
+        return Promise.resolve(0);
     }
 
-    purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<void> {
+    purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<number> {
         // Remove all facts that are descendants of the purge root
         // and not a trigger or an ancestor of a trigger.
         const triggersAndTheirAncestors: FactReference[] = [...triggers];
@@ -113,12 +113,14 @@ export class MemoryStore implements Storage {
                 this.addAllAncestors(triggerEnvelope.fact, triggersAndTheirAncestors);
             }
         }
+        const startingCount = this.factEnvelopes.length;
         this.factEnvelopes = this.factEnvelopes.filter(e => {
             const ancestors: FactReference[] = this.ancestorsOf(e.fact);
             return !ancestors.some(factReferenceEquals(purgeRoot)) ||
                 triggersAndTheirAncestors.some(factReferenceEquals(e.fact));
         });
-        return Promise.resolve();
+        const endingCount = this.factEnvelopes.length;
+        return Promise.resolve(startingCount - endingCount);
     }
 
     loadBookmark(feed: string): Promise<string> {

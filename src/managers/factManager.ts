@@ -4,6 +4,7 @@ import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactReference, ProjectedResult, Storage } from "../storage";
+import { Trace } from "../util/trace";
 import { Network, NetworkManager } from "./NetworkManager";
 import { PurgeManager } from "./PurgeManager";
 
@@ -44,7 +45,10 @@ export class FactManager {
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         await this.fork.save(envelopes);
         const saved = await this.store.save(envelopes);
-        await this.factsAdded(saved);
+        if (saved.length > 0) {
+            Trace.counter("facts_saved", saved.length);
+            await this.factsAdded(saved);
+        }
         return saved;
     }
 
@@ -67,8 +71,10 @@ export class FactManager {
         this.networkManager.unsubscribe(feeds);
     }
 
-    load(references: FactReference[]): Promise<FactEnvelope[]> {
-        return this.fork.load(references);
+    async load(references: FactReference[]): Promise<FactEnvelope[]> {
+        const loaded = await this.fork.load(references);
+        Trace.counter("facts_loaded", loaded.length);
+        return loaded;
     }
 
     getMruDate(specificationHash: string): Promise<Date | null> {

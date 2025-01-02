@@ -1,6 +1,7 @@
 import { TopologicalSorter } from '../fact/sorter';
 import { WebClient } from '../http/web-client';
 import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Storage } from '../storage';
+import { Trace } from "../util/trace";
 import { Fork } from "./fork";
 import { serializeLoad, serializeSave } from './serialize';
 
@@ -45,7 +46,10 @@ export class TransientFork implements Fork {
                     signatures: []
                 };
             });
-            await this.storage.save(envelopes);
+            const saved = await this.storage.save(envelopes);
+            if (saved.length > 0) {
+                Trace.counter("facts_saved", saved.length);
+            }
             loaded = loaded.concat(envelopes);
         }
         return loaded;
