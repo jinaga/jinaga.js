@@ -71,8 +71,10 @@ export class FactManager {
         this.networkManager.unsubscribe(feeds);
     }
 
-    load(references: FactReference[]): Promise<FactEnvelope[]> {
-        return this.fork.load(references);
+    async load(references: FactReference[]): Promise<FactEnvelope[]> {
+        const loaded = await this.fork.load(references);
+        Trace.counter("facts_loaded", loaded.length);
+        return loaded;
     }
 
     getMruDate(specificationHash: string): Promise<Date | null> {
