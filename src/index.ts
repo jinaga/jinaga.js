@@ -52,7 +52,7 @@ export { buildModel, FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf,
 export { EdgeDescription, emptySkeleton, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, skeletonOfSpecification } from './specification/skeleton';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, specificationIsDeterministic, specificationIsNotDeterministic, SpecificationProjection, splitBeforeFirstSuccessor } from './specification/specification';
 export { Invalid, SpecificationParser } from './specification/specification-parser';
-export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, ReferencesByName, Storage, validateGiven } from './storage';
+export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
 export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
 
