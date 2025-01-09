@@ -13,9 +13,11 @@ export { dehydrateFact, dehydrateReference, hydrate, hydrateFromTree } from "./f
 export { TopologicalSorter } from './fact/sorter';
 export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
+export { PersistentFork } from "./fork/persistent-fork";
 export { TransientFork } from './fork/transient-fork';
 export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvider";
 export { GraphDeserializer, GraphSource } from "./http/deserializer";
+export { FetchConnection } from "./http/fetch";
 export { HttpNetwork } from "./http/httpNetwork";
 export { parseLoadMessage, parseSaveMessage } from './http/messageParsers';
 export {
@@ -56,3 +58,4 @@ export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
 
 // Export the JinagaBrowser class using the alias JinagaClient
 export { JinagaBrowser as JinagaClient } from "./jinaga-browser";
+
