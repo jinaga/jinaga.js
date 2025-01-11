@@ -148,7 +148,9 @@ export class Jinaga {
         });
         await this.factManager.fetch(references, innerSpecification);
         const projectedResults = await this.factManager.read(references, innerSpecification);
-        return extractResults(projectedResults, innerSpecification.projection);
+        const extracted = extractResults(projectedResults, innerSpecification.projection);
+        Trace.counter("facts_loaded", extracted.totalCount);
+        return extracted.results;
     }
 
     /**
@@ -294,6 +296,7 @@ export class Jinaga {
 
 function extractResults(projectedResults: ProjectedResult[], projection: Projection) {
     const results = [];
+    let totalCount = 0;
     for (const projectedResult of projectedResults) {
         let result = projectedResult.result;
         if (projection.type === "composite") {
@@ -301,7 +304,9 @@ function extractResults(projectedResults: ProjectedResult[], projection: Project
             for (const component of projection.components) {
                 const value = result[component.name];
                 if (component.type === "specification") {
-                    obj[component.name] = extractResults(value, component.projection);
+                    const { results: nestedResults, totalCount: nestedCount } = extractResults(value, component.projection);
+                    obj[component.name] = nestedResults;
+                    totalCount += nestedCount;
                 }
                 else {
                     obj[component.name] = value;
@@ -310,6 +315,7 @@ function extractResults(projectedResults: ProjectedResult[], projection: Project
             result = obj;
         }
         results.push(result);
+        totalCount++;
     }
-    return results;
+    return { results, totalCount };
 }
