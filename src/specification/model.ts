@@ -211,6 +211,10 @@ export class Traversal<T> {
                 conditions
             }
         ];
+
+        // Verify that the matches collection contains no unknowns with the same name.
+        // Traverse existential conditions looking for names defined above.
+        verifyNoDuplicateNames(matches, []);
         return matches;
     }
 
@@ -579,5 +583,19 @@ function traversalFromDefinition<U>(definition: U, matches: Match[]): Traversal<
             components
         }
         return new Traversal<U>(definition, matches, compositeProjection);
+    }
+}
+
+function verifyNoDuplicateNames(matches: Match[], usedNames: string[]) {
+    for (const match of matches) {
+        if (usedNames.includes(match.unknown.name)) {
+            throw new Error(`The name "${match.unknown.name}" is already defined.`);
+        }
+        usedNames.push(match.unknown.name);
+        for (const condition of match.conditions) {
+            if (condition.type === "existential") {
+                verifyNoDuplicateNames(condition.matches, usedNames);
+            }
+        }
     }
 }
