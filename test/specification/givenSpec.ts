@@ -595,7 +595,7 @@ describe("given", () => {
                 .select(office => ({
                     identifier: office.identifier,
                     presidents: office.successors(President, president => president.office)
-                        .selectMany(president => president.user
+                        .selectMany(president => president.user.predecessor()
                             .select(user => ({
                                 user: user,
                                 names: user.successors(UserName, userName => userName.user)

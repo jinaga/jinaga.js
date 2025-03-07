@@ -139,11 +139,7 @@ class Given<T extends any[]> {
 
 interface LabelMethods<T> {
     successors<U>(type: FactConstructor<U>, selector: (successor: LabelOf<U>) => LabelOf<T>): Traversal<LabelOf<U>>;
-    join<U>(left: (input: LabelOf<T>) => LabelOf<U>, right: LabelOf<U>): Traversal<LabelOf<T>>;
-    notExists<U>(tupleDefinition: (proxy: LabelOf<T>) => Traversal<U>): Traversal<LabelOf<T>>;
-    exists<U>(tupleDefinition: (proxy: LabelOf<T>) => Traversal<U>): Traversal<LabelOf<T>>;
-    select<U>(selector: (input: LabelOf<T>) => U): Traversal<U>;
-    selectMany<U>(selector: (input: LabelOf<T>) => Traversal<U>): Traversal<U>;
+    predecessor(): Traversal<LabelOf<T>>;
 }
 
 export type LabelOf<T> = LabelMethods<T> & {
@@ -388,35 +384,32 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
                     return new Traversal<any>(unknown, [match], projection);
                 };
             }
-            else if (property === "join") {
-                return (left: (input: any) => any, right: any) => {
-                    const traversal = labelPredecessor(factTypeMap, target);
-                    return traversal.join(left, right);
-                };
-            }
-            else if (property === "notExists") {
-                return (tupleDefinition: (proxy: any) => any) => {
-                    const traversal = labelPredecessor(factTypeMap, target);
-                    return traversal.notExists(tupleDefinition);
-                };
-            }
-            else if (property === "exists") {
-                return (tupleDefinition: (proxy: any) => any) => {
-                    const traversal = labelPredecessor(factTypeMap, target);
-                    return traversal.exists(tupleDefinition);
-                };
-            }
-            else if (property === "select") {
-                return (selector: (input: any) => any) => {
-                    const traversal = labelPredecessor(factTypeMap, target);
-                    return traversal.select(selector);
-                };
-            }
-            else if (property === "selectMany") {
-                return (selector: (input: any) => any) => {
-                    const traversal = labelPredecessor(factTypeMap, target);
-                    return traversal.selectMany(selector);
-                };
+            else if (property === "predecessor") {
+                return () => {
+                    const typeWithOnlyAlphaNumeric = target.factType.replace(/[^a-zA-Z0-9]/g, '');
+                    const name = `u${typeWithOnlyAlphaNumeric}`;
+                    const unknown = createFactProxy(factTypeMap, name, [], target.factType);
+                    const condition: PathCondition = {
+                        type: "path",
+                        rolesLeft: [],
+                        labelRight: target.root,
+                        rolesRight: target.path
+                    };
+                    const match: Match = {
+                        unknown: {
+                            name: name,
+                            type: target.factType
+                        },
+                        conditions: [
+                            condition
+                        ]
+                    };
+                    const projection: FactProjection = {
+                        type: "fact",
+                        label: name
+                    };
+                    return new Traversal<any>(unknown, [match], projection);
+                }
             }
 
             const role = property.toString();
@@ -436,32 +429,6 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
             }
         }
     });
-}
-
-function labelPredecessor(factTypeMap: FactTypeMap, target: LabelPayloadFact) {
-    const typeWithOnlyAlphaNumeric = target.factType.replace(/[^a-zA-Z0-9]/g, '');
-    const name = `u${typeWithOnlyAlphaNumeric}`;
-    const unknown = createFactProxy(factTypeMap, name, [], target.factType);
-    const condition: PathCondition = {
-        type: "path",
-        rolesLeft: [],
-        labelRight: target.root,
-        rolesRight: target.path
-    };
-    const match: Match = {
-        unknown: {
-            name: name,
-            type: target.factType
-        },
-        conditions: [
-            condition
-        ]
-    };
-    const projection: FactProjection = {
-        type: "fact",
-        label: name
-    };
-    return new Traversal<any>(unknown, [match], projection);
 }
 
 function createFieldProxy(root: string, fieldName: string): any {
