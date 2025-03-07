@@ -329,7 +329,7 @@ function joinCondition(payloadLeft: LabelPayload, payloadRight: LabelPayload) {
     }
 
     if (payloadLeft.factType !== payloadRight.factType) {
-        throw new Error(`Cannot join ${payloadLeft.factType}" with "${payloadRight.factType}"`);
+        throw new Error(`Cannot join "${payloadLeft.factType}" with "${payloadRight.factType}"`);
     }
     const condition: PathCondition = {
         type: "path",
@@ -390,31 +390,31 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
             }
             else if (property === "join") {
                 return (left: (input: any) => any, right: any) => {
-                    const traversal = labelPredecessor(payload, factTypeMap, target);
+                    const traversal = labelPredecessor(factTypeMap, target);
                     return traversal.join(left, right);
                 };
             }
             else if (property === "notExists") {
                 return (tupleDefinition: (proxy: any) => any) => {
-                    const traversal = labelPredecessor(payload, factTypeMap, target);
+                    const traversal = labelPredecessor(factTypeMap, target);
                     return traversal.notExists(tupleDefinition);
                 };
             }
             else if (property === "exists") {
                 return (tupleDefinition: (proxy: any) => any) => {
-                    const traversal = labelPredecessor(payload, factTypeMap, target);
+                    const traversal = labelPredecessor(factTypeMap, target);
                     return traversal.exists(tupleDefinition);
                 };
             }
             else if (property === "select") {
                 return (selector: (input: any) => any) => {
-                    const traversal = labelPredecessor(payload, factTypeMap, target);
+                    const traversal = labelPredecessor(factTypeMap, target);
                     return traversal.select(selector);
                 };
             }
             else if (property === "selectMany") {
                 return (selector: (input: any) => any) => {
-                    const traversal = labelPredecessor(payload, factTypeMap, target);
+                    const traversal = labelPredecessor(factTypeMap, target);
                     return traversal.selectMany(selector);
                 };
             }
@@ -438,10 +438,10 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
     });
 }
 
-function labelPredecessor(payload: LabelPayloadFact, factTypeMap: FactTypeMap, target: LabelPayloadFact) {
-    const typeWithOnlyAlphaNumeric = payload.factType.replace(/[^a-zA-Z0-9]/g, '');
+function labelPredecessor(factTypeMap: FactTypeMap, target: LabelPayloadFact) {
+    const typeWithOnlyAlphaNumeric = target.factType.replace(/[^a-zA-Z0-9]/g, '');
     const name = `u${typeWithOnlyAlphaNumeric}`;
-    const unknown = createFactProxy(factTypeMap, name, [], payload.factType);
+    const unknown = createFactProxy(factTypeMap, name, [], target.factType);
     const condition: PathCondition = {
         type: "path",
         rolesLeft: [],
@@ -451,7 +451,7 @@ function labelPredecessor(payload: LabelPayloadFact, factTypeMap: FactTypeMap, t
     const match: Match = {
         unknown: {
             name: name,
-            type: payload.factType
+            type: target.factType
         },
         conditions: [
             condition
