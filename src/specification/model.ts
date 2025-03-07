@@ -96,11 +96,12 @@ class Given<T extends any[]> {
     ) { }
 
     match<U>(definition: (...parameters: MatchParameters<T>) => Traversal<U> | U): SpecificationOf<T, SpecificationResult<U>> {
+        const factRepository = new FactRepository(this.factTypeMap);
         const labels = this.factTypes.map((factType, i) => {
             const name = `p${i + 1}`;
-            return createFactProxy(this.factTypeMap, name, [], factType);
+            return createFactProxy(factRepository, this.factTypeMap, name, [], factType);
         });
-        const result = (definition as any)(...labels, new FactRepository(this.factTypeMap));
+        const result = (definition as any)(...labels, factRepository);
         const matches = result.matches ?? [];
         const projection = result.projection;
         const given = this.factTypes.map((type, i) => {
@@ -116,9 +117,10 @@ class Given<T extends any[]> {
     }
 
     select<U>(selector: (...parameters: MatchParameters<T>) => U): SpecificationOf<T, SpecificationResult<U>> {
+        const factRepository = new FactRepository(this.factTypeMap);
         const labels = this.factTypes.map((factType, i) => {
             const name = `p${i + 1}`;
-            return createFactProxy(this.factTypeMap, name, [], factType);
+            return createFactProxy(factRepository, this.factTypeMap, name, [], factType);
         });
         const result = (selector as any)(...labels, new FactRepository(this.factTypeMap));
         const matches: Match[] = [];
@@ -244,19 +246,20 @@ export class FactRepository {
 
     ofType<T>(factConstructor: FactConstructor<T>): Source<T> {
         const name = `u${this.unknownIndex++}`;
-        return new Source<T>(this.factTypeMap, name, factConstructor.Type);
+        return new Source<T>(this, this.factTypeMap, name, factConstructor.Type);
     }
 }
 
 class Source<T> {
     constructor(
+        private factRepository: FactRepository,
         private factTypeMap: FactTypeMap,
         private name: string,
         private factType: string
     ) { }
 
     join<U>(left: (input: LabelOf<T>) => LabelOf<U>, right: LabelOf<U>): Traversal<LabelOf<T>> {
-        const unknown = createFactProxy(this.factTypeMap, this.name, [], this.factType);
+        const unknown = createFactProxy(this.factRepository, this.factTypeMap, this.name, [], this.factType);
         const ancestor = left(unknown);
         const payloadLeft = getPayload(ancestor);
         const payloadRight = getPayload(right);
@@ -340,7 +343,7 @@ function joinCondition(payloadLeft: LabelPayload, payloadRight: LabelPayload) {
     return condition;
 }
 
-function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], factType: string): any {
+function createFactProxy(factRepository: FactRepository, factTypeMap: FactTypeMap, root: string, path: Role[], factType: string): any {
     const payload: LabelPayloadFact = {
         type: "fact",
         root,
@@ -362,57 +365,14 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
             }
             if (property === "successors") {
                 return (type: FactConstructor<any>, selector: (successor: any) => any) => {
-                    const typeWithOnlyAlphaNumeric = type.Type.replace(/[^a-zA-Z0-9]/g, '');
-                    const name = `u${typeWithOnlyAlphaNumeric}`;
-                    const unknown = createFactProxy(factTypeMap, name, [], type.Type);
-                    const ancestor = selector(unknown);
-                    const payloadLeft = getPayload(ancestor);
-                    const payloadRight = target;
-                    if (payloadLeft.root !== name) {
-                        throw new Error("The left side must be based on the source");
-                    }
-                    const condition = joinCondition(payloadLeft, payloadRight);
-                    const match: Match = {
-                        unknown: {
-                            name: name,
-                            type: type.Type
-                        },
-                        conditions: [
-                            condition
-                        ]
-                    };
-                    const projection: FactProjection = {
-                        type: "fact",
-                        label: name
-                    };
-                    return new Traversal<any>(unknown, [match], projection);
+                    const unknown = factRepository.ofType(type);
+                    return unknown.join(selector, target as any);
                 };
             }
             else if (property === "predecessor") {
                 return () => {
-                    const typeWithOnlyAlphaNumeric = target.factType.replace(/[^a-zA-Z0-9]/g, '');
-                    const name = `u${typeWithOnlyAlphaNumeric}`;
-                    const unknown = createFactProxy(factTypeMap, name, [], target.factType);
-                    const condition: PathCondition = {
-                        type: "path",
-                        rolesLeft: [],
-                        labelRight: target.root,
-                        rolesRight: target.path
-                    };
-                    const match: Match = {
-                        unknown: {
-                            name: name,
-                            type: target.factType
-                        },
-                        conditions: [
-                            condition
-                        ]
-                    };
-                    const projection: FactProjection = {
-                        type: "fact",
-                        label: name
-                    };
-                    return new Traversal<any>(unknown, [match], projection);
+                    const unknown = factRepository.ofType({ Type: target.factType } as any);
+                    return unknown.join((input: any) => input, target as any);
                 }
             }
 
@@ -420,7 +380,7 @@ function createFactProxy(factTypeMap: FactTypeMap, root: string, path: Role[], f
             const predecessorType = lookupRoleType(factTypeMap, target.factType, role);
             if (predecessorType) {
                 const path: Role[] = [...target.path, { name: role, predecessorType }];
-                return createFactProxy(factTypeMap, target.root, path, predecessorType);
+                return createFactProxy(factRepository, factTypeMap, target.root, path, predecessorType);
             }
             else {
                 if (target.path.length > 0) {
@@ -473,7 +433,7 @@ function createHashProxy(root: string): any {
 
 export function getPayload<T>(label: LabelOf<T>): LabelPayload {
     const proxy: any = label;
-    return proxy[IDENTITY];
+    return proxy[IDENTITY] || proxy;
 }
 
 function isLabel<T>(value: any): value is LabelOf<T> {
