@@ -122,7 +122,7 @@ class Given<T extends any[]> {
             const name = `p${i + 1}`;
             return createFactProxy(factRepository, this.factTypeMap, name, [], factType);
         });
-        const result = (selector as any)(...labels, new FactRepository(this.factTypeMap));
+        const result = (selector as any)(...labels, factRepository);
         const matches: Match[] = [];
         const traversal = traversalFromDefinition(result, matches);
         const projection = traversal.projection;
