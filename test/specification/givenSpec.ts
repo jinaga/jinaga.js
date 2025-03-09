@@ -31,10 +31,10 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                 ]
-            } => uOffice`);
+            } => u1`);
     });
 
     it("should parse negative existential condition", () => {
@@ -67,15 +67,15 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                     !E {
-                        uOfficeClosed: Office.Closed [
-                            uOfficeClosed->office: Office = uOffice
+                        u2: Office.Closed [
+                            u2->office: Office = u1
                         ]
                     }
                 ]
-            } => uOffice`);
+            } => u1`);
     });
 
     it("should parse positive existential condition", () => {
@@ -108,15 +108,15 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                     E {
-                        uOfficeClosed: Office.Closed [
-                            uOfficeClosed->office: Office = uOffice
+                        u2: Office.Closed [
+                            u2->office: Office = u1
                         ]
                     }
                 ]
-            } => uOffice`);
+            } => u1`);
     });
 
     it("should parse nested negative existential condition", () => {
@@ -152,20 +152,20 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                     !E {
-                        uOfficeClosed: Office.Closed [
-                            uOfficeClosed->office: Office = uOffice
+                        u2: Office.Closed [
+                            u2->office: Office = u1
                             !E {
-                                uOfficeReopened: Office.Reopened [
-                                    uOfficeReopened->officeClosed: Office.Closed = uOfficeClosed
+                                u3: Office.Reopened [
+                                    u3->officeClosed: Office.Closed = u2
                                 ]
                             }
                         ]
                     }
                 ]
-            } => uOffice`);
+            } => u1`);
     });
 
     it("should parse a field projection", () => {
@@ -191,10 +191,10 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                 ]
-            } => uOffice.identifier`);
+            } => u1.identifier`);
     });
 
     it("should parse a composite projection with a field", () => {
@@ -226,11 +226,11 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                 ]
             } => {
-                identifier = uOffice.identifier
+                identifier = u1.identifier
             }`);
     });
 
@@ -271,16 +271,16 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                 ]
             } => {
-                identifier = uOffice.identifier
+                identifier = u1.identifier
                 presidents = {
-                    uPresident: President [
-                        uPresident->office: Office = uOffice
+                    u2: President [
+                        u2->office: Office = u1
                     ]
-                } => uPresident
+                } => u2
             }`);
     });
 
@@ -339,22 +339,22 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                 ]
             } => {
-                identifier = uOffice.identifier
+                identifier = u1.identifier
                 presidents = {
-                    uPresident: President [
-                        uPresident->office: Office = uOffice
+                    u2: President [
+                        u2->office: Office = u1
                     ]
                 } => {
                     names = {
-                        uUserName: User.Name [
-                            uUserName->user: User = uPresident->user: User
+                        u3: User.Name [
+                            u3->user: User = u2->user: User
                         ]
-                    } => uUserName.value
-                    president = uPresident
+                    } => u3.value
+                    president = u2
                 }
             }`);
     });
@@ -427,28 +427,28 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                 ]
             } => {
-                identifier = uOffice.identifier
+                identifier = u1.identifier
                 presidents = {
-                    uPresident: President [
-                        uPresident->office: Office = uOffice
+                    u2: President [
+                        u2->office: Office = u1
                     ]
                 } => {
                     names = {
-                        uUserName: User.Name [
-                            uUserName->user: User = uPresident->user: User
+                        u3: User.Name [
+                            u3->user: User = u2->user: User
                             !E {
-                                uUserName: User.Name [
-                                    uUserName->prior: User.Name = uUserName
-                                    uUserName->user: User = uPresident->user: User
+                                u4: User.Name [
+                                    u4->prior: User.Name = u3
+                                    u4->user: User = u2->user: User
                                 ]
                             }
                         ]
-                    } => uUserName.value
-                    president = uPresident
+                    } => u3.value
+                    president = u2
                 }
             }`);
     });
@@ -519,27 +519,27 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                 ]
             } => {
-                identifier = uOffice.identifier
+                identifier = u1.identifier
                 presidents = {
-                    uPresident: President [
-                        uPresident->office: Office = uOffice
+                    u2: President [
+                        u2->office: Office = u1
                     ]
                 } => {
                     names = {
-                        uUserName: User.Name [
-                            uUserName->user: User = uPresident->user: User
+                        u3: User.Name [
+                            u3->user: User = u2->user: User
                             !E {
-                                uUserName: User.Name [
-                                    uUserName->prior: User.Name = uUserName
+                                u4: User.Name [
+                                    u4->prior: User.Name = u3
                                 ]
                             }
                         ]
-                    } => uUserName.value
-                    president = uPresident
+                    } => u3.value
+                    president = u2
                 }
             }`);
     });
@@ -607,25 +607,25 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company) {
-                uOffice: Office [
-                    uOffice->company: Company = p1
+                u1: Office [
+                    u1->company: Company = p1
                 ]
             } => {
-                identifier = uOffice.identifier
+                identifier = u1.identifier
                 presidents = {
-                    uPresident: President [
-                        uPresident->office: Office = uOffice
+                    u2: President [
+                        u2->office: Office = u1
                     ]
-                    uUser: User [
-                        uUser = uPresident->user: User
+                    u3: User [
+                        u3 = u2->user: User
                     ]
                 } => {
                     names = {
-                        uUserName: User.Name [
-                            uUserName->user: User = uUser
+                        u4: User.Name [
+                            u4->user: User = u3
                         ]
-                    } => uUserName.value
-                    user = uUser
+                    } => u4.value
+                    user = u3
                 }
             }`);
     });
@@ -654,11 +654,11 @@ describe("given", () => {
 
         expectSpecification(specification, `
             (p1: Company, p2: User) {
-                uPresident: President [
-                    uPresident->office: Office->company: Company = p1
-                    uPresident->user: User = p2
+                u1: President [
+                    u1->office: Office->company: Company = p1
+                    u1->user: User = p2
                 ]
-            } => uPresident`);
+            } => u1`);
     });
 });
 
