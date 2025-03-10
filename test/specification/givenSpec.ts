@@ -660,6 +660,94 @@ describe("given", () => {
                 ]
             } => u1`);
     });
+
+    it("should parse a predecessor join using predecessor syntax", () => {
+        const specification = model.given(Office).match(office =>
+            office.company.predecessor()
+        );
+
+        expectSpecification(specification, `
+            (p1: Office) {
+                u1: Company [
+                    u1 = p1->company: Company
+                ]
+            } => u1`);
+    });
+
+    it("should parse a predecessor join with field projection using predecessor syntax", () => {
+        const specification = model.given(Office).match(office =>
+            office.company.predecessor()
+                .select(company => company.identifier)
+        );
+
+        expectSpecification(specification, `
+            (p1: Office) {
+                u1: Company [
+                    u1 = p1->company: Company
+                ]
+            } => u1.identifier`);
+    });
+
+    it("should parse a predecessor join with composite projection using predecessor syntax", () => {
+        const specification = model.given(Office).match((office, facts) =>
+            office.company.predecessor()
+                .select(company => ({
+                    identifier: company.identifier,
+                    creator: facts.ofType(User)
+                        .join(user => user, company.creator)
+                }))
+        );
+
+        expectSpecification(specification, `
+            (p1: Office) {
+                u1: Company [
+                    u1 = p1->company: Company
+                ]
+            } => {
+                creator = {
+                    u2: User [
+                        u2 = u1->creator: User
+                    ]
+                } => u2
+                identifier = u1.identifier
+            }`);
+    });
+
+    it("should parse chained predecessor joins using predecessor syntax", () => {
+        const specification = model.given(President).match(president =>
+            president.office.predecessor()
+                .selectMany(office => office.company.predecessor())
+        );
+
+        expectSpecification(specification, `
+            (p1: President) {
+                u1: Office [
+                    u1 = p1->office: Office
+                ]
+                u2: Company [
+                    u2 = u1->company: Company
+                ]
+            } => u2`);
+    });
+
+    it("should parse a predecessor join with existential condition using predecessor syntax", () => {
+        const specification = model.given(OfficeClosed).match(officeClosed =>
+            officeClosed.office.predecessor()
+                .exists(office => office.company.predecessor())
+        );
+
+        expectSpecification(specification, `
+            (p1: Office.Closed) {
+                u1: Office [
+                    u1 = p1->office: Office
+                    E {
+                        u2: Company [
+                            u2 = u1->company: Company
+                        ]
+                    }
+                ]
+            } => u1`);
+    });
 });
 
 function expectSpecification<T, U>(specification: SpecificationOf<T, U>, expected: string) {
