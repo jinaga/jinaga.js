@@ -1,4 +1,4 @@
-import { FactRecord, KeyPair, dehydrateFact, generateKeyPair, signFacts, verifyEnvelopes } from "../../src";
+import { FactRecord, KeyPair, dehydrateFact, generateKeyPair, signFacts, verifyEnvelopes, BeginSingleUse, EndSingleUse } from "../../src";
 
 describe("keyPair", () => {
     it("should generate consistent signature", async () => {
@@ -37,6 +37,30 @@ describe("keyPair", () => {
         const verified = verifyEnvelopes(factEnvelopes);
 
         expect(verified).toBe(false);
+    });
+
+    it("should generate and discard a single-use key pair", async () => {
+        const keyPair = BeginSingleUse();
+        expect(keyPair.singleUseKeyPair).toBeDefined();
+
+        EndSingleUse(keyPair);
+        expect(keyPair.singleUseKeyPair).toBeNull();
+    });
+
+    it("should create and sign a user fact with a single-use key pair", async () => {
+        const keyPair = BeginSingleUse();
+        const userFact = {
+            type: "User",
+            publicKey: keyPair.publicPem
+        };
+        const factRecords = dehydrateFact(userFact);
+        const envelopes = signFacts(keyPair, factRecords);
+
+        expect(envelopes.length).toBe(1);
+        expect(envelopes[0].signatures.length).toBe(1);
+        expect(envelopes[0].signatures[0].publicKey).toBe(keyPair.publicPem);
+
+        EndSingleUse(keyPair);
     });
 });
 

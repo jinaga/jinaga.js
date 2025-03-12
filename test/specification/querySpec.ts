@@ -408,4 +408,15 @@ describe("specification query", () => {
             j.hash(reopenedOffice)
         ]);
     });
+
+    it("should create facts using a temporary user", async () => {
+        const result = await j.SingleUse(async (jinaga) => {
+            const tempUser = new User("--- TEMP USER PUBLIC KEY ---");
+            const tempCompany = new Company(tempUser, "TempCo");
+            await jinaga.fact(tempCompany);
+            return tempCompany;
+        });
+
+        expect(result.identifier).toBe("TempCo");
+    });
 });

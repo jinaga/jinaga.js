@@ -248,6 +248,16 @@ export class Jinaga {
         return this.factManager.purge();
     }
 
+    async SingleUse<T>(callback: (jinaga: Jinaga) => Promise<T>): Promise<T> {
+        await this.factManager.BeginSingleUse();
+        try {
+            const result = await callback(this);
+            return result;
+        } finally {
+            await this.factManager.EndSingleUse();
+        }
+    }
+
     private validateFact(prototype: Fact) {
         const error = Jinaga.getFactError(prototype);
         if (error) {

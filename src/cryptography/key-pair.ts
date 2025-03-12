@@ -6,6 +6,7 @@ import { Trace } from "../util/trace";
 export interface KeyPair {
     publicPem: string;
     privatePem: string;
+    singleUseKeyPair?: KeyPair | null;
 }
 
 export function generateKeyPair(): KeyPair {
@@ -41,4 +42,14 @@ function signFact(fact: FactRecord, publicPem: string, privateKey: pki.rsa.Priva
             publicKey: publicPem
         }]
     };
+}
+
+export function BeginSingleUse(): KeyPair {
+    const keyPair = generateKeyPair();
+    keyPair.singleUseKeyPair = keyPair;
+    return keyPair;
+}
+
+export function EndSingleUse(keyPair: KeyPair): void {
+    keyPair.singleUseKeyPair = null;
 }

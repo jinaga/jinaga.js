@@ -7,10 +7,13 @@ import { FactEnvelope, FactReference, ProjectedResult, Storage } from "../storag
 import { Trace } from "../util/trace";
 import { Network, NetworkManager } from "./NetworkManager";
 import { PurgeManager } from "./PurgeManager";
+import { generateKeyPair, KeyPair, signFacts } from "../cryptography/key-pair";
+import { User } from "../model/user";
 
 export class FactManager {
     private networkManager: NetworkManager;
     private purgeManager: PurgeManager;
+    private singleUseKeyPair: KeyPair | null = null;
 
     constructor(
         private readonly fork: Fork,
@@ -98,5 +101,20 @@ export class FactManager {
 
     async purge(): Promise<void> {
         await this.purgeManager.purge();
+    }
+
+    async BeginSingleUse(): Promise<void> {
+        this.singleUseKeyPair = generateKeyPair();
+        const userFact = {
+            type: "User",
+            publicKey: this.singleUseKeyPair.publicPem
+        };
+        const factRecords = dehydrateFact(userFact);
+        const envelopes = signFacts(this.singleUseKeyPair, factRecords);
+        await this.save(envelopes);
+    }
+
+    async EndSingleUse(): Promise<void> {
+        this.singleUseKeyPair = null;
     }
 }
