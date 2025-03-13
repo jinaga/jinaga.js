@@ -1,9 +1,12 @@
 import { Fork } from "../fork/fork";
+import { computeHash } from "../fact/hash";
+import { hydrate } from "../fact/hydrate";
+import { generateKeyPair, KeyPair, signFacts } from "../cryptography/key-pair";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactReference, ProjectedResult, Storage } from "../storage";
+import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
 import { Trace } from "../util/trace";
 import { Network, NetworkManager } from "./NetworkManager";
 import { PurgeManager } from "./PurgeManager";
@@ -11,6 +14,7 @@ import { PurgeManager } from "./PurgeManager";
 export class FactManager {
     private networkManager: NetworkManager;
     private purgeManager: PurgeManager;
+    private singleUseKeyPair: KeyPair | null = null;
 
     constructor(
         private readonly fork: Fork,
@@ -43,6 +47,11 @@ export class FactManager {
     }
 
     async save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+        // If we have a single-use key pair, sign the facts with it
+        if (this.singleUseKeyPair) {
+            envelopes = signFacts(this.singleUseKeyPair, envelopes.map(e => e.fact));
+        }
+        
         await this.fork.save(envelopes);
         const saved = await this.store.save(envelopes);
         if (saved.length > 0) {
@@ -50,6 +59,53 @@ export class FactManager {
             await this.factsAdded(saved);
         }
         return saved;
+    }
+
+    /**
+     * Begin a single-use session. Generates a key pair, creates a User fact with the public key,
+     * signs it, and saves it to the store.
+     * @returns A structure containing the user fact
+     */
+    async beginSingleUse(): Promise<{ graph: any, last: FactRecord }> {
+        // Generate a key pair for the single-use principal
+        const keyPair = generateKeyPair();
+        
+        // Create a User fact with the public key
+        const fields = {
+            publicKey: keyPair.publicPem
+        };
+        const predecessors = {};
+        const hash = computeHash(fields, predecessors);
+        
+        const userFact: FactRecord = {
+            hash,
+            type: "Jinaga.User",
+            fields,
+            predecessors
+        };
+        
+        // Sign the user fact with the key pair
+        const signedEnvelopes = signFacts(keyPair, [userFact]);
+        
+        // Save the user fact
+        await this.store.save(signedEnvelopes);
+        
+        // Store the key pair temporarily
+        this.singleUseKeyPair = keyPair;
+        
+        // Return a structure containing the user fact
+        return {
+            graph: { facts: [userFact] },
+            last: userFact
+        };
+    }
+
+    /**
+     * End a single-use session. Discards the private key.
+     */
+    endSingleUse(): void {
+        // Discard the private key
+        this.singleUseKeyPair = null;
     }
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {

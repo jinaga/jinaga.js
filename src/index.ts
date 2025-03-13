@@ -1,5 +1,6 @@
 export { Authentication } from './authentication/authentication';
 export { AuthenticationNoOp } from './authentication/authentication-noop';
+export { AuthenticationTest } from './authentication/authentication-test';
 export { Authorization } from './authorization/authorization';
 export { AuthorizationEngine, Forbidden } from './authorization/authorization-engine';
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
@@ -58,4 +59,3 @@ export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
 
 // Export the JinagaBrowser class using the alias JinagaClient
 export { JinagaBrowser as JinagaClient } from "./jinaga-browser";
-

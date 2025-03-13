@@ -2,6 +2,7 @@ import { Authentication } from "./authentication/authentication";
 import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { FactManager } from './managers/factManager';
+import { User } from './model/user';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
 import { SpecificationOf } from './specification/model';
 import { Projection } from './specification/specification';
@@ -246,6 +247,24 @@ export class Jinaga {
 
     purge(): Promise<void> {
         return this.factManager.purge();
+    }
+
+    /**
+     * Create some facts owned by a single-use principal. A key pair is
+     * generated for the principal and used to sign the facts. The private
+     * key is discarded after the facts are saved.
+     * 
+     * @param func A function that saves a set of facts and returns one or more of them
+     * @returns The result of the function
+     */
+    async singleUse<T>(func: (principal: User) => Promise<T>): Promise<T> {
+        try {
+            const { last } = await this.factManager.beginSingleUse();
+            const principal = hydrate<User>(last);
+            return await func(principal);
+        } finally {
+            this.factManager.endSingleUse();
+        }
     }
 
     private validateFact(prototype: Fact) {
