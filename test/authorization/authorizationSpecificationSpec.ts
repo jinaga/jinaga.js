@@ -224,12 +224,8 @@ function authorization(a: AuthorizationRules) {
     .type(Site, site => site.creator)
     .type(GuestBlogger, guestBlogger => guestBlogger.site.creator)
     .type(Content, content => content.site.creator)
-    .type(Content, (content, facts) =>
-      facts.ofType(GuestBlogger)
-        .join(guestBlogger => guestBlogger.site, content.site)
-        .selectMany(guestBlogger => facts.ofType(User)
-          .join(user => user, guestBlogger.guest)
-        )
+    .type(Content, content => content.site.successors(GuestBlogger, guestBlogger => guestBlogger.site)
+        .selectMany(guestBlogger => guestBlogger.guest.predecessor())
     )
     .type(Comment, comment => comment.author)
     ;
