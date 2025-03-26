@@ -374,6 +374,22 @@ export class AuthorizationRules {
         const specification = this.model.given(factConstructor).match<unknown>((fact, facts) => {
             const label = predecessorSelector(fact);
             const payload = getPayload(label);
+            if (payload instanceof Traversal) {
+                const traversal = payload as Traversal<LabelOf<User> | LabelOf<Device>>;
+                const projection = traversal.projection;
+                if (projection.type !== 'fact') {
+                    throw new Error('Authorization rules must select facts.');
+                }
+                const label = projection.label;
+                const match = traversal.matches.find(m => m.unknown.name === label);
+                if (match === undefined) {
+                    throw new Error(`The traversal must match the label ${label}.`);
+                }
+                if (match.unknown.type !== User.Type && match.unknown.type !== Device.Type) {
+                    throw new Error(`The traversal must match a user or device.`);
+                }
+                return traversal;
+            }
             if (payload.type !== 'fact') {
                 throw new Error('Authorization rules must select facts.');
             }
