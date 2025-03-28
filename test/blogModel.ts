@@ -76,38 +76,24 @@ export const model = buildModel(b => b
 
 export const distribution = (r: DistributionRules) => r
   // Everyone can see published posts
-  .share(model.given(Blog).match((blog, facts) =>
-    facts.ofType(Post)
-      .join(post => post.blog, blog)
-      .exists(post => facts.ofType(Publish)
-        .join(publish => publish.post, post)
-      )
+  .share(model.given(Blog).match(blog =>
+    blog.successors(Post, post => post.blog)
+      .exists(post => post.successors(Publish, publish => publish.post))
   )).withEveryone()
   // The creator can see all posts and comments
-  .share(model.given(Blog).select((blog, facts) =>({
-    posts: facts.ofType(Post)
-      .join(post => post.blog, blog),
-    comments: facts.ofType(Post)
-      .join(post => post.blog, blog)
-      .selectMany(post => facts.ofType(Comment)
-        .join(comment => comment.post, post)
-      )
-  }))).with(model.given(Blog).match((blog, facts) =>
-    facts.ofType(User)
-      .join(user => user, blog.creator)
+  .share(model.given(Blog).select(blog => ({
+    posts: blog.successors(Post, post => post.blog),
+    comments: blog.successors(Comment, comment => comment.post.blog)
+  }))).with(model.given(Blog).match(blog =>
+    blog.creator.predecessor()
   ))
   // A comment author can see their own comments on published posts
-  .share(model.given(Blog, User).match((blog, author, facts) =>
-    facts.ofType(Post)
-      .join(post => post.blog, blog)
-      .exists(post => facts.ofType(Publish)
-        .join(publish => publish.post, post)
-      )
-      .selectMany(post => facts.ofType(Comment)
-        .join(comment => comment.post, post)
+  .share(model.given(Blog, User).match((blog, author) =>
+    blog.successors(Post, post => post.blog)
+      .exists(post => post.successors(Publish, publish => publish.post))
+      .selectMany(post => post.successors(Comment, comment => comment.post)
         .join(comment => comment.author, author)
       )
-  )).with(model.given(Blog, User).select((blog, author, facts) =>
+  )).with(model.given(Blog, User).select((blog, author) =>
     author
-  ))
-  ;
+  ));
