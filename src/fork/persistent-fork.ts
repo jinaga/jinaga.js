@@ -63,7 +63,7 @@ export class PersistentFork implements Fork {
 
     private sendAndDequeue(envelopes: FactEnvelope[]) {
         (async () => {
-            await this.client.saveWithRetry(serializeSave(envelopes));
+            await this.client.saveWithRetry(envelopes);
             await this.queue.dequeue(envelopes);
         })().catch(err => Trace.error(err));
     }

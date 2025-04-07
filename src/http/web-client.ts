@@ -1,3 +1,5 @@
+import { serializeSave } from "../fork/serialize";
+import { FactEnvelope } from "../storage";
 import { Trace } from "../util/trace";
 import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse, SaveMessage } from "./messages";
 
@@ -66,12 +68,12 @@ export class WebClient {
         return <LoginResponse> await this.httpConnection.get('/login');
     }
 
-    async save(save: SaveMessage) {
-        await this.post('/save', save);
+    async save(envelopes: FactEnvelope[]) {
+        await this.post('/save', serializeSave(envelopes));
     }
 
-    async saveWithRetry(save: SaveMessage) {
-        await this.postWithInfiniteRetry('/save', save);
+    async saveWithRetry(envelopes: FactEnvelope[]) {
+        await this.postWithLimitedRetry('/save', serializeSave(envelopes));
     }
 
     async load(load: LoadMessage) {
