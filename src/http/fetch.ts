@@ -1,5 +1,6 @@
 import { Trace } from "../util/trace";
 import { HttpHeaders } from "./authenticationProvider";
+import { PostAccept, PostContentType, ContentTypeJson } from "./ContentType";
 import { HttpConnection, HttpResponse } from "./web-client";
 
 interface FetchHttpResponse {
@@ -52,7 +53,7 @@ export class FetchConnection implements HttpConnection {
             const response = await fetch(this.url + tail, {
                 method: 'GET',
                 headers: {
-                    'Accept': 'application/json',
+                    'Accept': ContentTypeJson,
                     ...headers
                 },
                 signal: controller.signal
@@ -61,7 +62,7 @@ export class FetchConnection implements HttpConnection {
             clearTimeout(timeoutId);
 
             const contentType = response.headers.get('content-type') || '';
-            const responseBody = contentType.includes('application/json') ? await response.json() : await response.text();
+            const responseBody = contentType.includes(ContentTypeJson) ? await response.json() : await response.text();
 
             return {
                 statusCode: response.status,
@@ -181,15 +182,15 @@ export class FetchConnection implements HttpConnection {
         };
     }
 
-    post(path: string, body: object | string, timeoutSeconds: number): Promise<HttpResponse> {
+    post(path: string, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<HttpResponse> {
         return Trace.dependency('POST', path, async () => {
             let headers = await this.getHeaders();
-            let response = await this.httpPost(path, headers, body, timeoutSeconds);
+            let response = await this.httpPost(path, headers, contentType, accept, body, timeoutSeconds);
             if (response.statusCode === 401 || response.statusCode === 407 || response.statusCode === 419) {
                 const reauthenticated = await this.reauthenticate();
                 if (reauthenticated) {
                     headers = await this.getHeaders();
-                    response = await this.httpPost(path, headers, body, timeoutSeconds);
+                    response = await this.httpPost(path, headers, contentType, accept, body, timeoutSeconds);
                 }
             }
             if (response.statusCode === 403) {
@@ -227,31 +228,36 @@ export class FetchConnection implements HttpConnection {
         });
     }
 
-    private async httpPost(tail: string, headers: HttpHeaders, body: string | object, timeoutSeconds: number): Promise<FetchHttpResponse> {
+    private async httpPost(tail: string, headers: HttpHeaders, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<FetchHttpResponse> {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
 
         try {
+            if (accept) {
+                headers = {
+                    'Accept': accept,
+                    ...headers
+                };
+            }
             const response = await fetch(this.url + tail, {
                 method: 'POST',
                 headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': typeof body === 'string' ? 'text/plain' : 'application/json',
+                    'Content-Type': contentType,
                     ...headers
                 },
-                body: typeof body === 'string' ? body : JSON.stringify(body),
+                body: body,
                 signal: controller.signal
             });
 
             clearTimeout(timeoutId);
 
-            const contentType = response.headers.get('content-type') || '';
-            const responseBody = contentType.includes('application/json') ? await response.json() : await response.text();
+            const responseContentType = response.headers.get('content-type') || '';
+            const responseBody = responseContentType.includes(ContentTypeJson) ? await response.json() : await response.text();
 
             return {
                 statusCode: response.status,
                 statusMessage: response.statusText,
-                responseType: contentType,
+                responseType: responseContentType,
                 response: responseBody
             };
         } catch (error: any) {
@@ -275,5 +281,11 @@ export class FetchConnection implements HttpConnection {
                 };
             }
         }
+    }
+
+    async getAcceptedContentTypes(path: string): Promise<string[]> {
+        const response = await fetch(path, { method: 'OPTIONS' });
+        const contentTypeHeader = response.headers.get('Accept');
+        return contentTypeHeader ? contentTypeHeader.split(',').map(type => type.trim()) : [];
     }
 }
