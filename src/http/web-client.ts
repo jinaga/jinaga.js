@@ -1,7 +1,7 @@
 import { serializeSave } from "../fork/serialize";
 import { FactEnvelope } from "../storage";
 import { Trace } from "../util/trace";
-import { ContentTypeGraph, ContentTypeJson, PostAccept, PostContentType } from "./ContentType";
+import { ContentTypeGraph, ContentTypeJson, ContentTypeText, PostAccept, PostContentType } from "./ContentType";
 import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse } from "./messages";
 import { serializeGraph } from "./serializer";
 
@@ -106,7 +106,7 @@ export class WebClient {
     }
 
     async feeds(request: string): Promise<FeedsResponse> {
-        return <FeedsResponse> await this.post('/feeds', ContentTypeJson, ContentTypeJson, request);
+        return <FeedsResponse> await this.post('/feeds', ContentTypeText, ContentTypeJson, request);
     }
 
     async feed(feed: string, bookmark: string): Promise<FeedResponse> {
