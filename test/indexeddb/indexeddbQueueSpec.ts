@@ -363,13 +363,13 @@ describe('IndexedDBQueue', () => {
       await expect(queue.peek()).rejects.toThrow('Circular dependencies detected');
     });
     
-    it('should detect topological ordering violations', async () => {
-      // Create facts where the topological ordering is violated
+    it('should correctly sort facts in topological order', async () => {
+      // Create facts with a predecessor relationship
       const mockFact1: FactRecord = {
         type: 'Type1',
         hash: 'hash1',
         predecessors: {
-          role2: { type: 'Type2', hash: 'hash2' } // This creates a violation
+          role2: { type: 'Type2', hash: 'hash2' } // This creates a dependency on mockFact2
         },
         fields: { field1: 'value1' }
       };
@@ -425,8 +425,9 @@ describe('IndexedDBQueue', () => {
         // Second call - get ancestors (empty array)
         .mockResolvedValueOnce([]);
       
-      // Should throw an error about topological ordering violation
-      await expect(queue.peek()).rejects.toThrow('Topological ordering violation');
+      // Should correctly sort the facts in topological order
+      const result = await queue.peek();
+      expect(result).toEqual([mockEnvelope2, mockEnvelope1]);
     });
     
     it('should not return duplicate ancestors', async () => {
