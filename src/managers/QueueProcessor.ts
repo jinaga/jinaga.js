@@ -1,5 +1,3 @@
-import { Signal, delay } from "../util/promise";
-import { Trace } from "../util/trace";
 
 /**
  * Interface for a component that can save data.
@@ -11,16 +9,92 @@ export interface Saver {
     save(): Promise<void>;
 }
 
+class Batch {
+    private isActive = false;
+    private hasWork = false;
+    private isTerminated = false;
+    private delay: NodeJS.Timeout | null = null;
+    private nextBatch: Batch | null = null;
+    private notifyResolver: (() => void) | null = null;
+    private notifyRejector: ((error: Error) => void) | null = null;
+    private notifyPromise: Promise<void> | null = null;
+
+    constructor(
+        private readonly saver: Saver,
+        private readonly delayMilliseconds: number,
+        private readonly setBatch: (batch: Batch) => void
+    ) {
+    }
+
+    activate() {
+        this.isActive = true;
+        this.beginWaiting();
+    }
+
+    workArrived() {
+        this.hasWork = true;
+        this.beginWaiting();
+    }
+
+    runNow(): Promise<void> {
+        if (this.isTerminated) {
+            return Promise.resolve();
+        }
+        if (!this.notifyPromise) {
+            this.notifyPromise = new Promise<void>((resolve, reject) => {
+                this.notifyResolver = resolve;
+                this.notifyRejector = reject;
+            });
+            this.beginWorking();
+        }
+        return this.notifyPromise;
+    }
+
+    terminate() {
+        this.isTerminated = true;
+    }
+
+    private beginWaiting() {
+        if (this.isTerminated || !this.isActive || !this.hasWork || this.delay) {
+            return;
+        }
+        this.delay = setTimeout(() => {
+            this.beginWorking();
+        }, this.delayMilliseconds);
+    }
+
+    private beginWorking() {
+        if (this.nextBatch) {
+            return;
+        }
+        this.nextBatch = new Batch(this.saver, this.delayMilliseconds, this.setBatch);
+        this.setBatch(this.nextBatch);
+        this.saver.save()
+            .then(() => this.done(null))
+            .catch((error) => this.done(error));
+    }
+
+    private done(error: Error | null) {
+        if (this.notifyResolver) {
+            if (error) {
+                this.notifyRejector!(error);
+            } else {
+                this.notifyResolver!();
+            }
+        }
+        if (this.nextBatch) {
+            this.nextBatch.activate();
+        }
+    }
+}
+
 /**
  * Processes a queue with a debouncing mechanism.
  * This improves performance by batching multiple operations together.
  */
 export class QueueProcessor {
-    private processingSignal: Signal;
-    private delaySignal: Signal;
-    private currentProcessingSignal: Signal;
-    private processingTask: Promise<void>;
-    private disposed: boolean = false;
+
+    private currentBatch: Batch;
 
     /**
      * Creates a new QueueProcessor.
@@ -28,16 +102,13 @@ export class QueueProcessor {
      * @param delayMilliseconds The delay in milliseconds before processing the queue.
      */
     constructor(
-        private readonly saver: Saver,
-        private readonly delayMilliseconds: number
+        saver: Saver,
+        delayMilliseconds: number
     ) {
-        this.processingSignal = new Signal();
-        this.delaySignal = new Signal();
-        this.currentProcessingSignal = new Signal();
-        this.currentProcessingSignal.signal(); // Initially complete
-        
-        // Start the background processing task
-        this.processingTask = this.processQueueAsync();
+        this.currentBatch = new Batch(saver, delayMilliseconds, (batch) => {
+            this.currentBatch = batch;
+        });
+        this.currentBatch.activate();
     }
 
     /**
@@ -45,107 +116,20 @@ export class QueueProcessor {
      * This allows multiple operations to be batched together.
      */
     public scheduleProcessing(): void {
-        if (this.disposed) {
-            throw new Error("QueueProcessor has been disposed");
-        }
-        
-        this.processingSignal.signal();
-        this.processingSignal.reset();
+        this.currentBatch.workArrived();
     }
 
     /**
      * Processes the queue immediately, bypassing any delay.
      */
     public async processQueueNow(): Promise<void> {
-        if (this.disposed) {
-            throw new Error("QueueProcessor has been disposed");
-        }
-        
-        // Reset the signals to cancel any ongoing delay
-        this.currentProcessingSignal.reset();
-        this.delaySignal.signal();
-        
-        // Signal processing and wait for it to complete
-        this.processingSignal.signal();
-        
-        // Wait for processing to complete
-        await this.currentProcessingSignal.wait();
-    }
-
-    /**
-     * Background task that continuously monitors for queue processing requests.
-     */
-    private async processQueueAsync(): Promise<void> {
-        try {
-            while (!this.disposed) {
-                // Wait for a processing signal
-                await this.processingSignal.wait();
-                
-                if (this.disposed) {
-                    break;
-                }
-                
-                // Reset for the next processing cycle
-                this.currentProcessingSignal.reset();
-                
-                // If there's a delay configured, wait for it
-                if (this.delayMilliseconds > 0) {
-                    this.delaySignal.reset();
-                    
-                    // Create a timeout that will signal after the delay
-                    const timeoutPromise = delay(this.delayMilliseconds).then(() => {
-                        this.delaySignal.signal();
-                    });
-                    
-                    // Wait for either the delay to complete or to be cancelled
-                    await this.delaySignal.wait();
-                }
-                
-                if (this.disposed) {
-                    break;
-                }
-                
-                try {
-                    // Process the queue by calling saver.save
-                    await this.saver.save();
-                } 
-                catch (error) {
-                    Trace.error(error);
-                }
-                finally {
-                    // Signal that processing is complete
-                    this.currentProcessingSignal.signal();
-                }
-            }
-        } 
-        catch (error) {
-            Trace.error(error);
-        }
-    }
-
-    /**
-     * Stops the background processing task.
-     */
-    public async stopBackgroundProcess(): Promise<void> {
-        this.disposed = true;
-        this.processingSignal.signal();
-        this.delaySignal.signal();
-        
-        // Wait for the processing task to complete
-        try {
-            await this.processingTask;
-        }
-        catch (error) {
-            Trace.error(error);
-        }
+        await this.currentBatch.runNow();
     }
 
     /**
      * Disposes of the QueueProcessor.
      */
-    public async dispose(): Promise<void> {
-        if (!this.disposed) {
-            await this.stopBackgroundProcess();
-        }
+    public dispose() {
+        this.currentBatch.terminate();
     }
 }
