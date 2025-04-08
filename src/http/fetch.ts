@@ -284,7 +284,7 @@ export class FetchConnection implements HttpConnection {
     }
 
     async getAcceptedContentTypes(path: string): Promise<string[]> {
-        const response = await fetch(path, { method: 'OPTIONS' });
+        const response = await fetch(this.url + path, { method: 'OPTIONS' });
         const contentTypeHeader = response.headers.get('Accept');
         return contentTypeHeader ? contentTypeHeader.split(',').map(type => type.trim()) : [];
     }
