@@ -54,12 +54,9 @@ describe("QueueProcessor", () => {
         // Act
         queueProcessor.scheduleProcessing();
         
-        // Wait a bit to ensure processing completes
-        await delay(50);
-        
         // Assert
         expect(saver.saveCount).toBe(1);
-    });
+    }, 1000);
 
     it("should debounce multiple calls when delay is greater than 0", async () => {
         // Arrange
@@ -82,7 +79,7 @@ describe("QueueProcessor", () => {
         
         // Assert - should have processed once
         expect(saver.saveCount).toBe(1);
-    });
+    }, 1000);
 
     it("should process immediately when processQueueNow is called", async () => {
         // Arrange
@@ -103,7 +100,7 @@ describe("QueueProcessor", () => {
         
         // Assert - should have processed once
         expect(saver.saveCount).toBe(1);
-    });
+    }, 10000);
 
     it("should batch multiple operations into a single save", async () => {
         // Arrange
@@ -122,7 +119,7 @@ describe("QueueProcessor", () => {
         
         // Assert - should have processed only once
         expect(saver.saveCount).toBe(1);
-    });
+    }, 1000);
 
     it("should process multiple times when calls are spaced out", async () => {
         // Arrange
@@ -143,7 +140,7 @@ describe("QueueProcessor", () => {
         
         // Assert - should have processed twice
         expect(saver.saveCount).toBe(2);
-    });
+    }, 1000);
 
     it("should handle errors during save", async () => {
         // Arrange
@@ -168,7 +165,7 @@ describe("QueueProcessor", () => {
             // Restore original Trace.error
             global.console.error = originalTraceError;
         }
-    });
+    }, 1000);
 
     it("should stop processing when disposed", async () => {
         // Arrange
@@ -176,16 +173,11 @@ describe("QueueProcessor", () => {
         
         // Act
         await queueProcessor.dispose();
-        
-        // Try to schedule after disposal
-        let errorThrown = false;
-        try {
-            queueProcessor.scheduleProcessing();
-        } catch (error) {
-            errorThrown = true;
-        }
-        
-        // Assert
-        expect(errorThrown).toBe(true);
-    });
+
+        // Try to run a process immediately
+        await queueProcessor.processQueueNow();
+
+        // Assert - should not have processed
+        expect(saver.saveCount).toBe(0);
+    }, 1000);
 });

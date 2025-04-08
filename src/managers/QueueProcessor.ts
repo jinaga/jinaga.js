@@ -1,3 +1,4 @@
+import { Trace } from "../util/trace";
 
 /**
  * Interface for a component that can save data.
@@ -52,15 +53,23 @@ class Batch {
 
     terminate() {
         this.isTerminated = true;
+        if (this.delay) {
+            clearTimeout(this.delay);
+            this.delay = null;
+        }
     }
 
     private beginWaiting() {
         if (this.isTerminated || !this.isActive || !this.hasWork || this.delay) {
             return;
         }
-        this.delay = setTimeout(() => {
+        if (this.delayMilliseconds === 0) {
             this.beginWorking();
-        }, this.delayMilliseconds);
+        } else {
+            this.delay = setTimeout(() => {
+                this.beginWorking();
+            }, this.delayMilliseconds);
+        }
     }
 
     private beginWorking() {
@@ -81,6 +90,8 @@ class Batch {
             } else {
                 this.notifyResolver!();
             }
+        } else if (error) {
+            Trace.error(error);
         }
         if (this.nextBatch) {
             this.nextBatch.activate();
