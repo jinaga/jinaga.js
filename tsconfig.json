@@ -1,7 +1,8 @@
 {
     "compilerOptions": {
         "target": "es6",
-        "module": "commonjs",
+        "module": "ESNext",
+        "moduleResolution": "node",
         "sourceMap": true,
         "declaration": true,
         "declarationMap": true,
