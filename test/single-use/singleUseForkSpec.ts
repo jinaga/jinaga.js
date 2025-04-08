@@ -13,6 +13,10 @@ class FakeFork implements Fork {
         return Promise.resolve([]);
     }
 
+    async processQueueNow(): Promise<void> {
+        return Promise.resolve();
+    }
+
     async close(): Promise<void> {
         return Promise.resolve();
     }

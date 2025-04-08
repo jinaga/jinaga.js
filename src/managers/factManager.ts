@@ -1,7 +1,7 @@
-import { Fork } from "../fork/fork";
-import { computeHash } from "../fact/hash";
-import { hydrate } from "../fact/hydrate";
 import { generateKeyPair, KeyPair, signFacts } from "../cryptography/key-pair";
+import { computeHash } from "../fact/hash";
+import { Fork } from "../fork/fork";
+import { PersistentFork } from "../fork/persistent-fork";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
@@ -155,4 +155,13 @@ export class FactManager {
     async purge(): Promise<void> {
         await this.purgeManager.purge();
     }
+
+    /**
+     * Processes the queue immediately, bypassing any delay.
+     * Only works if the fork is a PersistentFork.
+     */
+    async push(): Promise<void> {
+        await this.fork.processQueueNow();
+    }
 }
+

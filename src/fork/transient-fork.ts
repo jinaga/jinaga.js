@@ -54,4 +54,9 @@ export class TransientFork implements Fork {
         }
         return loaded;
     }
+
+    processQueueNow(): Promise<void> {
+        // No-op for transient fork
+        return Promise.resolve();
+    }
 }

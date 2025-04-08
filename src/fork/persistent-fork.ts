@@ -1,33 +1,39 @@
 import { TopologicalSorter } from '../fact/sorter';
 import { WebClient } from '../http/web-client';
+import { QueueProcessor } from '../managers/QueueProcessor';
 import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Queue, Storage } from '../storage';
-import { Trace } from '../util/trace';
 import { Fork } from "./fork";
-import { serializeLoad, serializeSave } from './serialize';
+import { serializeLoad } from './serialize';
+import { WebClientSaver } from './web-client-saver';
 
 export class PersistentFork implements Fork {
+    private queueProcessor: QueueProcessor;
+
     constructor(
         private storage: Storage,
         private queue: Queue,
-        private client: WebClient
+        private client: WebClient,
+        private delayMilliseconds: number
     ) {
-        
+        const saver = new WebClientSaver(client, queue);
+        this.queueProcessor = new QueueProcessor(saver, delayMilliseconds);
     }
 
     initialize() {
-        (async () => {
-            const envelopes = await this.queue.peek();
-            this.sendAndDequeue(envelopes);
-        })().catch(err => Trace.error(err));
+        // Schedule processing of any existing items in the queue
+        this.queueProcessor.scheduleProcessing();
     }
 
-    close(): Promise<void> {
+    async close(): Promise<void> {
+        // Process any pending facts before closing
+        await this.processQueueNow();
+        this.queueProcessor.dispose();
         return Promise.resolve();
     }
 
     async save(envelopes: FactEnvelope[]): Promise<void> {
         await this.queue.enqueue(envelopes);
-        this.sendAndDequeue(envelopes);
+        this.queueProcessor.scheduleProcessing();
     }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
@@ -40,6 +46,13 @@ export class PersistentFork implements Fork {
             const records = await this.loadEnvelopes(remaining);
             return records.concat(known);
         }
+    }
+
+    /**
+     * Processes the queue immediately, bypassing any delay.
+     */
+    async processQueueNow(): Promise<void> {
+        await this.queueProcessor.processQueueNow();
     }
 
     private async loadEnvelopes(references: FactReference[]) {
@@ -59,12 +72,5 @@ export class PersistentFork implements Fork {
             loaded = loaded.concat(envelopes);
         }
         return loaded;
-    }
-
-    private sendAndDequeue(envelopes: FactEnvelope[]) {
-        (async () => {
-            await this.client.saveWithRetry(envelopes);
-            await this.queue.dequeue(envelopes);
-        })().catch(err => Trace.error(err));
     }
 }
