@@ -2,6 +2,7 @@ import { TopologicalSorter } from '../fact/sorter';
 import { WebClient } from '../http/web-client';
 import { QueueProcessor } from '../managers/QueueProcessor';
 import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Queue, Storage } from '../storage';
+import { Trace } from "../util/trace";
 import { Fork } from "./fork";
 import { serializeLoad } from './serialize';
 import { WebClientSaver } from './web-client-saver';
