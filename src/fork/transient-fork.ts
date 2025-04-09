@@ -3,7 +3,7 @@ import { WebClient } from '../http/web-client';
 import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Storage } from '../storage';
 import { Trace } from "../util/trace";
 import { Fork } from "./fork";
-import { serializeLoad, serializeSave } from './serialize';
+import { serializeLoad } from './serialize';
 
 export class TransientFork implements Fork {
     constructor(
@@ -18,7 +18,7 @@ export class TransientFork implements Fork {
     }
 
     async save(envelopes: FactEnvelope[]): Promise<void> {
-        await this.client.save(serializeSave(envelopes));
+        await this.client.save(envelopes);
     }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
@@ -53,5 +53,10 @@ export class TransientFork implements Fork {
             loaded = loaded.concat(envelopes);
         }
         return loaded;
+    }
+
+    processQueueNow(): Promise<void> {
+        // No-op for transient fork
+        return Promise.resolve();
     }
 }

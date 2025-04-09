@@ -29,6 +29,7 @@ export type JinagaBrowserConfig = {
     indexedDb?: string,
     httpTimeoutSeconds?: number,
     httpAuthenticationProvider?: AuthenticationProvider,
+    queueProcessingDelayMs?: number,
     purgeConditions?: (p: PurgeConditions) => PurgeConditions
 }
 
@@ -88,7 +89,8 @@ function createFork(
     if (webClient) {
         if (config.indexedDb) {
             const queue = new IndexedDBQueue(config.indexedDb);
-            const fork = new PersistentFork(store, queue, webClient);
+            const queueProcessingDelay = config.queueProcessingDelayMs || 100;
+            const fork = new PersistentFork(store, queue, webClient, queueProcessingDelay);
             fork.initialize();
             return fork;
         }

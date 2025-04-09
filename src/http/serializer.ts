@@ -1,4 +1,4 @@
-import { FactEnvelope, PredecessorCollection, FactReference } from "../storage";
+import { FactEnvelope, FactReference, PredecessorCollection } from "../storage";
 
 export type IndexPredecessorCollection = {
     [role: string]: number | number[];
@@ -78,4 +78,12 @@ export class GraphSerializer
         }
         return this.indexByFactReference[key];
     }
+}
+
+export function serializeGraph(graph: FactEnvelope[]) {
+    const serializedData: string[] = [];
+    const serializer = new GraphSerializer(chunk => serializedData.push(chunk));
+    serializer.serialize(graph);
+    const body = serializedData.join('');
+    return body;
 }

@@ -228,6 +228,12 @@ export class Jinaga {
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true);
     }
 
+    /**
+     * Compute the SHA-256 hash of a fact.
+     * This is a deterministic hash that can be used to identify the fact.
+     * @param fact The fact to hash
+     * @returns The SHA-256 hash of the fact as a base-64 string
+     */
     static hash<T extends Fact>(fact: T) {
         const hash = lookupHash(fact);
         if (hash) {
@@ -241,12 +247,31 @@ export class Jinaga {
         return reference.hash;
     }
 
+    /**
+     * Compute the SHA-256 hash of a fact.
+     * This is a deterministic hash that can be used to identify the fact.
+     * @param fact The fact to hash
+     * @returns The SHA-256 hash of the fact as a base-64 string
+     */
     hash<T extends Fact>(fact: T) {
         return Jinaga.hash(fact);
     }
 
+    /**
+     * Purge the data store of all descendants of purge roots.
+     * A purge root is a fact that satisfies a purge condition.
+     * @returns Resolves when the data store has been purged.
+     */
     purge(): Promise<void> {
         return this.factManager.purge();
+    }
+
+    /**
+     * Processes the queue immediately, bypassing any delay.
+     * This allows you to ensure that all facts have been sent to the server.
+     */
+    push(): Promise<void> {
+        return this.factManager.push();
     }
 
     /**
