@@ -26,11 +26,14 @@ export class PersistentFork implements Fork {
 
     async close(): Promise<void> {
         // Process any pending facts before closing
-        await this.processQueueNow();
+        try {
+            await this.processQueueNow();
+        } catch (error) {
+            Trace.error(error);
+        }
         this.queueProcessor.dispose();
         return Promise.resolve();
     }
-
     async save(envelopes: FactEnvelope[]): Promise<void> {
         await this.queue.enqueue(envelopes);
         this.queueProcessor.scheduleProcessing();
