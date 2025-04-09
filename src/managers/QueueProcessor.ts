@@ -57,6 +57,9 @@ class Batch {
             clearTimeout(this.delay);
             this.delay = null;
         }
+        if (this.notifyRejector) {
+            this.notifyRejector(new Error("QueueProcessor terminated"));
+        }
     }
 
     private beginWaiting() {
