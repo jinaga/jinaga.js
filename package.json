@@ -20,16 +20,32 @@
   },
   "license": "MIT",
   "author": "Michael L Perry",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "scripts": {
-    "build": "tsc",
-    "clean": "rimraf dist/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
+    "build": "npm run build:esm && npm run build:cjs && npm run build:finalize",
+    "build:esm": "tsc",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:finalize": "node -e \"const fs = require('fs'); fs.copyFileSync('dist-cjs/index.js', 'dist/index.cjs'); fs.rm('dist-cjs', { recursive: true, force: true }, (err) => { if (err) console.error(err); });\"",
+    "clean": "rimraf dist/ && rimraf dist-cjs/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
     "prepack": "npm run clean && npm run build && npm run test",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "test": "npx tsc --noEmit --project tsconfig.test.json && jest",
     "test:watch": "jest --watch"
   },
+  "files": [
+    "dist/",
+    "src/",
+    "types/"
+  ],
   "dependencies": {
     "@stablelib/base64": "^1.0.1",
     "@stablelib/sha512": "^1.0.1",
