@@ -20,16 +20,32 @@
   },
   "license": "MIT",
   "author": "Michael L Perry",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "scripts": {
-    "build": "tsc",
-    "clean": "rimraf dist/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
+    "build": "npm run build:esm && npm run build:cjs && npm run build:finalize",
+    "build:esm": "tsc",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:finalize": "shx cp dist-cjs/index.js dist/index.cjs && shx rm -rf dist-cjs",
+    "clean": "shx rm -rf dist/ dist-cjs/ integration-test/jinaga-test/jinaga/ integration-test/jinaga-test/node_modules/",
     "prepack": "npm run clean && npm run build && npm run test",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
-    "test": "npx tsc --noEmit --project tsconfig.test.json && jest",
-    "test:watch": "jest --watch"
+    "test": "npx tsc --noEmit --project tsconfig.test.json && jest --config jest.config.cjs",
+    "test:watch": "jest --watch --config jest.config.cjs"
   },
+  "files": [
+    "dist/",
+    "src/",
+    "types/"
+  ],
   "dependencies": {
     "@stablelib/base64": "^1.0.1",
     "@stablelib/sha512": "^1.0.1",
@@ -43,7 +59,7 @@
     "globals": "^15.9.0",
     "jest": "^28.1.0",
     "jest-progress-bar-reporter": "^1.0.25",
-    "rimraf": "^3.0.2",
+    "shx": "^0.4.0",
     "source-map-support": "^0.5.21",
     "ts-jest": "^28.0.3",
     "typescript": "^4.7.2",
