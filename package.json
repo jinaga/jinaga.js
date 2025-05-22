@@ -38,8 +38,8 @@
     "clean": "shx rm -rf dist/ dist-cjs/ integration-test/jinaga-test/jinaga/ integration-test/jinaga-test/node_modules/",
     "prepack": "npm run clean && npm run build && npm run test",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
-    "test": "npx tsc --noEmit --project tsconfig.test.json && jest",
-    "test:watch": "jest --watch"
+    "test": "npx tsc --noEmit --project tsconfig.test.json && jest --config jest.config.cjs",
+    "test:watch": "jest --watch --config jest.config.cjs"
   },
   "files": [
     "dist/",
