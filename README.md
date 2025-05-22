@@ -17,6 +17,10 @@ npm i jinaga
 This installs just the client side components.
 See [jinaga.com](https://jinaga.com) for details on how to use them.
 
+## TypeScript Support
+
+Jinaga.js includes TypeScript declarations and supports both ESM and CommonJS imports. The package uses the "exports" field in package.json to properly map type declarations, ensuring compatibility with TypeScript's module resolution.
+
 ## Running a Replicator
 
 A Jinaga front end connects to a device called a Replicator.
