@@ -105,9 +105,9 @@ export class Jinaga {
             return prototype;
         }
         try {
-            this.validateFact(prototype);
+            const fact = this.validateFact(prototype);
             const dehydration = new Dehydration();
-            const reference = dehydration.dehydrate(prototype);
+            const reference = dehydration.dehydrate(fact);
             const factRecords = dehydration.factRecords();
             const hydrated = hydrateFromTree([reference], factRecords)[0];
             const envelopes = factRecords.map(fact => {
@@ -144,8 +144,8 @@ export class Jinaga {
 
         const references = given.map(g => {
             const fact = JSON.parse(JSON.stringify(g));
-            this.validateFact(fact);
-            return dehydrateReference(fact);
+            const validatedFact = this.validateFact(fact);
+            return dehydrateReference(validatedFact);
         });
         await this.factManager.fetch(references, innerSpecification);
         const projectedResults = await this.factManager.read(references, innerSpecification);
@@ -185,8 +185,8 @@ export class Jinaga {
 
         const references = given.map(g => {
             const fact = JSON.parse(JSON.stringify(g));
-            this.validateFact(fact);
-            return dehydrateReference(fact);
+            const validatedFact = this.validateFact(fact);
+            return dehydrateReference(validatedFact);
         });
 
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, false);
@@ -221,8 +221,8 @@ export class Jinaga {
 
         const references = given.map(g => {
             const fact = JSON.parse(JSON.stringify(g));
-            this.validateFact(fact);
-            return dehydrateReference(fact);
+            const validatedFact = this.validateFact(fact);
+            return dehydrateReference(validatedFact);
         });
 
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true);
@@ -292,24 +292,46 @@ export class Jinaga {
         }
     }
 
-    private validateFact(prototype: Fact) {
-        // Filter out null or undefined predecessors
-        for (const field in prototype) {
-            const value = prototype[field];
-            if (value === null || value === undefined) {
-                delete prototype[field];
-            }
-        }
+    private validateFact(prototype: Fact): Fact {
+        let fact = this.removeNullPredecessors(prototype);
 
-        const error = Jinaga.getFactError(prototype);
+        const error = Jinaga.getFactError(fact);
         if (error) {
             throw new Error(error);
         }
+
+        return fact as Fact;
     }
 
-    private static getFactError(prototype: Fact): string | undefined {
+    private removeNullPredecessors(fact: HashMap): HashMap {
+        if (!fact) {
+            return fact;
+        }
+        if (fact instanceof Date) {
+            return fact;
+        }
+        if (typeof fact !== 'object' || Array.isArray(fact)) {
+            return fact; // Let the validator report the error
+        }
+        const result: any = {};
+        for (const key in fact) {
+            const value = fact[key];
+            if (value !== null && value !== undefined) {
+                if (Array.isArray(value)) {
+                    result[key] = value.filter(v => v !== null && v !== undefined).map(v => this.removeNullPredecessors(v));
+                } else if (typeof value === 'object') {
+                    result[key] = this.removeNullPredecessors(value);
+                } else {
+                    result[key] = value;
+                }
+            }
+        }
+        return result;
+    }
+
+    private static getFactError(prototype: HashMap): string | undefined {
         if (!prototype) {
-            return 'A fact or any of its predecessors cannot be null.';
+            return 'A fact cannot be null.';
         }
         if (!('type' in prototype)) {
             return 'Specify the type of the fact and all of its predecessors.';

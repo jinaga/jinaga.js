@@ -128,3 +128,30 @@ describe('Fact Validation', () => {
         expect(createdFact.name).toBe('non-parented child');
     });
 });
+
+describe("Fact with null predecessor", () => {
+    it("should create a fact and omit null predecessors in canonical form and deserialization", async () => {
+        // Given a Jinaga instance
+        const j = JinagaTest.create({});
+
+        const parent = await j.fact({
+            type: "Parent",
+            name: "Parent Fact"
+        });
+
+        // When attempting to create a fact with an array of predecessors that includes null
+        const factWithNullPredecessor = {
+            type: "ChildWithMultipleParents",
+            parents: [parent, null],
+            name: "missing-parent child"
+        };
+
+        // Then the fact should be created without throwing an error
+        const createdFact = await j.fact(factWithNullPredecessor);
+        expect(createdFact).toBeDefined();
+
+        expect(createdFact.type).toBe("ChildWithMultipleParents");
+        expect(createdFact.parents).toBeDefined();
+        expect(createdFact.parents.length).toBe(1); // Only the valid parent should be included
+    });
+});
