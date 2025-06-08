@@ -142,11 +142,7 @@ export class Jinaga {
             throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
         }
 
-        const references = given.map(g => {
-            const fact = JSON.parse(JSON.stringify(g));
-            const validatedFact = this.validateFact(fact);
-            return dehydrateReference(validatedFact);
-        });
+        const references = given.map(g => this.prepareFactReference(g));
         await this.factManager.fetch(references, innerSpecification);
         const projectedResults = await this.factManager.read(references, innerSpecification);
         const extracted = extractResults(projectedResults, innerSpecification.projection);
@@ -183,11 +179,7 @@ export class Jinaga {
             throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
         }
 
-        const references = given.map(g => {
-            const fact = JSON.parse(JSON.stringify(g));
-            const validatedFact = this.validateFact(fact);
-            return dehydrateReference(validatedFact);
-        });
+        const references = given.map(g => this.prepareFactReference(g));
 
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, false);
     }
@@ -219,11 +211,7 @@ export class Jinaga {
             throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
         }
 
-        const references = given.map(g => {
-            const fact = JSON.parse(JSON.stringify(g));
-            const validatedFact = this.validateFact(fact);
-            return dehydrateReference(validatedFact);
-        });
+        const references = given.map(g => this.prepareFactReference(g));
 
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true);
     }
@@ -365,6 +353,12 @@ export class Jinaga {
         this.errorHandlers.forEach((errorHandler) => {
             errorHandler(error);
         });
+    }
+
+    private prepareFactReference(g: unknown) {
+        const fact = JSON.parse(JSON.stringify(g));
+        const validatedFact = this.validateFact(fact);
+        return dehydrateReference(validatedFact);
     }
 }
 
