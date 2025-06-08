@@ -1,5 +1,5 @@
 import { computeHash, verifyHash } from '../../src/fact/hash';
-import { dehydrateFact } from '../../src/fact/hydrate';
+import { dehydrateFact, Hydration } from '../../src/fact/hydrate';
 
 describe ('Hash', () => {
     it('should be independent of field order', () => {
@@ -45,4 +45,64 @@ describe ('Hash', () => {
         expect(verifyHash(records[0])).toBeTruthy();
         expect(verifyHash(records[1])).toBeTruthy();
     })
-})
+});
+
+describe('Nullable Predecessors', () => {
+    it('should create fact with null predecessor and omit it from canonical form', () => {
+        // Given a fact with a null predecessor
+        const factWithNullPredecessor = {
+            type: 'ChildWithOptionalParent',
+            parent: null,
+            name: 'orphan'
+        };
+
+        // When dehydrating the fact
+        const records = dehydrateFact(factWithNullPredecessor);
+
+        // Then no exception should be thrown during creation
+        expect(records).toBeDefined();
+        expect(records.length).toBe(1);
+
+        // And the canonical form should omit the null predecessor
+        const record = records[0];
+        expect(record.predecessors).toEqual({});
+        expect(record.fields).toEqual({ name: 'orphan' });
+        expect(record.type).toBe('ChildWithOptionalParent');
+
+        // And deserialization should result in the property being undefined
+        const hydration = new Hydration(records);
+        const hydratedFact = hydration.hydrate({ type: record.type, hash: record.hash });
+        expect(hydratedFact.parent).toBeUndefined();
+        expect(hydratedFact.name).toBe('orphan');
+        expect(hydratedFact.type).toBe('ChildWithOptionalParent');
+    });
+
+    it('should create fact with undefined predecessor and omit it from canonical form', () => {
+        // Given a fact with an undefined predecessor
+        const factWithUndefinedPredecessor = {
+            type: 'ChildWithOptionalParent',
+            parent: undefined,
+            name: 'orphan'
+        };
+
+        // When dehydrating the fact
+        const records = dehydrateFact(factWithUndefinedPredecessor);
+
+        // Then no exception should be thrown during creation
+        expect(records).toBeDefined();
+        expect(records.length).toBe(1);
+
+        // And the canonical form should omit the undefined predecessor
+        const record = records[0];
+        expect(record.predecessors).toEqual({});
+        expect(record.fields).toEqual({ name: 'orphan' });
+        expect(record.type).toBe('ChildWithOptionalParent');
+
+        // And deserialization should result in the property being undefined
+        const hydration = new Hydration(records);
+        const hydratedFact = hydration.hydrate({ type: record.type, hash: record.hash });
+        expect(hydratedFact.parent).toBeUndefined();
+        expect(hydratedFact.name).toBe('orphan');
+        expect(hydratedFact.type).toBe('ChildWithOptionalParent');
+    });
+});
