@@ -1,5 +1,6 @@
 import { computeHash, verifyHash } from '../../src/fact/hash';
 import { dehydrateFact, Hydration } from '../../src/fact/hydrate';
+import { JinagaTest } from '../../src/jinaga-test';
 
 describe ('Hash', () => {
     it('should be independent of field order', () => {
@@ -104,5 +105,24 @@ describe('Nullable Predecessors', () => {
         expect(hydratedFact.parent).toBeUndefined();
         expect(hydratedFact.name).toBe('orphan');
         expect(hydratedFact.type).toBe('ChildWithOptionalParent');
+    });
+});
+
+describe('Fact Validation', () => {
+    it('should throw error when fact contains null predecessor', async () => {
+        // Given a Jinaga instance
+        const j = JinagaTest.create({});
+
+        // When attempting to create a fact with a null predecessor
+        const factWithNullPredecessor = {
+            type: 'ChildWithNullParent',
+            parent: null,
+            name: 'invalid child'
+        };
+
+        // Then an error should be thrown with the expected message
+        await expect(j.fact(factWithNullPredecessor))
+            .rejects
+            .toThrow('A fact or any of its predecessors cannot be null.');
     });
 });
