@@ -298,8 +298,16 @@ export class Jinaga {
         if (fact instanceof Date) {
             return fact;
         }
-        if (typeof fact !== 'object' || Array.isArray(fact)) {
-            return fact; // Let the validator report the error
+        if (typeof fact !== 'object') {
+            return fact;
+        }
+        if (Array.isArray(fact)) {
+            // Let the validator report the error
+            return fact;
+        }
+        if (lookupHash(fact)) {
+            // If the fact has a hash symbol, then we need to retain its identity
+            return fact;
         }
         const result: any = {};
         for (const key in fact) {
