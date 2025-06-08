@@ -293,6 +293,14 @@ export class Jinaga {
     }
 
     private validateFact(prototype: Fact) {
+        // Filter out null or undefined predecessors
+        for (const field in prototype) {
+            const value = prototype[field];
+            if (value === null || value === undefined) {
+                delete prototype[field];
+            }
+        }
+
         const error = Jinaga.getFactError(prototype);
         if (error) {
             throw new Error(error);
