@@ -109,7 +109,7 @@ describe('Nullable Predecessors', () => {
 });
 
 describe('Fact Validation', () => {
-    it('should throw error when fact contains null predecessor', async () => {
+    it('should omit predecessor when fact contains null predecessor', async () => {
         // Given a Jinaga instance
         const j = JinagaTest.create({});
 
@@ -117,12 +117,14 @@ describe('Fact Validation', () => {
         const factWithNullPredecessor = {
             type: 'ChildWithNullParent',
             parent: null,
-            name: 'invalid child'
+            name: 'non-parented child'
         };
 
-        // Then an error should be thrown with the expected message
-        await expect(j.fact(factWithNullPredecessor))
-            .rejects
-            .toThrow('A fact or any of its predecessors cannot be null.');
+        // Then the fact should be created, and the null predecessor should be omitted
+        const createdFact = await j.fact(factWithNullPredecessor);
+        expect(createdFact).toBeDefined();
+        expect(createdFact.type).toBe('ChildWithNullParent');
+        expect(createdFact.parent).toBeUndefined();
+        expect(createdFact.name).toBe('non-parented child');
     });
 });
