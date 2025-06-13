@@ -301,9 +301,6 @@ Public key references are resolved using declaration order:
 - Each key gets the next available index when first declared
 - Subsequent references use the assigned index
 
-### Batch Processing
-The deserializer processes facts in batches (default: 20 facts) for efficiency.
-
 ## Protocol Characteristics
 
 ### Streaming Support
@@ -331,7 +328,7 @@ The deserializer processes facts in batches (default: 20 facts) for efficiency.
 
 ## Versioning
 
-The current protocol has no explicit version markers. The format is identified by:
+The current protocol is identified via content negotiation with the content type `x-jinaga-graph-v1`. The format is identified by:
 - Line-based structure
 - JSON encoding for data
 - `PK{index}` markers for public keys
@@ -352,7 +349,6 @@ The current protocol has no explicit version markers. The format is identified b
 ### Processing Efficiency
 - Line-by-line parsing
 - Incremental hash computation
-- Batch processing for I/O efficiency
 
 ## Implementation Notes
 

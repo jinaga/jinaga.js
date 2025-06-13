@@ -58,6 +58,21 @@ The feed builder employs a hierarchical decomposition strategy:
 } → [feed with child relationship]
 ```
 
+**Existential Condition Decomposition**: Existential conditions generate multiple feeds for logical branching:
+```
+(user: User, root: Root) {
+    assignment: Assignment [
+        assignment->user: User = user
+        assignment->project: Project->root: Root = root
+        !E {
+            revoked: Assignment.Revoked [
+                revoked->assignment: Assignment = assignment
+            ]
+        }
+    ]
+} → [negating feed for revoked assignments, condition-applied feed with !E]
+```
+
 **Projection Decomposition**: Composite projections generate multiple feeds:
 ```
 (root: Root) {} => {
@@ -79,6 +94,19 @@ The feed builder employs a hierarchical decomposition strategy:
         }
     }
 } → [parent feed, child feed, grandchild feed]
+```
+
+**Terminal Projections**: Non-specification projections (field, hash, fact) do not generate feeds:
+```
+(root: Root) {
+    child: Child [
+        child->root: Root = root
+    ]
+} => {
+    childName = child.name
+    childHash = hash(child)
+    childFact = child
+} → [single feed with child relationship, terminal projections in result only]
 ```
 
 ### 3. Feed Cache
