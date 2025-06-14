@@ -165,12 +165,16 @@ export class NetworkManager {
     private fectchCount = 0;
     private currentBatch: LoadBatch | null = null;
     private subscribers: Map<string, Subscriber> = new Map();
+    private readonly feedRefreshIntervalSeconds: number;
 
     constructor(
         private readonly network: Network,
         private readonly store: Storage,
-        private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>
-    ) { }
+        private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>,
+        feedRefreshIntervalSeconds?: number
+    ) { 
+        this.feedRefreshIntervalSeconds = feedRefreshIntervalSeconds || 4 * 60; // Default to 4 minutes
+    }
 
     async fetch(start: FactReference[], specification: Specification) {
         const reducedSpecification = reduceSpecification(specification);
@@ -204,7 +208,7 @@ export class NetworkManager {
         const subscribers = feeds.map(feed => {
             let subscriber = this.subscribers.get(feed);
             if (!subscriber) {
-                subscriber = new Subscriber(feed, this.network, this.store, this.notifyFactsAdded);
+                subscriber = new Subscriber(feed, this.network, this.store, this.notifyFactsAdded, this.feedRefreshIntervalSeconds);
                 this.subscribers.set(feed, subscriber);
             }
             return subscriber;
