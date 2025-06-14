@@ -162,7 +162,7 @@ class LoadBatch {
 export class NetworkManager {
     private readonly feedsCache = new Map<string, string[]>();
     private readonly activeFeeds = new Map<string, Promise<void>>();
-    private fectchCount = 0;
+    private fetchCount = 0;
     private currentBatch: LoadBatch | null = null;
     private subscribers: Map<string, Subscriber> = new Map();
     private readonly feedRefreshIntervalSeconds: number;
@@ -264,7 +264,7 @@ export class NetworkManager {
         let bookmark = await this.store.loadBookmark(feed);
 
         while (true) {
-            this.fectchCount++;
+            this.fetchCount++;
             let decremented = false;
             try {
                 const { references: factReferences, bookmark: nextBookmark } = await this.network.fetchFeed(feed, bookmark);
@@ -287,9 +287,9 @@ export class NetworkManager {
                         this.currentBatch = batch;
                     }
                     batch.add(unknownFactReferences);
-                    this.fectchCount--;
+                    this.fetchCount--;
                     decremented = true;
-                    if (this.fectchCount === 0) {
+                    if (this.fetchCount === 0) {
                         // This is the last fetch, so trigger the batch.
                         batch.trigger();
                     }
@@ -302,7 +302,7 @@ export class NetworkManager {
             finally {
                 if (!decremented) {
                     this.fectchCount--;
-                    if (this.fectchCount === 0 && this.currentBatch !== null) {
+                    if (this.fetchCount === 0 && this.currentBatch !== null) {
                         // This is the last fetch, so trigger the batch.
                         this.currentBatch.trigger();
                     }
