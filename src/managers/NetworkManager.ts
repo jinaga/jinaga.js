@@ -301,7 +301,7 @@ export class NetworkManager {
             }
             finally {
                 if (!decremented) {
-                    this.fectchCount--;
+                    this.fetchCount--;
                     if (this.fetchCount === 0 && this.currentBatch !== null) {
                         // This is the last fetch, so trigger the batch.
                         this.currentBatch.trigger();
