@@ -23,7 +23,8 @@ export type JinagaTestConfig = {
   user?: {},
   device?: {},
   initialState?: {}[],
-  purgeConditions?: (p: PurgeConditions) => PurgeConditions
+  purgeConditions?: (p: PurgeConditions) => PurgeConditions,
+  feedRefreshIntervalSeconds?: number
 }
 
 export class JinagaTest {
@@ -36,7 +37,7 @@ export class JinagaTest {
     const authentication = this.createAuthentication(config, store);
     const network = this.createNetwork(config, store);
     const purgeConditions = this.createPurgeConditions(config);
-    const factManager = new FactManager(fork, observableSource, store, network, purgeConditions);
+    const factManager = new FactManager(fork, observableSource, store, network, purgeConditions, config.feedRefreshIntervalSeconds);
     return new Jinaga(authentication, factManager, syncStatusNotifier);
   }
 

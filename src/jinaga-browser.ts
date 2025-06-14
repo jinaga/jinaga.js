@@ -30,6 +30,7 @@ export type JinagaBrowserConfig = {
     httpTimeoutSeconds?: number,
     httpAuthenticationProvider?: AuthenticationProvider,
     queueProcessingDelayMs?: number,
+    feedRefreshIntervalSeconds?: number,
     purgeConditions?: (p: PurgeConditions) => PurgeConditions
 }
 
@@ -43,7 +44,7 @@ export class JinagaBrowser {
         const authentication = createAuthentication(config, webClient);
         const network = createNetwork(webClient);
         const purgeConditions = createPurgeConditions(config);
-        const factManager = new FactManager(fork, observableSource, store, network, purgeConditions);
+        const factManager = new FactManager(fork, observableSource, store, network, purgeConditions, config.feedRefreshIntervalSeconds);
         return new Jinaga(authentication, factManager, syncStatusNotifier);
     }
 }

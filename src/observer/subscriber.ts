@@ -13,7 +13,8 @@ export class Subscriber {
     private readonly feed: string,
     private readonly network: Network,
     private readonly store: Storage,
-    private readonly notifyFactsAdded: (envelopes: FactEnvelope[]) => Promise<void>
+    private readonly notifyFactsAdded: (envelopes: FactEnvelope[]) => Promise<void>,
+    private readonly refreshIntervalSeconds: number
   ) {}
 
   addRef() {
@@ -30,14 +31,14 @@ export class Subscriber {
     this.bookmark = await this.store.loadBookmark(this.feed);
     await new Promise<void>((resolve, reject) => {
       this.resolved = false;
-      // Refresh the connection every 4 minutes.
+      // Refresh the connection at the configured interval.
       this.disconnect = this.connectToFeed(resolve, reject);
       this.timer = setInterval(() => {
         if (this.disconnect) {
           this.disconnect();
         }
         this.disconnect = this.connectToFeed(resolve, reject);
-      }, 4 * 60 * 1000);
+      }, this.refreshIntervalSeconds * 1000);
     });
   }
 

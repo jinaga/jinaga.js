@@ -21,10 +21,11 @@ export class FactManager {
         private readonly observableSource: ObservableSource,
         private readonly store: Storage,
         network: Network,
-        private readonly purgeConditions: Specification[]
+        private readonly purgeConditions: Specification[],
+        feedRefreshIntervalSeconds?: number
     ) {
         this.networkManager = new NetworkManager(network, store,
-            factsAdded => this.factsAdded(factsAdded));
+            factsAdded => this.factsAdded(factsAdded), feedRefreshIntervalSeconds);
 
         this.purgeManager = new PurgeManager(store, purgeConditions);
     }
