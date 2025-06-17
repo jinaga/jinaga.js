@@ -45,8 +45,25 @@ export class WebSocketNetwork implements Network {
     async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>
     async load(factReferences: FactReference[]): Promise<FactEnvelope[]>
 
-    // New WebSocket-based streaming
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void
+    // Enhanced WebSocket-based streaming with envelope optimization
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
+        // Use WebSocket client with enhanced response handling
+        return this.webSocketClient.streamFeed(feed, bookmark, async (response: FeedResponse) => {
+            const enhancedResponse = response as EnhancedFeedResponse;
+            
+            if (enhancedResponse.envelopes) {
+                // Optimized path: complete envelopes available
+                const references = enhancedResponse.envelopes.map(e => ({
+                    type: e.fact.type,
+                    hash: e.fact.hash
+                }));
+                await onResponse(references, enhancedResponse.bookmark);
+            } else {
+                // Legacy path: only references available
+                await onResponse(enhancedResponse.references || [], enhancedResponse.bookmark);
+            }
+        }, onError);
+    }
 }
 ```
 
@@ -368,4 +385,98 @@ interface WebSocketClientConfig {
 - `src/observer/subscriber.ts` - No changes needed
 - All existing HTTP implementation files preserved for fallback
 
-This architecture preserves the existing `streamFeed` API contract while providing a more efficient WebSocket-based implementation with robust connection management and error handling.
+## Optimized Fact Processing
+
+### Enhanced Subscriber Logic
+
+To eliminate redundant `load()` calls when complete fact envelopes are available via WebSocket:
+
+```typescript
+// Enhanced Subscriber implementation
+export class Subscriber {
+    // ... existing properties
+
+    private connectToFeed(resolve: Function, reject: Function) {
+        return this.network.streamFeed(this.feed, this.bookmark, async (factReferences, nextBookmark) => {
+            // Check if we received enhanced response with complete envelopes
+            const enhancedResponse = arguments[0] as any; // Access original response object
+            
+            if (enhancedResponse.envelopes) {
+                // Optimized path: process complete envelopes directly
+                await this.processEnvelopes(enhancedResponse.envelopes, nextBookmark, resolve);
+            } else {
+                // Legacy path: use existing reference-based processing
+                await this.processReferences(factReferences, nextBookmark, resolve);
+            }
+        }, reject);
+    }
+
+    private async processEnvelopes(envelopes: FactEnvelope[], nextBookmark: string, resolve: Function) {
+        // Filter out facts we already have
+        const references = envelopes.map(e => ({ type: e.fact.type, hash: e.fact.hash }));
+        const knownReferences = await this.store.whichExist(references);
+        const unknownEnvelopes = envelopes.filter(e =>
+            !knownReferences.some(ref => ref.hash === e.fact.hash && ref.type === e.fact.type)
+        );
+
+        if (unknownEnvelopes.length > 0) {
+            // Save directly without redundant load - envelopes already contain complete data
+            await this.store.save(unknownEnvelopes);
+            await this.store.saveBookmark(this.feed, nextBookmark);
+            this.bookmark = nextBookmark;
+            await this.notifyFactsAdded(unknownEnvelopes);
+            
+            if (unknownEnvelopes.length > 0) {
+                Trace.counter("facts_saved", unknownEnvelopes.length);
+            }
+        }
+
+        if (!this.resolved) {
+            this.resolved = true;
+            resolve();
+        }
+    }
+
+    private async processReferences(factReferences: FactReference[], nextBookmark: string, resolve: Function) {
+        // Existing logic - unchanged for backward compatibility
+        const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
+        const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
+        
+        if (unknownFactReferences.length > 0) {
+            const graph = await this.network.load(unknownFactReferences); // Still needed for legacy path
+            await this.store.save(graph);
+            if (graph.length > 0) {
+                Trace.counter("facts_saved", graph.length);
+            }
+            await this.store.saveBookmark(this.feed, nextBookmark);
+            this.bookmark = nextBookmark;
+            await this.notifyFactsAdded(graph);
+        }
+        
+        if (!this.resolved) {
+            this.resolved = true;
+            resolve();
+        }
+    }
+}
+```
+
+### Backward Compatibility Strategy
+
+The enhanced implementation maintains full backward compatibility:
+
+1. **Legacy Clients**: Continue to work unchanged using reference-based processing
+2. **Legacy Servers**: WebSocket clients gracefully fall back to HTTP when WebSocket unavailable
+3. **Mixed Environments**: New clients work with old servers, old clients work with new servers
+4. **Gradual Migration**: Components can be upgraded independently
+
+### Performance Benefits
+
+With the optimized envelope processing:
+
+- **Eliminate Redundant Loads**: No `network.load()` calls for WebSocket-delivered facts
+- **Reduce Network Traffic**: Facts transmitted once instead of twice
+- **Faster Processing**: Immediate fact availability without round-trip delays
+- **Lower Server Load**: Fewer HTTP load requests to handle
+
+This architecture preserves the existing `streamFeed` API contract while providing a more efficient WebSocket-based implementation with robust connection management, error handling, and optimized fact processing that eliminates redundant network operations.

@@ -103,6 +103,13 @@ export interface PingMessage {
 
 export type ClientMessage = SubscriptionMessage | UnsubscribeMessage | PingMessage;
 
+// Enhanced FeedResponse to support both references and complete envelopes
+export interface EnhancedFeedResponse {
+    references?: FactReference[];  // Legacy: hash references only
+    envelopes?: FactEnvelope[];    // Optimized: complete fact data
+    bookmark: string;
+}
+
 // Server responses are handled via the Graph Protocol stream parser
 // No separate message types needed - everything flows through the protocol
 ```
@@ -117,6 +124,7 @@ import { FactEnvelope } from '../storage';
 
 export interface WebSocketSubscriptionHandler {
     onFacts: (facts: FactEnvelope[]) => Promise<void>;
+    onEnvelopes?: (envelopes: FactEnvelope[]) => Promise<void>;  // Optimized path
     onBookmark: (bookmark: string) => Promise<void>;
     onError: (error: Error) => void;
 }
@@ -254,11 +262,16 @@ export class WebSocketGraphProtocolHandler {
         
         // Process the block and send facts to all active subscriptions
         await deserializer.read(async (envelopes: FactEnvelope[]) => {
-            // Send facts to all active subscription handlers
-            // In practice, the server would need to indicate which subscription
-            // these facts belong to, or we'd need subscription-specific streams
+            // Send complete envelopes to handlers that support optimization
+            // Fall back to legacy onFacts for backward compatibility
             for (const handler of this.subscriptionHandlers.values()) {
-                await handler.onFacts(envelopes);
+                if (handler.onEnvelopes) {
+                    // Optimized path: pass complete envelopes
+                    await handler.onEnvelopes(envelopes);
+                } else {
+                    // Legacy path: maintain existing behavior
+                    await handler.onFacts(envelopes);
+                }
             }
         });
 
@@ -326,24 +339,32 @@ export class WebSocketClient {
      * Create a new feed subscription using Graph Protocol
      */
     streamFeed(
-        feed: string, 
-        bookmark: string, 
-        onResponse: (response: FeedResponse) => Promise<void>, 
+        feed: string,
+        bookmark: string,
+        onResponse: (response: FeedResponse) => Promise<void>,
         onError: (err: Error) => void
     ): () => void {
         const subscriptionId = `sub_${++this.subscriptionCounter}_${Date.now()}`;
         
         // Create subscription handler that converts Graph Protocol to FeedResponse
         const handler: WebSocketSubscriptionHandler = {
+            // Optimized path: use complete envelopes when available
+            onEnvelopes: async (envelopes: FactEnvelope[]) => {
+                // Pass complete envelopes for efficient processing
+                const enhancedResponse: EnhancedFeedResponse = {
+                    envelopes,
+                    bookmark
+                };
+                await onResponse(enhancedResponse as FeedResponse);
+            },
+            // Legacy fallback: convert to references for backward compatibility
             onFacts: async (facts: FactEnvelope[]) => {
-                // Convert FactEnvelopes to FactReferences for FeedResponse
+                // Convert FactEnvelopes to FactReferences for legacy FeedResponse
                 const references: FactReference[] = facts.map(envelope => ({
                     type: envelope.fact.type,
                     hash: envelope.fact.hash
                 }));
                 
-                // We don't have a bookmark with facts, so use the last known bookmark
-                // The bookmark will be updated separately via onBookmark
                 await onResponse({ references, bookmark });
             },
             onBookmark: async (newBookmark: string) => {
