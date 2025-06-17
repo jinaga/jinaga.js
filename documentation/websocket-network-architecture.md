@@ -69,21 +69,10 @@ export class WebSocketNetwork implements Network {
     async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>
     async load(factReferences: FactReference[]): Promise<FactEnvelope[]>
 
-    // Enhanced WebSocket-based streaming with envelope optimization
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
-        // Use WebSocket client with enhanced response handling
-        return this.webSocketClient.streamFeed(feed, bookmark, async (envelopes: FactEnvelope[]) => {
-            // Convert envelopes to references for Network interface compatibility
-            const references = envelopes.map(e => ({
-                type: e.fact.type,
-                hash: e.fact.hash
-            }));
-            await onResponse(references, bookmark);
-        }, async (newBookmark: string) => {
-            // Handle bookmark updates
-            bookmark = newBookmark;
-            await onResponse([], newBookmark);
-        }, onError);
+    // Enhanced WebSocket-based streaming with direct envelope passing
+    streamFeed(feed: string, bookmark: string, onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>, onBookmark: (bookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
+        // Direct delegation to WebSocket client - signatures now aligned
+        return this.webSocketClient.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
     }
 }
 ```
@@ -350,29 +339,29 @@ interface WebSocketClientConfig {
 
 ### Enhanced Subscriber Logic
 
-To eliminate redundant `load()` calls when complete fact envelopes are available via WebSocket:
+With the aligned Network interface signature, the Subscriber can now directly receive complete envelopes and process them efficiently:
 
 ```typescript
-// Enhanced Subscriber implementation
+// Enhanced Subscriber implementation with new Network interface
 export class Subscriber {
     // ... existing properties
 
     private connectToFeed(resolve: Function, reject: Function) {
-        return this.network.streamFeed(this.feed, this.bookmark, async (factReferences, nextBookmark) => {
-            // Check if we received enhanced response with complete envelopes
-            const enhancedResponse = arguments[0] as any; // Access original response object
-            
-            if (enhancedResponse.envelopes) {
-                // Optimized path: process complete envelopes directly
-                await this.processEnvelopes(enhancedResponse.envelopes, nextBookmark, resolve);
-            } else {
-                // Legacy path: use existing reference-based processing
-                await this.processReferences(factReferences, nextBookmark, resolve);
-            }
+        return this.network.streamFeed(this.feed, this.bookmark, async (envelopes: FactEnvelope[]) => {
+            // Direct envelope processing - no conversion needed
+            await this.processEnvelopes(envelopes, resolve);
+        }, async (nextBookmark: string) => {
+            // Handle bookmark updates
+            await this.store.saveBookmark(this.feed, nextBookmark);
+            this.bookmark = nextBookmark;
         }, reject);
     }
 
-    private async processEnvelopes(envelopes: FactEnvelope[], nextBookmark: string, resolve: Function) {
+    private async processEnvelopes(envelopes: FactEnvelope[], resolve: Function) {
+        if (envelopes.length === 0) {
+            return;
+        }
+
         // Filter out facts we already have
         const references = envelopes.map(e => ({ type: e.fact.type, hash: e.fact.hash }));
         const knownReferences = await this.store.whichExist(references);
@@ -381,39 +370,12 @@ export class Subscriber {
         );
 
         if (unknownEnvelopes.length > 0) {
-            // Save directly without redundant load - envelopes already contain complete data
+            // Save directly - envelopes already contain complete data
             await this.store.save(unknownEnvelopes);
-            await this.store.saveBookmark(this.feed, nextBookmark);
-            this.bookmark = nextBookmark;
             await this.notifyFactsAdded(unknownEnvelopes);
-            
-            if (unknownEnvelopes.length > 0) {
-                Trace.counter("facts_saved", unknownEnvelopes.length);
-            }
+            Trace.counter("facts_saved", unknownEnvelopes.length);
         }
 
-        if (!this.resolved) {
-            this.resolved = true;
-            resolve();
-        }
-    }
-
-    private async processReferences(factReferences: FactReference[], nextBookmark: string, resolve: Function) {
-        // Existing logic - unchanged for backward compatibility
-        const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
-        const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
-        
-        if (unknownFactReferences.length > 0) {
-            const graph = await this.network.load(unknownFactReferences); // Still needed for legacy path
-            await this.store.save(graph);
-            if (graph.length > 0) {
-                Trace.counter("facts_saved", graph.length);
-            }
-            await this.store.saveBookmark(this.feed, nextBookmark);
-            this.bookmark = nextBookmark;
-            await this.notifyFactsAdded(graph);
-        }
-        
         if (!this.resolved) {
             this.resolved = true;
             resolve();

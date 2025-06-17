@@ -636,16 +636,17 @@ export class WebSocketClient {
 
 ## Optimization Strategies
 
-### Enhanced FeedResponse Interface
+### Aligned Network Interface
 
-Extend the existing `FeedResponse` interface to optionally include complete envelopes:
+The `Network` interface signature is now aligned with `WebSocketClient` for consistency:
 
 ```typescript
-// src/http/messages.ts - Simple extension
-export interface FeedResponse {
-    references: FactReference[];
-    bookmark: string;
-    envelopes?: FactEnvelope[];  // NEW: Complete fact data when available
+// src/managers/NetworkManager.ts - Updated Network interface
+export interface Network {
+    feeds(start: FactReference[], specification: Specification): Promise<string[]>;
+    fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>;
+    streamFeed(feed: string, bookmark: string, onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>, onBookmark: (bookmark: string) => Promise<void>, onError: (err: Error) => void): () => void;
+    load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
 }
 ```
 
