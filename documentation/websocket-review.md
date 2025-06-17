@@ -7,7 +7,7 @@ This document contains a review of the WebSocket implementation and related docu
 
 ## Requested Changes
 
-- [ ] Change the signature of `streamFeed` in `WebSocketClient`; replace `onResponse` with `onEnvelope` and `onBookmark`.
+- [x] Change the signature of `streamFeed` in `WebSocketClient`; replace `onResponse` with `onEnvelope` and `onBookmark`.
 - [ ] Remove the `EnhancedFeedResponse`; it is not necessary after `onResponse` is replaced.
 - [ ] Change the `streamFeed` signature on the `Network` interface to be in alignment with `WebSocketClient`.
 - [ ] Change the `Subscriber` fybctuib `connectToFeed` to use the new `streamFeed` signature.

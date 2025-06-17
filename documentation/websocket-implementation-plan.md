@@ -339,36 +339,28 @@ export class WebSocketClient {
     streamFeed(
         feed: string,
         bookmark: string,
-        onResponse: (response: FeedResponse) => Promise<void>,
+        onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>,
+        onBookmark: (bookmark: string) => Promise<void>,
         onError: (err: Error) => void
     ): () => void {
         const subscriptionId = `sub_${++this.subscriptionCounter}_${Date.now()}`;
         
-        // Create subscription handler that converts Graph Protocol to FeedResponse
+        // Create subscription handler that converts Graph Protocol to callbacks
         const handler: WebSocketSubscriptionHandler = {
             // Optimized path: use complete envelopes when available
             onEnvelopes: async (envelopes: FactEnvelope[]) => {
-                // Pass complete envelopes for efficient processing
-                const enhancedResponse: EnhancedFeedResponse = {
-                    envelopes,
-                    bookmark
-                };
-                await onResponse(enhancedResponse as FeedResponse);
+                // Pass complete envelopes directly for efficient processing
+                await onEnvelope(envelopes);
             },
-            // Legacy fallback: convert to references for backward compatibility
+            // Legacy fallback: convert to envelopes for backward compatibility
             onFacts: async (facts: FactEnvelope[]) => {
-                // Convert FactEnvelopes to FactReferences for legacy FeedResponse
-                const references: FactReference[] = facts.map(envelope => ({
-                    type: envelope.fact.type,
-                    hash: envelope.fact.hash
-                }));
-                
-                await onResponse({ references, bookmark });
+                // Pass facts as envelopes
+                await onEnvelope(facts);
             },
             onBookmark: async (newBookmark: string) => {
                 bookmark = newBookmark;
-                // Send empty fact batch with updated bookmark
-                await onResponse({ references: [], bookmark: newBookmark });
+                // Send bookmark update directly
+                await onBookmark(newBookmark);
             },
             onError: (error: Error) => {
                 onError(error);

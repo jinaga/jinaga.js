@@ -72,20 +72,17 @@ export class WebSocketNetwork implements Network {
     // Enhanced WebSocket-based streaming with envelope optimization
     streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
         // Use WebSocket client with enhanced response handling
-        return this.webSocketClient.streamFeed(feed, bookmark, async (response: FeedResponse) => {
-            const enhancedResponse = response as EnhancedFeedResponse;
-            
-            if (enhancedResponse.envelopes) {
-                // Optimized path: complete envelopes available
-                const references = enhancedResponse.envelopes.map(e => ({
-                    type: e.fact.type,
-                    hash: e.fact.hash
-                }));
-                await onResponse(references, enhancedResponse.bookmark);
-            } else {
-                // Legacy path: only references available
-                await onResponse(enhancedResponse.references || [], enhancedResponse.bookmark);
-            }
+        return this.webSocketClient.streamFeed(feed, bookmark, async (envelopes: FactEnvelope[]) => {
+            // Convert envelopes to references for Network interface compatibility
+            const references = envelopes.map(e => ({
+                type: e.fact.type,
+                hash: e.fact.hash
+            }));
+            await onResponse(references, bookmark);
+        }, async (newBookmark: string) => {
+            // Handle bookmark updates
+            bookmark = newBookmark;
+            await onResponse([], newBookmark);
         }, onError);
     }
 }
@@ -113,7 +110,7 @@ export class WebSocketClient {
     private reconnect(): void
     
     // Subscription management
-    streamFeed(feed: string, bookmark: string, onResponse: (response: FeedResponse) => Promise<void>, onError: (err: Error) => void): () => void
+    streamFeed(feed: string, bookmark: string, onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>, onBookmark: (bookmark: string) => Promise<void>, onError: (err: Error) => void): () => void
     private subscribe(subscription: WebSocketSubscription): void
     private unsubscribe(subscriptionId: string): void
     
