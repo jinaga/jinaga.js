@@ -103,13 +103,6 @@ export interface PingMessage {
 
 export type ClientMessage = SubscriptionMessage | UnsubscribeMessage | PingMessage;
 
-// Enhanced FeedResponse to support both references and complete envelopes
-export interface EnhancedFeedResponse {
-    references?: FactReference[];  // Legacy: hash references only
-    envelopes?: FactEnvelope[];    // Optimized: complete fact data
-    bookmark: string;
-}
-
 // Server responses are handled via the Graph Protocol stream parser
 // No separate message types needed - everything flows through the protocol
 ```
@@ -672,28 +665,25 @@ export interface WebSocketSubscriptionHandler {
 
 ### WebSocket Client Optimization
 
-Update the `WebSocketClient.streamFeed()` method:
+The `WebSocketClient.streamFeed()` method now uses direct callbacks:
 
 ```typescript
-// src/http/webSocketClient.ts - Enhanced subscription handler
+// src/http/webSocketClient.ts - Direct callback approach
 const handler: WebSocketSubscriptionHandler = {
-    // NEW: Optimized path - use complete envelopes
+    // Optimized path: pass complete envelopes directly
     onEnvelopes: async (envelopes: FactEnvelope[]) => {
-        await onResponse({ 
-            references: envelopes.map(e => ({ type: e.fact.type, hash: e.fact.hash })),
-            envelopes,  // Include complete data
-            bookmark 
-        });
+        await onEnvelope(envelopes);
     },
-    // EXISTING: Legacy fallback
+    // Legacy fallback: convert to envelopes for backward compatibility
     onFacts: async (facts: FactEnvelope[]) => {
-        const references = facts.map(envelope => ({
-            type: envelope.fact.type,
-            hash: envelope.fact.hash
-        }));
-        await onResponse({ references, bookmark });
+        await onEnvelope(facts);
     },
-    // ... rest unchanged
+    onBookmark: async (newBookmark: string) => {
+        await onBookmark(newBookmark);
+    },
+    onError: (error: Error) => {
+        onError(error);
+    }
 };
 ```
 
@@ -718,49 +708,7 @@ await deserializer.read(async (envelopes: FactEnvelope[]) => {
 
 ### Subscriber Enhancement
 
-Enhance `Subscriber.connectToFeed()` to detect and use complete envelopes:
-
-```typescript
-// src/observer/subscriber.ts - Detect optimized responses
-return this.network.streamFeed(this.feed, this.bookmark, async (factReferences, nextBookmark) => {
-    // Access the original response to check for envelopes
-    const response = arguments[2] as FeedResponse; // Third argument is the full response
-    
-    if (response?.envelopes) {
-        // OPTIMIZED: Process complete envelopes directly
-        const references = response.envelopes.map(e => ({ type: e.fact.type, hash: e.fact.hash }));
-        const knownReferences = await this.store.whichExist(references);
-        const unknownEnvelopes = response.envelopes.filter(e => 
-            !knownReferences.some(ref => ref.hash === e.fact.hash && ref.type === e.fact.type)
-        );
-        
-        if (unknownEnvelopes.length > 0) {
-            // Save directly - no load() needed!
-            await this.store.save(unknownEnvelopes);
-            await this.store.saveBookmark(this.feed, nextBookmark);
-            this.bookmark = nextBookmark;
-            await this.notifyFactsAdded(unknownEnvelopes);
-            Trace.counter("facts_saved", unknownEnvelopes.length);
-        }
-    } else {
-        // LEGACY: Existing reference-based processing unchanged
-        const knownFactReferences = await this.store.whichExist(factReferences);
-        const unknownFactReferences = factReferences.filter(fr => !knownFactReferences.includes(fr));
-        if (unknownFactReferences.length > 0) {
-            const graph = await this.network.load(unknownFactReferences); // Still needed for legacy
-            await this.store.save(graph);
-            // ... rest of existing logic
-        }
-    }
-    
-    if (!this.resolved) {
-        this.resolved = true;
-        resolve();
-    }
-}, err => {
-    // ... existing error handling
-});
-```
+With the new `streamFeed` signature using separate callbacks, the `Subscriber` can be enhanced to work directly with the WebSocket client's optimized interface. The WebSocket client will handle the envelope optimization internally and pass the appropriate data through the Network interface.
 
 ## Server-Side Protocol Implementation
 

@@ -426,13 +426,6 @@ export class Subscriber {
 
 #### Enhanced Interface Design
 ```typescript
-// Enhanced FeedResponse to support both references and complete envelopes
-export interface EnhancedFeedResponse {
-    references?: FactReference[];  // Legacy: hash references only
-    envelopes?: FactEnvelope[];    // Optimized: complete fact data
-    bookmark: string;
-}
-
 // Enhanced subscription handler interface
 interface WebSocketSubscriptionHandler {
     onFacts?: (facts: FactReference[]) => Promise<void>;      // Legacy
