@@ -1,11 +1,9 @@
 # WebSocket Review
 
-This document contains a review of the WebSocket Graph Protocol Plan and related documents:
+This document contains a review of the WebSocket implementation and related documents:
 
-- [WebSocket Implementation Using Jinaga Graph Protocol](./websocket-graph-protocol-plan.md)
-- [WebSocket Network Architecture Plan](./websocket-network-architecture.md)
-- [WebSocket Fact Processing Inefficiency Analysis](./websocket-fact-processing-inefficiency-analysis.md)
-- [WebSocket Optimization Implementation Summary](./websocket-optimization-summary.md)
+- [WebSocket Network Architecture](./websocket-network-architecture.md)
+- [WebSocket Implementation Plan](./websocket-implementation-plan.md)
 
 ## Requested Changes
 
