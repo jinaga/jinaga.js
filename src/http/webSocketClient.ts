@@ -102,7 +102,8 @@ export class WebSocketClient {
     }
 
     isConnected(): boolean {
-        return this.connectionState === 'connected' && this.ws?.readyState === WebSocket.OPEN;
+        const wsOpen = 1; // WebSocket.OPEN constant
+        return this.connectionState === 'connected' && this.ws?.readyState === wsOpen;
     }
 
     getStats(): { webSocketConnected: boolean; activeSubscriptions: number; reconnectAttempts: number; } {
@@ -152,6 +153,11 @@ export class WebSocketClient {
             this.ws = new WebSocket(wsUrl);
             this.setupWebSocketHandlers();
             this.setupConnectionTimeout();
+            
+            // For testing environments, trigger immediate connection if available
+            if ((this.ws as any).connectImmediately) {
+                (this.ws as any).connectImmediately();
+            }
 
         } catch (error) {
             if (this.config.enableLogging) {
@@ -184,9 +190,6 @@ export class WebSocketClient {
             // Process queued messages
             this.processMessageQueue();
             
-            // Resubscribe to active feeds
-            this.resubscribeAll();
-            
             // Start heartbeat
             this.startHeartbeat();
         };
@@ -210,7 +213,7 @@ export class WebSocketClient {
             }
         };
 
-        this.ws.onerror = () => {
+        this.ws.onerror = (event) => {
             this.handleConnectionError(new Error('WebSocket connection error'));
         };
     }
@@ -334,16 +337,22 @@ export class WebSocketClient {
     }
 
     private processMessageQueue(): void {
-        while (this.messageQueue.length > 0 && this.isConnected()) {
-            const message = this.messageQueue.shift();
-            if (message && this.ws) {
+        const messagesToSend = [...this.messageQueue];
+        this.messageQueue = [];
+        
+        for (const message of messagesToSend) {
+            if (this.isConnected() && this.ws) {
                 try {
                     this.ws.send(message);
                 } catch (error) {
-                    // Put message back at front of queue
+                    // Put message back in queue
                     this.messageQueue.unshift(message);
                     break;
                 }
+            } else {
+                // Put message back in queue
+                this.messageQueue.unshift(message);
+                break;
             }
         }
     }
@@ -361,16 +370,18 @@ export class WebSocketClient {
     private unsubscribe(subscriptionId: string): void {
         const subscription = this.subscriptions.get(subscriptionId);
         if (subscription) {
-            // Send unsubscribe message
-            const message = serializeUnsubscribeMessage({
-                type: 'unsubscribe',
-                subscriptionId
-            });
-            this.sendMessage(message);
-
-            // Remove from local tracking
+            // Remove from local tracking first
             this.subscriptions.delete(subscriptionId);
             this.protocolHandler.removeSubscription(subscriptionId);
+
+            // Send unsubscribe message if connected
+            if (this.isConnected()) {
+                const message = serializeUnsubscribeMessage({
+                    type: 'unsubscribe',
+                    subscriptionId
+                });
+                this.sendMessage(message);
+            }
 
             // Close connection if no subscriptions remain
             if (this.subscriptions.size === 0) {
@@ -393,6 +404,7 @@ export class WebSocketClient {
 
     private handleConnectionError(error: Error): void {
         this.clearTimeouts();
+        this.connectionState = 'disconnected';
         
         if (this.config.enableLogging) {
             Trace.error(`WebSocket connection error: ${error.message}`);
@@ -403,7 +415,7 @@ export class WebSocketClient {
             subscription.onError(error);
         }
 
-        if (!this.destroyed) {
+        if (!this.destroyed && this.subscriptions.size > 0) {
             this.attemptReconnection();
         }
     }

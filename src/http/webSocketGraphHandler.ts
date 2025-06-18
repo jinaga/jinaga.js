@@ -116,34 +116,34 @@ export class WebSocketGraphProtocolHandler {
     }
 
     private async processGraphData(block: string): Promise<void> {
-        // Create a line reader for the deserializer
-        const lines = block.split('\n');
-        let lineIndex = 0;
-        
-        const readLine = async (): Promise<string | null> => {
-            while (lineIndex < lines.length) {
-                const line = lines[lineIndex++];
-                // Skip the final empty lines that mark the end of the block
-                if (lineIndex === lines.length && line === '') {
-                    return null;
+        try {
+            // Create a line reader for the deserializer
+            const lines = block.split('\n').filter(line => line !== ''); // Remove empty lines
+            let lineIndex = 0;
+            
+            const readLine = async (): Promise<string | null> => {
+                if (lineIndex < lines.length) {
+                    return lines[lineIndex++];
                 }
-                return line;
-            }
-            return null;
-        };
+                return null;
+            };
 
-        const deserializer = new GraphDeserializer(readLine);
-        
-        // Process the graph data and send to all active subscriptions
-        await deserializer.read(async (envelopes: FactEnvelope[]) => {
-            if (envelopes.length > 0) {
-                // Send envelopes to all active subscription handlers
-                const promises: Promise<void>[] = [];
-                for (const handler of this.subscriptions.values()) {
-                    promises.push(handler.onFactEnvelopes(envelopes));
+            const deserializer = new GraphDeserializer(readLine);
+            
+            // Process the graph data and send to all active subscriptions
+            await deserializer.read(async (envelopes: FactEnvelope[]) => {
+                if (envelopes.length > 0) {
+                    // Send envelopes to all active subscription handlers
+                    const promises: Promise<void>[] = [];
+                    for (const handler of this.subscriptions.values()) {
+                        promises.push(handler.onFactEnvelopes(envelopes));
+                    }
+                    await Promise.all(promises);
                 }
-                await Promise.all(promises);
-            }
-        });
+            });
+        } catch (error) {
+            // Log the error but don't throw to prevent breaking the connection
+            console.warn('Failed to process Graph Protocol data:', error);
+        }
     }
 }

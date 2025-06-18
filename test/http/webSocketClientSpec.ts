@@ -54,6 +54,16 @@ class MockWebSocket {
         }, this.connectionDelay);
     }
 
+    // Helper method to connect immediately for tests
+    connectImmediately(): void {
+        if (!this.shouldFailConnection) {
+            this.readyState = MockWebSocket.OPEN;
+            if (this.onopen) {
+                this.onopen(new Event('open'));
+            }
+        }
+    }
+
     send(data: string): void {
         if (this.readyState !== MockWebSocket.OPEN) {
             throw new Error('WebSocket is not open');
