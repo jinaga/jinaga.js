@@ -846,8 +846,245 @@ export class HttpNetwork implements Network {
 - `src/http/webSocketGraphHandler.ts`
 - Basic unit tests
 
+## WebSocketNetwork Implementation
+
+### Class Design: Extending HttpNetwork
+
+The `WebSocketNetwork` class extends `HttpNetwork` to provide WebSocket-based streaming while inheriting all HTTP-based operations for maximum compatibility and code reuse:
+
+```typescript
+// src/http/webSocketNetwork.ts
+import { HttpNetwork } from './httpNetwork';
+import { WebSocketClient } from './webSocketClient';
+import { WebClient } from './web-client';
+import { FactEnvelope } from '../storage';
+
+export class WebSocketNetwork extends HttpNetwork {
+    constructor(
+        webClient: WebClient,                    // For HTTP fallback operations
+        private readonly webSocketClient: WebSocketClient,  // For WebSocket streaming
+        private readonly enableFallback: boolean = true     // Allow HTTP fallback
+    ) {
+        super(webClient);
+    }
+
+    /**
+     * Override streamFeed to use WebSocket instead of HTTP streaming
+     * All other methods (feeds, fetchFeed, load) inherited from HttpNetwork
+     */
+    streamFeed(
+        feed: string,
+        bookmark: string,
+        onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>,
+        onBookmark: (bookmark: string) => Promise<void>,
+        onError: (err: Error) => void
+    ): () => void {
+        // Try WebSocket first
+        try {
+            return this.webSocketClient.streamFeed(feed, bookmark, onEnvelope, onBookmark, (error) => {
+                if (this.enableFallback) {
+                    // Fall back to HTTP streaming on WebSocket failure
+                    console.warn('WebSocket streaming failed, falling back to HTTP:', error.message);
+                    return super.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+                } else {
+                    onError(error);
+                }
+            });
+        } catch (error) {
+            if (this.enableFallback) {
+                // Immediate fallback if WebSocket client unavailable
+                console.warn('WebSocket client unavailable, using HTTP streaming:', error.message);
+                return super.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+            } else {
+                onError(error);
+                return () => {}; // No-op cleanup function
+            }
+        }
+    }
+
+    /**
+     * Check if WebSocket connection is available
+     */
+    isWebSocketAvailable(): boolean {
+        return this.webSocketClient.isConnected();
+    }
+
+    /**
+     * Force fallback to HTTP streaming for testing or troubleshooting
+     */
+    forceHttpFallback(
+        feed: string,
+        bookmark: string,
+        onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>,
+        onBookmark: (bookmark: string) => Promise<void>,
+        onError: (err: Error) => void
+    ): () => void {
+        return super.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+    }
+
+    /**
+     * Get connection statistics for monitoring
+     */
+    getConnectionStats(): {
+        webSocketConnected: boolean;
+        activeSubscriptions: number;
+        reconnectAttempts: number;
+    } {
+        return this.webSocketClient.getStats();
+    }
+
+    /**
+     * Cleanup WebSocket resources
+     */
+    destroy(): void {
+        this.webSocketClient.destroy();
+    }
+}
+```
+
+### Key Design Benefits
+
+**1. Code Reuse Through Inheritance:**
+- **HTTP Operations**: `feeds()`, `fetchFeed()`, and `load()` methods inherited unchanged from `HttpNetwork`
+- **Proven Logic**: Reuses existing HTTP authentication, error handling, and retry mechanisms
+- **Minimal Duplication**: Only `streamFeed()` method needs to be reimplemented
+
+**2. Graceful Fallback Strategy:**
+- **Automatic Fallback**: WebSocket failures automatically fall back to HTTP streaming
+- **Configurable Behavior**: Fallback can be enabled/disabled via constructor parameter
+- **Transparent Operation**: Callers don't need to handle fallback logic
+
+**3. Operational Flexibility:**
+- **Runtime Switching**: Can switch between WebSocket and HTTP modes
+- **Monitoring Support**: Provides connection statistics and health checks
+- **Testing Support**: Allows forced HTTP fallback for testing scenarios
+
+**4. Interface Compatibility:**
+- **Drop-in Replacement**: Implements same `Network` interface as `HttpNetwork`
+- **Existing Code**: No changes needed to existing `NetworkManager` or `Subscriber` code
+- **Configuration**: Can be swapped in via configuration without code changes
+
+### Integration Strategy
+
+**Constructor Injection:**
+```typescript
+// Create WebSocket-enabled network
+const webSocketNetwork = new WebSocketNetwork(
+    webClient,           // Existing HTTP client for fallback
+    webSocketClient,     // New WebSocket client for streaming
+    true                 // Enable automatic fallback
+);
+
+// Use as drop-in replacement for HttpNetwork
+const networkManager = new NetworkManager(webSocketNetwork, store, notifyFactsAdded);
+```
+
+**Configuration-Based Creation:**
+```typescript
+// src/jinaga-browser.ts - Configuration-driven network creation
+function createNetwork(config: JinagaBrowserConfig): Network {
+    const webClient = new WebClient(httpConnection, syncStatusNotifier, webClientConfig);
+    
+    if (config.wsEndpoint && config.httpEndpoint) {
+        // Both endpoints configured - use WebSocket with HTTP fallback
+        const webSocketClient = new WebSocketClient(
+            config.wsEndpoint,
+            () => authenticationProvider.getHeaders(),
+            config.webSocketConfig || defaultWebSocketConfig
+        );
+        return new WebSocketNetwork(webClient, webSocketClient, true);
+    } else if (config.httpEndpoint) {
+        // Only HTTP endpoint - use standard HTTP network
+        return new HttpNetwork(webClient);
+    } else {
+        // No endpoints - use no-op network
+        return new NetworkNoOp();
+    }
+}
+```
+
+### Error Handling and Resilience
+
+**WebSocket Connection Failures:**
+```typescript
+// Automatic fallback on connection issues
+streamFeed(feed, bookmark, onEnvelope, onBookmark, onError) {
+    return this.webSocketClient.streamFeed(feed, bookmark, onEnvelope, onBookmark, (error) => {
+        if (this.isConnectionError(error) && this.enableFallback) {
+            console.warn(`WebSocket connection failed for feed ${feed}, falling back to HTTP`);
+            return super.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+        } else {
+            onError(error);
+        }
+    });
+}
+
+private isConnectionError(error: Error): boolean {
+    return error.message.includes('WebSocket') || 
+           error.message.includes('connection') ||
+           error.message.includes('network');
+}
+```
+
+**Subscription Management:**
+```typescript
+// Track active subscriptions for proper cleanup
+private activeSubscriptions = new Set<() => void>();
+
+streamFeed(feed, bookmark, onEnvelope, onBookmark, onError): () => void {
+    const cleanup = this.webSocketClient.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+    this.activeSubscriptions.add(cleanup);
+    
+    return () => {
+        this.activeSubscriptions.delete(cleanup);
+        cleanup();
+    };
+}
+```
+
+### Performance Characteristics
+
+**WebSocket Mode Benefits:**
+- **Single Connection**: All subscriptions share one WebSocket connection
+- **Real-time Delivery**: Immediate fact delivery without polling delays
+- **Reduced Overhead**: No HTTP request/response overhead per fact batch
+- **Efficient Protocol**: Direct Graph Protocol streaming without HTTP wrapping
+
+**HTTP Fallback Characteristics:**
+- **Proven Reliability**: Uses existing, tested HTTP streaming implementation
+- **Universal Compatibility**: Works in all network environments
+- **Gradual Degradation**: Maintains functionality when WebSocket unavailable
+- **Same Interface**: Identical callback patterns and error handling
+
+### Testing and Validation
+
+**Unit Testing Strategy:**
+```typescript
+// Test WebSocket functionality
+describe('WebSocketNetwork', () => {
+    it('should use WebSocket for streaming when available', async () => {
+        const webSocketNetwork = new WebSocketNetwork(mockWebClient, mockWebSocketClient, true);
+        const cleanup = webSocketNetwork.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+        
+        expect(mockWebSocketClient.streamFeed).toHaveBeenCalled();
+        expect(mockWebClient.streamFeed).not.toHaveBeenCalled();
+    });
+    
+    it('should fall back to HTTP when WebSocket fails', async () => {
+        mockWebSocketClient.streamFeed.mockImplementation((f, b, onE, onB, onErr) => {
+            onErr(new Error('WebSocket connection failed'));
+        });
+        
+        const webSocketNetwork = new WebSocketNetwork(mockWebClient, mockWebSocketClient, true);
+        webSocketNetwork.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+        
+        expect(mockWebClient.streamFeed).toHaveBeenCalled();
+    });
+});
+```
+
 ### Phase 2: Integration with Existing System
-1. Implement `WebSocketNetwork` class
+1. Implement `WebSocketNetwork` class extending `HttpNetwork`
 2. Update `HttpNetwork` to use new `streamFeed` signature
 3. Integrate with existing `NetworkManager`
 4. Preserve existing HTTP fallback paths
