@@ -4,82 +4,38 @@
 
 This document provides the comprehensive implementation plan for WebSocket-based fact streaming using the Jinaga Graph Serialization Protocol. It consolidates the concrete implementation steps, code interfaces, protocol details, and optimization strategies needed to replace the current HTTP polling approach with an efficient WebSocket solution.
 
-## Protocol Implementation Using Jinaga Graph Format
+## Current System Analysis
 
-### Bookmark Control Markers
+### Current HTTP Implementation
+The existing system uses HTTP polling for fact streaming:
 
-The Jinaga Graph Protocol will be extended with new control markers for bookmark management:
+- **HttpNetwork**: Implements the `Network` interface, delegates to `WebClient`
+- **WebClient**: Handles HTTP requests and streaming via `HttpConnection`
+- **FetchConnection**: Uses fetch API with streaming responses (`application/x-jinaga-feed-stream`)
+- **Subscriber**: Manages individual feed subscriptions with 4-minute reconnection intervals
+- **NetworkManager**: Coordinates multiple subscribers and manages feed lifecycle
 
-```
-BM{subscriptionId}
-"{bookmark}"
+### Current Data Flow Inefficiency
+The current HTTP implementation has an inefficient pattern:
 
-```
+1. `NetworkManager.subscribe()` creates `Subscriber` instances for each feed
+2. `Subscriber.start()` calls `Network.streamFeed()` 
+3. `HttpNetwork.streamFeed()` delegates to `WebClient.streamFeed()`
+4. `WebClient.streamFeed()` calls `HttpConnection.getStream()`
+5. `FetchConnection.getStream()` establishes HTTP streaming connection
+6. JSON responses contain `{references: FactReference[], bookmark: string}`
+7. `Subscriber` calls `network.load(references)` to get complete fact data
+8. This creates redundant HTTP requests for data that could be streamed directly
 
-**Format:**
-- Line 1: `BM` followed by subscription ID
-- Line 2: JSON-encoded bookmark string  
-- Line 3: Empty line separator
-
-### WebSocket Message Structure
-
-WebSocket messages will use the Jinaga Graph Protocol format with control markers for subscription management:
-
-#### Subscription Request (Client → Server)
-```
-SUB{subscriptionId}
-"{feed}"
-"{bookmark}"
-
-```
-
-#### Subscription Response Stream (Server → Client)
-```
-# Facts using standard Jinaga Graph Protocol
-PK0
-"public-key-1"
-
-"MyApp.BlogPost"
-{}
-{"title":"Hello World","content":"..."}
-PK0
-"signature-data"
-
-"MyApp.Comment"
-{"post":0}
-{"text":"Great post!"}
-
-# Bookmark update
-BM{subscriptionId}
-"bookmark_abc123"
-
-# More facts...
-"MyApp.Comment"
-{"post":0}
-{"text":"Thanks!"}
-
-# Final bookmark
-BM{subscriptionId}
-"bookmark_def456"
-
-```
-
-#### Subscription Termination (Client → Server)
-```
-UNSUB{subscriptionId}
-
-```
-
-#### Error Response (Server → Client)
-```
-ERR{subscriptionId}
-"{error_message}"
-
-```
+### Current Message Format
+- HTTP streaming uses `application/x-jinaga-feed-stream` content type
+- Each line contains a JSON-encoded `FeedResponse`: `{references: FactReference[], bookmark: string}`
+- Empty lines are ignored
+- Connection includes authentication headers
 
 ## Implementation Components
 
-### WebSocket Message Types
+### 1. WebSocket Message Types
 
 ```typescript
 // src/http/webSocketMessages.ts
@@ -107,7 +63,7 @@ export type ClientMessage = SubscriptionMessage | UnsubscribeMessage | PingMessa
 // No separate message types needed - everything flows through the protocol
 ```
 
-### WebSocket Graph Protocol Handler
+### 2. WebSocket Graph Protocol Handler
 
 ```typescript
 // src/http/webSocketGraphHandler.ts
@@ -116,8 +72,7 @@ import { GraphDeserializer } from './deserializer';
 import { FactEnvelope } from '../storage';
 
 export interface WebSocketSubscriptionHandler {
-    onFacts: (facts: FactEnvelope[]) => Promise<void>;
-    onEnvelopes?: (envelopes: FactEnvelope[]) => Promise<void>;  // Optimized path
+    onFactEnvelopes: (envelopes: FactEnvelope[]) => Promise<void>;
     onBookmark: (bookmark: string) => Promise<void>;
     onError: (error: Error) => void;
 }
@@ -172,6 +127,16 @@ export class WebSocketGraphProtocolHandler {
         
         if (line.startsWith('ERR')) {
             await this.handleError(line);
+            return;
+        }
+
+        if (line.startsWith('PING')) {
+            // Handle ping - could send PONG response
+            return;
+        }
+
+        if (line.startsWith('PONG')) {
+            // Handle pong response
             return;
         }
 
@@ -253,16 +218,9 @@ export class WebSocketGraphProtocolHandler {
         
         // Process the block and send facts to all active subscriptions
         await deserializer.read(async (envelopes: FactEnvelope[]) => {
-            // Send complete envelopes to handlers that support optimization
-            // Fall back to legacy onFacts for backward compatibility
+            // Send complete envelopes directly - this is the optimization
             for (const handler of this.subscriptionHandlers.values()) {
-                if (handler.onEnvelopes) {
-                    // Optimized path: pass complete envelopes
-                    await handler.onEnvelopes(envelopes);
-                } else {
-                    // Legacy path: maintain existing behavior
-                    await handler.onFacts(envelopes);
-                }
+                await handler.onFactEnvelopes(envelopes);
             }
         });
 
@@ -288,7 +246,7 @@ export class WebSocketGraphProtocolHandler {
 }
 ```
 
-### WebSocket Client Implementation
+### 3. WebSocket Client Implementation
 
 ```typescript
 // src/http/webSocketClient.ts
@@ -305,6 +263,8 @@ export interface WebSocketClientConfig {
     reconnectMaxDelay: number;
     pingInterval: number;
     pongTimeout: number;
+    messageQueueMaxSize: number;
+    subscriptionTimeout: number;
     enableLogging: boolean;
 }
 
@@ -315,10 +275,15 @@ export class WebSocketClient {
     private connectionState: ConnectionState = 'disconnected';
     private protocolHandler = new WebSocketGraphProtocolHandler();
     private subscriptionCounter = 0;
-    private activeSubscriptions = new Set<string>();
+    private activeSubscriptions = new Map<string, {
+        feed: string;
+        bookmark: string;
+        cleanup: () => void;
+    }>();
     private reconnectAttempts = 0;
     private reconnectTimer: NodeJS.Timeout | null = null;
     private pingTimer: NodeJS.Timeout | null = null;
+    private messageQueue: string[] = [];
 
     constructor(
         private readonly wsUrl: string,
@@ -340,19 +305,11 @@ export class WebSocketClient {
         
         // Create subscription handler that converts Graph Protocol to callbacks
         const handler: WebSocketSubscriptionHandler = {
-            // Optimized path: use complete envelopes when available
-            onEnvelopes: async (envelopes: FactEnvelope[]) => {
-                // Pass complete envelopes directly for efficient processing
+            onFactEnvelopes: async (envelopes: FactEnvelope[]) => {
                 await onEnvelope(envelopes);
-            },
-            // Legacy fallback: convert to envelopes for backward compatibility
-            onFacts: async (facts: FactEnvelope[]) => {
-                // Pass facts as envelopes
-                await onEnvelope(facts);
             },
             onBookmark: async (newBookmark: string) => {
                 bookmark = newBookmark;
-                // Send bookmark update directly
                 await onBookmark(newBookmark);
             },
             onError: (error: Error) => {
@@ -361,7 +318,17 @@ export class WebSocketClient {
         };
 
         this.protocolHandler.addSubscription(subscriptionId, handler);
-        this.activeSubscriptions.add(subscriptionId);
+        
+        // Store subscription info for reconnection
+        const cleanup = () => {
+            this.unsubscribe(subscriptionId);
+        };
+        
+        this.activeSubscriptions.set(subscriptionId, {
+            feed,
+            bookmark,
+            cleanup
+        });
 
         // Ensure connection and send subscription
         this.ensureConnected().then(() => {
@@ -369,19 +336,31 @@ export class WebSocketClient {
         }).catch(onError);
 
         // Return cleanup function
-        return () => {
-            this.unsubscribe(subscriptionId);
-        };
+        return cleanup;
     }
 
     /**
      * Send subscription request using Graph Protocol format
      */
     private sendSubscription(subscriptionId: string, feed: string, bookmark: string): void {
+        const message = `SUB${subscriptionId}\n"${feed}"\n"${bookmark}"\n\n`;
+        this.sendMessage(message);
+        this.log(`Sent subscription: ${subscriptionId} for feed: ${feed}`);
+    }
+
+    /**
+     * Send message, queuing if not connected
+     */
+    private sendMessage(message: string): void {
         if (this.ws && this.connectionState === 'connected') {
-            const message = `SUB${subscriptionId}\n"${feed}"\n"${bookmark}"\n\n`;
             this.ws.send(message);
-            this.log(`Sent subscription: ${subscriptionId} for feed: ${feed}`);
+        } else {
+            // Queue message for when connection is restored
+            if (this.messageQueue.length < this.config.messageQueueMaxSize) {
+                this.messageQueue.push(message);
+            } else {
+                this.log('Message queue full, dropping message');
+            }
         }
     }
 
@@ -449,7 +428,7 @@ export class WebSocketClient {
 
                 const connectionTimeout = setTimeout(() => {
                     reject(new Error('WebSocket connection timeout'));
-                }, 10000);
+                }, this.config.subscriptionTimeout);
 
                 this.ws.onopen = () => {
                     clearTimeout(connectionTimeout);
@@ -458,6 +437,7 @@ export class WebSocketClient {
                     this.log('WebSocket connected');
                     
                     this.startKeepAlive();
+                    this.processQueuedMessages();
                     this.resubscribeAll();
                     
                     resolve();
@@ -552,13 +532,26 @@ export class WebSocketClient {
     }
 
     /**
+     * Process queued messages after reconnection
+     */
+    private processQueuedMessages(): void {
+        while (this.messageQueue.length > 0 && this.ws && this.connectionState === 'connected') {
+            const message = this.messageQueue.shift();
+            if (message) {
+                this.ws.send(message);
+            }
+        }
+    }
+
+    /**
      * Resubscribe to all active subscriptions after reconnection
      */
     private resubscribeAll(): void {
-        // Note: In a real implementation, we'd need to track feed and bookmark
-        // for each subscription to properly resubscribe
         this.log(`Resubscribing to ${this.activeSubscriptions.size} subscriptions`);
-        // Implementation would iterate through active subscriptions and resend SUB messages
+        
+        for (const [subscriptionId, subscription] of this.activeSubscriptions) {
+            this.sendSubscription(subscriptionId, subscription.feed, subscription.bookmark);
+        }
     }
 
     /**
@@ -567,7 +560,6 @@ export class WebSocketClient {
     private startKeepAlive(): void {
         this.pingTimer = setInterval(() => {
             if (this.connectionState === 'connected' && this.ws) {
-                // Send ping using Graph Protocol format
                 const pingMessage = `PING\n${Date.now()}\n\n`;
                 this.ws.send(pingMessage);
             }
@@ -578,12 +570,34 @@ export class WebSocketClient {
      * Notify all subscriptions of an error
      */
     private notifyAllSubscriptions(error: Error): void {
-        for (const subscriptionId of this.activeSubscriptions) {
-            const handler = this.protocolHandler.subscriptionHandlers?.get?.(subscriptionId);
+        for (const subscriptionId of this.activeSubscriptions.keys()) {
+            const handler = this.protocolHandler['subscriptionHandlers']?.get?.(subscriptionId);
             if (handler) {
                 handler.onError(error);
             }
         }
+    }
+
+    /**
+     * Check if WebSocket is connected
+     */
+    isConnected(): boolean {
+        return this.connectionState === 'connected';
+    }
+
+    /**
+     * Get connection statistics
+     */
+    getStats(): {
+        webSocketConnected: boolean;
+        activeSubscriptions: number;
+        reconnectAttempts: number;
+    } {
+        return {
+            webSocketConnected: this.isConnected(),
+            activeSubscriptions: this.activeSubscriptions.size,
+            reconnectAttempts: this.reconnectAttempts
+        };
     }
 
     /**
@@ -629,231 +643,17 @@ export class WebSocketClient {
      */
     destroy(): void {
         this.activeSubscriptions.clear();
+        this.messageQueue = [];
         this.disconnect();
     }
 }
 ```
 
-## Optimization Strategies
-
-### Aligned Network Interface
-
-The `Network` interface signature is now aligned with `WebSocketClient` for consistency:
-
-```typescript
-// src/managers/NetworkManager.ts - Updated Network interface
-export interface Network {
-    feeds(start: FactReference[], specification: Specification): Promise<string[]>;
-    fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>;
-    streamFeed(feed: string, bookmark: string, onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>, onBookmark: (bookmark: string) => Promise<void>, onError: (err: Error) => void): () => void;
-    load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
-}
-```
-
-### Enhanced WebSocket Subscription Handler
-
-Modify the `WebSocketSubscriptionHandler` to support both optimized and legacy paths:
-
-```typescript
-// src/http/webSocketGraphHandler.ts - Add optional optimized callback
-export interface WebSocketSubscriptionHandler {
-    onFacts: (facts: FactEnvelope[]) => Promise<void>;
-    onEnvelopes?: (envelopes: FactEnvelope[]) => Promise<void>;  // NEW: Optimized path
-    onBookmark: (bookmark: string) => Promise<void>;
-    onError: (error: Error) => void;
-}
-```
-
-### WebSocket Client Optimization
-
-The `WebSocketClient.streamFeed()` method now uses direct callbacks:
-
-```typescript
-// src/http/webSocketClient.ts - Direct callback approach
-const handler: WebSocketSubscriptionHandler = {
-    // Optimized path: pass complete envelopes directly
-    onEnvelopes: async (envelopes: FactEnvelope[]) => {
-        await onEnvelope(envelopes);
-    },
-    // Legacy fallback: convert to envelopes for backward compatibility
-    onFacts: async (facts: FactEnvelope[]) => {
-        await onEnvelope(facts);
-    },
-    onBookmark: async (newBookmark: string) => {
-        await onBookmark(newBookmark);
-    },
-    onError: (error: Error) => {
-        onError(error);
-    }
-};
-```
-
-### Graph Protocol Handler Update
-
-Modify `WebSocketGraphProtocolHandler.processGraphBlock()`:
-
-```typescript
-// src/http/webSocketGraphHandler.ts - Use optimized path when available
-await deserializer.read(async (envelopes: FactEnvelope[]) => {
-    for (const handler of this.subscriptionHandlers.values()) {
-        if (handler.onEnvelopes) {
-            // NEW: Optimized path - pass complete envelopes
-            await handler.onEnvelopes(envelopes);
-        } else {
-            // EXISTING: Legacy path - maintain compatibility
-            await handler.onFacts(envelopes);
-        }
-    }
-});
-```
-
-### Subscriber Enhancement
-
-With the new `streamFeed` signature using separate callbacks, the `Subscriber` can be enhanced to work directly with the WebSocket client's optimized interface. The WebSocket client will handle the envelope optimization internally and pass the appropriate data through the Network interface.
-
-## Server-Side Protocol Implementation
-
-### WebSocket Server Graph Protocol Handler
-
-```typescript
-// Server-side implementation (for reference)
-
-export class WebSocketServerGraphHandler {
-    private subscriptions = new Map<string, {
-        feed: string;
-        bookmark: string;
-        connection: WebSocket;
-    }>();
-
-    handleSubscription(ws: WebSocket, subscriptionId: string, feed: string, bookmark: string): void {
-        this.subscriptions.set(subscriptionId, { feed, bookmark, connection: ws });
-        
-        // Start streaming facts for this feed
-        this.streamFeed(subscriptionId, feed, bookmark);
-    }
-
-    private async streamFeed(subscriptionId: string, feed: string, bookmark: string): Promise<void> {
-        const subscription = this.subscriptions.get(subscriptionId);
-        if (!subscription) return;
-
-        // Get facts from feed starting at bookmark
-        const facts = await this.getFeedFacts(feed, bookmark);
-        
-        if (facts.length > 0) {
-            // Serialize facts using Graph Protocol
-            const serializer = new GraphSerializer((chunk: string) => {
-                subscription.connection.send(chunk);
-            });
-            
-            serializer.serialize(facts);
-            
-            // Send bookmark update
-            const newBookmark = this.getNextBookmark(feed, facts);
-            const bookmarkMessage = `BM${subscriptionId}\n"${newBookmark}"\n\n`;
-            subscription.connection.send(bookmarkMessage);
-        }
-    }
-
-    handleUnsubscription(subscriptionId: string): void {
-        this.subscriptions.delete(subscriptionId);
-    }
-
-    private async getFeedFacts(feed: string, bookmark: string): Promise<FactEnvelope[]> {
-        // Implementation would fetch facts from storage
-        return [];
-    }
-
-    private getNextBookmark(feed: string, facts: FactEnvelope[]): string {
-        // Implementation would compute next bookmark
-        return 'next_bookmark';
-    }
-}
-```
-
-## HttpNetwork Implementation Update
-
-### Updated streamFeed Implementation
-
-The existing `HttpNetwork` already implements long polling via `WebClient.streamFeed()`. The implementation needs to be updated to use the new signature while maintaining the existing long polling behavior:
-
-```typescript
-// src/http/httpNetwork.ts - Updated implementation
-export class HttpNetwork implements Network {
-    // ... existing methods unchanged
-
-    streamFeed(
-        feed: string, 
-        bookmark: string, 
-        onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>, 
-        onBookmark: (bookmark: string) => Promise<void>, 
-        onError: (err: Error) => void
-    ): () => void {
-        return this.webClient.streamFeed(feed, bookmark, async (response: FeedResponse) => {
-            // Convert references to envelopes using existing load method
-            if (response.references.length > 0) {
-                try {
-                    const envelopes = await this.load(response.references);
-                    await onEnvelope(envelopes);
-                } catch (error) {
-                    onError(error);
-                    return;
-                }
-            }
-            
-            // Handle bookmark updates
-            await onBookmark(response.bookmark);
-        }, onError);
-    }
-}
-```
-
-### Implementation Strategy
-
-**Key Changes:**
-1. **Signature Update**: Replace `onResponse` with separate `onEnvelope` and `onBookmark` callbacks
-2. **Reference Conversion**: Use existing `load()` method to convert `FactReference[]` to `FactEnvelope[]`
-3. **Callback Separation**: Split single response handling into separate envelope and bookmark processing
-4. **Error Handling**: Wrap `load()` calls in try-catch to handle conversion errors
-
-**Long Polling Behavior Preserved:**
-- Underlying `WebClient.streamFeed()` continues to use HTTP streaming/long polling
-- Polling intervals and reconnection logic remain unchanged
-- Authentication and retry mechanisms preserved
-- 4-minute refresh cycle maintained
-
-**Performance Considerations:**
-- **Additional Load Calls**: Each polling response now triggers a `load()` call to convert references to envelopes
-- **Network Overhead**: Extra HTTP requests for fact loading, but provides complete envelope data
-- **Caching Opportunity**: Store could cache recently loaded facts to reduce redundant loads
-- **Efficiency Trade-off**: Slightly less efficient than WebSocket approach but maintains HTTP compatibility
-
-**Error Handling Strategy:**
-- **Load Failures**: Conversion errors are passed to `onError` callback
-- **Network Errors**: Existing WebClient error handling preserved
-- **Partial Failures**: If `load()` fails, bookmark updates are skipped to maintain consistency
-
-## Implementation Phases
-
-### Phase 1: Core WebSocket Infrastructure
-1. Implement `WebSocketClient` with basic connection management
-2. Define WebSocket message protocol using Graph Protocol extensions
-3. Implement subscription state management
-4. Add basic error handling and logging
-
-**Deliverables:**
-- `src/http/webSocketClient.ts`
-- `src/http/webSocketMessages.ts`
-- `src/http/webSocketGraphHandler.ts`
-- Basic unit tests
-
-## WebSocketNetwork Implementation
-
-### Class Design: Extending HttpNetwork
-
-The `WebSocketNetwork` class extends `HttpNetwork` to provide WebSocket-based streaming while inheriting all HTTP-based operations for maximum compatibility and code reuse:
+### 4. WebSocketNetwork Implementation
 
 ```typescript
 // src/http/webSocketNetwork.ts
+
 import { HttpNetwork } from './httpNetwork';
 import { WebSocketClient } from './webSocketClient';
 import { WebClient } from './web-client';
@@ -942,146 +742,123 @@ export class WebSocketNetwork extends HttpNetwork {
 }
 ```
 
-### Key Design Benefits
+## HttpNetwork Implementation Update
 
-**1. Code Reuse Through Inheritance:**
-- **HTTP Operations**: `feeds()`, `fetchFeed()`, and `load()` methods inherited unchanged from `HttpNetwork`
-- **Proven Logic**: Reuses existing HTTP authentication, error handling, and retry mechanisms
-- **Minimal Duplication**: Only `streamFeed()` method needs to be reimplemented
+### Updated streamFeed Implementation
 
-**2. Graceful Fallback Strategy:**
-- **Automatic Fallback**: WebSocket failures automatically fall back to HTTP streaming
-- **Configurable Behavior**: Fallback can be enabled/disabled via constructor parameter
-- **Transparent Operation**: Callers don't need to handle fallback logic
+The existing `HttpNetwork` needs to be updated to use the new signature while maintaining the existing long polling behavior:
 
-**3. Operational Flexibility:**
-- **Runtime Switching**: Can switch between WebSocket and HTTP modes
-- **Monitoring Support**: Provides connection statistics and health checks
-- **Testing Support**: Allows forced HTTP fallback for testing scenarios
-
-**4. Interface Compatibility:**
-- **Drop-in Replacement**: Implements same `Network` interface as `HttpNetwork`
-- **Existing Code**: No changes needed to existing `NetworkManager` or `Subscriber` code
-- **Configuration**: Can be swapped in via configuration without code changes
-
-### Integration Strategy
-
-**Constructor Injection:**
 ```typescript
-// Create WebSocket-enabled network
-const webSocketNetwork = new WebSocketNetwork(
-    webClient,           // Existing HTTP client for fallback
-    webSocketClient,     // New WebSocket client for streaming
-    true                 // Enable automatic fallback
-);
+// src/http/httpNetwork.ts - Updated implementation
+export class HttpNetwork implements Network {
+    // ... existing methods unchanged
 
-// Use as drop-in replacement for HttpNetwork
-const networkManager = new NetworkManager(webSocketNetwork, store, notifyFactsAdded);
-```
-
-**Configuration-Based Creation:**
-```typescript
-// src/jinaga-browser.ts - Configuration-driven network creation
-function createNetwork(config: JinagaBrowserConfig): Network {
-    const webClient = new WebClient(httpConnection, syncStatusNotifier, webClientConfig);
-    
-    if (config.wsEndpoint && config.httpEndpoint) {
-        // Both endpoints configured - use WebSocket with HTTP fallback
-        const webSocketClient = new WebSocketClient(
-            config.wsEndpoint,
-            () => authenticationProvider.getHeaders(),
-            config.webSocketConfig || defaultWebSocketConfig
-        );
-        return new WebSocketNetwork(webClient, webSocketClient, true);
-    } else if (config.httpEndpoint) {
-        // Only HTTP endpoint - use standard HTTP network
-        return new HttpNetwork(webClient);
-    } else {
-        // No endpoints - use no-op network
-        return new NetworkNoOp();
+    streamFeed(
+        feed: string, 
+        bookmark: string, 
+        onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>, 
+        onBookmark: (bookmark: string) => Promise<void>, 
+        onError: (err: Error) => void
+    ): () => void {
+        return this.webClient.streamFeed(feed, bookmark, async (response: FeedResponse) => {
+            // Convert references to envelopes using existing load method
+            if (response.references.length > 0) {
+                try {
+                    const envelopes = await this.load(response.references);
+                    await onEnvelope(envelopes);
+                } catch (error) {
+                    onError(error);
+                    return;
+                }
+            }
+            
+            // Handle bookmark updates
+            await onBookmark(response.bookmark);
+        }, onError);
     }
 }
 ```
 
-### Error Handling and Resilience
+### Implementation Strategy
 
-**WebSocket Connection Failures:**
+**Key Changes:**
+1. **Signature Update**: Replace `onResponse` with separate `onEnvelope` and `onBookmark` callbacks
+2. **Reference Conversion**: Use existing `load()` method to convert `FactReference[]` to `FactEnvelope[]`
+3. **Callback Separation**: Split single response handling into separate envelope and bookmark processing
+4. **Error Handling**: Wrap `load()` calls in try-catch to handle conversion errors
+
+**Long Polling Behavior Preserved:**
+- Underlying `WebClient.streamFeed()` continues to use HTTP streaming/long polling
+- Polling intervals and reconnection logic remain unchanged
+- Authentication and retry mechanisms preserved
+- 4-minute refresh cycle maintained
+
+**Performance Considerations:**
+- **Additional Load Calls**: Each polling response now triggers a `load()` call to convert references to envelopes
+- **Network Overhead**: Extra HTTP requests for fact loading, but provides complete envelope data
+- **Caching Opportunity**: Store could cache recently loaded facts to reduce redundant loads
+- **Efficiency Trade-off**: Slightly less efficient than WebSocket approach but maintains HTTP compatibility
+
+## Enhanced Subscriber Logic
+
+With the aligned Network interface signature, the Subscriber can now directly receive complete envelopes and process them efficiently:
+
 ```typescript
-// Automatic fallback on connection issues
-streamFeed(feed, bookmark, onEnvelope, onBookmark, onError) {
-    return this.webSocketClient.streamFeed(feed, bookmark, onEnvelope, onBookmark, (error) => {
-        if (this.isConnectionError(error) && this.enableFallback) {
-            console.warn(`WebSocket connection failed for feed ${feed}, falling back to HTTP`);
-            return super.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
-        } else {
-            onError(error);
+// src/observer/subscriber.ts - Enhanced implementation
+export class Subscriber {
+    // ... existing properties
+
+    private connectToFeed(resolve: Function, reject: Function) {
+        return this.network.streamFeed(this.feed, this.bookmark, async (envelopes: FactEnvelope[]) => {
+            // Direct envelope processing - no conversion needed
+            await this.processEnvelopes(envelopes, resolve);
+        }, async (nextBookmark: string) => {
+            // Handle bookmark updates
+            await this.store.saveBookmark(this.feed, nextBookmark);
+            this.bookmark = nextBookmark;
+        }, reject);
+    }
+
+    private async processEnvelopes(envelopes: FactEnvelope[], resolve: Function) {
+        if (envelopes.length === 0) {
+            return;
         }
-    });
-}
 
-private isConnectionError(error: Error): boolean {
-    return error.message.includes('WebSocket') || 
-           error.message.includes('connection') ||
-           error.message.includes('network');
-}
-```
+        // Filter out facts we already have
+        const references = envelopes.map(e => ({ type: e.fact.type, hash: e.fact.hash }));
+        const knownReferences = await this.store.whichExist(references);
+        const unknownEnvelopes = envelopes.filter(e =>
+            !knownReferences.some(ref => ref.hash === e.fact.hash && ref.type === e.fact.type)
+        );
 
-**Subscription Management:**
-```typescript
-// Track active subscriptions for proper cleanup
-private activeSubscriptions = new Set<() => void>();
+        if (unknownEnvelopes.length > 0) {
+            // Save directly - envelopes already contain complete data
+            await this.store.save(unknownEnvelopes);
+            await this.notifyFactsAdded(unknownEnvelopes);
+            Trace.counter("facts_saved", unknownEnvelopes.length);
+        }
 
-streamFeed(feed, bookmark, onEnvelope, onBookmark, onError): () => void {
-    const cleanup = this.webSocketClient.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
-    this.activeSubscriptions.add(cleanup);
-    
-    return () => {
-        this.activeSubscriptions.delete(cleanup);
-        cleanup();
-    };
+        if (!this.resolved) {
+            this.resolved = true;
+            resolve();
+        }
+    }
 }
 ```
 
-### Performance Characteristics
+## Implementation Phases
 
-**WebSocket Mode Benefits:**
-- **Single Connection**: All subscriptions share one WebSocket connection
-- **Real-time Delivery**: Immediate fact delivery without polling delays
-- **Reduced Overhead**: No HTTP request/response overhead per fact batch
-- **Efficient Protocol**: Direct Graph Protocol streaming without HTTP wrapping
+### Phase 1: Core WebSocket Infrastructure
+1. Implement `WebSocketClient` with basic connection management
+2. Define WebSocket message protocol using Graph Protocol extensions
+3. Implement subscription state management
+4. Add basic error handling and logging
 
-**HTTP Fallback Characteristics:**
-- **Proven Reliability**: Uses existing, tested HTTP streaming implementation
-- **Universal Compatibility**: Works in all network environments
-- **Gradual Degradation**: Maintains functionality when WebSocket unavailable
-- **Same Interface**: Identical callback patterns and error handling
-
-### Testing and Validation
-
-**Unit Testing Strategy:**
-```typescript
-// Test WebSocket functionality
-describe('WebSocketNetwork', () => {
-    it('should use WebSocket for streaming when available', async () => {
-        const webSocketNetwork = new WebSocketNetwork(mockWebClient, mockWebSocketClient, true);
-        const cleanup = webSocketNetwork.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
-        
-        expect(mockWebSocketClient.streamFeed).toHaveBeenCalled();
-        expect(mockWebClient.streamFeed).not.toHaveBeenCalled();
-    });
-    
-    it('should fall back to HTTP when WebSocket fails', async () => {
-        mockWebSocketClient.streamFeed.mockImplementation((f, b, onE, onB, onErr) => {
-            onErr(new Error('WebSocket connection failed'));
-        });
-        
-        const webSocketNetwork = new WebSocketNetwork(mockWebClient, mockWebSocketClient, true);
-        webSocketNetwork.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
-        
-        expect(mockWebClient.streamFeed).toHaveBeenCalled();
-    });
-});
-```
+**Deliverables:**
+- `src/http/webSocketClient.ts`
+- `src/http/webSocketMessages.ts`
+- `src/http/webSocketGraphHandler.ts`
+- Basic unit tests
 
 ### Phase 2: Integration with Existing System
 1. Implement `WebSocketNetwork` class extending `HttpNetwork`
@@ -1110,10 +887,10 @@ describe('WebSocketNetwork', () => {
 - Stress testing
 
 ### Phase 4: Optimization Implementation
-1. Implement enhanced `FeedResponse` interface
-2. Add envelope-based processing to `Subscriber`
-3. Implement optimized Graph Protocol handler
-4. Add performance monitoring and metrics
+1. Update `Subscriber` to use enhanced envelope processing
+2. Implement optimized Graph Protocol handler
+3. Add performance monitoring and metrics
+4. Optimize memory usage and connection handling
 
 **Deliverables:**
 - Optimized fact processing
@@ -1133,6 +910,51 @@ describe('WebSocketNetwork', () => {
 - Deployment guides
 - Migration documentation
 
+## Configuration Integration
+
+### Browser Configuration
+
+```typescript
+// src/jinaga-browser.ts - Configuration-driven network creation
+interface JinagaBrowserConfig {
+    httpEndpoint?: string;
+    wsEndpoint?: string;
+    webSocketConfig?: WebSocketClientConfig;
+    // ... existing config options
+}
+
+function createNetwork(config: JinagaBrowserConfig): Network {
+    const webClient = new WebClient(httpConnection, syncStatusNotifier, webClientConfig);
+    
+    if (config.wsEndpoint && config.httpEndpoint) {
+        // Both endpoints configured - use WebSocket with HTTP fallback
+        const webSocketClient = new WebSocketClient(
+            config.wsEndpoint,
+            () => authenticationProvider.getHeaders(),
+            config.webSocketConfig || defaultWebSocketConfig
+        );
+        return new WebSocketNetwork(webClient, webSocketClient, true);
+    } else if (config.httpEndpoint) {
+        // Only HTTP endpoint - use standard HTTP network
+        return new HttpNetwork(webClient);
+    } else {
+        // No endpoints - use no-op network
+        return new NetworkNoOp();
+    }
+}
+
+const defaultWebSocketConfig: WebSocketClientConfig = {
+    reconnectMaxAttempts: 10,
+    reconnectBaseDelay: 1000,
+    reconnectMaxDelay: 30000,
+    pingInterval: 30000,
+    pongTimeout: 5000,
+    messageQueueMaxSize: 1000,
+    subscriptionTimeout: 10000,
+    enableLogging: false
+};
+```
+
 ## Migration Strategy
 
 ### Development Phase
@@ -1150,24 +972,93 @@ describe('WebSocketNetwork', () => {
 - HTTP implementation maintained as fallback
 - Performance monitoring and optimization
 
-## Protocol Benefits
+## Testing Strategy
 
-### Advantages of Using Graph Protocol
+### Unit Testing
+```typescript
+// Test WebSocket functionality
+describe('WebSocketNetwork', () => {
+    it('should use WebSocket for streaming when available', async () => {
+        const webSocketNetwork = new WebSocketNetwork(mockWebClient, mockWebSocketClient, true);
+        const cleanup = webSocketNetwork.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+        
+        expect(mockWebSocketClient.streamFeed).toHaveBeenCalled();
+        expect(mockWebClient.streamFeed).not.toHaveBeenCalled();
+    });
+    
+    it('should fall back to HTTP when WebSocket fails', async () => {
+        mockWebSocketClient.streamFeed.mockImplementation((f, b, onE, onB, onErr) => {
+            onErr(new Error('WebSocket connection failed'));
+        });
+        
+        const webSocketNetwork = new WebSocketNetwork(mockWebClient, mockWebSocketClient, true);
+        webSocketNetwork.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+        
+        expect(mockWebClient.streamFeed).toHaveBeenCalled();
+    });
+});
+```
 
-1. **Consistency**: Same serialization format used for HTTP and WebSocket
-2. **Efficiency**: Optimized binary-like text format with deduplication
-3. **Streaming**: Built-in support for incremental processing
-4. **Signatures**: Cryptographic integrity maintained
-5. **Extensibility**: Control markers allow protocol extensions
+### Integration Testing
+```typescript
+// Test integration with existing system
+describe('WebSocket Integration', () => {
+    it('should integrate with NetworkManager', async () => {
+        const networkManager = new NetworkManager(webSocketNetwork, store, notifyFactsAdded);
+        const subscription = await networkManager.subscribe(feed, specification);
+        
+        expect(subscription).toBeDefined();
+        expect(webSocketNetwork.streamFeed).toHaveBeenCalled();
+    });
+    
+    it('should handle subscriber lifecycle', async () => {
+        const subscriber = new Subscriber(feed, bookmark, webSocketNetwork, store, notifyFactsAdded);
+        await subscriber.start();
+        
+        expect(subscriber.isResolved()).toBe(true);
+    });
+});
+```
 
-### Bookmark Integration
+### Performance Testing
+```typescript
+// Test performance characteristics
+describe('WebSocket Performance', () => {
+    it('should handle multiple concurrent subscriptions', async () => {
+        const subscriptions = [];
+        for (let i = 0; i < 100; i++) {
+            const cleanup = webSocketNetwork.streamFeed(
+                `feed_${i}`, 
+                'bookmark', 
+                onEnvelope, 
+                onBookmark, 
+                onError
+            );
+            subscriptions.push(cleanup);
+        }
+        
+        expect(webSocketClient.getStats().activeSubscriptions).toBe(100);
+        
+        // Cleanup
+        subscriptions.forEach(cleanup => cleanup());
+    });
+    
+    it('should maintain connection efficiency', async () => {
+        const startTime = Date.now();
+        const cleanup = webSocketNetwork.streamFeed(feed, bookmark, onEnvelope, onBookmark, onError);
+        
+        // Simulate fact delivery
+        await simulateFactDelivery(100);
+        
+        const endTime = Date.now();
+        expect(endTime - startTime).toBeLessThan(1000); // Should be fast
+        
+        cleanup();
+    });
+});
+```
 
-1. **Seamless**: Bookmarks flow naturally with fact streams
-2. **Efficient**: No separate message overhead
-3. **Reliable**: Bookmark updates are ordered with fact delivery
-4. **Compatible**: Existing bookmark logic unchanged
-
-## Performance Improvements
+## Performance Benefits
 
 ### Eliminated Operations
 - **Redundant HTTP Requests**: No more `network.load()` calls for WebSocket facts
@@ -1190,13 +1081,13 @@ describe('WebSocketNetwork', () => {
 
 ### Client Compatibility
 - **Old Clients**: Continue to work unchanged - only receive `references` in `FeedResponse`
-- **New Clients**: Automatically use optimized path when `envelopes` are available
+- **New Clients**: Automatically use optimized path when WebSocket available
 - **Mixed Environments**: New clients gracefully fall back when connecting to old servers
 
 ### Server Compatibility  
-- **Old Servers**: Send only `references` - new clients handle this gracefully
-- **New Servers**: Can send both `references` and `envelopes` for maximum compatibility
-- **Protocol**: No wire protocol changes - optimization is purely client-side processing
+- **Old Servers**: Send only `references` - new clients handle this gracefully via HTTP fallback
+- **New Servers**: Can send both HTTP and WebSocket streams for maximum compatibility
+- **Protocol**: No wire protocol changes for HTTP - WebSocket uses Graph Protocol extensions
 
 ### Implementation Complexity
 
