@@ -770,6 +770,68 @@ export class WebSocketServerGraphHandler {
 }
 ```
 
+## HttpNetwork Implementation Update
+
+### Updated streamFeed Implementation
+
+The existing `HttpNetwork` already implements long polling via `WebClient.streamFeed()`. The implementation needs to be updated to use the new signature while maintaining the existing long polling behavior:
+
+```typescript
+// src/http/httpNetwork.ts - Updated implementation
+export class HttpNetwork implements Network {
+    // ... existing methods unchanged
+
+    streamFeed(
+        feed: string, 
+        bookmark: string, 
+        onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>, 
+        onBookmark: (bookmark: string) => Promise<void>, 
+        onError: (err: Error) => void
+    ): () => void {
+        return this.webClient.streamFeed(feed, bookmark, async (response: FeedResponse) => {
+            // Convert references to envelopes using existing load method
+            if (response.references.length > 0) {
+                try {
+                    const envelopes = await this.load(response.references);
+                    await onEnvelope(envelopes);
+                } catch (error) {
+                    onError(error);
+                    return;
+                }
+            }
+            
+            // Handle bookmark updates
+            await onBookmark(response.bookmark);
+        }, onError);
+    }
+}
+```
+
+### Implementation Strategy
+
+**Key Changes:**
+1. **Signature Update**: Replace `onResponse` with separate `onEnvelope` and `onBookmark` callbacks
+2. **Reference Conversion**: Use existing `load()` method to convert `FactReference[]` to `FactEnvelope[]`
+3. **Callback Separation**: Split single response handling into separate envelope and bookmark processing
+4. **Error Handling**: Wrap `load()` calls in try-catch to handle conversion errors
+
+**Long Polling Behavior Preserved:**
+- Underlying `WebClient.streamFeed()` continues to use HTTP streaming/long polling
+- Polling intervals and reconnection logic remain unchanged
+- Authentication and retry mechanisms preserved
+- 4-minute refresh cycle maintained
+
+**Performance Considerations:**
+- **Additional Load Calls**: Each polling response now triggers a `load()` call to convert references to envelopes
+- **Network Overhead**: Extra HTTP requests for fact loading, but provides complete envelope data
+- **Caching Opportunity**: Store could cache recently loaded facts to reduce redundant loads
+- **Efficiency Trade-off**: Slightly less efficient than WebSocket approach but maintains HTTP compatibility
+
+**Error Handling Strategy:**
+- **Load Failures**: Conversion errors are passed to `onError` callback
+- **Network Errors**: Existing WebClient error handling preserved
+- **Partial Failures**: If `load()` fails, bookmark updates are skipped to maintain consistency
+
 ## Implementation Phases
 
 ### Phase 1: Core WebSocket Infrastructure
@@ -786,12 +848,14 @@ export class WebSocketServerGraphHandler {
 
 ### Phase 2: Integration with Existing System
 1. Implement `WebSocketNetwork` class
-2. Integrate with existing `NetworkManager`
-3. Preserve existing HTTP fallback paths
-4. Add configuration options
+2. Update `HttpNetwork` to use new `streamFeed` signature
+3. Integrate with existing `NetworkManager`
+4. Preserve existing HTTP fallback paths
+5. Add configuration options
 
 **Deliverables:**
 - `src/http/webSocketNetwork.ts`
+- Updated `src/http/httpNetwork.ts`
 - Updated `src/jinaga-browser.ts`
 - Configuration integration
 - Integration tests

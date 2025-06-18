@@ -11,7 +11,7 @@ This document contains a review of the WebSocket implementation and related docu
 - [X] Remove the `EnhancedFeedResponse`; it is not necessary after `onResponse` is replaced.
 - [X] Change the `streamFeed` signature on the `Network` interface to be in alignment with `WebSocketClient`.
 - [X] Change the `Subscriber` function `connectToFeed` to use the new `streamFeed` signature.
-- [ ] Implement the `streamFeed` method on `HttpNetwork` in terms of long polling.
+- [X] Implement the `streamFeed` method on `HttpNetwork` in terms of long polling.
 - [ ] Create a new `WebSocketNetwork` class that extends `HttpNetwork` and re-implements `streamFeed` in terms of web sockets.
 - [ ] Use the `wsEndpoint` configuration in `JinagaBrowserConfig` (src/jinaga-browser.ts) to determine which `Network` implementation to create; if both `wsEndpoint` and `httpEndpoint` are set, create a `WebSocketNetwork`; if only `httpEndpoint` is set, create an `HttpNetwork`; otherwise, create a `NetworkNoOp`.
 - [ ] Eliminate the `EnhancedNetwork` type; make the changes to the `Network` interface as described above.

@@ -447,6 +447,80 @@ With the optimized envelope processing:
 - **Faster Processing**: Immediate fact availability without round-trip delays
 - **Lower Server Load**: Fewer HTTP load requests to handle
 
+## HttpNetwork Long Polling Implementation
+
+### Current Implementation Analysis
+
+The existing `HttpNetwork` class already implements long polling through its delegation to `WebClient.streamFeed()`. The current implementation needs to be updated to use the new signature while preserving the existing long polling behavior.
+
+### Updated HttpNetwork Implementation
+
+```typescript
+// src/http/httpNetwork.ts - Updated to use new streamFeed signature
+export class HttpNetwork implements Network {
+    constructor(private readonly webClient: WebClient) {}
+
+    // ... existing methods unchanged (feeds, fetchFeed, load)
+
+    streamFeed(
+        feed: string, 
+        bookmark: string, 
+        onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>, 
+        onBookmark: (bookmark: string) => Promise<void>, 
+        onError: (err: Error) => void
+    ): () => void {
+        return this.webClient.streamFeed(feed, bookmark, async (response: FeedResponse) => {
+            // Handle fact references by converting to envelopes
+            if (response.references.length > 0) {
+                try {
+                    // Use existing load method to convert references to envelopes
+                    const envelopes = await this.load(response.references);
+                    await onEnvelope(envelopes);
+                } catch (error) {
+                    onError(error);
+                    return; // Skip bookmark update on load failure
+                }
+            }
+            
+            // Handle bookmark updates separately
+            await onBookmark(response.bookmark);
+        }, onError);
+    }
+}
+```
+
+### Long Polling Behavior Preservation
+
+**Existing Long Polling Characteristics Maintained:**
+- **HTTP Streaming**: Underlying `WebClient.streamFeed()` continues to use HTTP streaming connections
+- **4-Minute Refresh Cycle**: Periodic reconnection logic preserved
+- **Authentication Handling**: Existing auth mechanisms remain unchanged
+- **Retry Logic**: WebClient retry strategies continue to function
+- **Error Recovery**: Existing error handling patterns maintained
+
+**Key Implementation Details:**
+1. **Reference to Envelope Conversion**: Each `FeedResponse` with references triggers a `load()` call
+2. **Separate Callback Handling**: Envelope and bookmark data flow through dedicated callbacks
+3. **Error Isolation**: Load failures don't prevent bookmark updates from being processed
+4. **Backward Compatibility**: Underlying WebClient interface remains unchanged
+
+### Performance Impact Analysis
+
+**Additional Network Operations:**
+- **Extra Load Calls**: Each polling response now requires a `load()` HTTP request
+- **Increased Latency**: Additional round-trip for fact loading
+- **Higher Server Load**: More HTTP requests per feed subscription
+
+**Mitigation Strategies:**
+- **Store Caching**: Implement fact caching in storage layer to reduce redundant loads
+- **Batch Loading**: Group multiple reference loads when possible
+- **Smart Filtering**: Only load facts that aren't already in local storage
+
+**Trade-off Assessment:**
+- **Consistency**: Provides same interface as WebSocket implementation
+- **Compatibility**: Maintains HTTP-based connectivity for environments without WebSocket support
+- **Efficiency**: Less efficient than WebSocket but more compatible than pure streaming
+
 ## Minimal Architectural Changes
 
 ### Files to Create
@@ -456,13 +530,15 @@ With the optimized envelope processing:
 - `src/http/webSocketGraphHandler.ts` - Graph protocol handler for WebSocket
 
 ### Files to Modify
+- `src/http/httpNetwork.ts` - Update streamFeed signature and implementation
 - `src/jinaga.ts` - Add WebSocket configuration options
 - `src/jinaga-browser.ts` - Wire up WebSocket network implementation
 - `src/observer/subscriber.ts` - Add envelope processing optimization
 - Configuration files to support WebSocket URL and options
 
 ### Files Unchanged
-- `src/managers/NetworkManager.ts` - No changes needed
+- `src/managers/NetworkManager.ts` - Network interface updated but core logic unchanged
+- `src/http/web-client.ts` - WebClient interface remains unchanged
 - All existing HTTP implementation files preserved for fallback
 
 This architecture preserves the existing `streamFeed` API contract while providing a more efficient WebSocket-based implementation with robust connection management, error handling, and optimized fact processing that eliminates redundant network operations.
