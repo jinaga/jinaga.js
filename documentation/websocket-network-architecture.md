@@ -270,6 +270,82 @@ interface Network {
 }
 ```
 
+#### Configuration-Driven Network Selection
+The system uses `JinagaBrowserConfig` to determine which Network implementation to create:
+
+```typescript
+// src/jinaga-browser.ts - Network selection logic
+export type JinagaBrowserConfig = {
+    httpEndpoint?: string,
+    wsEndpoint?: string,
+    webSocketConfig?: WebSocketClientConfig,
+    // ... existing config options
+}
+
+function createNetwork(config: JinagaBrowserConfig, webClient: WebClient | null): Network {
+    if (config.wsEndpoint && config.httpEndpoint && webClient) {
+        // Both endpoints configured - create WebSocketNetwork with HTTP fallback
+        const webSocketClient = new WebSocketClient(
+            config.wsEndpoint,
+            () => config.httpAuthenticationProvider?.getHeaders() || Promise.resolve({}),
+            config.webSocketConfig || defaultWebSocketConfig
+        );
+        return new WebSocketNetwork(webClient, webSocketClient, true);
+    } else if (config.httpEndpoint && webClient) {
+        // Only HTTP endpoint configured - create HttpNetwork
+        return new HttpNetwork(webClient);
+    } else {
+        // No endpoints configured or no webClient available - create NetworkNoOp
+        return new NetworkNoOp();
+    }
+}
+```
+
+#### Network Selection Decision Tree
+The network implementation selection follows this priority order:
+
+1. **WebSocketNetwork**: When both `wsEndpoint` and `httpEndpoint` are configured
+   - Requires valid `webClient` for HTTP fallback operations
+   - Provides WebSocket streaming with automatic HTTP fallback
+   - Uses WebSocket for `streamFeed`, HTTP for `feeds`, `fetchFeed`, and `load`
+
+2. **HttpNetwork**: When only `httpEndpoint` is configured
+   - Requires valid `webClient` for all operations
+   - Maintains existing HTTP-based behavior
+   - Uses long polling for `streamFeed` operations
+
+3. **NetworkNoOp**: When no endpoints are configured or no `webClient` available
+   - Provides no-operation implementations for all methods
+   - Used in offline or testing scenarios
+   - Returns empty results for all operations
+
+#### Configuration Examples and Behavior
+
+```typescript
+// Example 1: WebSocket with HTTP fallback
+const config1: JinagaBrowserConfig = {
+    httpEndpoint: 'https://api.example.com',
+    wsEndpoint: 'wss://api.example.com/ws'
+};
+// Creates: WebSocketNetwork(HttpNetwork, WebSocketClient)
+// Behavior: WebSocket streaming, HTTP for other operations, automatic fallback
+
+// Example 2: HTTP only (existing behavior)
+const config2: JinagaBrowserConfig = {
+    httpEndpoint: 'https://api.example.com'
+};
+// Creates: HttpNetwork
+// Behavior: HTTP long polling for streaming, HTTP for all operations
+
+// Example 3: Offline mode
+const config3: JinagaBrowserConfig = {
+    indexedDb: 'myapp'
+    // No network endpoints
+};
+// Creates: NetworkNoOp
+// Behavior: No network operations, local storage only
+```
+
 #### Subscriber Integration
 Subscribers receive optimized envelope processing through the enhanced streamFeed interface:
 
