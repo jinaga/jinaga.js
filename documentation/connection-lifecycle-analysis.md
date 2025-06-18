@@ -31,7 +31,8 @@ FetchConnection (fetch.ts)
 ```typescript
 private connectToFeed(resolve, reject) {
     return this.network.streamFeed(this.feed, this.bookmark, 
-        async (factReferences, nextBookmark) => { /* success handler */ },
+        async (envelopes) => { /* envelope handler */ },
+        async (nextBookmark) => { /* bookmark handler */ },
         err => { /* error handler */ }
     );
 }
