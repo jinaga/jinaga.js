@@ -1,4 +1,19 @@
 import { FactEnvelope, FactReference } from "../../src/storage";
+import { WebSocketClient, WebSocketClientConfig } from "../../src/http/webSocketClient";
+
+// Mock CloseEvent for Node.js environment
+(global as any).CloseEvent = class CloseEvent extends Event {
+    code: number;
+    reason: string;
+    wasClean: boolean;
+
+    constructor(type: string, eventInitDict?: { code?: number; reason?: string; wasClean?: boolean }) {
+        super(type);
+        this.code = eventInitDict?.code || 1000;
+        this.reason = eventInitDict?.reason || '';
+        this.wasClean = eventInitDict?.wasClean || false;
+    }
+};
 
 // Mock WebSocket implementation for testing
 class MockWebSocket {
@@ -105,56 +120,11 @@ class MockWebSocket {
     }
 }
 
-// Mock WebSocketClient interfaces and types
-interface WebSocketClientConfig {
-    reconnectMaxAttempts: number;
-    reconnectBaseDelay: number;
-    reconnectMaxDelay: number;
-    pingInterval: number;
-    pongTimeout: number;
-    messageQueueMaxSize: number;
-    subscriptionTimeout: number;
-    enableLogging: boolean;
-}
-
 interface HttpHeaders {
     [key: string]: string;
 }
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
-
-// Mock WebSocketClient class (this will fail until implemented)
-class WebSocketClient {
-    constructor(
-        private readonly wsUrl: string,
-        private readonly getHeaders: () => Promise<HttpHeaders>,
-        private readonly config: WebSocketClientConfig
-    ) {
-        throw new Error("WebSocketClient not implemented");
-    }
-
-    streamFeed(
-        feed: string,
-        bookmark: string,
-        onEnvelope: (envelopes: FactEnvelope[]) => Promise<void>,
-        onBookmark: (bookmark: string) => Promise<void>,
-        onError: (err: Error) => void
-    ): () => void {
-        throw new Error("streamFeed not implemented");
-    }
-
-    isConnected(): boolean {
-        throw new Error("isConnected not implemented");
-    }
-
-    getStats(): { webSocketConnected: boolean; activeSubscriptions: number; reconnectAttempts: number; } {
-        throw new Error("getStats not implemented");
-    }
-
-    destroy(): void {
-        throw new Error("destroy not implemented");
-    }
-}
 
 describe("WebSocketClient", () => {
     let mockWebSocket: MockWebSocket;
@@ -177,7 +147,7 @@ describe("WebSocketClient", () => {
             pongTimeout: 5000,
             messageQueueMaxSize: 100,
             subscriptionTimeout: 10000,
-            enableLogging: false
+            enableLogging: true
         };
 
         getHeaders = jest.fn().mockResolvedValue({
@@ -205,6 +175,9 @@ describe("WebSocketClient", () => {
             const onError = jest.fn();
 
             const cleanup = client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
+
+            // Wait for async connection to be established
+            await new Promise(resolve => setTimeout(resolve, 10));
 
             // Should create WebSocket with auth parameters
             expect((global as any).WebSocket).toHaveBeenCalledWith("wss://example.com/ws?auth=Bearer%20test-token");
