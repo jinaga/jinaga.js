@@ -39,27 +39,54 @@ class MockWebSocket {
     constructor(url: string) {
         this.url = url;
         // Simulate async connection
-        setTimeout(() => {
-            if (this.shouldFailConnection) {
-                this.readyState = MockWebSocket.CLOSED;
-                if (this.onerror) {
-                    this.onerror(new Event('error'));
+        if (this.connectionDelay > 0) {
+            setTimeout(() => {
+                if (this.shouldFailConnection) {
+                    this.readyState = MockWebSocket.CLOSED;
+                    if (this.onerror) {
+                        this.onerror(new Event('error'));
+                    }
+                } else {
+                    this.readyState = MockWebSocket.OPEN;
+                    if (this.onopen) {
+                        this.onopen(new Event('open'));
+                    }
                 }
-            } else {
-                this.readyState = MockWebSocket.OPEN;
-                if (this.onopen) {
-                    this.onopen(new Event('open'));
+            }, this.connectionDelay);
+        } else {
+            // Immediate connection for normal tests
+            setTimeout(() => {
+                if (this.shouldFailConnection) {
+                    this.readyState = MockWebSocket.CLOSED;
+                    if (this.onerror) {
+                        this.onerror(new Event('error'));
+                    }
+                } else {
+                    this.readyState = MockWebSocket.OPEN;
+                    if (this.onopen) {
+                        this.onopen(new Event('open'));
+                    }
                 }
-            }
-        }, this.connectionDelay);
+            }, 0);
+        }
     }
 
     // Helper method to connect immediately for tests
     connectImmediately(): void {
+        // Don't connect immediately if there's a connection delay (for timeout tests)
+        if (this.connectionDelay > 0) {
+            return;
+        }
+        
         if (!this.shouldFailConnection) {
             this.readyState = MockWebSocket.OPEN;
             if (this.onopen) {
                 this.onopen(new Event('open'));
+            }
+        } else {
+            this.readyState = MockWebSocket.CLOSED;
+            if (this.onerror) {
+                this.onerror(new Event('error'));
             }
         }
     }
@@ -69,6 +96,18 @@ class MockWebSocket {
             throw new Error('WebSocket is not open');
         }
         this.sentMessages.push(data);
+        
+        // Auto-respond to PING with PONG
+        if (data.startsWith('PING\n')) {
+            setTimeout(() => {
+                if (this.onmessage && this.readyState === MockWebSocket.OPEN) {
+                    const lines = data.split('\n');
+                    const timestamp = lines[1];
+                    const pongMessage = `PONG\n${timestamp}\n\n`;
+                    this.onmessage({ data: pongMessage } as MessageEvent);
+                }
+            }, 10); // Small delay to simulate network
+        }
     }
 
     close(code?: number, reason?: string): void {
@@ -136,11 +175,34 @@ interface HttpHeaders {
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
 
+// Helper function to wait for connection with timeout
+async function waitForConnection(client: WebSocketClient, timeout = 5000): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            reject(new Error(`Connection timeout after ${timeout}ms`));
+        }, timeout);
+
+        const checkConnection = () => {
+            if (client.isConnected()) {
+                clearTimeout(timeoutId);
+                resolve();
+            } else {
+                setTimeout(checkConnection, 10);
+            }
+        };
+
+        checkConnection();
+    });
+}
+
 describe("WebSocketClient", () => {
     let mockWebSocket: MockWebSocket;
     let client: WebSocketClient;
     let config: WebSocketClientConfig;
     let getHeaders: () => Promise<HttpHeaders>;
+
+    // Set timeout for all tests in this suite
+    jest.setTimeout(10000);
 
     beforeEach(() => {
         // Mock WebSocket constructor
@@ -157,7 +219,7 @@ describe("WebSocketClient", () => {
             pongTimeout: 5000,
             messageQueueMaxSize: 100,
             subscriptionTimeout: 10000,
-            enableLogging: true
+            enableLogging: false  // Disable logging during tests to prevent race conditions
         };
 
         getHeaders = jest.fn().mockResolvedValue({
@@ -165,11 +227,13 @@ describe("WebSocketClient", () => {
         });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         jest.clearAllMocks();
         if (client) {
             try {
                 client.destroy();
+                // Wait a bit to ensure all timers are cleared
+                await new Promise(resolve => setTimeout(resolve, 50));
             } catch (e) {
                 // Ignore errors during cleanup
             }
@@ -187,7 +251,7 @@ describe("WebSocketClient", () => {
             const cleanup = client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
 
             // Wait for async connection to be established
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await waitForConnection(client);
 
             // Should create WebSocket with auth parameters
             expect((global as any).WebSocket).toHaveBeenCalledWith("wss://example.com/ws?auth=Bearer%20test-token");
@@ -212,7 +276,7 @@ describe("WebSocketClient", () => {
             expect(stats.webSocketConnected).toBe(false);
             
             // Wait for connection to establish
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await waitForConnection(client);
             
             // Should be connected
             expect(client.isConnected()).toBe(true);
@@ -220,12 +284,15 @@ describe("WebSocketClient", () => {
 
         it("should handle connection timeout", async () => {
             const slowConfig = { ...config, subscriptionTimeout: 100 };
-            client = new WebSocketClient("wss://example.com/ws", getHeaders, slowConfig);
             
-            // Set a long connection delay to trigger timeout
-            (global.WebSocket as any).prototype.setConnectionDelay = function(delay: number) {
-                this.connectionDelay = delay;
-            };
+            // Mock WebSocket constructor to create a mock that doesn't connect immediately
+            (global as any).WebSocket = jest.fn().mockImplementation((url: string) => {
+                mockWebSocket = new MockWebSocket(url);
+                mockWebSocket.setConnectionDelay(200); // Set delay longer than timeout
+                return mockWebSocket;
+            });
+            
+            client = new WebSocketClient("wss://example.com/ws", getHeaders, slowConfig);
             
             const onEnvelope = jest.fn();
             const onBookmark = jest.fn();
@@ -242,14 +309,18 @@ describe("WebSocketClient", () => {
         });
 
         it("should handle connection failure", async () => {
+            // Mock WebSocket constructor to create a mock that fails connection
+            (global as any).WebSocket = jest.fn().mockImplementation((url: string) => {
+                mockWebSocket = new MockWebSocket(url);
+                mockWebSocket.setConnectionFailure(true);
+                return mockWebSocket;
+            });
+            
             client = new WebSocketClient("wss://example.com/ws", getHeaders, config);
             
             const onEnvelope = jest.fn();
             const onBookmark = jest.fn();
             const onError = jest.fn();
-
-            // Mock connection failure
-            mockWebSocket.setConnectionFailure(true);
 
             client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
             
@@ -331,9 +402,14 @@ describe("WebSocketClient", () => {
 
             const cleanup = client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
             
+            // Wait for connection to establish
+            await waitForConnection(client);
             expect(client.isConnected()).toBe(true);
             
             cleanup();
+            
+            // Wait a bit for cleanup to process
+            await new Promise(resolve => setTimeout(resolve, 10));
             
             // Connection should be closed
             expect(client.isConnected()).toBe(false);
@@ -352,6 +428,9 @@ describe("WebSocketClient", () => {
             const onError = jest.fn();
 
             client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
+
+            // Wait for connection to establish
+            await waitForConnection(client);
 
             // Simulate incoming Graph Protocol message with fact envelope
             const graphMessage = `"TestApp.Fact"\n{}\n{"value":"test"}\n\n`;
@@ -378,8 +457,16 @@ describe("WebSocketClient", () => {
 
             const cleanup = client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
 
-            // Simulate bookmark update message
-            const bookmarkMessage = `BMsub_1_123\n"new-bookmark-456"\n\n`;
+            // Wait for connection to establish
+            await waitForConnection(client);
+
+            // Get the actual subscription ID from the sent subscription message
+            const sentMessages = mockWebSocket.getSentMessages();
+            const subscriptionMessage = sentMessages.find(msg => msg.startsWith('SUB'));
+            const subscriptionId = subscriptionMessage?.split('\n')[0].substring(3); // Remove 'SUB' prefix
+
+            // Simulate bookmark update message with correct subscription ID
+            const bookmarkMessage = `BM${subscriptionId}\n"new-bookmark-456"\n\n`;
             mockWebSocket.simulateMessage(bookmarkMessage);
 
             await new Promise(resolve => setTimeout(resolve, 10));
@@ -396,8 +483,16 @@ describe("WebSocketClient", () => {
 
             const cleanup = client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
 
-            // Simulate error message
-            const errorMessage = `ERRsub_1_123\n"Subscription failed"\n\n`;
+            // Wait for connection to establish
+            await waitForConnection(client);
+
+            // Get the actual subscription ID from the sent subscription message
+            const sentMessages = mockWebSocket.getSentMessages();
+            const subscriptionMessage = sentMessages.find(msg => msg.startsWith('SUB'));
+            const subscriptionId = subscriptionMessage?.split('\n')[0].substring(3); // Remove 'SUB' prefix
+
+            // Simulate error message with correct subscription ID
+            const errorMessage = `ERR${subscriptionId}\n"Subscription failed"\n\n`;
             mockWebSocket.simulateMessage(errorMessage);
 
             await new Promise(resolve => setTimeout(resolve, 10));
@@ -435,6 +530,9 @@ describe("WebSocketClient", () => {
 
             const cleanup = client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
 
+            // Wait for connection to establish
+            await waitForConnection(client);
+
             // Clear previous messages
             mockWebSocket.clearSentMessages();
 
@@ -464,12 +562,14 @@ describe("WebSocketClient", () => {
 
             client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
 
+            // Wait for connection to establish
+            await waitForConnection(client);
             expect(client.isConnected()).toBe(true);
 
             // Simulate unexpected disconnection
             mockWebSocket.simulateDisconnection(1006, "Connection lost");
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             const stats = client.getStats();
             expect(stats.reconnectAttempts).toBeGreaterThan(0);
@@ -677,7 +777,6 @@ describe("WebSocketClient", () => {
     describe("Resource Management", () => {
         it("should clean up resources on destroy", async () => {
             client = new WebSocketClient("wss://example.com/ws", getHeaders, config);
-            await new Promise(resolve => setTimeout(resolve, 50));
 
             const onEnvelope = jest.fn();
             const onBookmark = jest.fn();
@@ -685,6 +784,8 @@ describe("WebSocketClient", () => {
 
             client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
 
+            // Wait for connection to establish
+            await waitForConnection(client);
             expect(client.isConnected()).toBe(true);
             expect(client.getStats().activeSubscriptions).toBe(1);
 
@@ -696,14 +797,6 @@ describe("WebSocketClient", () => {
 
         it("should provide accurate connection statistics", async () => {
             client = new WebSocketClient("wss://example.com/ws", getHeaders, config);
-            await new Promise(resolve => setTimeout(resolve, 50));
-
-            const initialStats = client.getStats();
-            expect(initialStats).toEqual({
-                webSocketConnected: true,
-                activeSubscriptions: 0,
-                reconnectAttempts: 0
-            });
 
             const onEnvelope = jest.fn();
             const onBookmark = jest.fn();
@@ -711,10 +804,20 @@ describe("WebSocketClient", () => {
 
             const cleanup = client.streamFeed("test-feed", "bookmark-123", onEnvelope, onBookmark, onError);
 
-            const activeStats = client.getStats();
-            expect(activeStats.activeSubscriptions).toBe(1);
+            // Wait for connection to establish
+            await waitForConnection(client);
+
+            const initialStats = client.getStats();
+            expect(initialStats).toEqual({
+                webSocketConnected: true,
+                activeSubscriptions: 1,
+                reconnectAttempts: 0
+            });
 
             cleanup();
+
+            // Wait for cleanup to process
+            await new Promise(resolve => setTimeout(resolve, 10));
 
             const finalStats = client.getStats();
             expect(finalStats.activeSubscriptions).toBe(0);

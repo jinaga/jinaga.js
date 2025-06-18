@@ -102,8 +102,15 @@ export class WebSocketClient {
     }
 
     isConnected(): boolean {
+        // Handle destroyed state and undefined readyState gracefully
+        if (this.destroyed || !this.ws) {
+            return false;
+        }
+        
         const wsOpen = 1; // WebSocket.OPEN constant
-        return this.connectionState === 'connected' && this.ws?.readyState === wsOpen;
+        const connected = this.connectionState === 'connected' && this.ws.readyState === wsOpen;
+        
+        return connected;
     }
 
     getStats(): { webSocketConnected: boolean; activeSubscriptions: number; reconnectAttempts: number; } {
@@ -116,6 +123,8 @@ export class WebSocketClient {
 
     destroy(): void {
         this.destroyed = true;
+        
+        // Clear timeouts FIRST to prevent race conditions
         this.clearTimeouts();
         
         // Close WebSocket connection
@@ -199,9 +208,10 @@ export class WebSocketClient {
         };
 
         this.ws.onclose = (event) => {
+            // Clear timeouts immediately when connection closes
             this.clearTimeouts();
             
-            if (this.config.enableLogging) {
+            if (!this.destroyed && this.config.enableLogging) {
                 Trace.info(`WebSocket closed: ${event.code} ${event.reason}`);
             }
 
@@ -264,6 +274,9 @@ export class WebSocketClient {
             // Check for pong message
             const pongMsg = parsePongMessage(data);
             if (pongMsg) {
+                if (this.config.enableLogging) {
+                    console.log(`[DEBUG] Received pong message: ${JSON.stringify(pongMsg)}`);
+                }
                 this.handlePong();
                 return;
             }
@@ -291,11 +304,17 @@ export class WebSocketClient {
     }
 
     private startHeartbeat(): void {
+        // Clear any existing interval first
         if (this.pingInterval) {
             clearInterval(this.pingInterval);
+            this.pingInterval = null;
         }
 
         this.pingInterval = setInterval(() => {
+            // Early exit if destroyed to prevent any further execution
+            if (this.destroyed) {
+                return;
+            }
             if (this.isConnected()) {
                 this.sendPing();
             }
@@ -309,6 +328,10 @@ export class WebSocketClient {
 
         // Set pong timeout
         this.pongTimeout = setTimeout(() => {
+            // Early exit if destroyed to prevent any further execution
+            if (this.destroyed) {
+                return;
+            }
             if (this.config.enableLogging) {
                 Trace.warn('Pong timeout - connection may be stale');
             }
