@@ -18,4 +18,16 @@ export class ErrorClassifier {
         // Return 'unknown' for any other error types (minimal implementation)
         return 'unknown';
     }
+
+    isRetryable(error: Error): boolean {
+        const errorType = this.classify(error);
+        
+        // Transient and server errors are retryable
+        if (errorType === 'transient' || errorType === 'server') {
+            return true;
+        }
+        
+        // Authentication and unknown errors are not retryable
+        return false;
+    }
 }

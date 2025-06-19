@@ -37,4 +37,20 @@ describe('Subscriber Error Handling', () => {
         
         expect(errorType).toBe('server');
     });
+
+    it('should determine if errors are retryable', () => {
+        const errorClassifier = new ErrorClassifier();
+        
+        // Test that transient errors (like ECONNRESET) are retryable
+        const transientError = new Error('Network request failed');
+        (transientError as any).code = 'ECONNRESET';
+        
+        expect(errorClassifier.isRetryable(transientError)).toBe(true);
+        
+        // Test that authentication errors (401) are not retryable
+        const authError = new Error('Unauthorized');
+        (authError as any).status = 401;
+        
+        expect(errorClassifier.isRetryable(authError)).toBe(false);
+    });
 });
