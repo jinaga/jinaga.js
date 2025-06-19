@@ -5,6 +5,11 @@ export class ErrorClassifier {
             return 'transient';
         }
         
+        // Check if this is an HTTP 401 authentication error
+        if ((error as any).status === 401) {
+            return 'authentication';
+        }
+        
         // Return 'unknown' for any other error types (minimal implementation)
         return 'unknown';
     }

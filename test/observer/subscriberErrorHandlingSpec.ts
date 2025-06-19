@@ -13,4 +13,16 @@ describe('Subscriber Error Handling', () => {
         
         expect(errorType).toBe('transient');
     });
+
+    it('should classify 401 errors as authentication', () => {
+        // Create a mock HTTP error with 401 status
+        const authError = new Error('Unauthorized');
+        (authError as any).status = 401;
+        
+        // Test the ErrorClassifier to classify the error
+        const errorClassifier = new ErrorClassifier();
+        const errorType = errorClassifier.classify(authError);
+        
+        expect(errorType).toBe('authentication');
+    });
 });
