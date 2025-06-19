@@ -25,4 +25,16 @@ describe('Subscriber Error Handling', () => {
         
         expect(errorType).toBe('authentication');
     });
+
+    it('should classify 500 errors as server', () => {
+        // Create a mock HTTP error with 500 status
+        const serverError = new Error('Internal Server Error');
+        (serverError as any).status = 500;
+        
+        // Test the ErrorClassifier to classify the error
+        const errorClassifier = new ErrorClassifier();
+        const errorType = errorClassifier.classify(serverError);
+        
+        expect(errorType).toBe('server');
+    });
 });

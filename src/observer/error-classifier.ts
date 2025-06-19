@@ -10,6 +10,11 @@ export class ErrorClassifier {
             return 'authentication';
         }
         
+        // Check if this is an HTTP 500 server error
+        if ((error as any).status === 500) {
+            return 'server';
+        }
+        
         // Return 'unknown' for any other error types (minimal implementation)
         return 'unknown';
     }
