@@ -2,6 +2,7 @@ import { generateKeyPair, KeyPair, signFacts } from "../cryptography/key-pair";
 import { computeHash } from "../fact/hash";
 import { Fork } from "../fork/fork";
 import { PersistentFork } from "../fork/persistent-fork";
+import { logGlobalConnectionStats } from "../http/fetch";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
@@ -15,6 +16,7 @@ export class FactManager {
     private networkManager: NetworkManager;
     private purgeManager: PurgeManager;
     private singleUseKeyPair: KeyPair | null = null;
+    private connectionStatsInterval: NodeJS.Timeout | null = null;
 
     constructor(
         private readonly fork: Fork,
@@ -28,6 +30,9 @@ export class FactManager {
             factsAdded => this.factsAdded(factsAdded), feedRefreshIntervalSeconds);
 
         this.purgeManager = new PurgeManager(store, purgeConditions);
+        
+        // Start periodic connection stats logging for debugging
+        this.startConnectionStatsLogging();
     }
 
     addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
@@ -39,6 +44,10 @@ export class FactManager {
     }
 
     async close(): Promise<void> {
+        if (this.connectionStatsInterval) {
+            clearInterval(this.connectionStatsInterval);
+            this.connectionStatsInterval = null;
+        }
         await this.fork.close();
         await this.store.close();
     }
@@ -163,6 +172,15 @@ export class FactManager {
      */
     async push(): Promise<void> {
         await this.fork.processQueueNow();
+    }
+
+    private startConnectionStatsLogging(): void {
+        // Log connection stats every 5 seconds during load testing
+        this.connectionStatsInterval = setInterval(() => {
+            logGlobalConnectionStats();
+        }, 5000);
+        
+        Trace.info("FactManager: Started periodic connection stats logging (every 5s)");
     }
 }
 

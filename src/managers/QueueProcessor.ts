@@ -79,11 +79,21 @@ class Batch {
         if (this.nextBatch) {
             return;
         }
+        Trace.info(`QueueProcessor: Starting batch processing (delay: ${this.delayMilliseconds}ms)`);
         this.nextBatch = new Batch(this.saver, this.delayMilliseconds, this.setBatch);
         this.setBatch(this.nextBatch);
+        const startTime = Date.now();
         this.saver.save()
-            .then(() => this.done(null))
-            .catch((error) => this.done(error));
+            .then(() => {
+                const duration = Date.now() - startTime;
+                Trace.info(`QueueProcessor: Batch completed successfully in ${duration}ms`);
+                this.done(null);
+            })
+            .catch((error) => {
+                const duration = Date.now() - startTime;
+                Trace.warn(`QueueProcessor: Batch failed after ${duration}ms: ${error.message}`);
+                this.done(error);
+            });
     }
 
     private done(error: Error | null) {

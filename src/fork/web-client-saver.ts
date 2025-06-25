@@ -18,13 +18,20 @@ export class WebClientSaver implements Saver {
     async save(): Promise<void> {
         const envelopes = await this.queue.peek();
         if (envelopes.length > 0) {
+            Trace.info(`WebClientSaver: Processing ${envelopes.length} envelopes from queue`);
             try {
+                const startTime = Date.now();
                 await this.client.saveWithRetry(envelopes);
+                const duration = Date.now() - startTime;
+                Trace.info(`WebClientSaver: Successfully saved ${envelopes.length} envelopes in ${duration}ms`);
                 await this.queue.dequeue(envelopes);
             }
             catch (error) {
-                Trace.error(error);
+                Trace.error(`WebClientSaver: Failed to save ${envelopes.length} envelopes: ${error}`);
+                throw error;
             }
+        } else {
+            Trace.info(`WebClientSaver: No envelopes in queue to process`);
         }
     }
 }

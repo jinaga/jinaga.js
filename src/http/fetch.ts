@@ -3,6 +3,12 @@ import { HttpHeaders } from "./authenticationProvider";
 import { PostAccept, PostContentType, ContentTypeJson } from "./ContentType";
 import { HttpConnection, HttpResponse } from "./web-client";
 
+// Connection pool monitoring
+let activeConnections = 0;
+let totalRequests = 0;
+let timeoutCount = 0;
+let connectionErrors = 0;
+
 interface FetchHttpResponse {
     statusCode: number;
     statusMessage: string | undefined;
@@ -46,10 +52,20 @@ export class FetchConnection implements HttpConnection {
     }
 
     private async httpGet(tail: string, headers: HttpHeaders): Promise<FetchHttpResponse> {
+        const requestId = ++totalRequests;
+        activeConnections++;
+        
+        Trace.info(`[REQ-${requestId}] GET ${tail} - Active connections: ${activeConnections}, Total requests: ${totalRequests}`);
+        
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => {
+            timeoutCount++;
+            Trace.warn(`[REQ-${requestId}] GET ${tail} - Request timeout after 30s (timeout #${timeoutCount})`);
+            controller.abort();
+        }, 30000);
 
         try {
+            const startTime = Date.now();
             const response = await fetch(this.url + tail, {
                 method: 'GET',
                 headers: {
@@ -60,6 +76,10 @@ export class FetchConnection implements HttpConnection {
             });
 
             clearTimeout(timeoutId);
+            activeConnections--;
+            const duration = Date.now() - startTime;
+            
+            Trace.info(`[REQ-${requestId}] GET ${tail} - Completed in ${duration}ms, Status: ${response.status}, Active: ${activeConnections}`);
 
             const contentType = response.headers.get('content-type') || '';
             const responseBody = contentType.includes(ContentTypeJson) ? await response.json() : await response.text();
@@ -72,9 +92,10 @@ export class FetchConnection implements HttpConnection {
             };
         } catch (error: any) {
             clearTimeout(timeoutId);
-
+            activeConnections--;
+            
             if (error.name === 'AbortError') {
-                Trace.warn('Network request timed out.');
+                Trace.warn(`[REQ-${requestId}] GET ${tail} - Request timed out. Active: ${activeConnections}, Total timeouts: ${timeoutCount}`);
                 return {
                     statusCode: 408,
                     statusMessage: "Request Timeout",
@@ -82,7 +103,8 @@ export class FetchConnection implements HttpConnection {
                     response: null
                 };
             } else {
-                Trace.warn('Network request failed.');
+                connectionErrors++;
+                Trace.warn(`[REQ-${requestId}] GET ${tail} - Connection error: ${error.message}. Active: ${activeConnections}, Total errors: ${connectionErrors}`);
                 return {
                     statusCode: 500,
                     statusMessage: "Network request failed",
@@ -229,10 +251,20 @@ export class FetchConnection implements HttpConnection {
     }
 
     private async httpPost(tail: string, headers: HttpHeaders, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<FetchHttpResponse> {
+        const requestId = ++totalRequests;
+        activeConnections++;
+        
+        Trace.info(`[REQ-${requestId}] POST ${tail} - Active connections: ${activeConnections}, Total requests: ${totalRequests}, Timeout: ${timeoutSeconds}s`);
+        
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
+        const timeoutId = setTimeout(() => {
+            timeoutCount++;
+            Trace.warn(`[REQ-${requestId}] POST ${tail} - Request timeout after ${timeoutSeconds}s (timeout #${timeoutCount})`);
+            controller.abort();
+        }, timeoutSeconds * 1000);
 
         try {
+            const startTime = Date.now();
             if (accept) {
                 headers = {
                     'Accept': accept,
@@ -250,6 +282,10 @@ export class FetchConnection implements HttpConnection {
             });
 
             clearTimeout(timeoutId);
+            activeConnections--;
+            const duration = Date.now() - startTime;
+            
+            Trace.info(`[REQ-${requestId}] POST ${tail} - Completed in ${duration}ms, Status: ${response.status}, Active: ${activeConnections}`);
 
             const responseContentType = response.headers.get('content-type') || '';
             const responseBody = responseContentType.includes(ContentTypeJson) ? await response.json() : await response.text();
@@ -262,9 +298,10 @@ export class FetchConnection implements HttpConnection {
             };
         } catch (error: any) {
             clearTimeout(timeoutId);
+            activeConnections--;
 
             if (error.name === 'AbortError') {
-                Trace.warn('Network request timed out.');
+                Trace.warn(`[REQ-${requestId}] POST ${tail} - Request timed out. Active: ${activeConnections}, Total timeouts: ${timeoutCount}`);
                 return {
                     statusCode: 408,
                     statusMessage: "Request Timeout",
@@ -272,7 +309,8 @@ export class FetchConnection implements HttpConnection {
                     response: null
                 };
             } else {
-                Trace.warn('Network request failed.');
+                connectionErrors++;
+                Trace.warn(`[REQ-${requestId}] POST ${tail} - Connection error: ${error.message}. Active: ${activeConnections}, Total errors: ${connectionErrors}`);
                 return {
                     statusCode: 500,
                     statusMessage: "Network request failed",
@@ -288,4 +326,16 @@ export class FetchConnection implements HttpConnection {
         const contentTypeHeader = response.headers.get('accept-post');
         return contentTypeHeader ? contentTypeHeader.split(',').map(type => type.trim()) : [];
     }
+
+    /**
+     * Logs current connection pool statistics for debugging
+     */
+    logConnectionStats(): void {
+        Trace.info(`Connection Pool Stats - Active: ${activeConnections}, Total Requests: ${totalRequests}, Timeouts: ${timeoutCount}, Errors: ${connectionErrors}`);
+    }
+}
+
+// Export function to log connection stats globally
+export function logGlobalConnectionStats(): void {
+    Trace.info(`Global Connection Pool Stats - Active: ${activeConnections}, Total Requests: ${totalRequests}, Timeouts: ${timeoutCount}, Errors: ${connectionErrors}`);
 }
