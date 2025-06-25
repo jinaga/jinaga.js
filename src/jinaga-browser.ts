@@ -96,7 +96,8 @@ function createFork(
             return fork;
         }
         else {
-            const fork = new TransientFork(store, webClient);
+            const queueProcessingDelay = config.queueProcessingDelayMs || 100;
+            const fork = new TransientFork(store, webClient, queueProcessingDelay);
             return fork;
         }
     }

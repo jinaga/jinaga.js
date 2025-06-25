@@ -63,29 +63,30 @@ class TransientSaver implements Saver {
 }
 
 export class TransientFork implements Fork {
+    private memoryQueue: MemoryQueue;
+    private queueProcessor: QueueProcessor;
+
     constructor(
         private storage: Storage,
-        private client: WebClient
+        private client: WebClient,
+        private queueProcessingDelayMs: number = 100
     ) {
+        this.memoryQueue = new MemoryQueue();
+        const saver = new TransientSaver(this.client, this.memoryQueue);
+        this.queueProcessor = new QueueProcessor(saver, queueProcessingDelayMs);
         
+        Trace.info(`TransientFork: Initialized with memory queue and ${queueProcessingDelayMs}ms processing delay`);
     }
 
     close() {
+        this.queueProcessor.dispose();
         return Promise.resolve();
     }
 
     async save(envelopes: FactEnvelope[]): Promise<void> {
-        Trace.info(`TransientFork: Saving ${envelopes.length} envelopes directly to HTTP (no local queue)`);
-        const startTime = Date.now();
-        try {
-            await this.client.save(envelopes);
-            const duration = Date.now() - startTime;
-            Trace.info(`TransientFork: Successfully saved ${envelopes.length} envelopes in ${duration}ms`);
-        } catch (error) {
-            const duration = Date.now() - startTime;
-            Trace.error(`TransientFork: Failed to save ${envelopes.length} envelopes after ${duration}ms: ${error}`);
-            throw error;
-        }
+        Trace.info(`TransientFork: Queueing ${envelopes.length} envelopes for batched processing`);
+        await this.memoryQueue.enqueue(envelopes);
+        this.queueProcessor.scheduleProcessing();
     }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
@@ -146,7 +147,7 @@ export class TransientFork implements Fork {
     }
 
     processQueueNow(): Promise<void> {
-        // No-op for transient fork
-        return Promise.resolve();
+        Trace.info(`TransientFork: Processing queue immediately`);
+        return this.queueProcessor.processQueueNow();
     }
 }

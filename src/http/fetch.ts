@@ -3,11 +3,36 @@ import { HttpHeaders } from "./authenticationProvider";
 import { PostAccept, PostContentType, ContentTypeJson } from "./ContentType";
 import { HttpConnection, HttpResponse } from "./web-client";
 
-// Connection pool monitoring
+// Connection pool monitoring and management
 let activeConnections = 0;
 let totalRequests = 0;
 let timeoutCount = 0;
 let connectionErrors = 0;
+const MAX_CONCURRENT_CONNECTIONS = 6; // Conservative limit for HTTP/1.1
+const pendingRequests: Array<() => void> = [];
+
+function acquireConnection(): Promise<void> {
+    return new Promise((resolve) => {
+        if (activeConnections < MAX_CONCURRENT_CONNECTIONS) {
+            activeConnections++;
+            resolve();
+        } else {
+            Trace.info(`Connection pool full (${activeConnections}/${MAX_CONCURRENT_CONNECTIONS}), queuing request`);
+            pendingRequests.push(() => {
+                activeConnections++;
+                resolve();
+            });
+        }
+    });
+}
+
+function releaseConnection(): void {
+    activeConnections--;
+    if (pendingRequests.length > 0) {
+        const nextRequest = pendingRequests.shift()!;
+        nextRequest();
+    }
+}
 
 interface FetchHttpResponse {
     statusCode: number;
@@ -53,9 +78,11 @@ export class FetchConnection implements HttpConnection {
 
     private async httpGet(tail: string, headers: HttpHeaders): Promise<FetchHttpResponse> {
         const requestId = ++totalRequests;
-        activeConnections++;
         
-        Trace.info(`[REQ-${requestId}] GET ${tail} - Active connections: ${activeConnections}, Total requests: ${totalRequests}`);
+        // Wait for connection slot
+        await acquireConnection();
+        
+        Trace.info(`[REQ-${requestId}] GET ${tail} - Acquired connection, Active: ${activeConnections}/${MAX_CONCURRENT_CONNECTIONS}, Total: ${totalRequests}`);
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
@@ -76,7 +103,6 @@ export class FetchConnection implements HttpConnection {
             });
 
             clearTimeout(timeoutId);
-            activeConnections--;
             const duration = Date.now() - startTime;
             
             Trace.info(`[REQ-${requestId}] GET ${tail} - Completed in ${duration}ms, Status: ${response.status}, Active: ${activeConnections}`);
@@ -92,7 +118,6 @@ export class FetchConnection implements HttpConnection {
             };
         } catch (error: any) {
             clearTimeout(timeoutId);
-            activeConnections--;
             
             if (error.name === 'AbortError') {
                 Trace.warn(`[REQ-${requestId}] GET ${tail} - Request timed out. Active: ${activeConnections}, Total timeouts: ${timeoutCount}`);
@@ -112,6 +137,8 @@ export class FetchConnection implements HttpConnection {
                     response: null
                 };
             }
+        } finally {
+            releaseConnection();
         }
     }
 
@@ -252,9 +279,11 @@ export class FetchConnection implements HttpConnection {
 
     private async httpPost(tail: string, headers: HttpHeaders, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<FetchHttpResponse> {
         const requestId = ++totalRequests;
-        activeConnections++;
         
-        Trace.info(`[REQ-${requestId}] POST ${tail} - Active connections: ${activeConnections}, Total requests: ${totalRequests}, Timeout: ${timeoutSeconds}s`);
+        // Wait for connection slot
+        await acquireConnection();
+        
+        Trace.info(`[REQ-${requestId}] POST ${tail} - Acquired connection, Active: ${activeConnections}/${MAX_CONCURRENT_CONNECTIONS}, Total: ${totalRequests}, Timeout: ${timeoutSeconds}s`);
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
@@ -282,7 +311,6 @@ export class FetchConnection implements HttpConnection {
             });
 
             clearTimeout(timeoutId);
-            activeConnections--;
             const duration = Date.now() - startTime;
             
             Trace.info(`[REQ-${requestId}] POST ${tail} - Completed in ${duration}ms, Status: ${response.status}, Active: ${activeConnections}`);
@@ -298,7 +326,6 @@ export class FetchConnection implements HttpConnection {
             };
         } catch (error: any) {
             clearTimeout(timeoutId);
-            activeConnections--;
 
             if (error.name === 'AbortError') {
                 Trace.warn(`[REQ-${requestId}] POST ${tail} - Request timed out. Active: ${activeConnections}, Total timeouts: ${timeoutCount}`);
@@ -318,6 +345,8 @@ export class FetchConnection implements HttpConnection {
                     response: null
                 };
             }
+        } finally {
+            releaseConnection();
         }
     }
 
@@ -337,5 +366,5 @@ export class FetchConnection implements HttpConnection {
 
 // Export function to log connection stats globally
 export function logGlobalConnectionStats(): void {
-    Trace.info(`Global Connection Pool Stats - Active: ${activeConnections}, Total Requests: ${totalRequests}, Timeouts: ${timeoutCount}, Errors: ${connectionErrors}`);
+    Trace.info(`Global Connection Pool Stats - Active: ${activeConnections}/${MAX_CONCURRENT_CONNECTIONS}, Queued: ${pendingRequests.length}, Total Requests: ${totalRequests}, Timeouts: ${timeoutCount}, Errors: ${connectionErrors}`);
 }
