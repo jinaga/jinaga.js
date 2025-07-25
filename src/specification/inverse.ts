@@ -96,51 +96,38 @@ function shakeTree(matches: Match[], label: string): Match[] {
 }
 
 /**
- * Breadth-first search inspired algorithm that provides mathematical guarantees
- * for termination while preserving the original algorithm's exact behavior.
- * 
- * The algorithm ensures termination by:
- * 1. Tracking match configurations to detect cycles
- * 2. Using bounded iteration counts based on graph theory
- * 3. Maintaining a priority queue approach for match processing
+ * Enhanced shake tree algorithm with dependency validation and infinite loop prevention.
+ * This algorithm ensures that every match (except the first) has path conditions that
+ * reference labels appearing earlier in the match list, maintaining valid execution order.
  */
 function breadthFirstInspiredShakeTree(matches: Match[]): Match[] {
     if (matches.length <= 1) {
         return matches;
     }
 
-    // Track visited states to prevent cycles - this is the key BFS insight
-    const visitedStates: Set<string> = new Set();
-    const maxIterations = matches.length * matches.length; // O(n²) upper bound
+    // Track iteration count to prevent infinite loops
+    const maxIterations = matches.length * matches.length;
     let totalIterations = 0;
 
-    // Move any other matches with no paths down, using BFS principles
+    // Process each position starting from index 1
     for (let i = 1; i < matches.length && totalIterations < maxIterations; i++) {
         let otherMatch: Match = matches[i];
-        let localIterations = 0;
-        const maxLocalIterations = matches.length; // Per-position limit
+        let positionIterations = 0;
+        const maxPositionIterations = matches.length;
         
-        while (!otherMatch.conditions.some(c => c.type === "path") && 
-               localIterations < maxLocalIterations && 
+        // Ensure this match has valid path conditions
+        while (!hasValidPathConditions(matches, i) && 
+               positionIterations < maxPositionIterations && 
                totalIterations < maxIterations) {
             
-            localIterations++;
+            positionIterations++;
             totalIterations++;
             
-            // Generate a state key to detect cycles - this is inspired by BFS cycle detection
-            const stateKey = generateStateKey(matches, i);
-            if (visitedStates.has(stateKey)) {
-                // We've seen this configuration before - break to prevent infinite loop
-                break;
-            }
-            visitedStates.add(stateKey);
-            
+            // Try to find path conditions from later matches that reference this match
             let foundPathCondition = false;
             
-            // Find all matches beyond this point that tag this one.
             for (let j = i + 1; j < matches.length; j++) {
                 const taggedMatch: Match = matches[j];
-                // Move their path conditions to the other match.
                 for (const taggedCondition of taggedMatch.conditions) {
                     if (taggedCondition.type === "path" &&
                         taggedCondition.labelRight === otherMatch.unknown.name) {
@@ -154,24 +141,27 @@ function breadthFirstInspiredShakeTree(matches: Match[]): Match[] {
                 }
             }
 
-            // If no path condition was found to move to this match, 
-            // it means this match will never get a path condition.
-            // Move it to the bottom once and then break to avoid infinite loop.
+            // If no path condition was found, move this match to the end
             if (!foundPathCondition) {
+                // Before moving, check if moving would create dependency violations
+                if (wouldCreateDependencyViolation(matches, i)) {
+                    // Can't move safely - break to prevent invalid ordering
+                    break;
+                }
+                
                 matches = [ ...matches.slice(0, i), ...matches.slice(i + 1), matches[i] ];
-                // Check if we're at the end or if the next match also has no path conditions
+                
+                // Check if we're at the end or need to process the next match
                 if (i >= matches.length) {
                     break;
                 }
                 otherMatch = matches[i];
-                // If the new match at position i also has no path conditions,
-                // and we just moved the previous match without finding any path conditions,
-                // we may be in an infinite loop scenario. Break out.
-                if (!otherMatch.conditions.some(c => c.type === "path")) {
+                
+                // Break if we encounter consecutive matches with no path conditions
+                if (!hasValidPathConditions(matches, i)) {
                     break;
                 }
             } else {
-                // Update otherMatch since the matches array was modified
                 otherMatch = matches[i];
             }
         }
@@ -181,24 +171,57 @@ function breadthFirstInspiredShakeTree(matches: Match[]): Match[] {
 }
 
 /**
- * Generates a unique state key for cycle detection.
- * This is a core BFS technique for detecting when we've visited a state before.
+ * Checks if a match at the given position has valid path conditions that reference
+ * labels appearing earlier in the match list.
  */
-function generateStateKey(matches: Match[], currentIndex: number): string {
-    // Create a compact representation of the current state
-    const relevantMatches = matches.slice(currentIndex).map(match => ({
-        name: match.unknown.name,
-        pathConditions: match.conditions
-            .filter(c => c.type === "path")
-            .map(c => c.type === "path" ? c.labelRight : "")
-            .sort()
-    }));
+function hasValidPathConditions(matches: Match[], position: number): boolean {
+    if (position === 0) {
+        return true; // First match doesn't need path conditions
+    }
     
-    return JSON.stringify({
-        index: currentIndex,
-        matches: relevantMatches
-    });
+    const match = matches[position];
+    
+    if (match.conditions.length === 0) {
+        return false; // No conditions at all
+    }
+    
+    // The first condition must be a path condition
+    const firstCondition = match.conditions[0];
+    if (firstCondition.type !== "path") {
+        return false;
+    }
+    
+    // Check if the first path condition references a label that appears earlier
+    const availableLabels = new Set(matches.slice(0, position).map(m => m.unknown.name));
+    
+    return availableLabels.has(firstCondition.labelRight);
 }
+
+/**
+ * Checks if moving a match from the given position would create dependency violations
+ * in other matches that reference it.
+ */
+function wouldCreateDependencyViolation(matches: Match[], position: number): boolean {
+    const matchToMove = matches[position];
+    const labelToMove = matchToMove.unknown.name;
+    
+    // Check if any earlier matches reference this label
+    for (let i = 0; i < position; i++) {
+        const earlierMatch = matches[i];
+        const hasReferenceToMovingMatch = earlierMatch.conditions.some(condition =>
+            condition.type === "path" && condition.labelRight === labelToMove
+        );
+        
+        if (hasReferenceToMovingMatch) {
+            // Moving this match would create a dependency violation
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+
 
 function invertAndMovePathCondition(matches: Match[], label: string, pathCondition: PathCondition): Match[] {
     // Find the match for the given label.
