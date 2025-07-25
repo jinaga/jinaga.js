@@ -3,6 +3,10 @@ export interface Label {
     type: string;
 }
 
+export interface Given extends Label {
+    conditions: ExistentialCondition[];
+}
+
 export interface Role {
     name: string;
     predecessorType: string;
@@ -69,7 +73,7 @@ export interface Match {
 }
 
 export interface Specification {
-    given: Label[];
+    given: Given[];
     matches: Match[];
     projection: Projection;
 }
@@ -84,6 +88,10 @@ export function getAllFactTypes(specification: Specification): string[] {
     const factTypes: string[] = [];
     for (const given of specification.given) {
         factTypes.push(given.type);
+        // Add fact types from existential conditions on givens
+        for (const condition of given.conditions) {
+            factTypes.push(...getAllFactTypesFromMatches(condition.matches));
+        }
     }
     factTypes.push(...getAllFactTypesFromMatches(specification.matches));
     if (specification.projection.type === "composite") {
@@ -136,15 +144,25 @@ type TypeByLabel = {
 
 export function getAllRoles(specification: Specification): RoleDescription[] {
     const labels = specification.given
-        .reduce((labels, label) => ({
+        .reduce((labels, given) => ({
             ...labels,
-            [label.name]: label.type
+            [given.name]: given.type
         }),
         {} as TypeByLabel);
+    
+    // Collect roles from existential conditions on givens
+    let rolesFromGivenConditions: RoleDescription[] = [];
+    for (const given of specification.given) {
+        for (const condition of given.conditions) {
+            const { roles } = getAllRolesFromMatches(labels, condition.matches);
+            rolesFromGivenConditions.push(...roles);
+        }
+    }
+    
     const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, specification.matches);
     const components = specification.projection.type === "composite" ? specification.projection.components : [];
     const rolesFromComponents = getAllRolesFromComponents(labelsFromMatches, components);
-    const roles: RoleDescription[] = [ ...rolesFromMatches, ...rolesFromComponents ];
+    const roles: RoleDescription[] = [ ...rolesFromGivenConditions, ...rolesFromMatches, ...rolesFromComponents ];
     const distinctRoles = roles.filter((value, index, array) => {
         return array.findIndex(r =>
             r.successorType === value.successorType &&
@@ -262,14 +280,22 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
 
                 // Compute the givens of the head and tail
                 const headGiven = referencedLabels(headMatches, specification.given);
-                const allLabels = specification.given.concat(specification.matches.map(match => match.unknown));
+                const unknownAsGiven: Given[] = specification.matches.map(match => ({ 
+                    name: match.unknown.name, 
+                    type: match.unknown.type, 
+                    conditions: [] 
+                }));
+                const allLabels: (Label | Given)[] = specification.given.concat(unknownAsGiven);
                 const tailGiven = referencedLabels(tailMatches, allLabels);
 
                 // Project the tail givens
                 const headProjection: Projection = tailGiven.length === 1 ?
                     <FactProjection>{ type: "fact", label: tailGiven[0].name } :
-                    <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (
-                        <FactProjection>{ type: "fact", label: label.name })) };
+                    <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (<NamedComponentProjection>{
+                        type: "fact", 
+                        name: label.name,
+                        label: label.name 
+                    })) };
                 const head: Specification = {
                     given: headGiven,
                     matches: headMatches,
@@ -320,16 +346,24 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
 
             // Compute the givens of the head and tail
             const headGiven = referencedLabels(headMatches, specification.given);
-            const allLabels = specification.given
-                .concat(specification.matches.map(match => match.unknown))
-                .concat([ splitLabel ]);
+            const unknownAsGiven: Given[] = specification.matches.map(match => ({ 
+                name: match.unknown.name, 
+                type: match.unknown.type, 
+                conditions: [] 
+            }));
+            const allLabels: (Label | Given)[] = specification.given
+                .concat(unknownAsGiven)
+                .concat([ { name: splitLabel.name, type: splitLabel.type, conditions: [] } ]);
             const tailGiven = referencedLabels(tailMatches, allLabels);
 
             // Project the tail givens
             const headProjection: Projection = tailGiven.length === 1 ?
                 <FactProjection>{ type: "fact", label: tailGiven[0].name } :
-                <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (
-                    <FactProjection>{ type: "fact", label: label.name })) };
+                <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (<NamedComponentProjection>{
+                    type: "fact", 
+                    name: label.name,
+                    label: label.name 
+                })) };
             const head: Specification = {
                 given: headGiven,
                 matches: headMatches,
@@ -348,16 +382,25 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
     }
 }
 
-function referencedLabels(matches: Match[], labels: Label[]): Label[] {
+function referencedLabels(matches: Match[], labels: (Label | Given)[]): Given[] {
     // Find all labels referenced in the matches
     const definedLabels = matches.map(match => match.unknown.name);
-    const referencedLabels = matches.flatMap(labelsInMatch)
+    const referencedLabels = matches.map(labelsInMatch).reduce((acc, val) => acc.concat(val), [])
         .filter(label => definedLabels.indexOf(label) === -1);
-    return labels.filter(label => referencedLabels.indexOf(label.name) !== -1);
+    return labels
+        .filter(label => referencedLabels.indexOf(label.name) !== -1)
+        .map(label => {
+            // Ensure we return Given objects
+            if ('conditions' in label) {
+                return label;
+            } else {
+                return { name: label.name, type: label.type, conditions: [] };
+            }
+        });
 }
 
 function labelsInMatch(match: Match): string[] {
-    return match.conditions.flatMap(labelsInCondition);
+    return match.conditions.map(labelsInCondition).reduce((acc, val) => acc.concat(val), []);
 }
 
 function labelsInCondition(condition: Condition): string[] {
@@ -365,7 +408,7 @@ function labelsInCondition(condition: Condition): string[] {
         return [ condition.labelRight ];
     }
     else if (condition.type === "existential") {
-        return condition.matches.flatMap(labelsInMatch);
+        return condition.matches.map(labelsInMatch).reduce((acc, val) => acc.concat(val), []);
     }
     else {
         const _exhaustiveCheck: never = condition;

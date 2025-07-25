@@ -1,4 +1,4 @@
-import { ComponentProjection, Condition, Label, Match, Projection, Specification, SpecificationProjection } from "../../src/specification/specification";
+import { ComponentProjection, Condition, ExistentialCondition, Given, Label, Match, Projection, Specification, SpecificationProjection } from "../../src/specification/specification";
 import { FactReference } from "../storage";
 
 export function describeDeclaration(references: FactReference[], labels: Label[]) {
@@ -11,7 +11,7 @@ export function describeDeclaration(references: FactReference[], labels: Label[]
 
 export function describeSpecification(specification: Specification, depth: number) {
     const indent = "    ".repeat(depth);
-    const given = specification.given.map(given => describeGiven(given)).join(", ");
+    const given = specification.given.map(given => describeGiven(given, depth + 1)).join(", ");
     const matches = specification.matches.map(match => describeMatch(match, depth + 1)).join("");
     const projection = (specification.projection.type === "composite" && specification.projection.components.length === 0) ? "" :
         " => " + describeProjection(specification.projection, depth);
@@ -19,8 +19,22 @@ export function describeSpecification(specification: Specification, depth: numbe
     return `${indent}(${given}) {\n${matches}${indent}}${projection}\n`;
 }
 
-function describeGiven(given: Label) {
-    return `${given.name}: ${given.type}`;
+function describeGiven(given: Given, depth: number) {
+    if (given.conditions.length === 0) {
+        return `${given.name}: ${given.type}`;
+    }
+    
+    const indent = "    ".repeat(depth);
+    const conditions = given.conditions.map(condition => describeExistentialCondition(condition, depth + 1)).join("");
+    
+    return `${given.name}: ${given.type} [\n${conditions}${indent}]`;
+}
+
+function describeExistentialCondition(condition: ExistentialCondition, depth: number): string {
+    const indent = "    ".repeat(depth);
+    const matches = condition.matches.map(match => describeMatch(match, depth + 1)).join("");
+    const op = condition.exists ? "" : "!";
+    return `${indent}${op}E {\n${matches}${indent}}\n`;
 }
 
 function describeMatch(match: Match, depth: number) {
