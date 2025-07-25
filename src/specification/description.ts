@@ -1,4 +1,4 @@
-import { ComponentProjection, Condition, ExistentialCondition, Given, Label, Match, Projection, Specification, SpecificationProjection } from "../../src/specification/specification";
+import { ComponentProjection, Condition, ExistentialCondition, GivenWithConditions, Label, Match, Projection, Specification, SpecificationProjection } from "../../src/specification/specification";
 import { FactReference } from "../storage";
 
 export function describeDeclaration(references: FactReference[], labels: Label[]) {
@@ -19,8 +19,8 @@ export function describeSpecification(specification: Specification, depth: numbe
     return `${indent}(${given}) {\n${matches}${indent}}${projection}\n`;
 }
 
-function describeGiven(given: Given, depth: number) {
-    if (given.conditions.length === 0) {
+function describeGiven(given: GivenWithConditions, depth: number) {
+    if (!given.conditions || given.conditions.length === 0) {
         return `${given.name}: ${given.type}`;
     }
     

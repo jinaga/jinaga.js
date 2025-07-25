@@ -13,7 +13,8 @@ describe("Specification parser", () => {
             given: [
                 {
                     name: "root",
-                    type: "Root"
+                    type: "Root",
+                    conditions: []
                 }
             ],
             matches: [],
@@ -37,6 +38,8 @@ describe("Specification parser", () => {
                 {
                     name: "parent",
                     type: "MyApp.Parent"
+                ,
+                    conditions: []
                 }
             ],
             matches: [
@@ -143,10 +146,13 @@ describe("Specification parser", () => {
                 {
                     name: "user",
                     type: "Jinaga.User"
+                ,
+                    conditions: []
                 },
                 {
                     name: "company",
-                    type: "MyApp.Company"
+                    type: "MyApp.Company",
+                    conditions: []
                 }
             ],
             matches: [
@@ -211,10 +217,13 @@ describe("Specification parser", () => {
                 {
                     name: "user",
                     type: "Jinaga.User"
+                ,
+                    conditions: []
                 },
                 {
                     name: "company",
-                    type: "MyApp.Company"
+                    type: "MyApp.Company",
+                    conditions: []
                 }
             ],
             matches: [
@@ -321,6 +330,8 @@ describe("Specification parser", () => {
                 {
                     name: "user",
                     type: "Jinaga.User"
+                ,
+                    conditions: []
                 }
             ],
             matches: [
@@ -406,6 +417,8 @@ describe("Specification parser", () => {
                 {
                     name: "user",
                     type: "Jinaga.User"
+                ,
+                    conditions: []
                 }
             ],
             matches: [
@@ -511,6 +524,8 @@ describe("Specification parser", () => {
                 {
                     name: "user",
                     type: "Jinaga.User"
+                ,
+                    conditions: []
                 }
             ],
             matches: [
@@ -563,6 +578,8 @@ describe("Specification parser", () => {
                 {
                     name: "user",
                     type: "Jinaga.User"
+                ,
+                    conditions: []
                 }
             ],
             matches: [
@@ -612,6 +629,8 @@ describe("Specification parser", () => {
                 {
                     name: "user",
                     type: "Jinaga.User"
+                ,
+                    conditions: []
                 }
             ],
             matches: [
@@ -655,6 +674,8 @@ describe("Specification parser", () => {
                 {
                     name: "user",
                     type: "Jinaga.User"
+                ,
+                    conditions: []
                 }
             ],
             matches: [

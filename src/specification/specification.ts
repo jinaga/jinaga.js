@@ -3,8 +3,8 @@ export interface Label {
     type: string;
 }
 
-export interface Given extends Label {
-    conditions: ExistentialCondition[];
+export interface GivenWithConditions extends Label {
+    conditions?: ExistentialCondition[];
 }
 
 export interface Role {
@@ -73,7 +73,7 @@ export interface Match {
 }
 
 export interface Specification {
-    given: Given[];
+    given: GivenWithConditions[];
     matches: Match[];
     projection: Projection;
 }
@@ -89,8 +89,10 @@ export function getAllFactTypes(specification: Specification): string[] {
     for (const given of specification.given) {
         factTypes.push(given.type);
         // Add fact types from existential conditions on givens
-        for (const condition of given.conditions) {
-            factTypes.push(...getAllFactTypesFromMatches(condition.matches));
+        if (given.conditions) {
+            for (const condition of given.conditions) {
+                factTypes.push(...getAllFactTypesFromMatches(condition.matches));
+            }
         }
     }
     factTypes.push(...getAllFactTypesFromMatches(specification.matches));
@@ -153,9 +155,11 @@ export function getAllRoles(specification: Specification): RoleDescription[] {
     // Collect roles from existential conditions on givens
     let rolesFromGivenConditions: RoleDescription[] = [];
     for (const given of specification.given) {
-        for (const condition of given.conditions) {
-            const { roles } = getAllRolesFromMatches(labels, condition.matches);
-            rolesFromGivenConditions.push(...roles);
+        if (given.conditions) {
+            for (const condition of given.conditions) {
+                const { roles } = getAllRolesFromMatches(labels, condition.matches);
+                rolesFromGivenConditions.push(...roles);
+            }
         }
     }
     
@@ -280,12 +284,12 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
 
                 // Compute the givens of the head and tail
                 const headGiven = referencedLabels(headMatches, specification.given);
-                const unknownAsGiven: Given[] = specification.matches.map(match => ({ 
+                const unknownAsGiven: GivenWithConditions[] = specification.matches.map(match => ({ 
                     name: match.unknown.name, 
                     type: match.unknown.type, 
                     conditions: [] 
                 }));
-                const allLabels: (Label | Given)[] = specification.given.concat(unknownAsGiven);
+                const allLabels: (Label | GivenWithConditions)[] = specification.given.concat(unknownAsGiven);
                 const tailGiven = referencedLabels(tailMatches, allLabels);
 
                 // Project the tail givens
@@ -346,12 +350,12 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
 
             // Compute the givens of the head and tail
             const headGiven = referencedLabels(headMatches, specification.given);
-            const unknownAsGiven: Given[] = specification.matches.map(match => ({ 
+            const unknownAsGiven: GivenWithConditions[] = specification.matches.map(match => ({ 
                 name: match.unknown.name, 
                 type: match.unknown.type, 
                 conditions: [] 
             }));
-            const allLabels: (Label | Given)[] = specification.given
+            const allLabels: (Label | GivenWithConditions)[] = specification.given
                 .concat(unknownAsGiven)
                 .concat([ { name: splitLabel.name, type: splitLabel.type, conditions: [] } ]);
             const tailGiven = referencedLabels(tailMatches, allLabels);
@@ -382,7 +386,7 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
     }
 }
 
-function referencedLabels(matches: Match[], labels: (Label | Given)[]): Given[] {
+function referencedLabels(matches: Match[], labels: (Label | GivenWithConditions)[]): GivenWithConditions[] {
     // Find all labels referenced in the matches
     const definedLabels = matches.map(match => match.unknown.name);
     const referencedLabels = matches.map(labelsInMatch).reduce((acc, val) => acc.concat(val), [])

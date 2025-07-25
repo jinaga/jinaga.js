@@ -4,7 +4,7 @@ import { computeHash } from "../fact/hash";
 import { PurgeConditions } from "../purge/purgeConditions";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
-import { Condition, ExistentialCondition, Given, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
+import { Condition, ExistentialCondition, GivenWithConditions, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 
 type FieldValue = string | number | boolean;
 
@@ -108,7 +108,7 @@ export class SpecificationParser {
         return { name, predecessorType };
     }
 
-    parseGiven(): Given[] {
+    parseGiven(): GivenWithConditions[] {
         this.expect("(");
         if (this.continues(")")) {
             throw new Invalid("The specification must contain at least one given label");
@@ -122,7 +122,7 @@ export class SpecificationParser {
         return givens;
     }
 
-    parseGivenLabel(): Given {
+    parseGivenLabel(): GivenWithConditions {
         const label = this.parseLabel();
         const conditions: ExistentialCondition[] = [];
         

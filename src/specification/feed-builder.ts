@@ -1,4 +1,4 @@
-import { ComponentProjection, ExistentialCondition, Label, Match, Specification, emptySpecification, isExistentialCondition, isPathCondition, specificationIsNotDeterministic } from "./specification";
+import { ComponentProjection, ExistentialCondition, GivenWithConditions, Label, Match, Specification, emptySpecification, isExistentialCondition, isPathCondition, specificationIsNotDeterministic } from "./specification";
 
 export function buildFeeds(specification: Specification): Specification[] {
     const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given, specification.matches);
@@ -120,14 +120,20 @@ function withMatch(specification: Specification, match: Match): Specification {
 function withGiven(specification: Specification, label: Label): Specification {
     return {
         ...specification,
-        given: [...specification.given, label]
+        given: [...specification.given, { name: label.name, type: label.type, conditions: [] }]
     };
 }
 
 function withCondition(specification: Specification, newGivens: Label[], newExistentialCondition: ExistentialCondition) {
+    const givenWithConditions: GivenWithConditions[] = newGivens.map(label => ({
+        name: label.name,
+        type: label.type,
+        conditions: []
+    }));
+    
     return {
         ...specification,
-        given: newGivens,
+        given: givenWithConditions,
         matches: [...specification.matches.slice(0, specification.matches.length - 1), {
             ...specification.matches[specification.matches.length - 1],
             conditions: [...specification.matches[specification.matches.length - 1].conditions, newExistentialCondition]
