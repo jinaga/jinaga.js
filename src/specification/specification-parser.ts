@@ -4,7 +4,7 @@ import { computeHash } from "../fact/hash";
 import { PurgeConditions } from "../purge/purgeConditions";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
-import { Condition, ExistentialCondition, GivenWithConditions, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
+import { Condition, ExistentialCondition, SpecificationGiven, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 
 type FieldValue = string | number | boolean;
 
@@ -108,7 +108,7 @@ export class SpecificationParser {
         return { name, predecessorType };
     }
 
-    parseGiven(): GivenWithConditions[] {
+    parseGiven(): SpecificationGiven[] {
         this.expect("(");
         if (this.continues(")")) {
             throw new Invalid("The specification must contain at least one given label");
@@ -122,7 +122,7 @@ export class SpecificationParser {
         return givens;
     }
 
-    parseGivenLabel(): GivenWithConditions {
+    parseGivenLabel(): SpecificationGiven {
         const label = this.parseLabel();
         const conditions: ExistentialCondition[] = [];
         
@@ -138,8 +138,7 @@ export class SpecificationParser {
         }
         
         return {
-            name: label.name,
-            type: label.type,
+            label,
             conditions
         };
     }
@@ -494,7 +493,7 @@ export class SpecificationParser {
                 if (specification.given.length !== 1) {
                     throw new Invalid("A specification in an authorization rule must have exactly one given label");
                 }
-                const type = specification.given[0].type;
+                const type = specification.given[0].label.type;
                 authorizationRules = AuthorizationRules.combine(authorizationRules, type, new AuthorizationRuleSpecification(specification));
             }
         }

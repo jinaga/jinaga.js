@@ -28,7 +28,7 @@ export function invertSpecification(specification: Specification): Specification
     const matches: Match[] = [...emptyMatches, ...specification.matches];
 
     const labels: Label[] = specification.matches.map(m => m.unknown);
-    const givenSubset: string[] = specification.given.map(g => g.name);
+    const givenSubset: string[] = specification.given.map(g => g.label.name);
     const resultSubset: string[] = [ ...givenSubset, ...labels.map(l => l.name) ];
     const context: InverterContext = {
         path: "",
@@ -53,7 +53,7 @@ function invertMatches(matches: Match[], labels: Label[], context: InverterConte
         const simplified: Match[] | null = simplifyMatches(matches, label.name);
         if (simplified !== null) {
             const inverseSpecification: Specification = {
-                given: [{ name: label.name, type: label.type, conditions: [] }],
+                given: [{ label: { name: label.name, type: label.type }, conditions: [] }],
                 matches: simplified.slice(1),
                 projection: context.projection
             };

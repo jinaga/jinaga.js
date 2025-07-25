@@ -755,8 +755,10 @@ describe("given", () => {
         // For now, let's test by manually constructing the specification
         const specification: SpecificationOf<[Office], Office> = new SpecificationOf({
             given: [{
-                name: "p1",
-                type: "Office",
+                label: {
+                    name: "p1",
+                    type: "Office"
+                },
                 conditions: [{
                     type: "existential",
                     exists: false,
@@ -799,8 +801,10 @@ describe("given", () => {
         // Similar to above but with positive existential condition
         const specification: SpecificationOf<[Office], Office> = new SpecificationOf({
             given: [{
-                name: "p1",
-                type: "Office",
+                label: {
+                    name: "p1",
+                    type: "Office"
+                },
                 conditions: [{
                     type: "existential",
                     exists: true,

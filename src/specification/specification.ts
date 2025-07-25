@@ -3,8 +3,9 @@ export interface Label {
     type: string;
 }
 
-export interface GivenWithConditions extends Label {
-    conditions?: ExistentialCondition[];
+export interface SpecificationGiven {
+    label: Label;
+    conditions: ExistentialCondition[];
 }
 
 export interface Role {
@@ -73,7 +74,7 @@ export interface Match {
 }
 
 export interface Specification {
-    given: GivenWithConditions[];
+    given: SpecificationGiven[];
     matches: Match[];
     projection: Projection;
 }
@@ -87,12 +88,10 @@ export const emptySpecification: Specification = {
 export function getAllFactTypes(specification: Specification): string[] {
     const factTypes: string[] = [];
     for (const given of specification.given) {
-        factTypes.push(given.type);
+        factTypes.push(given.label.type);
         // Add fact types from existential conditions on givens
-        if (given.conditions) {
-            for (const condition of given.conditions) {
-                factTypes.push(...getAllFactTypesFromMatches(condition.matches));
-            }
+        for (const condition of given.conditions) {
+            factTypes.push(...getAllFactTypesFromMatches(condition.matches));
         }
     }
     factTypes.push(...getAllFactTypesFromMatches(specification.matches));
@@ -148,18 +147,16 @@ export function getAllRoles(specification: Specification): RoleDescription[] {
     const labels = specification.given
         .reduce((labels, given) => ({
             ...labels,
-            [given.name]: given.type
+            [given.label.name]: given.label.type
         }),
         {} as TypeByLabel);
     
     // Collect roles from existential conditions on givens
     let rolesFromGivenConditions: RoleDescription[] = [];
     for (const given of specification.given) {
-        if (given.conditions) {
-            for (const condition of given.conditions) {
-                const { roles } = getAllRolesFromMatches(labels, condition.matches);
-                rolesFromGivenConditions.push(...roles);
-            }
+        for (const condition of given.conditions) {
+            const { roles } = getAllRolesFromMatches(labels, condition.matches);
+            rolesFromGivenConditions.push(...roles);
         }
     }
     
@@ -284,21 +281,20 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
 
                 // Compute the givens of the head and tail
                 const headGiven = referencedLabels(headMatches, specification.given);
-                const unknownAsGiven: GivenWithConditions[] = specification.matches.map(match => ({ 
-                    name: match.unknown.name, 
-                    type: match.unknown.type, 
-                    conditions: [] 
+                const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({ 
+                    label: { name: match.unknown.name, type: match.unknown.type },
+                    conditions: []
                 }));
-                const allLabels: (Label | GivenWithConditions)[] = specification.given.concat(unknownAsGiven);
+                const allLabels: SpecificationGiven[] = specification.given.concat(unknownAsGiven);
                 const tailGiven = referencedLabels(tailMatches, allLabels);
 
                 // Project the tail givens
                 const headProjection: Projection = tailGiven.length === 1 ?
-                    <FactProjection>{ type: "fact", label: tailGiven[0].name } :
-                    <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (<NamedComponentProjection>{
+                    <FactProjection>{ type: "fact", label: tailGiven[0].label.name } :
+                    <CompositeProjection>{ type: "composite", components: tailGiven.map(given => (<NamedComponentProjection>{
                         type: "fact", 
-                        name: label.name,
-                        label: label.name 
+                        name: given.label.name,
+                        label: given.label.name 
                     })) };
                 const head: Specification = {
                     given: headGiven,
@@ -350,23 +346,22 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
 
             // Compute the givens of the head and tail
             const headGiven = referencedLabels(headMatches, specification.given);
-            const unknownAsGiven: GivenWithConditions[] = specification.matches.map(match => ({ 
-                name: match.unknown.name, 
-                type: match.unknown.type, 
-                conditions: [] 
+            const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({ 
+                label: { name: match.unknown.name, type: match.unknown.type },
+                conditions: []
             }));
-            const allLabels: (Label | GivenWithConditions)[] = specification.given
+            const allLabels: SpecificationGiven[] = specification.given
                 .concat(unknownAsGiven)
-                .concat([ { name: splitLabel.name, type: splitLabel.type, conditions: [] } ]);
+                .concat([{ label: { name: splitLabel.name, type: splitLabel.type }, conditions: [] }]);
             const tailGiven = referencedLabels(tailMatches, allLabels);
 
             // Project the tail givens
             const headProjection: Projection = tailGiven.length === 1 ?
-                <FactProjection>{ type: "fact", label: tailGiven[0].name } :
-                <CompositeProjection>{ type: "composite", components: tailGiven.map(label => (<NamedComponentProjection>{
+                <FactProjection>{ type: "fact", label: tailGiven[0].label.name } :
+                <CompositeProjection>{ type: "composite", components: tailGiven.map(given => (<NamedComponentProjection>{
                     type: "fact", 
-                    name: label.name,
-                    label: label.name 
+                    name: given.label.name,
+                    label: given.label.name 
                 })) };
             const head: Specification = {
                 given: headGiven,
@@ -386,21 +381,13 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
     }
 }
 
-function referencedLabels(matches: Match[], labels: (Label | GivenWithConditions)[]): GivenWithConditions[] {
+function referencedLabels(matches: Match[], labels: SpecificationGiven[]): SpecificationGiven[] {
     // Find all labels referenced in the matches
     const definedLabels = matches.map(match => match.unknown.name);
     const referencedLabels = matches.map(labelsInMatch).reduce((acc, val) => acc.concat(val), [])
         .filter(label => definedLabels.indexOf(label) === -1);
     return labels
-        .filter(label => referencedLabels.indexOf(label.name) !== -1)
-        .map(label => {
-            // Ensure we return Given objects
-            if ('conditions' in label) {
-                return label;
-            } else {
-                return { name: label.name, type: label.type, conditions: [] };
-            }
-        });
+        .filter(given => referencedLabels.indexOf(given.label.name) !== -1);
 }
 
 function labelsInMatch(match: Match): string[] {
