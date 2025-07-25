@@ -93,8 +93,16 @@ function shakeTree(matches: Match[], label: string): Match[] {
     // Move any other matches with no paths down.
     for (let i = 1; i < matches.length; i++) {
         let otherMatch: Match = matches[i];
+        let iterationCount = 0;
+        const maxIterations = matches.length * 2; // Safety limit to prevent infinite loops
+        
         while (!otherMatch.conditions.some(c => c.type === "path")) {
-            let foundPathCondition = false;
+            iterationCount++;
+            if (iterationCount > maxIterations) {
+                // We've done too many iterations, likely in an infinite loop
+                // Break out to prevent hanging
+                break;
+            }
             
             // Find all matches beyond this point that tag this one.
             for (let j = i + 1; j < matches.length; j++) {
@@ -104,35 +112,13 @@ function shakeTree(matches: Match[], label: string): Match[] {
                     if (taggedCondition.type === "path" &&
                         taggedCondition.labelRight === otherMatch.unknown.name) {
                         matches = invertAndMovePathCondition(matches, taggedMatch.unknown.name, taggedCondition);
-                        foundPathCondition = true;
-                        break;
                     }
-                }
-                if (foundPathCondition) {
-                    break;
                 }
             }
 
-            // If no path condition was found to move to this match, 
-            // it means this match will never get a path condition.
-            // Move it to the bottom once and then break to avoid infinite loop.
-            if (!foundPathCondition) {
-                matches = [ ...matches.slice(0, i), ...matches.slice(i + 1), matches[i] ];
-                // Check if we're at the end or if the next match also has no path conditions
-                if (i >= matches.length) {
-                    break;
-                }
-                otherMatch = matches[i];
-                // If the new match at position i also has no path conditions,
-                // and we just moved the previous match without finding any path conditions,
-                // we may be in an infinite loop scenario. Break out.
-                if (!otherMatch.conditions.some(c => c.type === "path")) {
-                    break;
-                }
-            } else {
-                // Update otherMatch since the matches array was modified
-                otherMatch = matches[i];
-            }
+            // Move the other match to the bottom of the list.
+            matches = [ ...matches.slice(0, i), ...matches.slice(i + 1), matches[i] ];
+            otherMatch = matches[i];
         }
     }
 
