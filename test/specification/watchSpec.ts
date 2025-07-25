@@ -1,4 +1,5 @@
 import { Jinaga, JinagaTest } from "../../src";
+import { validateSpecificationInvariant } from "../../src/specification/inverse";
 import { Company, Manager, ManagerName, ManagerTerminated, Office, OfficeClosed, OfficeReopened, President, User, UserName, model } from "../companyModel";
 
 describe("specification watch", () => {
@@ -499,10 +500,11 @@ describe("specification watch", () => {
             // If the BFS algorithm produces a specification ordering that's incompatible with the watch function,
             // that's acceptable as this test is specifically about watch functionality, not inverse specification ordering
             if (error.message && error.message.includes("The first condition must be a path condition")) {
-                // Alternative verification: ensure the specification compiles and the watch setup doesn't crash
+                // Alternative verification: ensure the specification meets invariant requirements and compiles
                 expect(specification).toBeDefined();
                 expect(specification.specification).toBeDefined();
                 expect(specification.specification.matches).toBeDefined();
+                expect(() => validateSpecificationInvariant(specification.specification)).not.toThrow();
                 return; // Test passes with alternative verification
             }
             throw error; // Re-throw if it's a different error

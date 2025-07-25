@@ -404,3 +404,63 @@ function expectsSuccessor(condition: Condition, given: string) {
         condition.rolesRight.length === 0 &&
         condition.rolesLeft.length > 0;
 }
+
+/**
+ * Validates that a specification meets the required invariant properties:
+ * 1. All matches except the first must have at least one path condition
+ * 2. Path conditions must reference labels that appear earlier in the specification
+ * 
+ * @param specification The specification to validate
+ * @returns true if the specification is valid
+ * @throws Error with descriptive message if the specification violates invariants
+ */
+export function validateSpecificationInvariant(specification: Specification): boolean {
+    // Collect all available labels in order: givens first, then matches in order
+    const availableLabels = new Set<string>();
+    
+    // Add all given labels
+    for (const given of specification.given) {
+        availableLabels.add(given.name);
+    }
+    
+    // Process each match in order
+    for (let i = 0; i < specification.matches.length; i++) {
+        const match = specification.matches[i];
+        
+        // First match doesn't need path conditions
+        if (i === 0) {
+            availableLabels.add(match.unknown.name);
+            continue;
+        }
+        
+        // All subsequent matches must have at least one path condition
+        if (match.conditions.length === 0) {
+            throw new Error(`Match ${i} for unknown '${match.unknown.name}' has no conditions. All matches except the first must have at least one path condition.`);
+        }
+        
+        // Check if the first condition is a path condition
+        const firstCondition = match.conditions[0];
+        if (firstCondition.type !== "path") {
+            throw new Error(`Match ${i} for unknown '${match.unknown.name}' does not start with a path condition. The first condition must be a path condition that references a prior label.`);
+        }
+        
+        // Validate that the path condition references a prior label
+        if (!availableLabels.has(firstCondition.labelRight)) {
+            throw new Error(`Match ${i} for unknown '${match.unknown.name}' has path condition referencing '${firstCondition.labelRight}', but this label is not available. Available labels: [${Array.from(availableLabels).join(', ')}]`);
+        }
+        
+        // Add this match's unknown to available labels for subsequent matches
+        availableLabels.add(match.unknown.name);
+        
+        // Validate all path conditions in this match reference prior labels
+        for (const condition of match.conditions) {
+            if (condition.type === "path") {
+                if (!availableLabels.has(condition.labelRight)) {
+                    throw new Error(`Match ${i} for unknown '${match.unknown.name}' has path condition referencing '${condition.labelRight}', but this label is not available. Available labels: [${Array.from(availableLabels).join(', ')}]`);
+                }
+            }
+        }
+    }
+    
+    return true;
+}
