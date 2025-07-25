@@ -9,7 +9,6 @@ describe("specification invariant validation", () => {
             projection: { type: "composite", components: [] }
         };
 
-        expect(() => validateSpecificationInvariant(specification)).not.toThrow();
         expect(validateSpecificationInvariant(specification)).toBe(true);
     });
 
@@ -20,11 +19,10 @@ describe("specification invariant validation", () => {
             projection: { type: "composite", components: [] }
         };
 
-        expect(() => validateSpecificationInvariant(specification)).not.toThrow();
         expect(validateSpecificationInvariant(specification)).toBe(true);
     });
 
-    it("should accept specification with single match and no conditions", () => {
+    it("should reject specification with single match and no conditions", () => {
         const specification: Specification = {
             given: [{ name: "p1", type: "Company" }],
             matches: [
@@ -36,24 +34,24 @@ describe("specification invariant validation", () => {
             projection: { type: "fact", label: "u1" }
         };
 
-        expect(() => validateSpecificationInvariant(specification)).not.toThrow();
-        expect(validateSpecificationInvariant(specification)).toBe(true);
+        expect(() => validateSpecificationInvariant(specification))
+            .toThrow("Match 0 for unknown 'u1' has no conditions. All matches must have at least one path condition.");
     });
 
     it("should accept valid specification with path conditions", () => {
-        const pathCondition: PathCondition = {
-            type: "path",
-            rolesLeft: [{ name: "company", predecessorType: "Company" }],
-            labelRight: "p1",
-            rolesRight: []
-        };
-
         const specification: Specification = {
             given: [{ name: "p1", type: "Company" }],
             matches: [
                 {
                     unknown: { name: "u1", type: "Office" },
-                    conditions: []
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        }
+                    ]
                 },
                 {
                     unknown: { name: "u2", type: "President" },
@@ -70,28 +68,34 @@ describe("specification invariant validation", () => {
             projection: { type: "fact", label: "u2" }
         };
 
-        expect(() => validateSpecificationInvariant(specification)).not.toThrow();
         expect(validateSpecificationInvariant(specification)).toBe(true);
     });
 
-    it("should reject match with no conditions when not first", () => {
+    it("should reject match with no conditions", () => {
         const specification: Specification = {
             given: [{ name: "p1", type: "Company" }],
             matches: [
                 {
                     unknown: { name: "u1", type: "Office" },
-                    conditions: []
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        }
+                    ]
                 },
                 {
                     unknown: { name: "u2", type: "President" },
-                    conditions: [] // This should fail - no conditions on second match
+                    conditions: [] // This should fail - no conditions
                 }
             ],
             projection: { type: "fact", label: "u2" }
         };
 
         expect(() => validateSpecificationInvariant(specification))
-            .toThrow("Match 1 for unknown 'u2' has no conditions. All matches except the first must have at least one path condition.");
+            .toThrow("Match 1 for unknown 'u2' has no conditions. All matches must have at least one path condition.");
     });
 
     it("should reject match with non-path first condition", () => {
@@ -106,7 +110,14 @@ describe("specification invariant validation", () => {
             matches: [
                 {
                     unknown: { name: "u1", type: "Office" },
-                    conditions: []
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        }
+                    ]
                 },
                 {
                     unknown: { name: "u2", type: "President" },
@@ -126,7 +137,14 @@ describe("specification invariant validation", () => {
             matches: [
                 {
                     unknown: { name: "u1", type: "Office" },
-                    conditions: []
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        }
+                    ]
                 },
                 {
                     unknown: { name: "u2", type: "President" },
@@ -166,7 +184,6 @@ describe("specification invariant validation", () => {
             projection: { type: "fact", label: "u1" }
         };
 
-        expect(() => validateSpecificationInvariant(specification)).not.toThrow();
         expect(validateSpecificationInvariant(specification)).toBe(true);
     });
 
@@ -200,7 +217,6 @@ describe("specification invariant validation", () => {
             projection: { type: "fact", label: "u2" }
         };
 
-        expect(() => validateSpecificationInvariant(specification)).not.toThrow();
         expect(validateSpecificationInvariant(specification)).toBe(true);
     });
 
@@ -243,7 +259,6 @@ describe("specification invariant validation", () => {
             projection: { type: "fact", label: "u2" }
         };
 
-        expect(() => validateSpecificationInvariant(specification)).not.toThrow();
         expect(validateSpecificationInvariant(specification)).toBe(true);
     });
 
@@ -253,7 +268,14 @@ describe("specification invariant validation", () => {
             matches: [
                 {
                     unknown: { name: "u1", type: "Office" },
-                    conditions: []
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        }
+                    ]
                 },
                 {
                     unknown: { name: "u2", type: "President" },
@@ -278,5 +300,212 @@ describe("specification invariant validation", () => {
 
         expect(() => validateSpecificationInvariant(specification))
             .toThrow("Match 1 for unknown 'u2' has path condition referencing 'u3', but this label is not available. Available labels: [p1, u1, u2]");
+    });
+
+    it("should accept specification with valid existential conditions", () => {
+        const specification: Specification = {
+            given: [{ name: "p1", type: "Company" }],
+            matches: [
+                {
+                    unknown: { name: "u1", type: "Office" },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        },
+                        {
+                            type: "existential",
+                            exists: true,
+                            matches: [
+                                {
+                                    unknown: { name: "u2", type: "Employee" },
+                                    conditions: [
+                                        {
+                                            type: "path",
+                                            rolesLeft: [{ name: "office", predecessorType: "Office" }],
+                                            labelRight: "u1",
+                                            rolesRight: []
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            projection: { type: "fact", label: "u1" }
+        };
+
+        expect(validateSpecificationInvariant(specification)).toBe(true);
+    });
+
+    it("should reject existential condition match with no conditions", () => {
+        const specification: Specification = {
+            given: [{ name: "p1", type: "Company" }],
+            matches: [
+                {
+                    unknown: { name: "u1", type: "Office" },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        },
+                        {
+                            type: "existential",
+                            exists: true,
+                            matches: [
+                                {
+                                    unknown: { name: "u2", type: "Employee" },
+                                    conditions: [] // This should fail
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            projection: { type: "fact", label: "u1" }
+        };
+
+        expect(() => validateSpecificationInvariant(specification))
+            .toThrow("Match 0 for unknown 'u1' existential condition match 0 for unknown 'u2' has no conditions. All matches must have at least one path condition.");
+    });
+
+    it("should reject existential condition match with non-path first condition", () => {
+        const specification: Specification = {
+            given: [{ name: "p1", type: "Company" }],
+            matches: [
+                {
+                    unknown: { name: "u1", type: "Office" },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        },
+                        {
+                            type: "existential",
+                            exists: true,
+                            matches: [
+                                {
+                                    unknown: { name: "u2", type: "Employee" },
+                                    conditions: [
+                                        {
+                                            type: "existential",
+                                            exists: false,
+                                            matches: []
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            projection: { type: "fact", label: "u1" }
+        };
+
+        expect(() => validateSpecificationInvariant(specification))
+            .toThrow("Match 0 for unknown 'u1' existential condition match 0 for unknown 'u2' does not start with a path condition. The first condition must be a path condition that references a prior label.");
+    });
+
+    it("should reject existential condition match with invalid path reference", () => {
+        const specification: Specification = {
+            given: [{ name: "p1", type: "Company" }],
+            matches: [
+                {
+                    unknown: { name: "u1", type: "Office" },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        },
+                        {
+                            type: "existential",
+                            exists: true,
+                            matches: [
+                                {
+                                    unknown: { name: "u2", type: "Employee" },
+                                    conditions: [
+                                        {
+                                            type: "path",
+                                            rolesLeft: [{ name: "office", predecessorType: "Office" }],
+                                            labelRight: "u3", // This label doesn't exist
+                                            rolesRight: []
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            projection: { type: "fact", label: "u1" }
+        };
+
+        expect(() => validateSpecificationInvariant(specification))
+            .toThrow("Match 0 for unknown 'u1' existential condition match 0 for unknown 'u2' has path condition referencing 'u3', but this label is not available. Available labels: [p1, u1]");
+    });
+
+    it("should accept nested existential conditions", () => {
+        const specification: Specification = {
+            given: [{ name: "p1", type: "Company" }],
+            matches: [
+                {
+                    unknown: { name: "u1", type: "Office" },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [{ name: "company", predecessorType: "Company" }],
+                            labelRight: "p1",
+                            rolesRight: []
+                        },
+                        {
+                            type: "existential",
+                            exists: true,
+                            matches: [
+                                {
+                                    unknown: { name: "u2", type: "Employee" },
+                                    conditions: [
+                                        {
+                                            type: "path",
+                                            rolesLeft: [{ name: "office", predecessorType: "Office" }],
+                                            labelRight: "u1",
+                                            rolesRight: []
+                                        },
+                                        {
+                                            type: "existential",
+                                            exists: false,
+                                            matches: [
+                                                {
+                                                    unknown: { name: "u3", type: "Task" },
+                                                    conditions: [
+                                                        {
+                                                            type: "path",
+                                                            rolesLeft: [{ name: "assignee", predecessorType: "Employee" }],
+                                                            labelRight: "u2",
+                                                            rolesRight: []
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            projection: { type: "fact", label: "u1" }
+        };
+
+        expect(validateSpecificationInvariant(specification)).toBe(true);
     });
 });

@@ -407,8 +407,9 @@ function expectsSuccessor(condition: Condition, given: string) {
 
 /**
  * Validates that a specification meets the required invariant properties:
- * 1. All matches except the first must have at least one path condition
+ * 1. All matches must have at least one path condition
  * 2. Path conditions must reference labels that appear earlier in the specification
+ * 3. Existential conditions within matches are recursively validated
  * 
  * @param specification The specification to validate
  * @returns true if the specification is valid
@@ -418,24 +419,19 @@ export function validateSpecificationInvariant(specification: Specification): bo
     // Collect all available labels in order: givens first, then matches in order
     const availableLabels = new Set<string>();
     
-    // Add all given labels
+    // Add all given labels and validate their existential conditions
     for (const given of specification.given) {
         availableLabels.add(given.name);
+        // Note: Givens are just Labels and don't have conditions to validate
     }
     
     // Process each match in order
     for (let i = 0; i < specification.matches.length; i++) {
         const match = specification.matches[i];
         
-        // First match doesn't need path conditions
-        if (i === 0) {
-            availableLabels.add(match.unknown.name);
-            continue;
-        }
-        
-        // All subsequent matches must have at least one path condition
+        // All matches must have at least one path condition
         if (match.conditions.length === 0) {
-            throw new Error(`Match ${i} for unknown '${match.unknown.name}' has no conditions. All matches except the first must have at least one path condition.`);
+            throw new Error(`Match ${i} for unknown '${match.unknown.name}' has no conditions. All matches must have at least one path condition.`);
         }
         
         // Check if the first condition is a path condition
@@ -452,15 +448,71 @@ export function validateSpecificationInvariant(specification: Specification): bo
         // Add this match's unknown to available labels for subsequent matches
         availableLabels.add(match.unknown.name);
         
-        // Validate all path conditions in this match reference prior labels
+        // Validate all conditions in this match
         for (const condition of match.conditions) {
             if (condition.type === "path") {
+                // Validate path condition references prior label
                 if (!availableLabels.has(condition.labelRight)) {
                     throw new Error(`Match ${i} for unknown '${match.unknown.name}' has path condition referencing '${condition.labelRight}', but this label is not available. Available labels: [${Array.from(availableLabels).join(', ')}]`);
                 }
+            } else if (condition.type === "existential") {
+                // Recursively validate matches within existential conditions
+                validateMatchesInExistentialCondition(condition, availableLabels, `Match ${i} for unknown '${match.unknown.name}'`);
             }
         }
     }
     
     return true;
+}
+
+/**
+ * Helper function to recursively validate matches within an existential condition
+ * @param existentialCondition The existential condition to validate
+ * @param availableLabels The set of labels available at this scope
+ * @param context Context string for error messages
+ */
+function validateMatchesInExistentialCondition(
+    existentialCondition: ExistentialCondition, 
+    availableLabels: Set<string>, 
+    context: string
+): void {
+    // Create a copy of available labels for this scope
+    const scopedLabels = new Set(availableLabels);
+    
+    // Process each match within the existential condition
+    for (let i = 0; i < existentialCondition.matches.length; i++) {
+        const match = existentialCondition.matches[i];
+        
+        // All matches within existential conditions must have at least one path condition
+        if (match.conditions.length === 0) {
+            throw new Error(`${context} existential condition match ${i} for unknown '${match.unknown.name}' has no conditions. All matches must have at least one path condition.`);
+        }
+        
+        // Check if the first condition is a path condition
+        const firstCondition = match.conditions[0];
+        if (firstCondition.type !== "path") {
+            throw new Error(`${context} existential condition match ${i} for unknown '${match.unknown.name}' does not start with a path condition. The first condition must be a path condition that references a prior label.`);
+        }
+        
+        // Validate that the path condition references a prior label
+        if (!scopedLabels.has(firstCondition.labelRight)) {
+            throw new Error(`${context} existential condition match ${i} for unknown '${match.unknown.name}' has path condition referencing '${firstCondition.labelRight}', but this label is not available. Available labels: [${Array.from(scopedLabels).join(', ')}]`);
+        }
+        
+        // Add this match's unknown to available labels for subsequent matches in this scope
+        scopedLabels.add(match.unknown.name);
+        
+        // Validate all conditions in this match
+        for (const condition of match.conditions) {
+            if (condition.type === "path") {
+                // Validate path condition references prior label
+                if (!scopedLabels.has(condition.labelRight)) {
+                    throw new Error(`${context} existential condition match ${i} for unknown '${match.unknown.name}' has path condition referencing '${condition.labelRight}', but this label is not available. Available labels: [${Array.from(scopedLabels).join(', ')}]`);
+                }
+            } else if (condition.type === "existential") {
+                // Recursively validate nested existential conditions
+                validateMatchesInExistentialCondition(condition, scopedLabels, `${context} existential condition match ${i} for unknown '${match.unknown.name}'`);
+            }
+        }
+    }
 }
