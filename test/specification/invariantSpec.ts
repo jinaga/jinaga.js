@@ -299,7 +299,7 @@ describe("specification invariant validation", () => {
         };
 
         expect(() => validateSpecificationInvariant(specification))
-            .toThrow("Match 1 for unknown 'u2' has path condition referencing 'u3', but this label is not available. Available labels: [p1, u1, u2]");
+            .toThrow("Match 1 for unknown 'u2' has path condition referencing 'u3', but this label is not available. Available labels: [p1, u1]");
     });
 
     it("should accept specification with valid existential conditions", () => {

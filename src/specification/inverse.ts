@@ -191,10 +191,18 @@ function hasValidPathConditions(matches: Match[], position: number): boolean {
         return false;
     }
     
-    // Check if the first path condition references a label that appears earlier
+    // Check if all path conditions reference labels that appear earlier
     const availableLabels = new Set(matches.slice(0, position).map(m => m.unknown.name));
     
-    return availableLabels.has(firstCondition.labelRight);
+    for (const condition of match.conditions) {
+        if (condition.type === "path") {
+            if (!availableLabels.has(condition.labelRight)) {
+                return false;
+            }
+        }
+    }
+    
+    return true;
 }
 
 /**
@@ -422,7 +430,8 @@ export function validateSpecificationInvariant(specification: Specification): bo
     // Add all given labels and validate their existential conditions
     for (const given of specification.given) {
         availableLabels.add(given.name);
-        // Note: Givens are just Labels and don't have conditions to validate
+        // TODO: After adding support for existential conditions on givens,
+        // we need to validate those existential conditions.
     }
     
     // Process each match in order
@@ -440,22 +449,22 @@ export function validateSpecificationInvariant(specification: Specification): bo
             throw new Error(`Match ${i} for unknown '${match.unknown.name}' does not start with a path condition. The first condition must be a path condition that references a prior label.`);
         }
         
-        // Validate that the path condition references a prior label
-        if (!availableLabels.has(firstCondition.labelRight)) {
-            throw new Error(`Match ${i} for unknown '${match.unknown.name}' has path condition referencing '${firstCondition.labelRight}', but this label is not available. Available labels: [${Array.from(availableLabels).join(', ')}]`);
-        }
-        
-        // Add this match's unknown to available labels for subsequent matches
-        availableLabels.add(match.unknown.name);
-        
-        // Validate all conditions in this match
+        // Validate all path conditions in this match
         for (const condition of match.conditions) {
             if (condition.type === "path") {
                 // Validate path condition references prior label
                 if (!availableLabels.has(condition.labelRight)) {
                     throw new Error(`Match ${i} for unknown '${match.unknown.name}' has path condition referencing '${condition.labelRight}', but this label is not available. Available labels: [${Array.from(availableLabels).join(', ')}]`);
                 }
-            } else if (condition.type === "existential") {
+            }
+        }
+        
+        // Add this match's unknown to available labels for subsequent matches
+        availableLabels.add(match.unknown.name);
+        
+        // Validate all existential conditions in this match
+        for (const condition of match.conditions) {
+            if (condition.type === "existential") {
                 // Recursively validate matches within existential conditions
                 validateMatchesInExistentialCondition(condition, availableLabels, `Match ${i} for unknown '${match.unknown.name}'`);
             }
@@ -494,22 +503,21 @@ function validateMatchesInExistentialCondition(
             throw new Error(`${context} existential condition match ${i} for unknown '${match.unknown.name}' does not start with a path condition. The first condition must be a path condition that references a prior label.`);
         }
         
-        // Validate that the path condition references a prior label
-        if (!scopedLabels.has(firstCondition.labelRight)) {
-            throw new Error(`${context} existential condition match ${i} for unknown '${match.unknown.name}' has path condition referencing '${firstCondition.labelRight}', but this label is not available. Available labels: [${Array.from(scopedLabels).join(', ')}]`);
+        // Validate that all path conditions reference a prior label
+        for (const condition of match.conditions) {
+            if (condition.type === "path") {
+                if (!scopedLabels.has(condition.labelRight)) {
+                    throw new Error(`${context} existential condition match ${i} for unknown '${match.unknown.name}' has path condition referencing '${condition.labelRight}', but this label is not available. Available labels: [${Array.from(scopedLabels).join(', ')}]`);
+                }
+            }
         }
         
         // Add this match's unknown to available labels for subsequent matches in this scope
         scopedLabels.add(match.unknown.name);
         
-        // Validate all conditions in this match
+        // Validate all existential conditions in this match
         for (const condition of match.conditions) {
-            if (condition.type === "path") {
-                // Validate path condition references prior label
-                if (!scopedLabels.has(condition.labelRight)) {
-                    throw new Error(`${context} existential condition match ${i} for unknown '${match.unknown.name}' has path condition referencing '${condition.labelRight}', but this label is not available. Available labels: [${Array.from(scopedLabels).join(', ')}]`);
-                }
-            } else if (condition.type === "existential") {
+            if (condition.type === "existential") {
                 // Recursively validate nested existential conditions
                 validateMatchesInExistentialCondition(condition, scopedLabels, `${context} existential condition match ${i} for unknown '${match.unknown.name}'`);
             }
