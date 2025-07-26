@@ -1,6 +1,6 @@
 import { hashSymbol } from "../fact/hydrate";
 import { describeSpecification } from "./description";
-import { CompositeProjection, Condition, ExistentialCondition, FactProjection, FieldProjection, HashProjection, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
+import { CompositeProjection, Condition, ExistentialCondition, FactProjection, FieldProjection, HashProjection, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification, detectDisconnectedSpecification } from "./specification";
 
 type RoleMap = { [role: string]: string };
 
@@ -113,6 +113,10 @@ class Given<T extends any[]> {
             matches,
             projection
         };
+        
+        // Detect disconnected specifications early
+        detectDisconnectedSpecification(specification);
+        
         return new SpecificationOf<T, SpecificationResult<U>>(specification);
     }
 
@@ -135,6 +139,10 @@ class Given<T extends any[]> {
             matches,
             projection
         };
+        
+        // Detect disconnected specifications early
+        detectDisconnectedSpecification(specification);
+        
         return new SpecificationOf<T, U>(specification);
     }
 }

@@ -1,9 +1,27 @@
-import { DisconnectedSpecificationError, Specification, SpecificationParser } from "../../src";
+import { DisconnectedSpecificationError, Specification, SpecificationParser, buildModel } from "../../src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
     parser.skipWhitespace();
     return parser.parseSpecification();
+}
+
+// Test classes for Model API testing
+class Player {
+    static Type = "GameHub.Player";
+    type = "GameHub.Player";
+}
+
+class Playground {
+    static Type = "GameHub.Playground";
+    type = "GameHub.Playground";
+    code!: string;
+}
+
+class Join {
+    static Type = "GameHub.Join";
+    type = "GameHub.Join";
+    player!: Player;
 }
 
 describe("Disconnected specification detection", () => {
@@ -48,8 +66,9 @@ describe("Disconnected specification detection", () => {
     });
 
     it("detects disconnected specification with multiple isolated clusters", () => {
+        // Two separate match clusters: p1 connects to u1, p3 connects to u2, but no connection between clusters
         expect(() => parseSpecification(`
-            (p1: GameHub.Player, p2: GameHub.Playground, p3: GameHub.Game) {
+            (p1: GameHub.Player, p3: GameHub.Game) {
                 u1: GameHub.Join [
                     u1->player:GameHub.Player = p1
                 ]
@@ -182,5 +201,36 @@ describe("Disconnected specification detection", () => {
                     ]
                 }
             }`)).toThrow(DisconnectedSpecificationError);
+    });
+
+    it("detects disconnected specifications when using Model API with match()", () => {
+        // Test that Model API also detects disconnected specifications
+        const model = buildModel(b => b
+            .type(Player)
+            .type(Playground) 
+            .type(Join, f => f.predecessor("player", Player))
+        );
+
+        expect(() => {
+            // Create a disconnected specification: p1 connects to join, but p2 is isolated
+            model.given(Player, Playground).match((player, playground, r) => 
+                r.ofType(Join).join(j => j.player, player)
+            );
+        }).toThrow(DisconnectedSpecificationError);
+    });
+
+    it("allows connected specifications when using Model API", () => {
+        // Test that connected specifications work fine with Model API
+        const model = buildModel(b => b
+            .type(Player)
+            .type(Join, f => f.predecessor("player", Player))
+        );
+
+        expect(() => {
+            // This should work - only one given, connects properly
+            model.given(Player).match((player, r) => 
+                r.ofType(Join).join(j => j.player, player)
+            );
+        }).not.toThrow();
     });
 });
