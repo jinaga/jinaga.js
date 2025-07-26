@@ -93,6 +93,7 @@ function shakeTree(matches: Match[], label: string): Match[] {
     // Move any other matches with no paths down.
     for (let i = 1; i < matches.length; i++) {
         let otherMatch: Match = matches[i];
+        const firstLabel = otherMatch.unknown.name;
         while (!otherMatch.conditions.some(c => c.type === "path")) {
             // Find all matches beyond this point that tag this one.
             for (let j = i + 1; j < matches.length; j++) {
@@ -109,6 +110,12 @@ function shakeTree(matches: Match[], label: string): Match[] {
             // Move the other match to the bottom of the list.
             matches = [ ...matches.slice(0, i), ...matches.slice(i + 1), matches[i] ];
             otherMatch = matches[i];
+
+            // If we have returned to the first match, we have found an infinite loop.
+            if (otherMatch.unknown.name === firstLabel) {
+                const remainingLabelTypes = matches.slice(i).map(m => m.unknown.type).join(", ");
+                throw new Error(`The labels with types [${remainingLabelTypes}] are not connected to the rest of the graph`);
+            }
         }
     }
 
