@@ -53,11 +53,8 @@ describe("specification inverse infinite loop bug", () => {
             projection: { type: "composite", components: [] }
         };
 
-        // This should not hang or throw an error
-        expect(() => {
-            const inverses = invertSpecification(specification);
-            expect(inverses).toBeDefined();
-            expect(Array.isArray(inverses)).toBe(true);
-        }).not.toThrow();
+        // This should throw an error
+        expect(() => invertSpecification(specification))
+            .toThrow("The labels with types [PlayerMove, User, Player] are not connected to the rest of the graph");
     });
 });
