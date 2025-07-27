@@ -1,12 +1,12 @@
 import { Authentication } from "./authentication/authentication";
-import { dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
+import { dehydrateReference, Dehydration, factReferenceSymbol, HashMap, hashSymbol, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
 import { SpecificationOf } from './specification/model';
 import { Projection } from './specification/specification';
-import { FactEnvelope, ProjectedResult } from './storage';
+import { FactEnvelope, FactReference, ProjectedResult } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
     
@@ -236,6 +236,38 @@ export class Jinaga {
     }
 
     /**
+     * Create a strongly-typed fact reference from a type constructor and hash.
+     * This allows you to create a minimal fact object that can be used with
+     * query, watch, and subscribe APIs when you only have the hash.
+     * 
+     * @param ctor The constructor function with a static Type property
+     * @param hash The SHA-256 hash of the fact as a base-64 string
+     * @returns A fact reference object typed as T
+     */
+    static factReference<T extends Fact>(ctor: new (...args: any[]) => T, hash: string): T {
+        const type = (ctor as any).Type;
+        if (!type || typeof type !== 'string') {
+            throw new Error(`Constructor must have a static Type property of type string. Found: ${typeof type}`);
+        }
+        
+        const factRef = {
+            type: type
+        } as T;
+        
+        // Set the hash symbol if available
+        if (hashSymbol) {
+            (factRef as any)[hashSymbol] = hash;
+        }
+        
+        // Mark this as a factReference for special handling
+        if (factReferenceSymbol) {
+            (factRef as any)[factReferenceSymbol] = { type, hash };
+        }
+        
+        return factRef;
+    }
+
+    /**
      * Compute the SHA-256 hash of a fact.
      * This is a deterministic hash that can be used to identify the fact.
      * @param fact The fact to hash
@@ -243,6 +275,19 @@ export class Jinaga {
      */
     hash<T extends Fact>(fact: T) {
         return Jinaga.hash(fact);
+    }
+
+    /**
+     * Create a strongly-typed fact reference from a type constructor and hash.
+     * This allows you to create a minimal fact object that can be used with
+     * query, watch, and subscribe APIs when you only have the hash.
+     * 
+     * @param ctor The constructor function with a static Type property
+     * @param hash The SHA-256 hash of the fact as a base-64 string
+     * @returns A fact reference object typed as T
+     */
+    factReference<T extends Fact>(ctor: new (...args: any[]) => T, hash: string): T {
+        return Jinaga.factReference(ctor, hash);
     }
 
     /**
@@ -363,7 +408,17 @@ export class Jinaga {
         });
     }
 
-    private prepareFactReference(g: unknown) {
+    private prepareFactReference(g: unknown): FactReference {
+        // Check if this is a factReference created by our helper
+        if (factReferenceSymbol && typeof g === 'object' && g !== null && (g as any)[factReferenceSymbol]) {
+            const refData = (g as any)[factReferenceSymbol];
+            return {
+                type: refData.type,
+                hash: refData.hash
+            };
+        }
+        
+        // Otherwise, process it as a normal fact
         const fact = JSON.parse(JSON.stringify(g));
         const validatedFact = this.validateFact(fact);
         return dehydrateReference(validatedFact);
