@@ -4,7 +4,7 @@ import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
-import { SpecificationOf } from './specification/model';
+import { SpecificationOf, FactConstructor } from './specification/model';
 import { Projection } from './specification/specification';
 import { FactEnvelope, FactReference, ProjectedResult } from './storage';
 import { toJSON } from './util/obj';
@@ -244,7 +244,7 @@ export class Jinaga {
      * @param hash The SHA-256 hash of the fact as a base-64 string
      * @returns A fact reference object typed as T
      */
-    static factReference<T extends Fact>(ctor: new (...args: any[]) => T, hash: string): T {
+    static factReference<T extends Fact>(ctor: FactConstructor<T>, hash: string): T {
         const type = (ctor as any).Type;
         if (!type || typeof type !== 'string') {
             throw new Error(`Constructor must have a static Type property of type string. Found: ${typeof type}`);
@@ -286,7 +286,7 @@ export class Jinaga {
      * @param hash The SHA-256 hash of the fact as a base-64 string
      * @returns A fact reference object typed as T
      */
-    factReference<T extends Fact>(ctor: new (...args: any[]) => T, hash: string): T {
+    factReference<T extends Fact>(ctor: FactConstructor<T>, hash: string): T {
         return Jinaga.factReference(ctor, hash);
     }
 

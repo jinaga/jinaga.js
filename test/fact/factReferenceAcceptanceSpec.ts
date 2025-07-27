@@ -1,6 +1,7 @@
 import { Jinaga } from '../../src';
 import { JinagaTest } from '../../src/jinaga-test';
-import { User, Company, model } from '../companyModel';
+import { User as StandardUser } from '../../src/model/user';
+import { Company, model } from '../companyModel';
 
 describe('factReference acceptance criteria', () => {
     let j: Jinaga;
@@ -13,33 +14,33 @@ describe('factReference acceptance criteria', () => {
         const hash = 'test-hash-123';
         
         // Test static method
-        const ref1 = Jinaga.factReference(User, hash);
-        expect(ref1.type).toBe('User');
+        const ref1 = Jinaga.factReference(StandardUser, hash);
+        expect(ref1.type).toBe('Jinaga.User');
         
         // Test instance method
-        const ref2 = j.factReference(User, hash);
-        expect(ref2.type).toBe('User');
+        const ref2 = j.factReference(StandardUser, hash);
+        expect(ref2.type).toBe('Jinaga.User');
         
         // Test standalone exported function
-        const ref3 = Jinaga.factReference(User, hash);
-        expect(ref3.type).toBe('User');
+        const ref3 = Jinaga.factReference(StandardUser, hash);
+        expect(ref3.type).toBe('Jinaga.User');
         
-        // TypeScript should treat these as User objects
+        // TypeScript should treat these as StandardUser objects
         // (This compiles without errors, proving type safety)
         const userType: string = ref1.type;
-        expect(userType).toBe('User');
+        expect(userType).toBe('Jinaga.User');
     });
 
     it('✅ The returned object is accepted by Jinaga\'s query, watch, and subscribe APIs as the appropriate type', async () => {
-        const user = await j.fact(new User('api-test-key'));
+        const user = await j.fact(new StandardUser('api-test-key'));
         const company = await j.fact(new Company(user, 'TestCompany'));
         
         const userHash = j.hash(user);
-        const userRef = j.factReference(User, userHash);
+        const userRef = j.factReference(StandardUser, userHash);
         
         // Test query API
         const companies = await j.query(
-            model.given(User).match((u, facts) =>
+            model.given(StandardUser).match((u, facts) =>
                 facts.ofType(Company).join(c => c.creator, u)
             ),
             userRef
@@ -49,7 +50,7 @@ describe('factReference acceptance criteria', () => {
         
         // Test watch API (setup only, no timing issues)
         const observer = j.watch(
-            model.given(User).match((u, facts) =>
+            model.given(StandardUser).match((u, facts) =>
                 facts.ofType(Company).join(c => c.creator, u)
             ),
             userRef,
@@ -60,7 +61,7 @@ describe('factReference acceptance criteria', () => {
         
         // Test subscribe API (setup only)  
         const subscription = j.subscribe(
-            model.given(User).match((u, facts) =>
+            model.given(StandardUser).match((u, facts) =>
                 facts.ofType(Company).join(c => c.creator, u)
             ),
             userRef,
@@ -72,7 +73,7 @@ describe('factReference acceptance criteria', () => {
 
     it('✅ The returned object works with Jinaga.hash() to return the provided hash', () => {
         const originalHash = 'test-original-hash-456';
-        const userRef = j.factReference(User, originalHash);
+        const userRef = j.factReference(StandardUser, originalHash);
         
         const retrievedHash = Jinaga.hash(userRef);
         expect(retrievedHash).toBe(originalHash);
@@ -83,8 +84,8 @@ describe('factReference acceptance criteria', () => {
     });
 
     it('✅ The .type property is correctly set to the fact type', () => {
-        const userRef = j.factReference(User, 'hash123');
-        expect(userRef.type).toBe('User');
+        const userRef = j.factReference(StandardUser, 'hash123');
+        expect(userRef.type).toBe('Jinaga.User');
         
         const companyRef = j.factReference(Company, 'hash456');
         expect(companyRef.type).toBe('Company');
@@ -103,7 +104,7 @@ describe('factReference acceptance criteria', () => {
 
     it('✅ Tests confirm type safety and runtime behavior', async () => {
         // Type safety: these should compile without errors
-        const userRef = j.factReference(User, 'user-hash');
+        const userRef = j.factReference(StandardUser, 'user-hash');
         const companyRef = j.factReference(Company, 'company-hash');
         
         // Runtime behavior: proper hash and type handling
@@ -133,23 +134,23 @@ describe('factReference acceptance criteria', () => {
 
     it('✅ Integration with existing fact ecosystem', async () => {
         // Create real facts
-        const user = await j.fact(new User('integration-key'));
+        const user = await j.fact(new StandardUser('integration-key'));
         const company = await j.fact(new Company(user, 'IntegrationCorp'));
         
         // Create fact references
-        const userRef = j.factReference(User, j.hash(user));
+        const userRef = j.factReference(StandardUser, j.hash(user));
         const companyRef = j.factReference(Company, j.hash(company));
         
         // Fact references should work exactly like the original facts in queries
         const companiesFromReal = await j.query(
-            model.given(User).match((u, facts) =>
+            model.given(StandardUser).match((u, facts) =>
                 facts.ofType(Company).join(c => c.creator, u)
             ),
             user
         );
         
         const companiesFromRef = await j.query(
-            model.given(User).match((u, facts) =>
+            model.given(StandardUser).match((u, facts) =>
                 facts.ofType(Company).join(c => c.creator, u)
             ),
             userRef

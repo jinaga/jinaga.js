@@ -1,16 +1,7 @@
 import { Jinaga } from '../../src/jinaga';
 import { JinagaTest } from '../../src/jinaga-test';
 import { buildModel } from '../../src/specification/model';
-
-// Test fact classes for integration
-class User {
-    static Type = "IntegrationTest.User" as const;
-    type = User.Type;
-    
-    constructor(
-        public publicKey: string
-    ) { }
-}
+import { User } from '../../src/model/user';
 
 class Task {
     static Type = "IntegrationTest.Task" as const;
