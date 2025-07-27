@@ -81,7 +81,6 @@ type HydrationEntry = {
 }
 
 export const hashSymbol = typeof(Symbol) === "undefined" ? null : Symbol("hash");
-export const factReferenceSymbol = typeof(Symbol) === "undefined" ? null : Symbol("factReference");
 
 export class Hydration {
     private entries: HydrationEntry[];

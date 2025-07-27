@@ -1,5 +1,5 @@
 import { Authentication } from "./authentication/authentication";
-import { dehydrateReference, Dehydration, factReferenceSymbol, HashMap, hashSymbol, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
+import { dehydrateReference, Dehydration, HashMap, hashSymbol, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
@@ -259,11 +259,6 @@ export class Jinaga {
             (factRef as any)[hashSymbol] = hash;
         }
         
-        // Mark this as a factReference for special handling
-        if (factReferenceSymbol) {
-            (factRef as any)[factReferenceSymbol] = { type, hash };
-        }
-        
         return factRef;
     }
 
@@ -410,12 +405,20 @@ export class Jinaga {
 
     private prepareFactReference(g: unknown): FactReference {
         // Check if this is a factReference created by our helper
-        if (factReferenceSymbol && typeof g === 'object' && g !== null && (g as any)[factReferenceSymbol]) {
-            const refData = (g as any)[factReferenceSymbol];
-            return {
-                type: refData.type,
-                hash: refData.hash
-            };
+        // It should be an object with only a 'type' field and a hashSymbol
+        if (typeof g === 'object' && g !== null) {
+            const obj = g as any;
+            const keys = Object.keys(obj);
+            const hasType = typeof obj.type === 'string';
+            const hasHash = hashSymbol && obj[hashSymbol];
+            
+            // If it only has a 'type' field and a hash symbol, treat it as a fact reference
+            if (hasType && hasHash && keys.length === 1 && keys[0] === 'type') {
+                return {
+                    type: obj.type,
+                    hash: hashSymbol ? obj[hashSymbol] : ''
+                };
+            }
         }
         
         // Otherwise, process it as a normal fact
