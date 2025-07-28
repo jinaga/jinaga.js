@@ -101,8 +101,8 @@ export function validateGiven(start: FactReference[], specification: Specificati
     }
     // Verify that the input type matches the start fact type
     for (let i = 0; i < start.length; i++) {
-        if (start[i].type !== specification.given[i].type) {
-            throw new Error(`The type of start fact ${i} (${start[i].type}) does not match the type of input ${i} (${specification.given[i].type})`);
+        if (start[i].type !== specification.given[i].label.type) {
+            throw new Error(`The type of start fact ${i} (${start[i].type}) does not match the type of input ${i} (${specification.given[i].label.type})`);
         }
     }
 }

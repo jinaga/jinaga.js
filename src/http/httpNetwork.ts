@@ -11,7 +11,7 @@ export class HttpNetwork implements Network {
     ) { }
 
     async feeds(start: FactReference[], specification: Specification): Promise<string[]> {
-        const declarationString = describeDeclaration(start, specification.given);
+        const declarationString = describeDeclaration(start, specification.given.map(g => g.label));
         const specificationString = describeSpecification(specification, 0);
         const request = `${declarationString}\n${specificationString}`;
         const response: FeedsResponse = await this.webClient.feeds(request);

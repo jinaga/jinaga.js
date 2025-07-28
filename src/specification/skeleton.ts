@@ -170,10 +170,10 @@ type InputByIdentifier = {
 };
 
 export function skeletonOfSpecification(specification: Specification): Skeleton {
-    const givenFacts: InputByIdentifier = specification.given.reduce((acc, label, i) => ({
+    const givenFacts: InputByIdentifier = specification.given.reduce((acc, given, i) => ({
         ...acc,
-        [label.name]: {
-            type: label.type,
+        [given.label.name]: {
+            type: given.label.type,
             inputIndex: i
         }
     }), {} as InputByIdentifier);

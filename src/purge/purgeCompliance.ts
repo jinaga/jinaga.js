@@ -7,7 +7,7 @@ export function testSpecificationForCompliance(specification: Specification, pur
 
 function testMatchForCompliance(match: Match, purgeConditions: Specification[]): string[] {
     var failedUnknownConditions = purgeConditions.filter(pc =>
-        pc.given[0].type === match.unknown.type &&
+        pc.given[0].label.type === match.unknown.type &&
         !hasCondition(match.conditions, pc)
     );
     if (failedUnknownConditions.length > 0) {
@@ -16,7 +16,7 @@ function testMatchForCompliance(match: Match, purgeConditions: Specification[]):
     }
 
     var failedIntermediateConditions = purgeConditions.filter(pc =>
-        match.conditions.some(c => hasIntermediateType(c, pc.given[0].type))
+        match.conditions.some(c => hasIntermediateType(c, pc.given[0].label.type))
     )
     if (failedIntermediateConditions.length > 0) {
         const specificationDescriptions = failedIntermediateConditions.map(pc => describePurgeCondition(pc)).join("");

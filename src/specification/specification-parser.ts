@@ -4,7 +4,7 @@ import { computeHash } from "../fact/hash";
 import { PurgeConditions } from "../purge/purgeConditions";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
-import { Condition, ExistentialCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
+import { Condition, ExistentialCondition, SpecificationGiven, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 
 type FieldValue = string | number | boolean;
 
@@ -108,18 +108,48 @@ export class SpecificationParser {
         return { name, predecessorType };
     }
 
-    parseGiven(): Label[] {
+    parseGiven(): SpecificationGiven[] {
         this.expect("(");
         if (this.continues(")")) {
             throw new Invalid("The specification must contain at least one given label");
         }
-        const labels = [];
-        labels.push(this.parseLabel());
+        const givens = [];
+        givens.push(this.parseGivenLabel());
         while (this.consume(",")) {
-            labels.push(this.parseLabel());
+            givens.push(this.parseGivenLabel());
         }
         this.expect(")");
-        return labels;
+        return givens;
+    }
+
+    parseGivenLabel(): SpecificationGiven {
+        const label = this.parseLabel();
+        const conditions: ExistentialCondition[] = [];
+        
+        // Check if there are conditions on this given
+        if (this.consume("[")) {
+            if (this.continues("]")) {
+                throw new Invalid(`The given '${label.name}' has no conditions`);
+            }
+            while (!this.consume("]")) {
+                const condition = this.parseGivenCondition(label, []);
+                conditions.push(condition);
+            }
+        }
+        
+        return {
+            label,
+            conditions
+        };
+    }
+
+    parseGivenCondition(given: Label, labels: Label[]): ExistentialCondition {
+        let exists = true;
+        if (this.consume("!")) {
+            exists = false;
+        }
+        this.expect("E");
+        return this.parseExistentialCondition([...labels, given], given, exists);
     }
 
     parseRoles(): Role[] {
@@ -463,7 +493,7 @@ export class SpecificationParser {
                 if (specification.given.length !== 1) {
                     throw new Invalid("A specification in an authorization rule must have exactly one given label");
                 }
-                const type = specification.given[0].type;
+                const type = specification.given[0].label.type;
                 authorizationRules = AuthorizationRules.combine(authorizationRules, type, new AuthorizationRuleSpecification(specification));
             }
         }

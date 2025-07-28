@@ -1,6 +1,6 @@
 import { hashSymbol } from "../fact/hydrate";
 import { describeSpecification } from "./description";
-import { CompositeProjection, Condition, ExistentialCondition, FactProjection, FieldProjection, HashProjection, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
+import { CompositeProjection, Condition, ExistentialCondition, FactProjection, FieldProjection, SpecificationGiven, HashProjection, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 
 type RoleMap = { [role: string]: string };
 
@@ -104,9 +104,9 @@ class Given<T extends any[]> {
         const result = (definition as any)(...labels, factRepository);
         const matches = result.matches ?? [];
         const projection = result.projection;
-        const given = this.factTypes.map((type, i) => {
+        const given: SpecificationGiven[] = this.factTypes.map((type, i) => {
             const name = `p${i + 1}`;
-            return { name, type };
+            return { label: { name, type }, conditions: [] };
         });
         const specification: Specification = {
             given,
@@ -126,9 +126,9 @@ class Given<T extends any[]> {
         const matches: Match[] = [];
         const traversal = traversalFromDefinition(result, matches);
         const projection = traversal.projection;
-        const given = this.factTypes.map((type, i) => {
+        const given: SpecificationGiven[] = this.factTypes.map((type, i) => {
             const name = `p${i + 1}`;
-            return { name, type };
+            return { label: { name, type }, conditions: [] };
         });
         const specification: Specification = {
             given,

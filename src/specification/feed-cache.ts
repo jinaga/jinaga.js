@@ -27,7 +27,7 @@ export class FeedCache {
         const feedsByHash = feeds.reduce((map, feed) => {
             const skeleton = skeletonOfSpecification(feed);
             const indexedStart = skeleton.inputs.map(input => ({
-                factReference: namedStart[feed.given[input.inputIndex].name],
+                factReference: namedStart[feed.given[input.inputIndex].label.name],
                 index: input.inputIndex
             }));
             const feedIdentifier: FeedIdentifier = {
