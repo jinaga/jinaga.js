@@ -1,5 +1,5 @@
-import { Jinaga, JinagaTest } from "../../src";
-import { Company, Employee, Office, OfficeClosed, OfficeReopened, President, User, model } from "../companyModel";
+import { Jinaga, JinagaTest, User } from "../../src";
+import { Company, Employee, Office, OfficeClosed, OfficeReopened, President, model } from "../companyModel";
 
 describe("specification query", () => {
     let creator: User;

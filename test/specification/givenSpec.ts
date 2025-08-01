@@ -1,5 +1,5 @@
-import { SpecificationOf } from "../../src";
-import { Company, Office, OfficeClosed, OfficeReopened, President, User, UserName, model } from "../companyModel";
+import { SpecificationOf, User } from "../../src";
+import { Company, Office, OfficeClosed, OfficeReopened, President, UserName, model } from "../companyModel";
 
 describe("given", () => {
     it("should parse an identity specification", () => {
@@ -315,7 +315,7 @@ describe("given", () => {
                 } => {
                     names = {
                         u3: User.Name [
-                            u3->user: User = u2->user: User
+                            u3->user: Jinaga.User = u2->user: Jinaga.User
                         ]
                     } => u3.value
                     president = u2
@@ -351,7 +351,7 @@ describe("given", () => {
                 } => {
                     names = {
                         u3: User.Name [
-                            u3->user: User = u2->user: User
+                            u3->user: Jinaga.User = u2->user: Jinaga.User
                         ]
                     } => u3.value
                     president = u2
@@ -394,11 +394,11 @@ describe("given", () => {
                 } => {
                     names = {
                         u3: User.Name [
-                            u3->user: User = u2->user: User
+                            u3->user: Jinaga.User = u2->user: Jinaga.User
                             !E {
                                 u4: User.Name [
                                     u4->prior: User.Name = u3
-                                    u4->user: User = u2->user: User
+                                    u4->user: Jinaga.User = u2->user: Jinaga.User
                                 ]
                             }
                         ]
@@ -439,11 +439,11 @@ describe("given", () => {
                 } => {
                     names = {
                         u3: User.Name [
-                            u3->user: User = u2->user: User
+                            u3->user: Jinaga.User = u2->user: Jinaga.User
                             !E {
                                 u4: User.Name [
                                     u4->prior: User.Name = u3
-                                    u4->user: User = u2->user: User
+                                    u4->user: Jinaga.User = u2->user: Jinaga.User
                                 ]
                             }
                         ]
@@ -488,10 +488,10 @@ describe("given", () => {
                 } => {
                     names = {
                         u3: User.Name [
-                            u3->user: User = u2->user: User
+                            u3->user: Jinaga.User = u2->user: Jinaga.User
                             !E {
                                 u4: User.Name [
-                                    u4->user: User = u2->user: User
+                                    u4->user: Jinaga.User = u2->user: Jinaga.User
                                     u4->prior: User.Name = u3
                                 ]
                             }
@@ -531,7 +531,7 @@ describe("given", () => {
                 } => {
                     names = {
                         u3: User.Name [
-                            u3->user: User = u2->user: User
+                            u3->user: Jinaga.User = u2->user: Jinaga.User
                             !E {
                                 u4: User.Name [
                                     u4->prior: User.Name = u3
@@ -575,13 +575,13 @@ describe("given", () => {
                     u2: President [
                         u2->office: Office = u1
                     ]
-                    u3: User [
-                        u3 = u2->user: User
+                    u3: Jinaga.User [
+                        u3 = u2->user: Jinaga.User
                     ]
                 } => {
                     names = {
                         u4: User.Name [
-                            u4->user: User = u3
+                            u4->user: Jinaga.User = u3
                         ]
                     } => u4.value
                     user = u3
@@ -616,13 +616,13 @@ describe("given", () => {
                     u2: President [
                         u2->office: Office = u1
                     ]
-                    u3: User [
-                        u3 = u2->user: User
+                    u3: Jinaga.User [
+                        u3 = u2->user: Jinaga.User
                     ]
                 } => {
                     names = {
                         u4: User.Name [
-                            u4->user: User = u3
+                            u4->user: Jinaga.User = u3
                         ]
                     } => u4.value
                     user = u3
@@ -638,10 +638,10 @@ describe("given", () => {
         );
 
         expectSpecification(specification, `
-            (p1: Company, p2: User) {
+            (p1: Company, p2: Jinaga.User) {
                 u1: President [
                     u1->office: Office->company: Company = p1
-                    u1->user: User = p2
+                    u1->user: Jinaga.User = p2
                 ]
             } => u1`);
     });
@@ -653,10 +653,10 @@ describe("given", () => {
         );
 
         expectSpecification(specification, `
-            (p1: Company, p2: User) {
+            (p1: Company, p2: Jinaga.User) {
                 u1: President [
                     u1->office: Office->company: Company = p1
-                    u1->user: User = p2
+                    u1->user: Jinaga.User = p2
                 ]
             } => u1`);
     });
@@ -705,8 +705,8 @@ describe("given", () => {
                 ]
             } => {
                 creator = {
-                    u2: User [
-                        u2 = u1->creator: User
+                    u2: Jinaga.User [
+                        u2 = u1->creator: Jinaga.User
                     ]
                 } => u2
                 identifier = u1.identifier
