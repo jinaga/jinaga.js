@@ -108,7 +108,7 @@ describe('factReference acceptance criteria', () => {
         const companyRef = j.factReference(Company, 'company-hash');
         
         // Runtime behavior: proper hash and type handling
-        expect(userRef.type).toBe('User');
+        expect(userRef.type).toBe('Jinaga.User');
         expect(companyRef.type).toBe('Company');
         expect(j.hash(userRef)).toBe('user-hash');
         expect(j.hash(companyRef)).toBe('company-hash');

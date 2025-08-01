@@ -165,7 +165,7 @@ describe('factReference integration', () => {
         
         // This should compile without issues
         const publicKey: string = userRef.type;
-        expect(publicKey).toBe('IntegrationTest.User');
+        expect(publicKey).toBe('Jinaga.User');
         
         // The object should be treated as User type by TypeScript
         // (We can't test this at runtime, but it should compile)

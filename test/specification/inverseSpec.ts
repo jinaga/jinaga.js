@@ -1,5 +1,5 @@
-import { describeSpecification, invertSpecification, SpecificationInverse, SpecificationOf } from "../../src";
-import { Company, model, Office, OfficeClosed, OfficeReopened, President, User } from "../companyModel";
+import { describeSpecification, invertSpecification, SpecificationInverse, SpecificationOf, User } from "../../src";
+import { Company, model, Office, OfficeClosed, OfficeReopened, President } from "../companyModel";
 
 describe("specification inverse", () => {
     it("should invert successor", () => {
@@ -49,8 +49,8 @@ describe("specification inverse", () => {
                 p1: Office [
                     p1 = u1->office: Office
                 ]
-                u2: User [
-                    u2 = u1->user: User
+                u2: Jinaga.User [
+                    u2 = u1->user: Jinaga.User
                 ]
             } => u2`
         ]);

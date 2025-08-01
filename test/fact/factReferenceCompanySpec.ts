@@ -1,6 +1,5 @@
-import { Jinaga } from '../../src/jinaga';
-import { JinagaTest } from '../../src/jinaga-test';
-import { User, Company, model } from '../companyModel';
+import { Jinaga, JinagaTest, User } from '../../src';
+import { Company, model } from '../companyModel';
 
 describe('factReference with company model', () => {
     let j: Jinaga;
