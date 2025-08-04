@@ -1,0 +1,52 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Testing Standards
+
+## Test Structure
+Tests are located in [test/](mdc:test/) and follow Jest patterns:
+- Use descriptive test names with `describe()` and `it()`
+- Group related tests in describe blocks
+- Use `beforeEach()` and `afterEach()` for setup/cleanup
+- Test both success and failure scenarios
+
+## Jinaga Test Utilities
+Use `JinagaTest` from [src/jinaga-test.ts](mdc:src/jinaga-test.ts) for testing:
+```typescript
+import { JinagaTest } from 'jinaga';
+
+const j = JinagaTest.create();
+```
+
+## Test Patterns
+- Test specifications with sample facts
+- Test authorization rules with different user contexts
+- Test error conditions and edge cases
+- Use `j.fork()` for isolated test scenarios
+- Mock external dependencies appropriately
+
+## Example Test Structure
+```typescript
+describe('BlogPost', () => {
+  let j: JinagaTest;
+  
+  beforeEach(() => {
+    j = JinagaTest.create();
+  });
+  
+  it('should create a blog post', async () => {
+    const user = await j.fact(new User());
+    const post = await j.fact(new BlogPost(user));
+    expect(post.author).toBe(user);
+  });
+});
+```
+
+## Coverage Requirements
+- Aim for 90%+ code coverage
+- Test all public API methods
+- Test error handling paths
+- Test integration scenarios
+- Use Jest's built-in coverage reporting

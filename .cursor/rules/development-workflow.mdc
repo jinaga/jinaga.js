@@ -1,0 +1,73 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Development Workflow
+
+## Build Process
+The build process is configured in [package.json](mdc:package.json):
+- `npm run build`: Compile TypeScript to JavaScript
+- `npm run clean`: Clean build artifacts
+- `npm run test`: Run all tests
+- `npm run test:watch`: Run tests in watch mode
+
+## TypeScript Configuration
+TypeScript is configured in [tsconfig.json](mdc:tsconfig.json):
+- Target: ES6
+- Module: CommonJS
+- Strict mode enabled
+- Declaration files generated
+- Source maps enabled
+
+## Testing
+Tests use Jest as configured in [jest.config.js](mdc:jest.config.js):
+- TypeScript support with ts-jest
+- Coverage reporting enabled
+- Test files in [test/](mdc:test/) directory
+- Integration tests in separate directories
+
+## Code Quality
+ESLint is configured in [eslint.config.mjs](mdc:eslint.config.mjs):
+- TypeScript-aware linting
+- Enforce coding standards
+- Catch common errors
+- Maintain code consistency
+
+## Release Process
+Release process is documented in [README.md](mdc:README.md):
+1. Bump version in package.json
+2. Create and push git tag
+3. Create GitHub release
+4. GitHub Actions builds and publishes
+
+## Development Commands
+```bash
+# Install dependencies
+npm ci
+
+# Build the project
+npm run build
+
+# Run tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Clean build artifacts
+npm run clean
+```
+
+## File Organization
+- Source code in [src/](mdc:src/)
+- Tests in [test/](mdc:test/)
+- Documentation in [docs/](mdc:docs/)
+- Examples in [examples/](mdc:examples/)
+- Build output in `dist/`
+
+## Git Workflow
+- Use descriptive commit messages
+- Test before committing
+- Update documentation for breaking changes
+- Follow semantic versioning

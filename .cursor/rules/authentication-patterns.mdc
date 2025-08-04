@@ -1,0 +1,56 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Authentication and Authorization Patterns
+
+## Authentication Providers
+Authentication is handled by providers in [src/authentication/](mdc:src/authentication/):
+- `AuthenticationWebClient`: Browser-based authentication
+- `AuthenticationTest`: Testing authentication
+- `AuthenticationNoOp`: No-op authentication for development
+
+## User Identity
+User identity is managed through the `User` model in [src/model/user.ts](mdc:src/model/user.ts):
+- Users are facts with type `"Jinaga.User"`
+- User identity is cryptographically verified
+- Profile information includes display name
+
+## Login Process
+```typescript
+const j = JinagaBrowser.create({
+  httpEndpoint: "http://localhost:8080/jinaga"
+});
+
+const { userFact, profile } = await j.login();
+```
+
+## Authorization Rules
+Authorization rules are defined using `describeAuthorizationRules()` in [src/authorization/authorizationRules.ts](mdc:src/authorization/authorizationRules.ts):
+- Rules are evaluated before fact creation
+- Rules can reference predecessor facts
+- Use `Forbidden` error for access violations
+- Rules support complex authorization patterns
+
+## Example Authorization Rule
+```typescript
+export const authorizationRules = describeAuthorizationRules({
+  "Blog.Post": (post, facts) => {
+    const user = facts.ofType("Jinaga.User").withHash(post.author);
+    return facts.any(user);
+  }
+});
+```
+
+## Device Identity
+For server-side applications, use `j.local()` to access device identity:
+```typescript
+const device = await j.local();
+```
+
+## Security Considerations
+- Always validate user permissions before fact creation
+- Use cryptographic signatures for fact verification
+- Implement proper session management
+- Handle authentication errors gracefully

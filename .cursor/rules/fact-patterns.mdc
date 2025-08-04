@@ -1,0 +1,49 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Fact and Specification Patterns
+
+## Fact Structure
+All facts must extend the `Fact` interface from [src/storage.ts](mdc:src/storage.ts):
+```typescript
+interface Fact {
+  type: string;
+  [key: string]: unknown;
+}
+```
+
+## Creating Facts
+- Use the `j.fact()` method to create new facts
+- Facts are immutable and automatically hashed
+- Include all required predecessor references
+- Use descriptive type names (e.g., `"Blog.Post"`, `"User.Profile"`)
+
+## Specifications
+Specifications define query patterns and are defined in [src/specification/](mdc:src/specification/):
+- Use `j.match()` to find facts by type
+- Use `j.for()` to traverse predecessor relationships
+- Use `j.where()` to filter results
+- Use `j.select()` to project specific fields
+
+## Example Specification Pattern
+```typescript
+function blogPosts(user: User) {
+  return j.match(BlogPost)
+    .where(post => j.for(post.author).matches(user));
+}
+```
+
+## Observers and Watchers
+- Use `j.watch()` for reactive data watching
+- Use `j.subscribe()` for one-time subscriptions
+- Observers automatically update when facts change
+- Handle observer lifecycle properly
+
+## Authorization Rules
+Authorization rules are defined in [src/authorization/](mdc:src/authorization/):
+- Use `describeAuthorizationRules()` to define access patterns
+- Rules are evaluated before fact creation
+- Rules can reference predecessor facts
+- Use `Forbidden` error for access violations

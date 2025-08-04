@@ -1,0 +1,52 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Jinaga.js Development Quick Reference
+
+## Core Rules Overview
+- **[Project Overview](mdc:.cursor/rules/project-overview.mdc)**: Framework architecture and key concepts
+- **[TypeScript Standards](mdc:.cursor/rules/typescript-standards.mdc)**: Coding standards and conventions
+- **[Fact Patterns](mdc:.cursor/rules/fact-patterns.mdc)**: Working with facts and specifications
+- **[Testing Standards](mdc:.cursor/rules/testing-standards.mdc)**: Testing patterns and requirements
+- **[Authentication Patterns](mdc:.cursor/rules/authentication-patterns.mdc)**: Auth and authorization
+- **[Network Patterns](mdc:.cursor/rules/network-patterns.mdc)**: HTTP communication
+- **[Storage Patterns](mdc:.cursor/rules/storage-patterns.mdc)**: Data persistence
+- **[Cryptography Patterns](mdc:.cursor/rules/cryptography-patterns.mdc)**: Security and verification
+- **[Development Workflow](mdc:.cursor/rules/development-workflow.mdc)**: Build and release process
+
+## Key Files
+- [src/index.ts](mdc:src/index.ts): Main exports
+- [src/jinaga.ts](mdc:src/jinaga.ts): Core Jinaga class
+- [src/storage.ts](mdc:src/storage.ts): Storage interfaces
+- [package.json](mdc:package.json): Project configuration
+- [tsconfig.json](mdc:tsconfig.json): TypeScript configuration
+- [jest.config.js](mdc:jest.config.js): Test configuration
+
+## Quick Start
+```typescript
+import { JinagaBrowser } from 'jinaga';
+
+const j = JinagaBrowser.create({
+  httpEndpoint: "http://localhost:8080/jinaga"
+});
+
+// Create a fact
+const user = await j.fact(new User());
+
+// Query with specification
+const posts = await j.query(blogPosts, user);
+
+// Watch for changes
+const observer = j.watch(blogPosts, user, (posts) => {
+  console.log('Posts updated:', posts);
+});
+```
+
+## Common Patterns
+- Use `j.fact()` to create facts
+- Use `j.query()` for one-time queries
+- Use `j.watch()` for reactive data
+- Use `j.fork()` for isolated contexts
+- Use `JinagaTest` for testing

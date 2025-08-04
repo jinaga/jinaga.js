@@ -1,0 +1,37 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# TypeScript Coding Standards
+
+## Type Safety
+- Use strict TypeScript as configured in [tsconfig.json](mdc:tsconfig.json)
+- Always define explicit return types for public functions
+- Use generic types for reusable components
+- Prefer `interface` over `type` for object shapes
+- Use `Fact` type from [src/storage.ts](mdc:src/storage.ts) for all data records
+
+## Naming Conventions
+- Use PascalCase for classes and interfaces (e.g., `Jinaga`, `FactManager`)
+- Use camelCase for functions and variables
+- Use UPPER_SNAKE_CASE for constants
+- Prefix private methods with underscore (e.g., `_validateFact`)
+
+## Module Structure
+- Export public APIs from [src/index.ts](mdc:src/index.ts)
+- Use barrel exports for related functionality
+- Keep modules focused on single responsibility
+- Use relative imports within the project
+
+## Error Handling
+- Use custom error classes extending `Error`
+- Provide meaningful error messages
+- Use `try/catch` for async operations
+- Validate inputs early and fail fast
+
+## Async/Await
+- Prefer async/await over Promises
+- Handle errors in async functions
+- Use proper typing for async return values
+- Avoid mixing Promise chains with async/await

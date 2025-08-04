@@ -1,0 +1,65 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Storage and Persistence Patterns
+
+## Storage Interfaces
+Storage is defined in [src/storage.ts](mdc:src/storage.ts):
+- `Storage`: Main storage interface
+- `FactReference`: Reference to a fact by hash
+- `FactEnvelope`: Fact with metadata
+- `Queue`: Queue for pending operations
+
+## Storage Implementations
+- `MemoryStore`: In-memory storage for testing
+- `IndexedDBStore`: Browser storage using IndexedDB
+- `IndexedDBQueue`: Queue implementation for offline support
+
+## Fact References
+Facts are referenced by their cryptographic hash:
+```typescript
+const factRef: FactReference = {
+  type: "Blog.Post",
+  hash: "abc123..."
+};
+```
+
+## Fact Envelopes
+Facts are wrapped in envelopes with metadata:
+```typescript
+interface FactEnvelope {
+  fact: Fact;
+  signatures: FactSignature[];
+  hash: string;
+}
+```
+
+## Queue Management
+The queue system handles offline operations:
+- Facts are queued when offline
+- Automatic retry when connection is restored
+- Progress tracking for user feedback
+- Queue processing in [src/managers/QueueProcessor.ts](mdc:src/managers/QueueProcessor.ts)
+
+## Purge Operations
+Purge functionality is in [src/purge/](mdc:src/purge/):
+- `PurgeConditions`: Define when facts can be purged
+- `validatePurgeSpecification`: Validate purge rules
+- `PurgeManager`: Manage purge operations
+
+## IndexedDB Usage
+For browser storage, use IndexedDB:
+```typescript
+import { IndexedDBStore } from 'jinaga';
+
+const store = new IndexedDBStore('jinaga-db');
+```
+
+## Best Practices
+- Use appropriate storage for environment (memory for tests, IndexedDB for browser)
+- Handle storage errors gracefully
+- Implement proper cleanup for purged facts
+- Monitor queue size for performance
+- Use transactions for multi-fact operations
