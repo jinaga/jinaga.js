@@ -4,44 +4,91 @@ description: Use when working with facts, specifications, queries, or data relat
 # Fact and Specification Patterns
 
 ## Fact Structure
-All facts must extend the `Fact` interface from [src/storage.ts](mdc:src/storage.ts):
+
+Facts should be classes with a static `Type` property:
 ```typescript
-interface Fact {
-  type: string;
-  [key: string]: unknown;
+export class BlogPost {
+  static Type = "Blog.Post" as const;
+  type = BlogPost.Type;
+
+  constructor(
+    public author: User,
+    public title: string,
+    public content: string
+  ) { }
 }
 ```
 
 ## Creating Facts
+
 - Use the `j.fact()` method to create new facts
 - Facts are immutable and automatically hashed
 - Include all required predecessor references
 - Use descriptive type names (e.g., `"Blog.Post"`, `"User.Profile"`)
 
+## Model Builder Pattern
+
+Specifications are created using the model builder pattern:
+```typescript
+export const model = buildModel(b => b
+  .type(User)
+  .type(BlogPost, x => x
+    .predecessor("author", User)
+  )
+);
+```
+
 ## Specifications
-Specifications define query patterns and are defined in [src/specification/](mdc:src/specification/):
-- Use `j.match()` to find facts by type
-- Use `j.for()` to traverse predecessor relationships
-- Use `j.where()` to filter results
-- Use `j.select()` to project specific fields
+
+Specifications define query patterns using the model:
+- Use `model.given().match()` to create specifications
+- Use `facts.ofType()` to find facts by type
+- Use `join()` to traverse predecessor relationships
+- Use `successors()` to find successor facts
+- Use `select()` to project specific fields
 
 ## Example Specification Pattern
+
 ```typescript
-function blogPosts(user: User) {
-  return j.match(BlogPost)
-    .where(post => j.for(post.author).matches(user));
-}
+const blogPostsSpec = model.given(User).match(user =>
+  user.successors(BlogPost, post => post.author)
+);
+
+const posts = await j.query(blogPostsSpec, user);
 ```
 
 ## Observers and Watchers
-- Use `j.watch()` for reactive data watching
-- Use `j.subscribe()` for one-time subscriptions
+
+- Use `j.watch()` for reactive data watching with automatic updates
+- Use `j.subscribe()` for server-sent events
 - Observers automatically update when facts change
 - Handle observer lifecycle properly
 
 ## Authorization Rules
-Authorization rules are defined in [src/authorization/](mdc:src/authorization/):
-- Use `describeAuthorizationRules()` to define access patterns
-- Rules are evaluated before fact creation
-- Rules can reference predecessor facts
-- Use `Forbidden` error for access violations
+
+Authorization rules are defined using the `AuthorizationRules` class in [src/authorization/authorizationRules.ts](mdc:src/authorization/authorizationRules.ts):
+
+```typescript
+const authorization = (a: AuthorizationRules) => a
+  .any(User)  // Allow all users
+  .type(Post, post => post.author)  // Allow post authors
+  .type(Comment, comment => comment.author)  // Allow comment authors
+  .no(PrivatePost);  // Deny private posts
+```
+
+Authorization rules require the model:
+```typescript
+const authorizationRules = new AuthorizationRules(model);
+const rules = authorization(authorizationRules);
+```
+
+Common patterns:
+- `.any(Type)` - Allow all facts of a type
+- `.no(Type)` - Deny all facts of a type  
+- `.type(Fact, fact => fact.predecessor)` - Allow based on predecessor
+- `.type(Fact, (fact, facts) => facts.ofType(User).join(...))` - Complex rules
+
+Rules are evaluated on both client and server:
+- Tests: Validates facts during creation only when authorization rules are configured in test setup
+- Client: Does not validate facts against authorization rules
+- Server: Validates facts upon receipt
