@@ -23,7 +23,7 @@ export class PurgeManager {
             const fact = envelope.fact;
             for (const purgeInverse of this.purgeInverses) {
                 // Only run the purge inverse if the given type matches the fact type
-                if (purgeInverse.inverseSpecification.given[0].type !== fact.type) {
+                if (purgeInverse.inverseSpecification.given[0].label.type !== fact.type) {
                     continue;
                 }
 
