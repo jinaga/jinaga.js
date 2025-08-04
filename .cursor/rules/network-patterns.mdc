@@ -1,7 +1,5 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: Use when working with HTTP communication, network requests, synchronization, or offline functionality to implement proper network patterns
 ---
 # Network and HTTP Patterns
 

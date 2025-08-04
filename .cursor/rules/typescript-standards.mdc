@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: Use when writing or modifying TypeScript code to ensure consistent coding standards, type safety, and best practices
+globs: *.ts
 alwaysApply: false
 ---
 # TypeScript Coding Standards

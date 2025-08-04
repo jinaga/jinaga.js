@@ -1,6 +1,5 @@
 ---
-description:
-globs:
+description: Use as a quick reference guide to find the appropriate rule for any Jinaga.js development task
 alwaysApply: false
 ---
 # Jinaga.js Development Quick Reference

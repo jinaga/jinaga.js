@@ -1,7 +1,5 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: Use when working with data persistence, storage interfaces, fact references, or queue management to implement proper storage patterns
 ---
 # Storage and Persistence Patterns
 

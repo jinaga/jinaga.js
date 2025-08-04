@@ -1,7 +1,5 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: Use when implementing authentication, authorization, user identity, or security features to follow Jinaga's auth patterns and security best practices
 ---
 # Authentication and Authorization Patterns
 

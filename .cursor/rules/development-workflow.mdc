@@ -1,7 +1,5 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: Use when setting up the development environment, building the project, running tests, or managing releases to follow the established workflow
 ---
 # Development Workflow
 

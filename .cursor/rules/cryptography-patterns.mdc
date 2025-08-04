@@ -1,7 +1,5 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: Use when implementing cryptographic features, fact signing, verification, or security measures to ensure proper cryptography patterns
 ---
 # Cryptography and Security Patterns
 

@@ -1,6 +1,5 @@
 ---
-description:
-globs:
+description: Use when writing tests or working with test-related code to ensure proper test structure, coverage, and Jinaga-specific testing patterns
 alwaysApply: false
 ---
 # Testing Standards

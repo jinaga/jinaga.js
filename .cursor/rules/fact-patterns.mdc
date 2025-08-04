@@ -1,7 +1,5 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: Use when working with facts, specifications, queries, or data relationships to follow Jinaga's data patterns and best practices
 ---
 # Fact and Specification Patterns
 

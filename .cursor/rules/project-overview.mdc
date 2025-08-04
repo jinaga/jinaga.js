@@ -1,7 +1,6 @@
 ---
-description:
-globs:
-alwaysApply: false
+alwaysApply: true
+description: Use when starting work on the Jinaga.js project to understand the overall architecture, key concepts, and development guidelines
 ---
 # Jinaga.js Project Overview
 
