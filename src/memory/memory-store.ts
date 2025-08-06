@@ -151,7 +151,9 @@ export class MemoryStore implements Storage {
     private getPredecessors(reference: FactReference, name: string, predecessorType: string): Promise<FactReference[]> {
         const record = this.factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
         if (record === null) {
-            throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
+            // Return empty array instead of throwing when fact is not found
+            // This allows specifications to handle unpersisted given facts gracefully
+            return Promise.resolve([]);
         }
         const predecessors = getPredecessors(record.fact, name);
         const matching = predecessors.filter(predecessor => predecessor.type === predecessorType);
