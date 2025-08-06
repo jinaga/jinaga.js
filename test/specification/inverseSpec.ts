@@ -223,6 +223,53 @@ describe("specification inverse", () => {
             } => u2`
         ]);
     });
+
+    it("should not include given in inverse when first step is a successor", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(President)
+                .join(president => president.office.company, company)
+        );
+
+        const inverses = fromSpecification(specification);
+
+        expect(inverses).toEqual([`
+            (u1: President) {
+                p1: Company [
+                    p1 = u1->office: Office->company: Company
+                ]
+            } => u1`
+        ]);
+    });
+
+    it("should include given in inverse when first step is a predecessor", () => {
+        const specification = model.given(Office).match((office, facts) =>
+            office.company.predecessor().selectMany(company =>
+                facts.ofType(President)
+                    .join(president => president.office, office)
+            )
+        );
+
+        const inverses = fromSpecification(specification);
+
+        expect(inverses).toEqual([`
+            (u1: Office) {
+                p1: Company [
+                    p1 = u1->company: Company
+                ]
+                p2: President [
+                    p2 = u1->company: Company
+                ]
+            } => p2`,`
+            (u2: President) {
+                p1: Office [
+                    p1 = u2->office: Office
+                ]
+                u1: Company [
+                    u1 = p1->company: Company
+                ]
+            } => u2`
+        ]);
+    });
 });
 
 function fromSpecification<T, U>(specification: SpecificationOf<T, U>) {
