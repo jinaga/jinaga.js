@@ -27,9 +27,10 @@ export function invertSpecification(specification: Specification): Specification
     }));
     const matches: Match[] = [...emptyMatches, ...specification.matches];
 
-    const labels: Label[] = specification.matches.map(m => m.unknown);
+    const labels: Label[] = [...specification.given, ...specification.matches.map(m => m.unknown)];
     const givenSubset: string[] = specification.given.map(g => g.name);
-    const resultSubset: string[] = [ ...givenSubset, ...labels.map(l => l.name) ];
+    const matchLabels: Label[] = specification.matches.map(m => m.unknown);
+    const resultSubset: string[] = [ ...givenSubset, ...matchLabels.map(l => l.name) ];
     const context: InverterContext = {
         path: "",
         givenSubset,
@@ -39,6 +40,7 @@ export function invertSpecification(specification: Specification): Specification
     };
     const inverses: SpecificationInverse[] = invertMatches(matches, labels, context);
     const projectionInverses: SpecificationInverse[] = invertProjection(matches, context);
+    
     return [ ...inverses, ...projectionInverses ];
 }
 
@@ -303,3 +305,7 @@ function expectsSuccessor(condition: Condition, given: string) {
         condition.rolesRight.length === 0 &&
         condition.rolesLeft.length > 0;
 }
+
+
+
+

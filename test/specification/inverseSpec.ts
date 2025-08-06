@@ -27,8 +27,14 @@ describe("specification inverse", () => {
 
         const inverses = fromSpecification(specification);
 
-        // When the predecessor is created, it does not have a successor yet.
-        expect(inverses).toEqual([]);
+        // With broader self-inverse coverage, specifications that reference givens get self-inverses
+        expect(inverses).toEqual([`
+            (p1: Office) {
+                u1: Company [
+                    u1 = p1->company: Company
+                ]
+            } => u1`
+        ]);
     });
 
     it("should invert predecessor of successor", () => {
@@ -221,6 +227,45 @@ describe("specification inverse", () => {
                     p1 = u1->company: Company
                 ]
             } => u2`
+        ]);
+    });
+
+    it("should not include given in inverse when first step is a successor", () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(President)
+                .join(president => president.office.company, company)
+        );
+
+        const inverses = fromSpecification(specification);
+
+        expect(inverses).toEqual([`
+            (u1: President) {
+                p1: Company [
+                    p1 = u1->office: Office->company: Company
+                ]
+            } => u1`
+        ]);
+    });
+
+    it("should include given in inverse when first step is a predecessor", () => {
+        const specification = model.given(Office).match((office, facts) =>
+            facts.ofType(President)
+                .join(president => president.office.company, office.company)
+        );
+
+        const inverses = fromSpecification(specification);
+
+        expect(inverses).toEqual([`
+            (p1: Office) {
+                u1: President [
+                    u1->office: Office->company: Company = p1->company: Company
+                ]
+            } => u1`, `
+            (u1: President) {
+                p1: Office [
+                    p1->company: Company = u1->office: Office->company: Company
+                ]
+            } => u1`
         ]);
     });
 });
