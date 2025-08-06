@@ -27,8 +27,14 @@ describe("specification inverse", () => {
 
         const inverses = fromSpecification(specification);
 
-        // When the predecessor is created, it does not have a successor yet.
-        expect(inverses).toEqual([]);
+        // With broader self-inverse coverage, specifications that reference givens get self-inverses
+        expect(inverses).toEqual([`
+            (p1: Office) {
+                u1: Company [
+                    u1 = p1->company: Company
+                ]
+            } => u1`
+        ]);
     });
 
     it("should invert predecessor of successor", () => {
@@ -258,14 +264,6 @@ describe("specification inverse", () => {
                 ]
                 u1: Company [
                     u1 = p1->company: Company
-                ]
-            } => u2`,`
-            (p1: Office) {
-                u1: Company [
-                    u1 = p1->company: Company
-                ]
-                u2: President [
-                    u2->office: Office = p1
                 ]
             } => u2`
         ]);
