@@ -249,10 +249,8 @@ describe("specification inverse", () => {
 
     it("should include given in inverse when first step is a predecessor", () => {
         const specification = model.given(Office).match((office, facts) =>
-            office.company.predecessor().selectMany(company =>
-                facts.ofType(President)
-                    .join(president => president.office, office)
-            )
+            facts.ofType(President)
+                .join(president => president.office.company, office.company)
         );
 
         const inverses = fromSpecification(specification);
