@@ -835,4 +835,36 @@ describe("specification watch", () => {
         // Verify the manager is found through the mixed chain
         expect(results).toEqual([j.hash(manager)]);
     });
+
+    it("should handle simple predecessor access with unpersisted given", async () => {
+        // Simple predecessor access - single match, no selectMany - CURRENTLY FAILS!
+        const specification = model.given(Office).match((office, facts) =>
+            office.company.predecessor()
+        );
+
+        // Set up test data
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+
+        const j = JinagaTest.create({
+            initialState: [user, company] // office NOT included initially
+        });
+
+        // Test the execution using watch
+        const results: any[] = [];
+        const observer = j.watch(specification, office, result => {
+            results.push(result);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        observer.stop();
+
+        // This SHOULD work but currently doesn't due to matches.length <= 1 constraint
+        expect(results.length).toBeGreaterThan(0);
+    });
 });

@@ -309,18 +309,14 @@ function expectsSuccessor(condition: Condition, given: string) {
 }
 
 function createSelfInverseIfNeeded(specification: Specification): SpecificationInverse[] {
-    // Only create self-inverse if there's exactly one given and the first step is a predecessor
-    if (specification.given.length !== 1) {
+    // Create self-inverse if the specification navigates from any given fact
+    // This handles cases where given facts might be unpersisted when the observer starts
+    
+    if (!shouldCreateSelfInverse(specification)) {
         return [];
     }
 
-    const firstStepIsPredecessor = hasFirstStepPredecessor(specification);
-    if (!firstStepIsPredecessor) {
-        return [];
-    }
-
-    // Create a self-inverse: when the given fact is saved, execute the original specification
-    const givenType = specification.given[0].type;
+    // Create a self-inverse: when any given fact is saved, execute the original specification
     const givenSubset = specification.given.map(g => g.name);
     
     const selfInverse: SpecificationInverse = {
@@ -335,23 +331,43 @@ function createSelfInverseIfNeeded(specification: Specification): SpecificationI
     return [selfInverse];
 }
 
-function hasFirstStepPredecessor(specification: Specification): boolean {
-    // Only add self-inverse for specifications that have multiple matches (selectMany pattern)
-    // and involve predecessor operations from the given fact
-    
-    if (specification.matches.length <= 1) {
+function shouldCreateSelfInverse(specification: Specification): boolean {
+    // Only create self-inverse for single given specifications that navigate from the given
+    // Multiple givens are not yet supported by the observable infrastructure
+    if (specification.given.length !== 1) {
         return false;
     }
     
     const givenName = specification.given[0].name;
+    return specificationNavigatesFromGiven(specification, givenName);
+}
+
+function specificationNavigatesFromGiven(specification: Specification, givenName: string): boolean {
+    // Look for specifications that navigate FROM the given fact through predecessor/successor operations
+    // These are the cases where an unpersisted given would cause the specification to fail
     
-    // Look for patterns where:
-    // 1. There are multiple matches (indicating selectMany)
-    // 2. One match has a path from the given with roles (predecessor operation)
     for (const match of specification.matches) {
         for (const condition of match.conditions) {
-            if (condition.type === "path" && condition.labelRight === givenName && condition.rolesRight.length > 0) {
-                return true;
+            if (condition.type === "path" && condition.labelRight === givenName) {
+                // Check if this is a navigation FROM the given (rolesRight > 0)
+                // vs a join TO the given (which doesn't need self-inverse)
+                if (condition.rolesRight.length > 0) {
+                    // Special case: exclude simple field access joins like facts.ofType(Company).join(c => c, office.company)
+                    // Those don't actually navigate from the given, they join external facts to the given
+                    
+                    // If the match is looking for facts of the same type as what we're navigating to,
+                    // it's likely a join TO the given, not FROM it
+                    if (condition.rolesRight.length === 1) {
+                        const navigatedType = condition.rolesRight[0].predecessorType;
+                        if (match.unknown.type === navigatedType) {
+                            // This looks like: facts.ofType(Company).join(c => c, office.company)
+                            // where we're finding companies that match office.company
+                            return false;
+                        }
+                    }
+                    
+                    return true;
+                }
             }
         }
     }
