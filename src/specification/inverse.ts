@@ -39,7 +39,11 @@ export function invertSpecification(specification: Specification): Specification
     };
     const inverses: SpecificationInverse[] = invertMatches(matches, labels, context);
     const projectionInverses: SpecificationInverse[] = invertProjection(matches, context);
-    return [ ...inverses, ...projectionInverses ];
+    
+    // Add self-inverse when first step is a predecessor operation
+    const selfInverses: SpecificationInverse[] = createSelfInverseIfNeeded(specification);
+    
+    return [ ...inverses, ...projectionInverses, ...selfInverses ];
 }
 
 function invertMatches(matches: Match[], labels: Label[], context: InverterContext): SpecificationInverse[] {
@@ -302,4 +306,55 @@ function expectsSuccessor(condition: Condition, given: string) {
         condition.labelRight === given &&
         condition.rolesRight.length === 0 &&
         condition.rolesLeft.length > 0;
+}
+
+function createSelfInverseIfNeeded(specification: Specification): SpecificationInverse[] {
+    // Only create self-inverse if there's exactly one given and the first step is a predecessor
+    if (specification.given.length !== 1) {
+        return [];
+    }
+
+    const firstStepIsPredecessor = hasFirstStepPredecessor(specification);
+    if (!firstStepIsPredecessor) {
+        return [];
+    }
+
+    // Create a self-inverse: when the given fact is saved, execute the original specification
+    const givenType = specification.given[0].type;
+    const givenSubset = specification.given.map(g => g.name);
+    
+    const selfInverse: SpecificationInverse = {
+        inverseSpecification: specification,
+        operation: "add",
+        givenSubset,
+        parentSubset: givenSubset,
+        path: "",
+        resultSubset: []
+    };
+
+    return [selfInverse];
+}
+
+function hasFirstStepPredecessor(specification: Specification): boolean {
+    // Only add self-inverse for specifications that have multiple matches (selectMany pattern)
+    // and involve predecessor operations from the given fact
+    
+    if (specification.matches.length <= 1) {
+        return false;
+    }
+    
+    const givenName = specification.given[0].name;
+    
+    // Look for patterns where:
+    // 1. There are multiple matches (indicating selectMany)
+    // 2. One match has a path from the given with roles (predecessor operation)
+    for (const match of specification.matches) {
+        for (const condition of match.conditions) {
+            if (condition.type === "path" && condition.labelRight === givenName && condition.rolesRight.length > 0) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
 }
