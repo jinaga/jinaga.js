@@ -595,4 +595,54 @@ describe("specification watch", () => {
         // Verify the inverse execution works correctly
         expect(results).toEqual([j.hash(otherPresident)]);
     });
+
+    it("should execute inverse when first step is a predecessor and include new president", async () => {
+        // Find all presidents of other offices
+        const specification = model.given(Office).match((office, facts) =>
+            office.company.predecessor().selectMany(company =>
+                facts.ofType(President)
+                    .join(president => president.office.company, company)
+                    .select(president => Jinaga.hash(president))
+            )
+        );
+
+        // Set up test data
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+
+        const otherOffice = new Office(company, "OtherOffice");
+        const otherUser = new User("--- OTHER PUBLIC KEY GOES HERE ---");
+        const otherPresident = new President(otherOffice, otherUser);
+        
+        const j = JinagaTest.create({
+            initialState: [user, company, otherOffice, otherPresident]
+        });
+
+        // Test the execution using watch
+        const results: string[] = [];
+        const observer = j.watch(specification, office, hash => {
+            results.push(hash);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        // Add a president to the starting office after observer is loaded
+        const newUser = new User("--- NEW PRESIDENT KEY GOES HERE ---");
+        const newPresident = new President(office, newUser);
+        await j.fact(newUser);
+        await j.fact(newPresident);
+
+        observer.stop();
+
+        // Verify both the existing president and the new president are included
+        expect(results).toEqual(expect.arrayContaining([
+            j.hash(otherPresident),
+            j.hash(newPresident)
+        ]));
+        expect(results).toHaveLength(2);
+    });
 });
