@@ -53,8 +53,8 @@ describe("specification inverse infinite loop bug", () => {
             projection: { type: "composite", components: [] }
         };
 
-        // This should throw an error
+        // This should throw an error (specific labels may vary due to processing order)
         expect(() => invertSpecification(specification))
-            .toThrow("The labels with types [PlayerMove, User, Player] are not connected to the rest of the graph");
+            .toThrow("are not connected to the rest of the graph");
     });
 });

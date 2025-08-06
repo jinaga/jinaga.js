@@ -27,9 +27,10 @@ export function invertSpecification(specification: Specification): Specification
     }));
     const matches: Match[] = [...emptyMatches, ...specification.matches];
 
-    const labels: Label[] = specification.matches.map(m => m.unknown);
+    const labels: Label[] = [...specification.given, ...specification.matches.map(m => m.unknown)];
     const givenSubset: string[] = specification.given.map(g => g.name);
-    const resultSubset: string[] = [ ...givenSubset, ...labels.map(l => l.name) ];
+    const matchLabels: Label[] = specification.matches.map(m => m.unknown);
+    const resultSubset: string[] = [ ...givenSubset, ...matchLabels.map(l => l.name) ];
     const context: InverterContext = {
         path: "",
         givenSubset,
@@ -40,10 +41,7 @@ export function invertSpecification(specification: Specification): Specification
     const inverses: SpecificationInverse[] = invertMatches(matches, labels, context);
     const projectionInverses: SpecificationInverse[] = invertProjection(matches, context);
     
-    // Add self-inverse when first step is a predecessor operation
-    const selfInverses: SpecificationInverse[] = createSelfInverseIfNeeded(specification);
-    
-    return [ ...inverses, ...projectionInverses, ...selfInverses ];
+    return [ ...inverses, ...projectionInverses ];
 }
 
 function invertMatches(matches: Match[], labels: Label[], context: InverterContext): SpecificationInverse[] {
@@ -308,44 +306,6 @@ function expectsSuccessor(condition: Condition, given: string) {
         condition.rolesLeft.length > 0;
 }
 
-function createSelfInverseIfNeeded(specification: Specification): SpecificationInverse[] {
-    // Use the same machinery as normal inverse generation: shake from each given and simplify
-    // This leverages the existing filtering logic to determine when self-inverses are needed
-    
-    const selfInverses: SpecificationInverse[] = [];
-    
-    for (const given of specification.given) {
-        // Create empty matches from the original specification
-        const emptyMatches: Match[] = specification.given.map(g => ({
-            unknown: g,
-            conditions: []
-        }));
-        let matches: Match[] = [...emptyMatches, ...specification.matches];
-        
-        // Shake the tree from this given's perspective
-        matches = shakeTree(matches, given.name);
-        
-        // Apply the same filtering logic as normal inverses
-        const simplified: Match[] | null = simplifyMatches(matches, given.name);
-        
-        if (simplified !== null) {
-            // Create self-inverse: when this given is saved, execute the original specification
-            const givenSubset = [given.name];
-            
-            const selfInverse: SpecificationInverse = {
-                inverseSpecification: specification,
-                operation: "add",
-                givenSubset,
-                parentSubset: givenSubset,
-                path: "",
-                resultSubset: []
-            };
-            
-            selfInverses.push(selfInverse);
-        }
-    }
-    
-    return selfInverses;
-}
+
 
 
