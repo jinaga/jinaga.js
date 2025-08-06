@@ -256,14 +256,16 @@ describe("specification inverse", () => {
         const inverses = fromSpecification(specification);
 
         expect(inverses).toEqual([`
-            (u2: President) {
+            (p1: Office) {
+                u1: President [
+                    u1->office: Office->company: Company = p1->company: Company
+                ]
+            } => u1`, `
+            (u1: President) {
                 p1: Office [
-                    p1 = u2->office: Office
+                    p1->company: Company = u1->office: Office->company: Company
                 ]
-                u1: Company [
-                    u1 = p1->company: Company
-                ]
-            } => u2`
+            } => u1`
         ]);
     });
 });
