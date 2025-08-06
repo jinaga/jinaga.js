@@ -309,54 +309,43 @@ function expectsSuccessor(condition: Condition, given: string) {
 }
 
 function createSelfInverseIfNeeded(specification: Specification): SpecificationInverse[] {
-    // Create self-inverse if the specification navigates from any given fact
-    // This handles cases where given facts might be unpersisted when the observer starts
+    // Use the same machinery as normal inverse generation: shake from each given and simplify
+    // This leverages the existing filtering logic to determine when self-inverses are needed
     
-    if (!shouldCreateSelfInverse(specification)) {
-        return [];
-    }
-
-    // Create a self-inverse: when any given fact is saved, execute the original specification
-    const givenSubset = specification.given.map(g => g.name);
+    const selfInverses: SpecificationInverse[] = [];
     
-    const selfInverse: SpecificationInverse = {
-        inverseSpecification: specification,
-        operation: "add",
-        givenSubset,
-        parentSubset: givenSubset,
-        path: "",
-        resultSubset: []
-    };
-
-    return [selfInverse];
-}
-
-function shouldCreateSelfInverse(specification: Specification): boolean {
-    // Only create self-inverse for single given specifications that navigate from the given
-    // Multiple givens are not yet supported by the observable infrastructure
-    if (specification.given.length !== 1) {
-        return false;
-    }
-    
-    const givenName = specification.given[0].name;
-    return specificationNavigatesFromGiven(specification, givenName);
-}
-
-function specificationNavigatesFromGiven(specification: Specification, givenName: string): boolean {
-    // Apply the same logic as the inverse generator: look for cases where we navigate FROM the given
-    // This is complementary to the normal inverse filtering which removes successor-based inverses
-    
-    for (const match of specification.matches) {
-        for (const condition of match.conditions) {
-            if (condition.type === "path" && condition.labelRight === givenName) {
-                // We need self-inverse when there's navigation FROM the given (rolesRight > 0)
-                // This is the opposite of expectsSuccessor which looks for rolesLeft > 0 (TO the given)
-                if (condition.rolesRight.length > 0) {
-                    return true;
-                }
-            }
+    for (const given of specification.given) {
+        // Create empty matches from the original specification
+        const emptyMatches: Match[] = specification.given.map(g => ({
+            unknown: g,
+            conditions: []
+        }));
+        let matches: Match[] = [...emptyMatches, ...specification.matches];
+        
+        // Shake the tree from this given's perspective
+        matches = shakeTree(matches, given.name);
+        
+        // Apply the same filtering logic as normal inverses
+        const simplified: Match[] | null = simplifyMatches(matches, given.name);
+        
+        if (simplified !== null) {
+            // Create self-inverse: when this given is saved, execute the original specification
+            const givenSubset = [given.name];
+            
+            const selfInverse: SpecificationInverse = {
+                inverseSpecification: specification,
+                operation: "add",
+                givenSubset,
+                parentSubset: givenSubset,
+                path: "",
+                resultSubset: []
+            };
+            
+            selfInverses.push(selfInverse);
         }
     }
     
-    return false;
+    return selfInverses;
 }
+
+
