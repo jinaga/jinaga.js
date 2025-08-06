@@ -343,29 +343,15 @@ function shouldCreateSelfInverse(specification: Specification): boolean {
 }
 
 function specificationNavigatesFromGiven(specification: Specification, givenName: string): boolean {
-    // Look for specifications that navigate FROM the given fact through predecessor/successor operations
-    // These are the cases where an unpersisted given would cause the specification to fail
+    // Apply the same logic as the inverse generator: look for cases where we navigate FROM the given
+    // This is complementary to the normal inverse filtering which removes successor-based inverses
     
     for (const match of specification.matches) {
         for (const condition of match.conditions) {
             if (condition.type === "path" && condition.labelRight === givenName) {
-                // Check if this is a navigation FROM the given (rolesRight > 0)
-                // vs a join TO the given (which doesn't need self-inverse)
+                // We need self-inverse when there's navigation FROM the given (rolesRight > 0)
+                // This is the opposite of expectsSuccessor which looks for rolesLeft > 0 (TO the given)
                 if (condition.rolesRight.length > 0) {
-                    // Special case: exclude simple field access joins like facts.ofType(Company).join(c => c, office.company)
-                    // Those don't actually navigate from the given, they join external facts to the given
-                    
-                    // If the match is looking for facts of the same type as what we're navigating to,
-                    // it's likely a join TO the given, not FROM it
-                    if (condition.rolesRight.length === 1) {
-                        const navigatedType = condition.rolesRight[0].predecessorType;
-                        if (match.unknown.type === navigatedType) {
-                            // This looks like: facts.ofType(Company).join(c => c, office.company)
-                            // where we're finding companies that match office.company
-                            return false;
-                        }
-                    }
-                    
                     return true;
                 }
             }
