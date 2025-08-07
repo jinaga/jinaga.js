@@ -5,6 +5,7 @@ import { PurgeConditions } from "../purge/purgeConditions";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
 import { Condition, ExistentialCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
+import { enforceConnectivityValidation } from "./connectivity";
 
 type FieldValue = string | number | boolean;
 
@@ -425,7 +426,10 @@ export class SpecificationParser {
         const given = this.parseGiven();
         const { matches, labels } = this.parseMatches(given);
         const projection = this.parseProjection(labels);
-        return { given, matches, projection };
+        const specification = { given, matches, projection };
+        // Validate connectivity early for DSL-parsed specifications
+        enforceConnectivityValidation(specification);
+        return specification;
     }
 
     parseDeclaration(knownFacts: Declaration): Declaration {

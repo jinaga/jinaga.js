@@ -10,6 +10,7 @@ import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } fro
 import { Trace } from "../util/trace";
 import { Network, NetworkManager } from "./NetworkManager";
 import { PurgeManager } from "./PurgeManager";
+import { enforceConnectivityValidation } from "../specification/connectivity";
 
 export class FactManager {
     private networkManager: NetworkManager;
@@ -110,16 +111,19 @@ export class FactManager {
     }
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        enforceConnectivityValidation(specification);
         this.purgeManager.checkCompliance(specification);
         return await this.store.read(start, specification);
     }
 
     async fetch(start: FactReference[], specification: Specification) {
+        enforceConnectivityValidation(specification);
         this.purgeManager.checkCompliance(specification);
         await this.networkManager.fetch(start, specification);
     }
 
     async subscribe(start: FactReference[], specification: Specification) {
+        enforceConnectivityValidation(specification);
         this.purgeManager.checkCompliance(specification);
         return await this.networkManager.subscribe(start, specification);
     }

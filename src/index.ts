@@ -56,6 +56,5 @@ export { Invalid, SpecificationParser } from './specification/specification-pars
 export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
 export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
-
-// Export the JinagaBrowser class using the alias JinagaClient
 export { JinagaBrowser as JinagaClient } from "./jinaga-browser";
+export { validateSpecificationConnectivity, DisconnectedSpecificationError, setConnectivityValidationMode, enforceConnectivityValidation } from './specification/connectivity';

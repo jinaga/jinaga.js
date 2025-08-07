@@ -1,6 +1,7 @@
 import { hashSymbol } from "../fact/hydrate";
 import { describeSpecification } from "./description";
 import { CompositeProjection, Condition, ExistentialCondition, FactProjection, FieldProjection, HashProjection, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
+import { enforceConnectivityValidation } from "./connectivity";
 
 type RoleMap = { [role: string]: string };
 
@@ -113,6 +114,7 @@ class Given<T extends any[]> {
             matches,
             projection
         };
+        enforceConnectivityValidation(specification);
         return new SpecificationOf<T, SpecificationResult<U>>(specification);
     }
 
@@ -135,6 +137,7 @@ class Given<T extends any[]> {
             matches,
             projection
         };
+        enforceConnectivityValidation(specification);
         return new SpecificationOf<T, U>(specification);
     }
 }
