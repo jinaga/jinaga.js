@@ -18,6 +18,16 @@ export class SpecificationRunner {
     if (start.length !== specification.given.length) {
       throw new Error(`The number of start references (${start.length}) must match the number of given facts (${specification.given.length}).`);
     }
+    
+    // Check if all given facts exist by attempting to find them
+    for (const reference of start) {
+      const fact = await this.source.findFact(reference);
+      if (fact === null) {
+        // If any given fact doesn't exist, return empty result
+        return [];
+      }
+    }
+    
     const references = start.reduce((references, reference, index) => ({
       ...references,
       [specification.given[index].name]: {

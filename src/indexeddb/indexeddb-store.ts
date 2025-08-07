@@ -136,7 +136,7 @@ export class IndexedDBStore implements Storage {
               execRequest<FactRecord>(factObjectStore.get(key))));
             const facts = hydrateFromTree([reference], factRecords);
             if (facts.length === 0) {
-              throw new Error(`The fact ${reference} is not defined.`);
+              return undefined;
             }
             if (facts.length > 1) {
               throw new Error(`The fact ${reference} is defined more than once.`);

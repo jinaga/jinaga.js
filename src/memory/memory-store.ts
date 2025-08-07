@@ -191,7 +191,7 @@ export class MemoryStore implements Storage {
     private hydrate(reference: FactReference) {
         const fact = hydrateFromTree([reference], this.factEnvelopes.map(e => e.fact));
         if (fact.length === 0) {
-            throw new Error(`The fact ${reference} is not defined.`);
+            return Promise.resolve(undefined);
         }
         if (fact.length > 1) {
             throw new Error(`The fact ${reference} is defined more than once.`);
