@@ -29,6 +29,10 @@ export class GraphDeserializer implements GraphSource {
                 const index = parseInt(line.substring(2));
                 await this.readPublicKey(index);
             }
+            else if (line.startsWith("BOOK") || line.startsWith("SUB") || line.startsWith("UNSUB") || line.startsWith("ERR")) {
+                // Skip WebSocket protocol commands
+                continue;
+            }
             else {
                 const type = JSON.parse(line);
                 envelopes = await this.readEnvelope(type, envelopes, onEnvelopes);
