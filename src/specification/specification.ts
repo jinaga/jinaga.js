@@ -431,3 +431,5 @@ export class DisconnectedSpecificationError extends Error {
         this.name = "DisconnectedSpecificationError";
     }
 }
+
+export { detectDisconnectedSpecification } from './UnionFind';
