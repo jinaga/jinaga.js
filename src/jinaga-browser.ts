@@ -22,8 +22,6 @@ import { PurgeConditions } from "./purge/purgeConditions";
 import { validatePurgeSpecification } from "./purge/validate";
 import { Specification } from "./specification/specification";
 import { Storage } from "./storage";
-import { WsClient } from "./ws/ws-client";
-import { WsNetwork } from "./ws/wsNetwork";
 import { WsGraphNetwork } from "./ws/wsGraphNetwork";
 
 export type JinagaBrowserConfig = {
@@ -45,7 +43,7 @@ export class JinagaBrowser {
         const webClient = createWebClient(config, syncStatusNotifier);
         const fork = createFork(config, store, webClient);
         const authentication = createAuthentication(config, webClient);
-        const network = createNetwork(config, webClient);
+        const network = createNetwork(config, webClient, store);
         const purgeConditions = createPurgeConditions(config);
         const factManager = new FactManager(fork, observableSource, store, network, purgeConditions, config.feedRefreshIntervalSeconds);
         return new Jinaga(authentication, factManager, syncStatusNotifier);
@@ -132,14 +130,15 @@ function createAuthentication(
 
 function createNetwork(
     config: JinagaBrowserConfig,
-    webClient: WebClient | null
+    webClient: WebClient | null,
+    store: Storage
 ): Network {
     if (webClient) {
         // Prefer WebSocket graph when endpoint provided and environment supports WebSocket
         if (config.wsEndpoint && typeof (globalThis as any).WebSocket !== 'undefined') {
             try {
                 const httpNetwork = new HttpNetwork(webClient);
-                const network: Network = new WsGraphNetwork(httpNetwork, createStore(config), config.wsEndpoint);
+                const network: Network = new WsGraphNetwork(httpNetwork, store, config.wsEndpoint);
                 return network;
             }
             catch {
