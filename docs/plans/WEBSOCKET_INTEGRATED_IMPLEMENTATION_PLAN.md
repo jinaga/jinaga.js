@@ -11,26 +11,26 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 **Deliverables**: Clean protocol separation, working WebSocket client
 
 #### 1.1 Protocol Router Implementation
-- [ ] Create `WebSocketMessageRouter` class
-- [ ] Implement `ProtocolMessage` and `ControlFrame` interfaces
-- [ ] Add message routing logic
-- [ ] Write comprehensive unit tests
+- [x] Create `WebSocketMessageRouter` class
+- [x] Implement `ProtocolMessage` and `ControlFrame` interfaces
+- [x] Add message routing logic
+- [x] Write comprehensive unit tests
 
 #### 1.2 Control Frame Handler Implementation
-- [ ] Create `ControlFrameHandler` class
-- [ ] Implement BOOK/ERR/SUB/UNSUB command handling
-- [ ] Add bookmark management logic
+- [x] Create `ControlFrameHandler` class
+- [x] Implement BOOK/ERR/SUB/UNSUB command handling
+- [x] Add bookmark management logic
 - [ ] Write unit tests for each command type
 
 #### 1.3 WebSocket Client Refactoring
-- [ ] Integrate protocol router into `WsGraphClient`
-- [ ] Separate graph buffer from protocol handling
-- [ ] Update socket event handling
-- [ ] Maintain backward compatibility
+- [x] Integrate protocol router into `WsGraphClient`
+- [x] Separate graph buffer from protocol handling
+- [x] Update socket event handling
+- [x] Maintain backward compatibility
 
 #### 1.4 HTTP Deserializer Cleanup
-- [ ] Remove WebSocket command detection from `GraphDeserializer`
-- [ ] Restore HTTP-only functionality
+- [x] Remove WebSocket command detection from `GraphDeserializer`
+- [x] Restore HTTP-only functionality
 - [ ] Update tests and documentation
 
 #### 1.5 Validation and Optimization
@@ -44,10 +44,10 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 **Deliverables**: Authorization-ready WebSocket client
 
 #### 2.1 Authorization Context Support
-- [ ] Add authorization context types to protocol router
-- [ ] Prepare bookmark management for authorization integration
-- [ ] Add user identity support to WebSocket client
-- [ ] Update type definitions for authorization context
+- [x] Add authorization context types to protocol router
+- [x] Prepare bookmark management for authorization integration
+- [x] Add user identity support to WebSocket client (optional URL param)
+- [x] Update type definitions for authorization context
 
 #### 2.2 Integration Testing
 - [ ] Test protocol router with authorization context
@@ -61,27 +61,27 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 **Deliverables**: Authorization-enabled WebSocket server
 
 #### 3.1 Authorization Handler Implementation
-- [ ] Create `AuthorizationWebSocketHandler` class
-- [ ] Inject Authorization implementation
-- [ ] Handle WebSocket connections
-- [ ] Process SUB/UNSUB messages
+- [x] Create `AuthorizationWebSocketHandler` class
+- [x] Inject Authorization implementation
+- [x] Handle WebSocket connections
+- [x] Process SUB/UNSUB messages
 
 #### 3.2 Feed Authorization Integration
-- [ ] Use `authorization.feed()` for initial data loading
-- [ ] Stream authorized facts via WebSocket
-- [ ] Handle authorization errors
-- [ ] Validate user identity
+- [x] Use `authorization.feed()` for initial data loading
+- [x] Stream authorized facts via WebSocket
+- [x] Handle authorization errors
+- [x] Validate user identity
 
 #### 3.3 Inverse Specification Integration
-- [ ] Create `InverseSpecificationEngine`
-- [ ] Use `invertSpecification()` for reactive updates
-- [ ] Set up specification listeners
-- [ ] Handle add/remove operations
+- [x] Create `InverseSpecificationEngine`
+- [x] Use `invertSpecification()` for reactive updates (add only)
+- [ ] Set up listener removal on UNSUB/close
+- [ ] Handle remove operations
 
 #### 3.4 Bookmark Management Integration
-- [ ] Create `BookmarkManager`
-- [ ] Integrate bookmark advancement with authorization
-- [ ] Send BOOK frames after updates
+- [x] Create `BookmarkManager`
+- [x] Integrate bookmark advancement with authorization
+- [x] Send BOOK frames after updates
 - [ ] Handle bookmark validation
 
 ### Phase 4: Enhanced FactFeed Interface
@@ -157,24 +157,25 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 ## Success Criteria
 
 ### Phase 1 Success Criteria
-- [ ] All WebSocket protocol commands handled correctly
-- [ ] HTTP deserializer no longer contains WebSocket code
+- [x] All WebSocket protocol commands handled correctly
+- [x] HTTP deserializer no longer contains WebSocket code
 - [ ] Performance matches or exceeds current implementation
-- [ ] All existing tests pass without modification
-- [ ] New architecture supports protocol evolution
+- [x] All existing tests pass without modification
+- [x] New architecture supports protocol evolution
 
 ### Phase 2 Success Criteria
-- [ ] Authorization context support added to protocol router
-- [ ] Bookmark management prepared for authorization integration
-- [ ] User identity support added to WebSocket client
+- [x] Authorization context support added to protocol router
+- [x] Bookmark management prepared for authorization integration
+- [x] User identity support added to WebSocket client
 - [ ] Integration tests with authorization context passing
 
 ### Phase 3 Success Criteria
-- [ ] Authorization handler working with WebSocket connections
-- [ ] Initial feed loading uses `authorization.feed()`
-- [ ] Reactive updates use `invertSpecification()`
-- [ ] Bookmarks properly managed and advanced
-- [ ] WebSocket streaming works with authorization
+- [x] Authorization handler working with WebSocket connections
+- [x] Initial feed loading uses `authorization.feed()`
+- [x] Reactive updates use `invertSpecification()` for adds
+- [x] Bookmarks properly managed and advanced
+- [ ] Listener lifecycle handled for UNSUB/close
+- [ ] Remove operations processed
 
 ### Phase 4 Success Criteria
 - [ ] Enhanced FactFeed interface is backward compatible
@@ -207,7 +208,7 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 - [ ] Message processing speed
 - [ ] Memory usage optimization
 - [ ] Authorization overhead measurement
-- [ ] Stress testing with multiple connections
+- [ ] Stress testing
 
 ## Monitoring and Validation
 

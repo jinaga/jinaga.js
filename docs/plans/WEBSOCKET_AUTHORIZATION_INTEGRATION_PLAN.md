@@ -74,7 +74,6 @@ graph TB
         WSServer[WebSocket Server]
         AuthHandler[Authorization Handler]
         Authorization[Authorization Implementation]
-        FeedEngine[Feed Engine]
         InverseEngine[Inverse Specification Engine]
         BookmarkManager[Bookmark Manager]
     end
@@ -98,8 +97,7 @@ graph TB
     Authorization --> feed
     Authorization --> read
     Authorization --> load
-    AuthHandler --> FeedEngine
-    FeedEngine --> InverseEngine
+    AuthHandler --> InverseEngine
     InverseEngine --> invertSpec
     invertSpec --> specListeners
     specListeners --> reactiveUpdates
@@ -128,110 +126,19 @@ export interface FactFeed {
 ### 2. Authorization WebSocket Handler
 
 ```typescript
-class AuthorizationWebSocketHandler {
-  constructor(
-    private authorization: Authorization,
-    private inverseEngine: InverseSpecificationEngine,
-    private bookmarkManager: BookmarkManager
-  ) {}
-
-  handleConnection(socket: WebSocket, userIdentity: UserIdentity) {
-    socket.on('SUB', async (feed, bookmark) => {
-      try {
-        // 1. Use Authorization to get initial feed data
-        const factFeed = await this.authorization.feed(
-          userIdentity,
-          this.getSpecificationForFeed(feed),
-          [], // start references
-          bookmark
-        );
-
-        // 2. Stream initial facts
-        if (factFeed.tuples.length > 0) {
-          const envelopes = await this.authorization.load(
-            userIdentity,
-            factFeed.tuples.flatMap(tuple => tuple.facts)
-          );
-          socket.send(serializeGraph(envelopes));
-        }
-
-        // 3. Set up inverse specification listeners for reactive updates
-        const specification = this.getSpecificationForFeed(feed);
-        const inverses = invertSpecification(specification);
-        
-        const inverseListeners = inverses.map(inverse => 
-          this.inverseEngine.addSpecificationListener(
-            inverse.inverseSpecification,
-            async (results) => {
-              if (inverse.operation === 'add') {
-                // New facts that match inverse - stream them
-                const newEnvelopes = await this.authorization.load(
-                  userIdentity,
-                  results.flatMap(r => Object.values(r.tuple))
-                );
-                socket.send(serializeGraph(newEnvelopes));
-                
-                // Advance bookmark
-                const newBookmark = await this.bookmarkManager.advanceBookmark(feed);
-                socket.send(`BOOK\n${JSON.stringify(feed)}\n${JSON.stringify(newBookmark)}\n\n`);
-              }
-            }
-          )
-        );
-
-        // 4. Send initial bookmark advancement
-        if (factFeed.bookmark !== bookmark) {
-          socket.send(`BOOK\n${JSON.stringify(feed)}\n${JSON.stringify(factFeed.bookmark)}\n\n`);
-        }
-
-      } catch (error) {
-        socket.send(`ERR\n${JSON.stringify(feed)}\n${JSON.stringify(error.message)}\n\n`);
-      }
-    });
-  }
-
-  private getSpecificationForFeed(feed: string): Specification {
-    // Map feed ID to specification
-    // This would be implemented based on your feed-to-specification mapping
-    return { /* specification */ };
-  }
-}
+// Implemented in src/ws/authorization-websocket-handler.ts
 ```
 
 ### 3. Inverse Specification Engine
 
 ```typescript
-class InverseSpecificationEngine {
-  constructor(private authorization: Authorization) {}
-
-  addSpecificationListener(
-    specification: Specification,
-    onResult: (results: ProjectedResult[]) => Promise<void>
-  ): SpecificationListener {
-    // Implementation that uses authorization for fact loading
-    // Uses existing invertSpecification() from src/specification/inverse.ts
-    return this.authorization.addSpecificationListener(specification, onResult);
-  }
-}
+// Implemented in src/ws/inverse-specification-engine.ts
 ```
 
 ### 4. Bookmark Manager
 
 ```typescript
-class BookmarkManager {
-  private bookmarks = new Map<string, string>();
-
-  async advanceBookmark(feed: string): Promise<string> {
-    const currentBookmark = this.bookmarks.get(feed) || '';
-    const newBookmark = generateBookmark(); // Implementation specific
-    this.bookmarks.set(feed, newBookmark);
-    return newBookmark;
-  }
-
-  getBookmark(feed: string): string {
-    return this.bookmarks.get(feed) || '';
-  }
-}
+// Implemented in src/ws/bookmark-manager.ts
 ```
 
 ## Runtime Integration Flow
@@ -243,32 +150,32 @@ class BookmarkManager {
 - [x] WsGraphNetwork implements Network interface
 - [x] Subscriber handles feed subscriptions
 
-### Phase 2: Server Authorization Handler 🔄
+### Phase 2: Server Authorization Handler ✅
 
-- [ ] Create AuthorizationWebSocketHandler class
-- [ ] Inject Authorization implementation
-- [ ] Handle WebSocket connections
-- [ ] Process SUB/UNSUB messages
+- [x] Create AuthorizationWebSocketHandler class
+- [x] Inject Authorization implementation
+- [x] Handle WebSocket connections
+- [x] Process SUB/UNSUB messages
 
-### Phase 3: Feed Authorization Integration ❌
+### Phase 3: Feed Authorization Integration ✅
 
-- [ ] Use `authorization.feed()` for initial data loading
-- [ ] Stream authorized facts via WebSocket
-- [ ] Handle authorization errors
-- [ ] Validate user identity
+- [x] Use `authorization.feed()` for initial data loading
+- [x] Stream authorized facts via WebSocket
+- [x] Handle authorization errors
+- [x] Validate user identity (plumbed via ws query param)
 
-### Phase 4: Inverse Specification Integration ❌
+### Phase 4: Inverse Specification Integration 🔄
 
-- [ ] Create InverseSpecificationEngine
-- [ ] Use `invertSpecification()` for reactive updates
-- [ ] Set up specification listeners
-- [ ] Handle add/remove operations
+- [x] Create InverseSpecificationEngine
+- [x] Use `invertSpecification()` for reactive updates
+- [ ] Set up specification listeners removal on UNSUB/close
+- [x] Handle add/remove operations (add only for now)
 
-### Phase 5: Bookmark Management ❌
+### Phase 5: Bookmark Management 🔄
 
-- [ ] Create BookmarkManager
-- [ ] Integrate bookmark advancement with authorization
-- [ ] Send BOOK frames after updates
+- [x] Create BookmarkManager
+- [x] Integrate bookmark advancement with authorization
+- [x] Send BOOK frames after updates
 - [ ] Handle bookmark validation
 
 ### Phase 6: Enhanced FactFeed Interface ❌
@@ -286,87 +193,13 @@ class BookmarkManager {
 - [ ] Performance testing with authorization overhead
 - [ ] Integration testing with protocol refactoring
 
-## Test Scenario Integration
-
-```typescript
-describe('Authorization + WebSocket + Inverse Integration', () => {
-  test('server uses authorization to stream facts and reactively updates', async () => {
-    // 1. Client setup (standard factory)
-    const jinaga = JinagaBrowser.create({
-      wsEndpoint: 'ws://localhost:8080'
-    });
-    
-    const observer = jinaga.watch(specification, async (result) => {
-      // Handle reactive updates
-      return Promise.resolve();
-    });
-
-    // 2. Server setup (authorization injection)
-    const wss = new WebSocketServer({ port: 8080 });
-    const authorization = new AuthorizationNoOp(factManager, store);
-    const inverseEngine = new InverseSpecificationEngine(authorization);
-    const bookmarkManager = new BookmarkManager();
-    
-    const handler = new AuthorizationWebSocketHandler(
-      authorization,
-      inverseEngine,
-      bookmarkManager
-    );
-
-    wss.on('connection', (socket) => {
-      const userIdentity = createTestUserIdentity();
-      handler.handleConnection(socket, userIdentity);
-    });
-
-    // 3. Test flow
-    await observer.loaded();
-    
-    // Verify authorization was used for initial feed
-    expect(authorization.feed).toHaveBeenCalledWith(
-      userIdentity,
-      specification,
-      [],
-      ''
-    );
-    
-    // Verify inverse specifications were set up
-    expect(inverseEngine.addSpecificationListener).toHaveBeenCalled();
-    
-    // Verify bookmark advancement
-    expect(bookmarkManager.advanceBookmark).toHaveBeenCalled();
-  });
-});
-```
-
-## Key Integration Points
-
-### Client-Side (Standard Factory)
-1. **JinagaBrowser.create()**: Standard factory creates all components
-2. **NetworkManager**: Manages network operations through injected Network
-3. **WsGraphNetwork**: WebSocket-specific Network implementation
-4. **Subscriber**: Handles feed subscriptions and bookmark management
-5. **No Authorization**: Client doesn't know about Authorization interface
-
-### Server-Side (Authorization Injection)
-1. **Authorization Handler**: Injects Authorization implementation
-2. **Feed Authorization**: Uses `authorization.feed()` for initial data
-3. **Inverse Specifications**: Uses `invertSpecification()` for reactive updates
-4. **Bookmark Management**: Manages bookmark advancement after updates
-5. **WebSocket Streaming**: Streams facts and sends BOOK frames
-
-### FactFeed Augmentation
-1. **Enhanced Interface**: Add optional authorization context to FactFeed
-2. **Authorization Context**: Include authorization context in feed responses
-3. **Bookmark Integration**: Ensure bookmarks are properly managed through authorization
-
 ## Success Criteria
 
-- [ ] Client uses standard Jinaga browser factory without Authorization knowledge
-- [ ] Server injects Authorization implementation into WebSocket handler
-- [ ] Initial feed loading uses `authorization.feed()`
-- [ ] Reactive updates use `invertSpecification()`
-- [ ] Bookmarks are properly managed and advanced
-- [ ] WebSocket streaming works with authorization
+- [x] Client uses standard Jinaga browser factory without Authorization knowledge
+- [x] Server injects Authorization implementation into WebSocket handler
+- [x] Initial feed loading uses `authorization.feed()`
+- [x] Reactive updates use `invertSpecification()` (add operations)
+- [x] Bookmarks are properly managed and advanced
 - [ ] Test scenario validates all integration points
 - [ ] Enhanced FactFeed interface is backward compatible
 

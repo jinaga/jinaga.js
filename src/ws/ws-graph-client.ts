@@ -1,6 +1,9 @@
 import { GraphDeserializer } from "../http/deserializer";
 import { FactEnvelope, FactReference, Storage } from "../storage";
 import { Trace } from "../util/trace";
+import { WebSocketMessageRouter } from "./protocol-router";
+import { ControlFrameHandler } from "./control-frame-handler";
+import { UserIdentity } from "../user-identity";
 
 // Avoid DOM lib dependency; define minimal WebSocket ctor type
 declare const WebSocket: any;
@@ -14,7 +17,6 @@ type ActiveFeed = {
 
 export class WsGraphClient {
   private socket: any | null = null;
-  private buffer: string = "";
   private readonly activeFeeds = new Map<string, ActiveFeed>();
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempt = 0;
@@ -23,12 +25,15 @@ export class WsGraphClient {
 
   private pendingLines: string[] = [];
   private waitingResolver: ((line: string | null) => void) | null = null;
+  private router: WebSocketMessageRouter | null = null;
+  private lastSavePromise: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly getWsUrl: () => Promise<string>,
     private readonly store: Storage,
     private readonly onBookmark: BookmarkListener,
-    private readonly onErrorGlobal: (err: Error) => void
+    private readonly onErrorGlobal: (err: Error) => void,
+    private readonly getUserIdentity?: () => Promise<UserIdentity | null>
   ) {}
 
   subscribe(feed: string, bookmark: string): () => void {
@@ -68,13 +73,56 @@ export class WsGraphClient {
   private openSocket(): Promise<void> {
     return new Promise<void>(async (resolve, reject) => {
       try {
-        const url = await this.getWsUrl();
+        let url = await this.getWsUrl();
+        // Optionally append identity as query param if not already included
+        if (this.getUserIdentity) {
+          try {
+            const id = await this.getUserIdentity();
+            if (id) {
+              const parsed = new URL(url);
+              if (!parsed.searchParams.has("uid")) {
+                parsed.searchParams.set("uid", `${encodeURIComponent(id.provider)}:${encodeURIComponent(id.id)}`);
+                url = parsed.toString();
+              }
+            }
+          } catch { /* ignore */ }
+        }
         const socket = new WebSocket(url);
         this.socket = socket;
 
         socket.onopen = () => {
           this.hasEverConnected = true;
           this.reconnectAttempt = 0;
+          // Instantiate router and handler per-connection
+          const handler = new ControlFrameHandler(
+            (feed, bookmark) => {
+              // Defer BOOK processing to next macrotask, then await latest save
+              setTimeout(() => {
+                this.lastSavePromise
+                  .catch(() => {})
+                  .then(() => {
+                    const active = this.activeFeeds.get(feed);
+                    if (active) {
+                      active.bookmark = bookmark;
+                      this.onBookmark(feed, bookmark);
+                    }
+                  });
+              }, 0);
+            },
+            (feed, message) => {
+              Trace.warn(`Feed error for ${feed}: ${message}`);
+            }
+          );
+          this.router = new WebSocketMessageRouter(
+            {
+              onGraphLine: (line: string) => {
+                this.pendingLines.push(line);
+                this.pumpWaiting();
+              },
+            },
+            handler
+          );
+
           // Start graph reader
           this.startGraphReader();
           // Resubscribe all feeds
@@ -86,8 +134,7 @@ export class WsGraphClient {
 
         socket.onmessage = (event: any) => {
           const chunk = typeof event.data === "string" ? event.data : String(event.data);
-          this.buffer += chunk;
-          this.flushLines();
+          this.router?.pushChunk(chunk);
         };
 
         socket.onerror = () => {
@@ -113,7 +160,10 @@ export class WsGraphClient {
     (async () => {
       try {
         await deserializer.read(async (envelopes: FactEnvelope[]) => {
-          const saved = await this.store.save(envelopes);
+          const savePromise = this.store.save(envelopes);
+          // Track the latest save so control frames can wait for persistence
+          this.lastSavePromise = savePromise.then(() => {});
+          const saved = await savePromise;
           if (saved.length > 0) {
             Trace.counter("facts_saved", saved.length);
           }
@@ -122,14 +172,6 @@ export class WsGraphClient {
         this.onErrorGlobal(err as Error);
       }
     })();
-  }
-
-  private flushLines() {
-    // Split buffer by newlines, keep trailing partial in buffer
-    const parts = this.buffer.split(/\r?\n/);
-    this.buffer = parts.pop() ?? "";
-    this.pendingLines.push(...parts);
-    this.pumpWaiting();
   }
 
   private pumpWaiting() {
@@ -142,7 +184,6 @@ export class WsGraphClient {
   }
 
   private readLine(): Promise<string | null> {
-    // Interleave control frames parsing here
     return new Promise<string | null>((resolve) => {
       const tryDequeue = () => {
         if (this.pendingLines.length === 0) {
@@ -155,54 +196,10 @@ export class WsGraphClient {
           return;
         }
         const line = this.pendingLines.shift()!;
-        if (line === "SUB" || line === "UNSUB" || line === "BOOK" || line === "ERR") {
-          this.handleControlFrame(line).then(() => {
-            // After control frame handled, continue reading next line
-            tryDequeue();
-          }).catch(err => this.onErrorGlobal(err));
-          return;
-        }
         resolve(line);
       };
       tryDequeue();
     });
-  }
-
-  private async handleControlFrame(keyword: string): Promise<void> {
-    const readJsonLine = async () => {
-      const l = await this.readLine();
-      if (l === null) throw new Error("Unexpected EOF in control frame");
-      return JSON.parse(l);
-    };
-    if (keyword === "BOOK") {
-      const feed: string = await readJsonLine();
-      const bookmark: string = await readJsonLine();
-      const empty = await this.readLine();
-      if (empty !== "") throw new Error("Expected blank line after BOOK");
-      const active = this.activeFeeds.get(feed);
-      if (active) {
-        active.bookmark = bookmark;
-        this.onBookmark(feed, bookmark);
-      }
-      return;
-    }
-    if (keyword === "ERR") {
-      const feed: string = await readJsonLine();
-      const message: string = await readJsonLine();
-      const empty = await this.readLine();
-      if (empty !== "") throw new Error("Expected blank line after ERR");
-      Trace.warn(`Feed error for ${feed}: ${message}`);
-      return;
-    }
-    if (keyword === "SUB") {
-      // Server should not send SUB back; read until blank line to realign
-      while ((await this.readLine()) !== "") { /* discard */ }
-      return;
-    }
-    if (keyword === "UNSUB") {
-      while ((await this.readLine()) !== "") { /* discard */ }
-      return;
-    }
   }
 
   private scheduleReconnect() {
