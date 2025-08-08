@@ -1,7 +1,6 @@
 import { computeObjectHash } from "./fact/hash";
 import { Specification } from "./specification/specification";
 import { findIndex } from './util/fn';
-import { UserIdentity } from "./user-identity";
 
 export type FactReference = {
     type: string;
@@ -16,12 +15,6 @@ export interface FactTuple {
 export interface FactFeed {
     tuples: FactTuple[];
     bookmark: string;
-    // Optional authorization context for backward-compatible enhancement
-    authorizationContext?: {
-        specification?: Specification;
-        userIdentity?: UserIdentity;
-        metadata?: Record<string, any>;
-    };
 }
 
 export type PredecessorCollection = {
