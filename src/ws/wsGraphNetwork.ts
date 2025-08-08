@@ -4,6 +4,7 @@ import { FactEnvelope, FactReference, Storage } from "../storage";
 import { FeedResponse } from "../http/messages";
 import { HttpNetwork } from "../http/httpNetwork";
 import { WsGraphClient } from "./ws-graph-client";
+import { UserIdentity } from "../user-identity";
 
 export class WsGraphNetwork implements Network {
   private readonly wsClient: WsGraphClient;
@@ -11,13 +12,27 @@ export class WsGraphNetwork implements Network {
   constructor(
     private readonly httpNetwork: HttpNetwork,
     store: Storage,
-    wsEndpoint: string
+    wsEndpoint: string,
+    getUserIdentity?: () => Promise<UserIdentity | null>
   ) {
+    const getWsUrl = async () => {
+      if (!getUserIdentity) return wsEndpoint;
+      try {
+        const id = await getUserIdentity();
+        if (!id) return wsEndpoint;
+        const url = new URL(wsEndpoint);
+        url.searchParams.set("uid", `${encodeURIComponent(id.provider)}:${encodeURIComponent(id.id)}`);
+        return url.toString();
+      } catch {
+        return wsEndpoint;
+      }
+    };
     this.wsClient = new WsGraphClient(
-      async () => wsEndpoint,
+      getWsUrl,
       store,
       (feed, bookmark) => this.onBookmarkAdvance(feed, bookmark),
-      (err) => this.onGlobalError(err)
+      (err) => this.onGlobalError(err),
+      getUserIdentity
     );
   }
 

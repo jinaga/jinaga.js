@@ -3,6 +3,7 @@ import { FactEnvelope, FactReference, Storage } from "../storage";
 import { Trace } from "../util/trace";
 import { WebSocketMessageRouter } from "./protocol-router";
 import { ControlFrameHandler } from "./control-frame-handler";
+import { UserIdentity } from "../user-identity";
 
 // Avoid DOM lib dependency; define minimal WebSocket ctor type
 declare const WebSocket: any;
@@ -31,7 +32,8 @@ export class WsGraphClient {
     private readonly getWsUrl: () => Promise<string>,
     private readonly store: Storage,
     private readonly onBookmark: BookmarkListener,
-    private readonly onErrorGlobal: (err: Error) => void
+    private readonly onErrorGlobal: (err: Error) => void,
+    private readonly getUserIdentity?: () => Promise<UserIdentity | null>
   ) {}
 
   subscribe(feed: string, bookmark: string): () => void {
@@ -71,7 +73,20 @@ export class WsGraphClient {
   private openSocket(): Promise<void> {
     return new Promise<void>(async (resolve, reject) => {
       try {
-        const url = await this.getWsUrl();
+        let url = await this.getWsUrl();
+        // Optionally append identity as query param if not already included
+        if (this.getUserIdentity) {
+          try {
+            const id = await this.getUserIdentity();
+            if (id) {
+              const parsed = new URL(url);
+              if (!parsed.searchParams.has("uid")) {
+                parsed.searchParams.set("uid", `${encodeURIComponent(id.provider)}:${encodeURIComponent(id.id)}`);
+                url = parsed.toString();
+              }
+            }
+          } catch { /* ignore */ }
+        }
         const socket = new WebSocket(url);
         this.socket = socket;
 

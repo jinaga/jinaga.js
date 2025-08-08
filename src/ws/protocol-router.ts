@@ -1,15 +1,23 @@
-import { ControlKeyword, ControlFrame, ProtocolMessageRouterCallbacks } from "./types";
+import { ControlKeyword, ControlFrame, ProtocolMessageRouterCallbacks, AuthorizationContext } from "./types";
 import { ControlFrameHandler } from "./control-frame-handler";
 
 const CONTROL_KEYWORDS: ReadonlySet<string> = new Set(["BOOK", "ERR", "SUB", "UNSUB"]);
 
 export class WebSocketMessageRouter {
   private buffer: string = "";
+  private authorizationContext: AuthorizationContext | undefined;
 
   constructor(
     private readonly callbacks: ProtocolMessageRouterCallbacks,
-    private readonly controlHandler: ControlFrameHandler
-  ) {}
+    private readonly controlHandler: ControlFrameHandler,
+    authorizationContext?: AuthorizationContext
+  ) {
+    this.authorizationContext = authorizationContext;
+  }
+
+  setAuthorizationContext(ctx: AuthorizationContext | undefined) {
+    this.authorizationContext = ctx;
+  }
 
   pushChunk(chunk: string): void {
     this.buffer += typeof chunk === "string" ? chunk : String(chunk);
@@ -48,7 +56,6 @@ export class WebSocketMessageRouter {
           this.controlHandler.handle(frame);
         } catch (err) {
           // Swallow handler errors; protocol continues
-          // Optionally could log; omitted to keep router generic
         }
         continue;
       }

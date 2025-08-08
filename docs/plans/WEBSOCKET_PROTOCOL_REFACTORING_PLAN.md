@@ -8,9 +8,9 @@ Refactor the WebSocket client architecture to properly separate graph data parsi
 - 🔄 **Phase 2: Refactor WebSocket Client** - COMPLETE
 - ✅ **Phase 3: Clean Up HTTP Deserializer** - COMPLETE
 - ❌ **Phase 4: Validation and Optimization** - PENDING
-- ❌ **Phase 5: Authorization Integration Preparation** - PENDING
+- 🔄 **Phase 5: Authorization Integration Preparation** - PARTIAL
 
-**Current Status**: Router and handler implemented and integrated; HTTP deserializer cleaned; tests passing
+**Current Status**: Router and handler implemented and integrated; HTTP deserializer cleaned; tests passing; authorization context and identity hooks prepared
 
 ## Prerequisites
 - [x] Understanding of current WebSocket client architecture
@@ -52,6 +52,7 @@ Refactor the WebSocket client architecture to properly separate graph data parsi
 - [x] Define `ProtocolMessage` interface
 - [x] Define `ControlFrame` interface
 - [x] Define command type enums
+- [x] Add authorization context type
 - [ ] Add JSDoc documentation
 
 ## Phase 2: Refactor WebSocket Client 🔄
@@ -160,26 +161,26 @@ Refactor the WebSocket client architecture to properly separate graph data parsi
 - [ ] Add missing documentation
 - [ ] Ensure consistent coding style
 
-## Phase 5: Authorization Integration Preparation ❌
+## Phase 5: Authorization Integration Preparation 🔄
 **Location**: `src/ws/ws-graph-client.ts`
 
 ### 5.1 Prepare for Authorization Integration
-**Files**: `src/ws/ws-graph-client.ts`
+**Files**: `src/ws/ws-graph-client.ts`, `src/ws/wsGraphNetwork.ts`, `src/ws/types.ts`, `src/ws/protocol-router.ts`
 
 **Required Steps**:
-- [ ] Add authorization context support to protocol router
-- [ ] Prepare bookmark management for authorization integration
-- [ ] Add user identity support to WebSocket client
-- [ ] Update type definitions for authorization context
+- [x] Add authorization context support to protocol router (types + setter)
+- [x] Prepare bookmark management for authorization integration
+- [x] Add user identity support to WebSocket client (optional URL param)
+- [x] Update type definitions for authorization context
 
 ### 5.2 Coordinate with Authorization Integration Plan
 **Files**: `src/ws/types.ts`
 
 **Required Changes**:
-- [ ] Add authorization context types
-- [ ] Add user identity types
-- [ ] Update protocol message types for authorization
-- [ ] Ensure compatibility with Authorization Integration Plan
+- [x] Add authorization context types
+- [ ] Add user identity types (provided via existing `UserIdentity`)
+- [ ] Update protocol message types for authorization (not needed yet)
+- [x] Ensure compatibility with Authorization Integration Plan
 
 ## Success Criteria
 - [x] All WebSocket protocol commands handled correctly
