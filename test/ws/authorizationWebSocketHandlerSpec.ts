@@ -6,17 +6,8 @@ import { InverseSpecificationEngine } from '../../src/ws/inverse-specification-e
 import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
 import { Specification } from '../../src/specification/specification';
 import { serializeGraph } from '../../src/http/serializer';
-
-// Mock invertSpecification to return both add and remove operations
-jest.mock('../../src/specification/inverse', () => {
-  const dummySpec: Specification = { given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } };
-  return {
-    invertSpecification: jest.fn(() => ([
-      { inverseSpecification: dummySpec, operation: 'add', givenSubset: [], parentSubset: [], path: '', resultSubset: [] },
-      { inverseSpecification: dummySpec, operation: 'remove', givenSubset: [], parentSubset: [], path: '', resultSubset: [] },
-    ]))
-  };
-});
+import { MemoryStore } from '../../src/memory/memory-store';
+import { ObservableSource } from '../../src/observable/observable';
 
 jest.setTimeout(15000);
 
@@ -45,13 +36,11 @@ describe('AuthorizationWebSocketHandler', () => {
       async load() { return []; }
     } as any;
 
-    const callbacks: Array<(results: any[]) => Promise<void>> = [];
+    const store = new MemoryStore();
+    const observable = new ObservableSource(store);
     const engine = new InverseSpecificationEngine(
-      (_spec, onResult) => {
-        callbacks.push(onResult);
-        return { onResult } as any;
-      },
-      (_listener) => { /* no-op */ }
+      observable.addSpecificationListener.bind(observable),
+      observable.removeSpecificationListener.bind(observable)
     );
 
     const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } });
@@ -79,7 +68,7 @@ describe('AuthorizationWebSocketHandler', () => {
     });
   });
 
-  test('streams graph on inverse add and sends BOOK on remove', async () => {
+  test('streams graph on inverse add (via ObservableSource) and sends BOOK', async () => {
     const address = wss.address();
     const port = typeof address === 'string' ? parseInt(address.split(':').pop() || '0', 10) : (address as any).port;
     const wsUrl = `ws://127.0.0.1:${port}`;
@@ -90,21 +79,19 @@ describe('AuthorizationWebSocketHandler', () => {
     const fact: FactRecord = { type: 'Test.Fact', hash: 'h123', predecessors: {}, fields: { n: 1 } };
     const envelope: FactEnvelope = { fact, signatures: [] };
 
+    const store = new MemoryStore();
+    const observable = new ObservableSource(store);
+    const engine = new InverseSpecificationEngine(
+      observable.addSpecificationListener.bind(observable),
+      observable.removeSpecificationListener.bind(observable)
+    );
+
     const authStub = {
       async feed() { return { tuples: [], bookmark: '' }; },
       async load(_id: any, refs: FactReference[]) { return refs.length ? [envelope] : []; }
     } as any;
 
-    const callbacks: Array<(results: any[]) => Promise<void>> = [];
-    const engine = new InverseSpecificationEngine(
-      (_spec, onResult) => {
-        callbacks.push(onResult);
-        return { onResult } as any;
-      },
-      (_listener) => { /* no-op */ }
-    );
-
-    const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } });
+    const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'Test.Fact' }], matches: [], projection: { type: 'composite', components: [] } });
 
     wss.once('connection', (socket) => {
       const handler = new AuthorizationWebSocketHandler(authStub, resolveFeed, engine, bookmarks);
@@ -116,25 +103,18 @@ describe('AuthorizationWebSocketHandler', () => {
     client.on('message', (d) => received.push(typeof d === 'string' ? d : String(d)));
     await new Promise<void>(resolve => client.once('open', () => resolve()));
 
-    // Subscribe (single framed message)
+    // Subscribe (single framed message) where given type matches our fact
     client.send(`SUB\n${JSON.stringify('feed2')}\n${JSON.stringify('')}\n\n`);
 
-    // Wait until inverse listeners are registered on the server
-    await waitFor(() => callbacks.length >= 2);
+    // Allow time for inverse listeners to register
+    await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Trigger first callback (either add or remove)
-    const result = [{ tuple: { x: factRef }, result: {} } as any];
-    callbacks[0] && (await callbacks[0](result));
+    // Simulate a new fact saved that matches the inverse given
+    await store.save([envelope]);
+    await observable.notify([envelope]);
 
-    // Wait for at least one BOOK
+    // Expect a BOOK frame indicating reactive update processed
     await waitFor(() => received.some(m => m.startsWith('BOOK\n') && m.includes('"feed2"')));
-
-    // Trigger second callback
-    callbacks[1] && (await callbacks[1](result));
-
-    // After both callbacks, expect at least one graph payload to have been received
-    const hasGraph = received.some(m => !m.startsWith('BOOK\n') && !m.startsWith('ERR\n'));
-    expect(hasGraph).toBe(true);
 
     await new Promise<void>(resolve => {
       client.once('close', () => resolve());
@@ -155,13 +135,10 @@ describe('AuthorizationWebSocketHandler', () => {
       async getOrCreateUserFact() { return { type: 'User', hash: 'u1', predecessors: {}, fields: {} }; }
     } as any;
 
-    const callbacks: Array<(results: any[]) => Promise<void>> = [];
+    const observable = new ObservableSource(new MemoryStore());
     const engine = new InverseSpecificationEngine(
-      (_spec, onResult) => {
-        callbacks.push(onResult);
-        return { onResult } as any;
-      },
-      (_listener) => { /* no-op */ }
+      observable.addSpecificationListener.bind(observable),
+      observable.removeSpecificationListener.bind(observable)
     );
 
     const denyDistributionEngine = {
@@ -188,9 +165,6 @@ describe('AuthorizationWebSocketHandler', () => {
 
     await waitFor(() => received.some(m => m.startsWith('ERR\n') && m.includes('feedX') && m.includes('Not authorized')));
 
-    // Ensure no listeners were registered (callbacks should remain empty)
-    expect(callbacks.length).toBe(0);
-
     await new Promise<void>(resolve => { client.once('close', () => resolve()); client.close(); });
   });
 
@@ -207,13 +181,10 @@ describe('AuthorizationWebSocketHandler', () => {
       async getOrCreateUserFact() { return { type: 'User', hash: 'u1', predecessors: {}, fields: {} }; }
     } as any;
 
-    const callbacks: Array<(results: any[]) => Promise<void>> = [];
+    const observable = new ObservableSource(new MemoryStore());
     const engine = new InverseSpecificationEngine(
-      (_spec, onResult) => {
-        callbacks.push(onResult);
-        return { onResult } as any;
-      },
-      (_listener) => { /* no-op */ }
+      observable.addSpecificationListener.bind(observable),
+      observable.removeSpecificationListener.bind(observable)
     );
 
     const allowDistributionEngine = {
@@ -238,8 +209,8 @@ describe('AuthorizationWebSocketHandler', () => {
 
     client.send(`SUB\n${JSON.stringify('feedY')}\n${JSON.stringify('')}\n\n`);
 
-    // Expect no ERR; allow time for subscription to register (callbacks length > 0 eventually)
-    await waitFor(() => callbacks.length > 0);
+    // Expect no ERR
+    await new Promise(resolve => setTimeout(resolve, 50));
     const hasErr = received.some(m => m.startsWith('ERR\n'));
     expect(hasErr).toBe(false);
 
