@@ -1,0 +1,34 @@
+---
+alwaysApply: true
+description: Use when starting work on the Jinaga.js project to understand the overall architecture, key concepts, and development guidelines
+---
+# Jinaga.js Project Overview
+
+Jinaga.js is an end-to-end application state management framework written in TypeScript. The main entry point is [src/index.ts](mdc:src/index.ts) which exports all public APIs.
+
+## Core Architecture
+
+The framework is built around the concept of **facts** - immutable data records that form a directed acyclic graph (DAG). Key components include:
+
+- **Jinaga Class**: Main API entry point in [src/jinaga.ts](mdc:src/jinaga.ts)
+- **Specifications**: Query patterns defined in [src/specification/](mdc:src/specification/)
+- **Authentication**: User identity management in [src/authentication/](mdc:src/authentication/)
+- **Authorization**: Access control rules in [src/authorization/](mdc:src/authorization/)
+- **Storage**: Fact persistence in [src/storage.ts](mdc:src/storage.ts)
+- **Network**: HTTP communication in [src/http/](mdc:src/http/)
+
+## Key Patterns
+
+1. **Facts**: All data is represented as immutable facts with type and hash
+2. **Specifications**: Declarative queries that define data relationships
+3. **Observers**: Reactive data watching with automatic updates
+4. **Forks**: Isolated data contexts for testing and transactions
+5. **Cryptography**: Digital signatures for fact verification
+
+## Development Guidelines
+
+- Use TypeScript with strict mode enabled
+- Follow the existing module structure in [src/](mdc:src/)
+- Write comprehensive tests in [test/](mdc:test/)
+- Document breaking changes in [README.md](mdc:README.md)
+- Use Jest for testing as configured in [jest.config.js](mdc:jest.config.js)

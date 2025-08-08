@@ -1,0 +1,248 @@
+---
+description: Use when writing tests or working with test-related code to ensure proper test structure, coverage, and Jinaga-specific testing patterns
+alwaysApply: false
+---
+# Testing Standards
+
+## Overview
+This guide provides comprehensive testing standards for Jinaga.js applications, covering basic patterns, framework constraints, advanced scenarios, and best practices.
+
+## Test Structure and Setup
+
+### Basic Test Structure
+Tests are located in [test/](mdc:test/) and follow Jest patterns:
+- Use descriptive test names with `describe()` and `it()`
+- Group related tests in describe blocks
+- Use `beforeEach()` and `afterEach()` for setup/cleanup
+- Test both success and failure scenarios
+
+### Jinaga Test Utilities
+Use `JinagaTest` from [src/jinaga-test.ts](mdc:src/jinaga-test.ts) for testing:
+```typescript
+import { JinagaTest } from 'jinaga';
+
+const j = JinagaTest.create();
+```
+
+### Example Test Structure
+```typescript
+describe('BlogPost', () => {
+  let j: JinagaTest;
+  
+  beforeEach(() => {
+    j = JinagaTest.create();
+  });
+  
+  it('should create a blog post', async () => {
+    const user = await j.fact(new User());
+    const post = await j.fact(new BlogPost(user));
+    expect(post.author).toBe(user);
+  });
+});
+```
+
+## Framework Constraints
+
+### Observer Callbacks
+Must return `void`, not the result of operations:
+```typescript
+// CORRECT
+manager => {
+    managers.push(j.hash(manager));
+}
+
+// WRONG - Returns number
+manager => managers.push(j.hash(manager))
+```
+
+### Fact Validity
+All facts must have valid predecessor relationships:
+```typescript
+// CORRECT
+const manager = new Manager(office, 123);
+
+// WRONG - Creates invalid fact
+const orphanedManager = new Manager(null as any, 456);
+```
+
+### Specification Patterns
+Use separate specifications for different fact types:
+```typescript
+// CORRECT - Separate observers for different types
+const managerObserver = j.watch(managerSpec, company, manager => {});
+const presidentObserver = j.watch(presidentSpec, company, president => {});
+
+// WRONG - No union operator exists
+.union(facts.ofType(President))
+```
+
+## Core Testing Principles
+
+### 1. Research Existing Patterns First
+Before writing new tests:
+- Examine existing test files in the same module
+- Look for similar test scenarios
+- Understand the framework's testing utilities
+- Review specification patterns
+
+### 2. Incremental Test Development
+1. Start with a simple, focused test
+2. Verify it demonstrates the specific issue
+3. Add complexity gradually
+4. Refactor and improve
+
+### 3. Test Isolation
+- Use `JinagaTest.create()` for each test
+- Clean up observers with `observer.stop()`
+- Avoid shared state between tests
+
+## Common Testing Scenarios
+
+### Basic Test Patterns
+- Test specifications with sample facts
+- Test authorization rules with different user contexts
+- Test error conditions and edge cases
+- Mock external dependencies appropriately
+
+### Subscription Testing
+```typescript
+describe("subscription behavior", () => {
+  it("should notify when facts are added", async () => {
+    const results: string[] = [];
+    const observer = j.watch(specification, given, result => {
+      results.push(j.hash(result));
+    });
+    
+    await observer.loaded();
+    await j.fact(newFact);
+    
+    expect(results).toContain(j.hash(newFact));
+    observer.stop();
+  });
+});
+```
+
+### Error Testing Patterns
+```typescript
+it("should handle invalid input gracefully", () => {
+  expect(() => parseSpecification("invalid")).toThrowError(
+    /expected error message/
+  );
+});
+
+it("should validate fact relationships", async () => {
+  // Test that framework prevents invalid facts
+  await expect(j.fact(invalidFact)).rejects.toThrow();
+});
+```
+
+## Performance Testing
+
+### Large Dataset Testing
+```typescript
+it("should handle many facts efficiently", async () => {
+  const facts = Array.from({ length: 100 }, (_, i) => 
+    new TestFact(parent, i)
+  );
+  
+  // Test with large datasets
+  for (const fact of facts) {
+    await j.fact(fact);
+  }
+  
+  expect(results).toHaveLength(100);
+});
+```
+
+## Best Practices
+
+### 1. Clear Test Structure
+- Descriptive test names
+- Clear setup and teardown
+- Focused assertions
+- Proper async handling
+
+### 2. Documentation
+- Comment complex test scenarios
+- Explain why tests are structured as they are
+- Document expected vs. actual behavior
+
+### 3. Framework Understanding
+- Study existing test patterns
+- Understand framework constraints
+- Follow established conventions
+- Test framework behavior, not violations
+
+## Common Mistakes to Avoid
+
+### 1. Observer Callback Return Types
+```typescript
+// WRONG
+manager => managers.push(j.hash(manager))
+
+// CORRECT
+manager => {
+  managers.push(j.hash(manager));
+}
+```
+
+### 2. Invalid Fact Creation
+```typescript
+// WRONG - Creates invalid fact
+const orphanedFact = new Fact(null as any, "value");
+
+// CORRECT - Valid fact with proper relationships
+const validFact = new Fact(parent, "value");
+```
+
+### 3. Complex Specifications
+```typescript
+// WRONG - No union operator
+.union(facts.ofType(OtherFact))
+
+// CORRECT - Separate specifications
+const observer1 = j.watch(spec1, given, callback1);
+const observer2 = j.watch(spec2, given, callback2);
+```
+
+## Debugging Tips
+
+### 1. Use Console Logging
+```typescript
+const observer = j.watch(spec, given, result => {
+  console.log('Received result:', j.hash(result));
+  results.push(j.hash(result));
+});
+```
+
+### 2. Check Framework Logs
+- Enable trace logging for debugging
+- Monitor observer lifecycle
+- Verify fact creation and relationships
+
+### 3. Validate Test Setup
+- Ensure facts are created in correct order
+- Verify predecessor relationships
+- Check specification syntax
+
+## Coverage Requirements
+- Aim for 90%+ code coverage
+- Test all public API methods
+- Test error handling paths
+- Test integration scenarios
+- Use Jest's built-in coverage reporting
+
+## Validation Checklist
+
+- [ ] Test covers the specific scenario
+- [ ] Test is reproducible and deterministic
+- [ ] Test includes proper setup and teardown
+- [ ] Test validates both success and failure scenarios
+- [ ] Test documents the scenario being tested
+- [ ] Test includes proper error handling
+- [ ] Test follows framework constraints
+- [ ] Test provides clear failure messages
+- [ ] Observer callbacks return `void`
+- [ ] All facts have valid relationships
+- [ ] Specifications follow correct patterns
+- [ ] Async operations are handled properly

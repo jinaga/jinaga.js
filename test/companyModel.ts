@@ -1,12 +1,4 @@
-import { buildModel, FactRepository, LabelOf, ModelBuilder } from "../src/specification/model";
-
-export class User {
-    static Type = "User" as const;
-    type = User.Type;
-    constructor(
-        public publicKey: string
-    ) { }
-}
+import { buildModel, FactRepository, LabelOf, ModelBuilder, User } from "../src";
 
 export class UserName {
     static Type = "User.Name" as const;

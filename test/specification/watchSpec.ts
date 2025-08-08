@@ -1,5 +1,5 @@
-import { Jinaga, JinagaTest } from "../../src";
-import { Company, Manager, ManagerName, ManagerTerminated, Office, OfficeClosed, OfficeReopened, President, User, UserName, model } from "../companyModel";
+import { Jinaga, JinagaTest, User } from "../../src";
+import { Company, Employee, Manager, ManagerName, ManagerTerminated, Office, OfficeClosed, OfficeReopened, President, UserName, model } from "../companyModel";
 
 describe("specification watch", () => {
     let creator: User;
@@ -554,5 +554,317 @@ describe("specification watch", () => {
                 managers: [j.hash(manager)]
             }
         ]);
+    });
+
+    it("should execute inverse when first step is a predecessor", async () => {
+        // Find all presidents of other offices
+        const specification = model.given(Office).match((office, facts) =>
+            office.company.predecessor().selectMany(company =>
+                facts.ofType(President)
+                    .join(president => president.office.company, company)
+                    .select(president => Jinaga.hash(president))
+            )
+        );
+
+        // Set up test data
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+
+        const otherOffice = new Office(company, "OtherOffice");
+        const otherUser = new User("--- OTHER PUBLIC KEY GOES HERE ---");
+        const otherPresident = new President(otherOffice, otherUser);
+        
+        const j = JinagaTest.create({
+            initialState: [user, company, otherOffice, otherPresident]
+        });
+
+        // Test the execution using watch
+        const results: string[] = [];
+        const observer = j.watch(specification, office, hash => {
+            results.push(hash);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        observer.stop();
+
+        // Verify the inverse execution works correctly
+        expect(results).toEqual([j.hash(otherPresident)]);
+    });
+
+    it("should execute inverse when first step is a predecessor and include new president", async () => {
+        // Find all presidents of other offices
+        const specification = model.given(Office).match((office, facts) =>
+            office.company.predecessor().selectMany(company =>
+                facts.ofType(President)
+                    .join(president => president.office.company, company)
+                    .select(president => Jinaga.hash(president))
+            )
+        );
+
+        // Set up test data
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+
+        const otherOffice = new Office(company, "OtherOffice");
+        const otherUser = new User("--- OTHER PUBLIC KEY GOES HERE ---");
+        const otherPresident = new President(otherOffice, otherUser);
+        
+        const j = JinagaTest.create({
+            initialState: [user, company, otherOffice, otherPresident]
+        });
+
+        // Test the execution using watch
+        const results: string[] = [];
+        const observer = j.watch(specification, office, hash => {
+            results.push(hash);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        // Add a president to the starting office after observer is loaded
+        const newUser = new User("--- NEW PRESIDENT KEY GOES HERE ---");
+        const newPresident = new President(office, newUser);
+        await j.fact(newUser);
+        await j.fact(newPresident);
+
+        observer.stop();
+
+        // Verify both the existing president and the new president are included
+        expect(results).toEqual(expect.arrayContaining([
+            j.hash(otherPresident),
+            j.hash(newPresident)
+        ]));
+        expect(results).toHaveLength(2);
+    });
+
+    // High-priority tests for additional unpersisted given scenarios
+    it("should execute inverse when first step is a successor", async () => {
+        // Find all managers of this office
+        const specification = model.given(Office).match((office, facts) =>
+            office.successors(Manager, manager => manager.office)
+                .select(manager => Jinaga.hash(manager))
+        );
+
+        // Set up test data - manager exists but office is not persisted yet
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+        const manager = new Manager(office, 12345);
+
+        const j = JinagaTest.create({
+            initialState: [user, company, manager] // office NOT included initially
+        });
+
+        // Test the execution using watch
+        const results: string[] = [];
+        const observer = j.watch(specification, office, hash => {
+            results.push(hash);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        observer.stop();
+
+        // Verify the inverse execution works correctly
+        expect(results).toEqual([j.hash(manager)]);
+    });
+
+    it("should execute inverse when first step is a successor and include new manager", async () => {
+        // Find all managers of this office
+        const specification = model.given(Office).match((office, facts) =>
+            office.successors(Manager, manager => manager.office)
+                .select(manager => Jinaga.hash(manager))
+        );
+
+        // Set up test data - existing manager
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+        const existingManager = new Manager(office, 12345);
+
+        const j = JinagaTest.create({
+            initialState: [user, company, existingManager] // office NOT included initially
+        });
+
+        // Test the execution using watch
+        const results: string[] = [];
+        const observer = j.watch(specification, office, hash => {
+            results.push(hash);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        // Add a new manager after office is persisted
+        const newManager = new Manager(office, 67890);
+        await j.fact(newManager);
+
+        observer.stop();
+
+        // Verify both managers are found
+        expect(results).toEqual(expect.arrayContaining([
+            j.hash(existingManager),
+            j.hash(newManager)
+        ]));
+        expect(results).toHaveLength(2);
+    });
+
+    it("should handle simple fact query with unpersisted given", async () => {
+        // Simple query that just returns the given fact itself when it exists
+        const specification = model.given(Office).match((office, facts) =>
+            facts.ofType(Office)
+                .join(o => o, office)
+                .select(o => Jinaga.hash(o))
+        );
+
+        // Set up test data
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+
+        const j = JinagaTest.create({
+            initialState: [user, company] // office NOT included initially
+        });
+
+        // Test the execution using watch
+        const results: string[] = [];
+        const observer = j.watch(specification, office, hash => {
+            results.push(hash);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        observer.stop();
+
+        // Verify the office itself is found
+        expect(results).toEqual([j.hash(office)]);
+    });
+
+    it("should handle multiple unpersisted givens", async () => {
+        // Find employees that match both office and user
+        const specification = model.given(Office, User).match((office, user, facts) =>
+            facts.ofType(Employee)
+                .join(employee => employee.office, office)
+                .join(employee => employee.user, user)
+                .select(employee => Jinaga.hash(employee))
+        );
+
+        // Set up test data - employee exists but both givens are unpersisted
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+        const employee = new Employee(office, user);
+
+        const j = JinagaTest.create({
+            initialState: [company, employee] // user and office NOT included initially
+        });
+
+        // Test the execution using watch
+        const results: string[] = [];
+        const observer = j.watch(specification, office, user, hash => {
+            results.push(hash);
+        });
+
+        await observer.loaded();
+
+        // Add the given facts
+        await j.fact(office);
+        await j.fact(user);
+
+        observer.stop();
+
+        // Verify the employee is found
+        expect(results).toEqual([j.hash(employee)]);
+    });
+
+    it("should handle mixed predecessor-successor chains", async () => {
+        // Find managers in other offices of the same company's predecessors
+        const specification = model.given(Office).match((office, facts) =>
+            office.company.predecessor().selectMany(company =>
+                company.successors(Office, o => o.company)
+                    .selectMany(otherOffice =>
+                        otherOffice.successors(Manager, m => m.office)
+                    )
+                    .select(manager => Jinaga.hash(manager))
+            )
+        );
+
+        // Set up test data
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+        
+        // Other office and manager in same company
+        const otherOffice = new Office(company, "OtherOffice");
+        const manager = new Manager(otherOffice, 12345);
+
+        const j = JinagaTest.create({
+            initialState: [user, company, otherOffice, manager] // office NOT included initially
+        });
+
+        // Test the execution using watch
+        const results: string[] = [];
+        const observer = j.watch(specification, office, hash => {
+            results.push(hash);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        observer.stop();
+
+        // Verify the manager is found through the mixed chain
+        expect(results).toEqual([j.hash(manager)]);
+    });
+
+    it("should handle simple predecessor access with unpersisted given", async () => {
+        // Simple predecessor access - single match, no selectMany - CURRENTLY FAILS!
+        const specification = model.given(Office).match((office, facts) =>
+            office.company.predecessor()
+        );
+
+        // Set up test data
+        const user = new User("--- PUBLIC KEY GOES HERE ---");
+        const company = new Company(user, "TestCo");
+        const office = new Office(company, "TestOffice");
+
+        const j = JinagaTest.create({
+            initialState: [user, company] // office NOT included initially
+        });
+
+        // Test the execution using watch
+        const results: any[] = [];
+        const observer = j.watch(specification, office, result => {
+            results.push(result);
+        });
+
+        await observer.loaded();
+
+        // Add the starting office
+        await j.fact(office);
+
+        observer.stop();
+
+        // This SHOULD work but currently doesn't due to matches.length <= 1 constraint
+        expect(results.length).toBeGreaterThan(0);
     });
 });

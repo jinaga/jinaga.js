@@ -1,0 +1,60 @@
+---
+description: Use when working with HTTP communication, network requests, synchronization, or offline functionality to implement proper network patterns
+---
+# Network and HTTP Patterns
+
+## HTTP Client
+The HTTP client is implemented in [src/http/](mdc:src/http/):
+- `WebClient`: Main HTTP client for browser environments
+- `HttpNetwork`: Network layer for fact synchronization
+- `FetchConnection`: HTTP connection implementation
+
+## Connection Configuration
+```typescript
+const j = JinagaBrowser.create({
+  httpEndpoint: "http://localhost:8080/jinaga",
+  authenticationProvider: new AuthenticationProvider()
+});
+```
+
+## Sync Status
+Monitor synchronization status using `onSyncStatus()`:
+```typescript
+j.onSyncStatus((status) => {
+  console.log('Sync status:', status);
+});
+```
+
+## Error Handling
+Network errors are handled through error callbacks:
+```typescript
+j.onError((message) => {
+  console.error('Jinaga error:', message);
+});
+```
+
+## Offline Support
+Jinaga supports offline operation:
+- Facts are queued when offline
+- Automatic retry when connection is restored
+- Progress tracking with `onProgress()`
+
+## Message Types
+HTTP messages are defined in [src/http/messages.ts](mdc:src/http/messages.ts):
+- `LoadMessage`: Request facts from server
+- `SaveMessage`: Send facts to server
+- `FeedResponse`: Server response with facts
+- `LoginResponse`: Authentication response
+
+## Serialization
+Fact serialization is handled by:
+- `GraphSerializer`: Serialize facts for transmission
+- `GraphDeserializer`: Deserialize facts from server
+- `ContentType`: Define message content types
+
+## Best Practices
+- Handle network errors gracefully
+- Implement retry logic for failed requests
+- Monitor sync status for user feedback
+- Use appropriate timeouts for requests
+- Implement offline-first patterns

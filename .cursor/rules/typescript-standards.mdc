@@ -1,0 +1,59 @@
+---
+description: Use when writing or modifying TypeScript code to ensure consistent coding standards, type safety, and best practices
+globs: *.ts
+alwaysApply: false
+---
+# TypeScript Coding Standards
+
+## Type Safety
+- Use strict TypeScript as configured in [tsconfig.json](mdc:tsconfig.json)
+- Always define explicit return types for public functions
+- Use generic types for reusable components
+- Prefer `interface` over `type` for object shapes
+- Use `Fact` type from [src/storage.ts](mdc:src/storage.ts) for all data records
+
+## Naming Conventions
+- Use PascalCase for classes and interfaces (e.g., `Jinaga`, `FactManager`)
+- Use camelCase for functions and variables
+- Use UPPER_SNAKE_CASE for constants
+- Prefix private methods with underscore (e.g., `_validateFact`)
+
+## Module Structure
+- Export public APIs from [src/index.ts](mdc:src/index.ts)
+- Use barrel exports for related functionality
+- Keep modules focused on single responsibility
+- Use relative imports within the project
+
+## Error Handling
+- Use custom error classes extending `Error`
+- Provide meaningful error messages
+- Use `try/catch` for async operations
+- Validate inputs early and fail fast
+
+## Async/Await
+- Prefer async/await over Promises
+- Handle errors in async functions
+- Use proper typing for async return values
+- Avoid mixing Promise chains with async/await
+
+## Jinaga.js Framework Patterns
+
+### Observer Pattern
+- Observer callbacks must return `void`
+- Use proper typing for fact references
+- Handle async operations correctly
+
+### Fact Creation
+- All facts must have valid predecessor relationships
+- Use proper constructors with required parameters
+- Validate fact structure before testing
+
+### Specification Patterns
+- Specifications follow specific builder patterns
+- No union operators exist - use separate specifications
+- Match patterns to existing test examples
+
+### Error Handling
+- Understand framework validation constraints
+- Test expected errors, not framework violations
+- Use proper error boundaries

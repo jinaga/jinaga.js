@@ -1,5 +1,5 @@
-import { Jinaga, JinagaTest } from "../../src";
-import { Company, Employee, Office, OfficeClosed, OfficeReopened, President, User, model } from "../companyModel";
+import { Jinaga, JinagaTest, User } from "../../src";
+import { Company, Employee, Office, OfficeClosed, OfficeReopened, President, model } from "../companyModel";
 
 describe("specification query", () => {
     let creator: User;
@@ -407,5 +407,50 @@ describe("specification query", () => {
             j.hash(closedOffice),
             j.hash(reopenedOffice)
         ]);
+    });
+
+    it("should execute a hash projection using query method", async () => {
+        const specification = model.given(Company).match(company =>
+            company.successors(Office, office => office.company)
+                .select(office => ({
+                    id: j.hash(office)
+                }))
+        );
+
+        const result = await j.query(specification, company);
+        const resultIds = result.map((r: any) => r.id);
+        expect(resultIds).toEqual([
+            j.hash(office),
+            j.hash(closedOffice),
+            j.hash(reopenedOffice)
+        ]);
+    });
+
+    it("should execute a hash projection using watch method", async () => {
+        const specification = model.given(Company).match(company =>
+            company.successors(Office, office => office.company)
+                .select(office => ({
+                    id: j.hash(office)
+                }))
+        );
+        
+        // Use the watch method to receive the results
+        const results: { id: string }[] = [];
+        const observer = j.watch(specification, company, result => {
+            results.push(result);
+        });
+        
+        // Wait for the results to be processed
+        await new Promise(resolve => setTimeout(resolve, 0));
+        
+        // Verify the results
+        expect(results.map(r => r.id)).toEqual([
+            j.hash(office),
+            j.hash(closedOffice),
+            j.hash(reopenedOffice)
+        ]);
+        
+        // Clean up
+        observer.stop();
     });
 });

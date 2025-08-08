@@ -1,0 +1,65 @@
+---
+description: Use when implementing cryptographic features, fact signing, verification, or security measures to ensure proper cryptography patterns
+---
+# Cryptography and Security Patterns
+
+## Key Management
+Cryptography is implemented in [src/cryptography/](mdc:src/cryptography/):
+- `KeyPair`: Generate and manage cryptographic key pairs
+- `generateKeyPair()`: Create new key pairs
+- `signFacts()`: Sign facts with private keys
+
+## Fact Signatures
+Facts are cryptographically signed for verification:
+```typescript
+import { generateKeyPair, signFacts } from 'jinaga';
+
+const keyPair = generateKeyPair();
+const signedFacts = signFacts(facts, keyPair.privateKey);
+```
+
+## Verification
+Fact verification is handled by `verifyEnvelopes()`:
+```typescript
+import { verifyEnvelopes } from 'jinaga';
+
+const isValid = verifyEnvelopes(factEnvelopes, publicKey);
+```
+
+## Hash Computation
+Fact hashing is implemented in [src/fact/hash.ts](mdc:src/fact/hash.ts):
+- `computeHash()`: Compute hash of a fact
+- `canonicalizeFact()`: Canonicalize fact for consistent hashing
+- `computeObjectHash()`: Hash arbitrary objects
+
+## Security Best Practices
+- Never expose private keys in client code
+- Use secure key storage for private keys
+- Verify all facts before processing
+- Implement proper key rotation
+- Use strong cryptographic algorithms
+
+## Fact Integrity
+- All facts are cryptographically signed
+- Signatures prevent tampering
+- Hash-based references ensure integrity
+- Canonicalization prevents replay attacks
+
+## Key Pair Generation
+```typescript
+const keyPair = generateKeyPair();
+console.log('Public key:', keyPair.publicKey);
+console.log('Private key:', keyPair.privateKey);
+```
+
+## Verification Process
+1. Extract fact from envelope
+2. Verify signature using public key
+3. Check hash matches computed hash
+4. Validate predecessor references
+
+## Error Handling
+- Handle signature verification failures
+- Implement proper error messages
+- Log security-related errors
+- Fail fast on verification errors
