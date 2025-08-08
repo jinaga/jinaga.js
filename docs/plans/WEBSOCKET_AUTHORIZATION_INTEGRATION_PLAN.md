@@ -4,6 +4,11 @@
 
 This document outlines the design for integrating the Authorization interface with WebSocket-based fact streaming, using inverse specifications for reactive updates. The client uses the standard Jinaga browser factory, while the server injects Authorization implementations to handle feed operations and reactive updates.
 
+## Distribution Rules and Authentication (Findings)
+- Distribution rules are defined via `DistributionRules` and enforced by `DistributionEngine` by evaluating whether a given user can receive target feeds.
+- In HTTP flows, authentication headers are applied and `NetworkDistribution` enforces distribution using the `DistributionEngine`.
+- For WebSocket flows, user identity is passed via the `uid` query parameter. The server should enforce distribution at SUB time using the same rules and emit `ERR` frames when denied.
+
 ## Architecture Overview
 
 ### Client-Side Components (Standard Jinaga Browser Factory)
@@ -34,6 +39,7 @@ The server injects Authorization implementations into a WebSocket handler that h
 2. **Inverse Specifications**: Uses `invertSpecification()` for reactive updates
 3. **Bookmark Management**: Manages bookmark advancement after updates
 4. **WebSocket Streaming**: Streams facts and sends BOOK frames
+5. **Distribution Enforcement**: Validates SUB requests via `DistributionEngine`; emits `ERR` on violations
 
 ## Component Architecture
 
@@ -127,6 +133,8 @@ export interface FactFeed {
 
 ```typescript
 // Implemented in src/ws/authorization-websocket-handler.ts
+// - On SUB: enforce distribution with DistributionEngine
+// - On violation: send ERR frame and do not register listeners
 ```
 
 ### 3. Inverse Specification Engine
@@ -164,14 +172,14 @@ export interface FactFeed {
 - [x] Handle authorization errors
 - [x] Validate user identity (plumbed via ws query param)
 
-### Phase 4: Inverse Specification Integration 🔄
+### Phase 4: Inverse Specification Integration ✅
 
 - [x] Create InverseSpecificationEngine
 - [x] Use `invertSpecification()` for reactive updates
 - [x] Set up specification listeners removal on UNSUB/close
 - [x] Handle add/remove operations
 
-### Phase 5: Bookmark Management 🔄
+### Phase 5: Bookmark Management ✅
 
 - [x] Create BookmarkManager
 - [x] Integrate bookmark advancement with authorization
@@ -192,6 +200,7 @@ export interface FactFeed {
 - [x] Test bookmark management with authorization (including SUB sync)
 - [ ] Performance testing with authorization overhead
 - [ ] Integration testing with protocol refactoring
+- [ ] Test WS SUB distribution rule enforcement: expect `ERR` frames on violations
 
 ## Success Criteria
 
@@ -202,6 +211,7 @@ export interface FactFeed {
 - [x] Bookmarks are properly managed and advanced
 - [ ] Test scenario validates all integration points
 - [ ] Enhanced FactFeed interface is backward compatible
+- [ ] Distribution rules enforced on WebSocket SUB with `ERR` frames on violations
 
 ## Updated Risk Assessment
 
@@ -212,6 +222,8 @@ export interface FactFeed {
   - *Mitigation*: Single BookmarkManager shared by both plans
 - **Inverse Specification Complexity**: Complex inverse logic
   - *Mitigation*: Leverage existing inverse.ts implementation
+- **Feed Resolution**: Mapping feed identifiers to specifications
+  - *Mitigation*: Centralize mapping and reuse feed cache logic
 
 ### Integration Risks
 - **Protocol Refactoring Dependencies**: Authorization integration depends on protocol refactoring
@@ -243,6 +255,5 @@ export interface FactFeed {
 - Authorization is injected only on the server side
 - Inverse specifications provide reactive updates without client changes
 - Bookmark management integrates with authorization for proper advancement
-- The design maintains clean separation between client and server responsibilities
-- Enhanced FactFeed interface is backward compatible
+- Distribution rules are enforced consistently across HTTP and WebSocket
 - Uses existing inverse specification implementation from src/specification/inverse.ts

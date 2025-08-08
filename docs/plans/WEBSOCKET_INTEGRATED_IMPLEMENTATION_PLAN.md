@@ -3,6 +3,12 @@
 ## Overview
 Coordinated implementation of both WebSocket Protocol Refactoring and Authorization Integration plans. This plan ensures proper sequencing, dependency management, and integration testing between the two plans.
 
+## Distribution Rules + Authentication Interaction (Findings)
+- Distribution access control is implemented in `DistributionEngine` using `DistributionRules`. It evaluates whether a user (as a FactReference) can receive a given feed via `canDistributeToAll`.
+- HTTP flows pass authentication via headers (see `AuthenticationProvider.getHeaders()`), while distribution enforcement occurs in `NetworkDistribution` by providing the current user fact to `DistributionEngine`.
+- WebSocket flows currently pass identity via `uid` query string and perform authorization-based reads/loads, but do not yet enforce distribution rules on SUB.
+- To align with HTTP behavior, the WebSocket server should evaluate distribution rules on SUB and emit `ERR` frames on violations.
+
 ## Implementation Phases
 
 ### Phase 1: Foundation (Protocol Refactoring)
@@ -110,12 +116,26 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 - [x] Test authorization context propagation (server-side bookmark sync)
 - [x] Test bookmark management with authorization (including SUB sync)
 - [ ] Performance testing with authorization overhead
+- [ ] Test WebSocket SUB distribution rule enforcement with `ERR` frames on violations
 
-#### 5.2 End-to-End Testing
+#### 5.2 End-To-End and Error Handling
 - [x] Full client-server integration testing (ws handler unit/integration)
 - [ ] Real-world scenario testing
 - [ ] Performance benchmarking
 - [ ] Stress testing
+- [ ] Validate that distribution rule violations emit `ERR` frames and do not register listeners
+
+### Phase 6: Distribution Rule Enforcement on WebSocket
+**Dependencies**: Phases 2-3 complete
+**Duration**: 1 week
+**Deliverables**: Consistent access control across HTTP and WebSocket
+
+- [ ] Inject `DistributionEngine` into WebSocket server
+- [ ] Resolve feed specification and named start from `feed` id for SUB
+- [ ] Evaluate `canDistributeToAll` for the connecting user identity
+- [ ] On violation, emit `ERR` frame (`ERR\n<feed>\n<message>\n\n`) and skip listener registration
+- [ ] Add unit/integration tests for allowed/denied cases
+- [ ] Document interaction with HTTP auth headers and WS `uid` identity
 
 ## Dependencies and Handoff Points
 
@@ -123,12 +143,14 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 1. **Protocol Refactoring → Authorization Integration**: Authorization integration cannot begin until protocol refactoring is complete
 2. **Authorization Integration → FactFeed Enhancement**: FactFeed changes depend on authorization integration being stable
 3. **All Phases → Comprehensive Testing**: Final testing phase depends on all implementation phases
+4. **Distribution Rules → WS Enforcement**: WebSocket distribution checks depend on mapping `feed` to specification + start
 
 ### Handoff Criteria
 - **Phase 1 → Phase 2**: All WebSocket protocol commands working, HTTP deserializer cleaned up, performance benchmarks met
 - **Phase 2 → Phase 3**: Authorization context support added, integration tests passing
 - **Phase 3 → Phase 4**: Authorization integration working, inverse specifications functional
 - **Phase 4 → Phase 5**: FactFeed interface enhanced, backward compatibility verified
+- **Phase 6 → Completion**: Distribution rule enforcement active on WS; `ERR` frames emitted on violations; tests passing
 
 ## Risk Mitigation
 
@@ -139,6 +161,8 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
   - *Mitigation*: Performance benchmarking and optimization
 - **Interface Changes**: FactFeed enhancement
   - *Mitigation*: Make authorization context optional for backward compatibility
+- **Feed Mapping**: Need reliable mapping from feed id to specification + start
+  - *Mitigation*: Centralize feed resolution on server; reuse HTTP feed cache where applicable
 
 ### Integration Risks
 - **Protocol Refactoring Dependencies**: Authorization integration depends on protocol refactoring
@@ -188,60 +212,10 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 - [ ] Performance benchmarks maintained or improved
 - [ ] End-to-end functionality verified
 - [ ] Documentation complete and accurate
+- [ ] WebSocket distribution rule enforcement tested with `ERR` frames
 
-## Testing Strategy
-
-### Unit Testing
-- [ ] Protocol router functionality
-- [ ] Control frame handler
-- [ ] Authorization handler
-- [ ] Inverse specification engine
-- [ ] Bookmark manager
-
-### Integration Testing
-- [ ] WebSocket client with protocol router
-- [ ] Authorization integration with WebSocket
-- [ ] FactFeed interface with authorization context
-- [ ] End-to-end client-server communication
-
-### Performance Testing
-- [ ] Message processing speed
-- [ ] Memory usage optimization
-- [ ] Authorization overhead measurement
-- [ ] Stress testing
-
-## Monitoring and Validation
-
-### Key Metrics
-- [ ] WebSocket connection success rate
-- [ ] Message processing latency
-- [ ] Authorization check performance
-- [ ] Memory usage patterns
-- [ ] Error rates and types
-
-### Validation Checkpoints
-- [ ] Phase completion criteria met
-- [ ] Performance benchmarks achieved
-- [ ] Integration tests passing
-- [ ] Backward compatibility verified
-- [ ] Documentation updated
-
-## Notes
-
-### Architecture Decisions
-- **Sequential Implementation**: Protocol refactoring must complete before authorization integration
-- **Backward Compatibility**: All changes maintain existing functionality
-- **Incremental Testing**: Each phase includes comprehensive testing
-- **Clear Handoffs**: Well-defined criteria for moving between phases
-
-### Performance Considerations
-- Protocol routing adds minimal overhead
-- Authorization checks may add latency
-- Memory usage optimization for multiple connections
-- Efficient bookmark management
-
-### Future Extensibility
-- Easy to add new WebSocket commands
-- Support for other protocols (gRPC, etc.)
-- Authorization context extensibility
-- Protocol versioning support
+### Phase 6 Success Criteria
+- [ ] Distribution rules enforced on SUB
+- [ ] Violations emit `ERR` frames
+- [ ] No listeners registered for denied feeds
+- [ ] Behavior consistent with HTTP distribution enforcement
