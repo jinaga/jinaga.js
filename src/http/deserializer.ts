@@ -21,6 +21,10 @@ export class GraphDeserializer implements GraphSource {
         let envelopes: FactEnvelope[] = [];
         let line: string | null;
         while ((line = await this.readLine()) !== null) {
+            if (line === "") {
+                // Skip stray blank lines between blocks
+                continue;
+            }
             if (line.startsWith("PK")) {
                 const index = parseInt(line.substring(2));
                 await this.readPublicKey(index);
@@ -63,6 +67,10 @@ export class GraphDeserializer implements GraphSource {
 
         // Periodically handle a batch of envelopes
         if (envelopes.length >= 20) {
+            await onEnvelopes(envelopes);
+            envelopes = [];
+        } else {
+            // Flush after each fact to ensure timely persistence in streaming scenarios
             await onEnvelopes(envelopes);
             envelopes = [];
         }

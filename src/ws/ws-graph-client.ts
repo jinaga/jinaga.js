@@ -124,10 +124,10 @@ export class WsGraphClient {
   }
 
   private flushLines() {
-    // Split buffer by newlines, keep trailing partial
-    const lines = this.buffer.split(/\r?\n/);
-    this.buffer = lines.pop() ?? "";
-    this.pendingLines.push(...lines);
+    // Split buffer by newlines, keep trailing partial in buffer
+    const parts = this.buffer.split(/\r?\n/);
+    this.buffer = parts.pop() ?? "";
+    this.pendingLines.push(...parts);
     this.pumpWaiting();
   }
 
@@ -206,6 +206,9 @@ export class WsGraphClient {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
+    if (this.activeFeeds.size === 0) {
+      return; // No active subscriptions; do not reconnect
+    }
     const delayMs = Math.min(30000, 1000 * Math.pow(2, this.reconnectAttempt));
     this.reconnectAttempt = Math.min(this.reconnectAttempt + 1, 15);
     this.reconnectTimer = setTimeout(async () => {
