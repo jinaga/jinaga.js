@@ -113,6 +113,7 @@ class Given<T extends any[]> {
             matches,
             projection
         };
+        
         return new SpecificationOf<T, SpecificationResult<U>>(specification);
     }
 
@@ -135,6 +136,7 @@ class Given<T extends any[]> {
             matches,
             projection
         };
+        
         return new SpecificationOf<T, U>(specification);
     }
 }
