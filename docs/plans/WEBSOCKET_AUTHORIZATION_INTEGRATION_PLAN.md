@@ -176,7 +176,7 @@ export interface FactFeed {
 - [x] Create BookmarkManager
 - [x] Integrate bookmark advancement with authorization
 - [x] Send BOOK frames after updates
-- [ ] Handle bookmark validation
+- [x] Handle bookmark validation (server-side sync on SUB)
 
 ### Phase 6: Enhanced FactFeed Interface ❌
 
@@ -189,7 +189,7 @@ export interface FactFeed {
 
 - [ ] Test inverse specification integration
 - [ ] Test authorization context propagation
-- [ ] Test bookmark management with authorization
+- [ ] Test bookmark management with authorization (including SUB sync)
 - [ ] Performance testing with authorization overhead
 - [ ] Integration testing with protocol refactoring
 

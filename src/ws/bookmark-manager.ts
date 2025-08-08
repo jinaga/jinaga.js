@@ -15,4 +15,17 @@ export class BookmarkManager {
     this.bookmarks.set(feed, next);
     return next;
   }
+
+  /**
+   * If a bookmark is already known for the feed and differs from the provided value,
+   * return the known bookmark so callers can synchronize the client.
+   * Returns null if no sync is necessary.
+   */
+  syncBookmarkIfMismatch(feed: string, provided: string): string | null {
+    const current = this.bookmarks.get(feed);
+    if (current && current !== provided) {
+      return current;
+    }
+    return null;
+  }
 }

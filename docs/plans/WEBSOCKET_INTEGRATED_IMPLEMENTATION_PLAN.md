@@ -82,7 +82,7 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 - [x] Create `BookmarkManager`
 - [x] Integrate bookmark advancement with authorization
 - [x] Send BOOK frames after updates
-- [ ] Handle bookmark validation
+- [x] Handle bookmark validation
 
 ### Phase 4: Enhanced FactFeed Interface
 **Dependencies**: Phase 3 complete
@@ -108,7 +108,7 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 #### 5.1 Integration Testing
 - [ ] Test inverse specification integration
 - [ ] Test authorization context propagation
-- [ ] Test bookmark management with authorization
+- [ ] Test bookmark management with authorization (including SUB sync)
 - [ ] Performance testing with authorization overhead
 
 #### 5.2 End-to-End Testing

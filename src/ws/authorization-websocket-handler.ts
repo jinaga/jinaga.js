@@ -68,6 +68,13 @@ export class AuthorizationWebSocketHandler {
     try {
       const specification = this.resolveFeed(feed);
       const start: FactReference[] = [];
+
+      // If server already has a more recent bookmark for this feed, sync it to client
+      const serverKnown = this.bookmarks.syncBookmarkIfMismatch(feed, bookmark);
+      if (serverKnown) {
+        socket.send(`BOOK\n${JSON.stringify(feed)}\n${JSON.stringify(serverKnown)}\n\n`);
+      }
+
       const factFeed = await this.authorization.feed(userIdentity, specification, start, bookmark);
 
       if (factFeed.tuples.length > 0) {
