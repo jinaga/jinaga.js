@@ -57,5 +57,9 @@ export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, Fac
 export { UserIdentity } from './user-identity';
 export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
 
+// Optional WebSocket client and network
+export { WsClient } from './ws/ws-client';
+export { WsNetwork } from './ws/wsNetwork';
+
 // Export the JinagaBrowser class using the alias JinagaClient
 export { JinagaBrowser as JinagaClient } from "./jinaga-browser";

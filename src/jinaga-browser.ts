@@ -22,6 +22,8 @@ import { PurgeConditions } from "./purge/purgeConditions";
 import { validatePurgeSpecification } from "./purge/validate";
 import { Specification } from "./specification/specification";
 import { Storage } from "./storage";
+import { WsClient } from "./ws/ws-client";
+import { WsNetwork } from "./ws/wsNetwork";
 
 export type JinagaBrowserConfig = {
     httpEndpoint?: string,
@@ -42,7 +44,7 @@ export class JinagaBrowser {
         const webClient = createWebClient(config, syncStatusNotifier);
         const fork = createFork(config, store, webClient);
         const authentication = createAuthentication(config, webClient);
-        const network = createNetwork(webClient);
+        const network = createNetwork(config, webClient);
         const purgeConditions = createPurgeConditions(config);
         const factManager = new FactManager(fork, observableSource, store, network, purgeConditions, config.feedRefreshIntervalSeconds);
         return new Jinaga(authentication, factManager, syncStatusNotifier);
@@ -128,11 +130,25 @@ function createAuthentication(
 }
 
 function createNetwork(
+    config: JinagaBrowserConfig,
     webClient: WebClient | null
 ): Network {
     if (webClient) {
-        const network = new HttpNetwork(webClient);
-        return network;
+        // Prefer WebSocket when endpoint provided and environment supports WebSocket
+        if (config.wsEndpoint && typeof (globalThis as any).WebSocket !== 'undefined') {
+            try {
+                const httpNetwork = new HttpNetwork(webClient);
+                const wsClient = new WsClient(config.wsEndpoint);
+                const network: Network = new WsNetwork(httpNetwork, wsClient);
+                return network;
+            }
+            catch {
+                // Fallback to HTTP network on construction error
+                return new HttpNetwork(webClient);
+            }
+        }
+        // Fallback to HTTP streaming
+        return new HttpNetwork(webClient);
     }
     else {
         return new NetworkNoOp();
