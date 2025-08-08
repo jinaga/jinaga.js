@@ -245,10 +245,10 @@ class BookmarkManager {
 
 ### Phase 2: Server Authorization Handler 🔄
 
-- [ ] Create AuthorizationWebSocketHandler class
-- [ ] Inject Authorization implementation
-- [ ] Handle WebSocket connections
-- [ ] Process SUB/UNSUB messages
+- [x] Create AuthorizationWebSocketHandler class
+- [x] Inject Authorization implementation
+- [x] Handle WebSocket connections
+- [x] Process SUB/UNSUB messages
 
 ### Phase 3: Feed Authorization Integration ❌
 
@@ -289,53 +289,7 @@ class BookmarkManager {
 ## Test Scenario Integration
 
 ```typescript
-describe('Authorization + WebSocket + Inverse Integration', () => {
-  test('server uses authorization to stream facts and reactively updates', async () => {
-    // 1. Client setup (standard factory)
-    const jinaga = JinagaBrowser.create({
-      wsEndpoint: 'ws://localhost:8080'
-    });
-    
-    const observer = jinaga.watch(specification, async (result) => {
-      // Handle reactive updates
-      return Promise.resolve();
-    });
-
-    // 2. Server setup (authorization injection)
-    const wss = new WebSocketServer({ port: 8080 });
-    const authorization = new AuthorizationNoOp(factManager, store);
-    const inverseEngine = new InverseSpecificationEngine(authorization);
-    const bookmarkManager = new BookmarkManager();
-    
-    const handler = new AuthorizationWebSocketHandler(
-      authorization,
-      inverseEngine,
-      bookmarkManager
-    );
-
-    wss.on('connection', (socket) => {
-      const userIdentity = createTestUserIdentity();
-      handler.handleConnection(socket, userIdentity);
-    });
-
-    // 3. Test flow
-    await observer.loaded();
-    
-    // Verify authorization was used for initial feed
-    expect(authorization.feed).toHaveBeenCalledWith(
-      userIdentity,
-      specification,
-      [],
-      ''
-    );
-    
-    // Verify inverse specifications were set up
-    expect(inverseEngine.addSpecificationListener).toHaveBeenCalled();
-    
-    // Verify bookmark advancement
-    expect(bookmarkManager.advanceBookmark).toHaveBeenCalled();
-  });
-});
+// Kept as future work; end-to-end auth + ws test will use the new handler.
 ```
 
 ## Key Integration Points
