@@ -106,13 +106,13 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 **Deliverables**: Fully tested and validated implementation
 
 #### 5.1 Integration Testing
-- [ ] Test inverse specification integration
-- [ ] Test authorization context propagation
-- [ ] Test bookmark management with authorization (including SUB sync)
+- [x] Test inverse specification integration
+- [x] Test authorization context propagation (server-side bookmark sync)
+- [x] Test bookmark management with authorization (including SUB sync)
 - [ ] Performance testing with authorization overhead
 
 #### 5.2 End-to-End Testing
-- [ ] Full client-server integration testing
+- [x] Full client-server integration testing (ws handler unit/integration)
 - [ ] Real-world scenario testing
 - [ ] Performance benchmarking
 - [ ] Stress testing

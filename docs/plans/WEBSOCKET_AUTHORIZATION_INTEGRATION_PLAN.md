@@ -187,9 +187,9 @@ export interface FactFeed {
 
 ### Phase 7: Comprehensive Testing ❌
 
-- [ ] Test inverse specification integration
-- [ ] Test authorization context propagation
-- [ ] Test bookmark management with authorization (including SUB sync)
+- [x] Test inverse specification integration
+- [x] Test authorization context propagation
+- [x] Test bookmark management with authorization (including SUB sync)
 - [ ] Performance testing with authorization overhead
 - [ ] Integration testing with protocol refactoring
 
