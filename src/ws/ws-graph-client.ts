@@ -25,7 +25,7 @@ export class WsGraphClient {
   private waitingResolver: ((line: string | null) => void) | null = null;
 
   constructor(
-    private readonly wsEndpoint: string,
+    private readonly getWsUrl: () => Promise<string>,
     private readonly store: Storage,
     private readonly onBookmark: BookmarkListener,
     private readonly onErrorGlobal: (err: Error) => void
@@ -66,9 +66,10 @@ export class WsGraphClient {
   }
 
   private openSocket(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>(async (resolve, reject) => {
       try {
-        const socket = new WebSocket(this.wsEndpoint);
+        const url = await this.getWsUrl();
+        const socket = new WebSocket(url);
         this.socket = socket;
 
         socket.onopen = () => {

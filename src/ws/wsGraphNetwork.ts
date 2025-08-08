@@ -14,7 +14,7 @@ export class WsGraphNetwork implements Network {
     wsEndpoint: string
   ) {
     this.wsClient = new WsGraphClient(
-      wsEndpoint,
+      async () => wsEndpoint,
       store,
       (feed, bookmark) => this.onBookmarkAdvance(feed, bookmark),
       (err) => this.onGlobalError(err)
