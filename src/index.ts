@@ -60,5 +60,10 @@ export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
 // Optional WebSocket graph client and network
 export { WsGraphNetwork } from './ws/wsGraphNetwork';
 
+// Server-side WebSocket authorization helpers
+export { AuthorizationWebSocketHandler } from './ws/authorization-websocket-handler';
+export { InverseSpecificationEngine } from './ws/inverse-specification-engine';
+export { BookmarkManager } from './ws/bookmark-manager';
+
 // Export the JinagaBrowser class using the alias JinagaClient
 export { JinagaBrowser as JinagaClient } from "./jinaga-browser";

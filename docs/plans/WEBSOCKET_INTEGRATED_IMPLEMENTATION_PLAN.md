@@ -67,21 +67,21 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 - [x] Process SUB/UNSUB messages
 
 #### 3.2 Feed Authorization Integration
-- [ ] Use `authorization.feed()` for initial data loading
-- [ ] Stream authorized facts via WebSocket
-- [ ] Handle authorization errors
-- [ ] Validate user identity
+- [x] Use `authorization.feed()` for initial data loading
+- [x] Stream authorized facts via WebSocket
+- [x] Handle authorization errors
+- [x] Validate user identity
 
 #### 3.3 Inverse Specification Integration
-- [ ] Create `InverseSpecificationEngine`
-- [ ] Use `invertSpecification()` for reactive updates
-- [ ] Set up specification listeners
-- [ ] Handle add/remove operations
+- [x] Create `InverseSpecificationEngine`
+- [x] Use `invertSpecification()` for reactive updates (add only)
+- [ ] Set up listener removal on UNSUB/close
+- [ ] Handle remove operations
 
 #### 3.4 Bookmark Management Integration
-- [ ] Create `BookmarkManager`
-- [ ] Integrate bookmark advancement with authorization
-- [ ] Send BOOK frames after updates
+- [x] Create `BookmarkManager`
+- [x] Integrate bookmark advancement with authorization
+- [x] Send BOOK frames after updates
 - [ ] Handle bookmark validation
 
 ### Phase 4: Enhanced FactFeed Interface
@@ -171,10 +171,11 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 
 ### Phase 3 Success Criteria
 - [x] Authorization handler working with WebSocket connections
-- [ ] Initial feed loading uses `authorization.feed()`
-- [ ] Reactive updates use `invertSpecification()`
-- [ ] Bookmarks properly managed and advanced
-- [ ] WebSocket streaming works with authorization
+- [x] Initial feed loading uses `authorization.feed()`
+- [x] Reactive updates use `invertSpecification()` for adds
+- [x] Bookmarks properly managed and advanced
+- [ ] Listener lifecycle handled for UNSUB/close
+- [ ] Remove operations processed
 
 ### Phase 4 Success Criteria
 - [ ] Enhanced FactFeed interface is backward compatible
