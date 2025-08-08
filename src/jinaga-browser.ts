@@ -24,6 +24,7 @@ import { Specification } from "./specification/specification";
 import { Storage } from "./storage";
 import { WsClient } from "./ws/ws-client";
 import { WsNetwork } from "./ws/wsNetwork";
+import { WsGraphNetwork } from "./ws/wsGraphNetwork";
 
 export type JinagaBrowserConfig = {
     httpEndpoint?: string,
@@ -134,12 +135,11 @@ function createNetwork(
     webClient: WebClient | null
 ): Network {
     if (webClient) {
-        // Prefer WebSocket when endpoint provided and environment supports WebSocket
+        // Prefer WebSocket graph when endpoint provided and environment supports WebSocket
         if (config.wsEndpoint && typeof (globalThis as any).WebSocket !== 'undefined') {
             try {
                 const httpNetwork = new HttpNetwork(webClient);
-                const wsClient = new WsClient(config.wsEndpoint);
-                const network: Network = new WsNetwork(httpNetwork, wsClient);
+                const network: Network = new WsGraphNetwork(httpNetwork, createStore(config), config.wsEndpoint);
                 return network;
             }
             catch {

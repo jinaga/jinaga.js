@@ -66,6 +66,12 @@ export class Subscriber {
         await this.store.saveBookmark(this.feed, nextBookmark);
         this.bookmark = nextBookmark;
         await this.notifyFactsAdded(graph);
+      } else {
+        // Treat empty-reference responses as bookmark advance from WS graph transport
+        if (nextBookmark && nextBookmark !== this.bookmark) {
+          await this.store.saveBookmark(this.feed, nextBookmark);
+          this.bookmark = nextBookmark;
+        }
       }
       if (!this.resolved) {
         this.resolved = true;
