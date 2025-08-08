@@ -180,9 +180,9 @@ export interface FactFeed {
 
 ### Phase 6: Enhanced FactFeed Interface ❌
 
-- [ ] Augment FactFeed interface with optional authorization context
-- [ ] Add specification and user identity fields
-- [ ] Include authorization context
+- [x] Augment FactFeed interface with optional authorization context
+- [x] Add specification and user identity fields
+- [ ] Include authorization context propagation in responses
 - [ ] Update related interfaces
 
 ### Phase 7: Comprehensive Testing ❌
@@ -200,6 +200,7 @@ export interface FactFeed {
 - [x] Initial feed loading uses `authorization.feed()`
 - [x] Reactive updates use `invertSpecification()` (add/remove operations)
 - [x] Bookmarks are properly managed and advanced
+- [x] Enhanced FactFeed interface shape updated (backward compatible)
 - [ ] Test scenario validates all integration points
 - [ ] Enhanced FactFeed interface is backward compatible
 
