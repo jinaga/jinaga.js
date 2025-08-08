@@ -3,13 +3,15 @@ import { Authorization } from "../authorization/authorization";
 import { Specification } from "../specification/specification";
 import { invertSpecification } from "../specification/inverse";
 import { serializeGraph } from "../http/serializer";
-import { FactEnvelope, FactReference, ProjectedResult } from "../storage";
+import { FactEnvelope, FactReference, ProjectedResult, ReferencesByName } from "../storage";
 import { UserIdentity } from "../user-identity";
 import { InverseSpecificationEngine } from "./inverse-specification-engine";
 import { BookmarkManager } from "./bookmark-manager";
 import { SpecificationListener } from "../observable/observable";
+import { DistributionEngine } from "../distribution/distribution-engine";
 
 export type FeedResolver = (feed: string) => Specification;
+export type FeedInfoResolver = (feed: string) => { specification: Specification; namedStart: ReferencesByName };
 
 type Subscription = {
   feed: string;
@@ -23,7 +25,9 @@ export class AuthorizationWebSocketHandler {
     private readonly authorization: Authorization,
     private readonly resolveFeed: FeedResolver,
     private readonly inverseEngine: InverseSpecificationEngine,
-    private readonly bookmarks: BookmarkManager
+    private readonly bookmarks: BookmarkManager,
+    private readonly distributionEngine?: DistributionEngine,
+    private readonly resolveFeedInfo?: FeedInfoResolver
   ) {}
 
   handleConnection(socket: WebSocket, userIdentity: UserIdentity | null) {
@@ -68,6 +72,28 @@ export class AuthorizationWebSocketHandler {
     try {
       const specification = this.resolveFeed(feed);
       const start: FactReference[] = [];
+
+      // Optional distribution enforcement: if engine and resolver provided, validate access
+      if (this.distributionEngine && this.resolveFeedInfo) {
+        try {
+          const { specification: feedSpec, namedStart } = this.resolveFeedInfo(feed);
+          let userRef: FactReference | null = null;
+          if (userIdentity) {
+            const userFact = await this.authorization.getOrCreateUserFact(userIdentity);
+            userRef = { type: userFact.type, hash: userFact.hash };
+          }
+          const result = await this.distributionEngine.canDistributeToAll([feedSpec], namedStart, userRef);
+          if (result.type === "failure") {
+            const message = `Not authorized: ${result.reason}`;
+            socket.send(`ERR\n${JSON.stringify(feed)}\n${JSON.stringify(message)}\n\n`);
+            return; // Do not proceed with subscription
+          }
+        } catch (e: any) {
+          const message = e && e.message ? e.message : String(e);
+          socket.send(`ERR\n${JSON.stringify(feed)}\n${JSON.stringify(message)}\n\n`);
+          return;
+        }
+      }
 
       // If server already has a more recent bookmark for this feed, sync it to client
       const serverKnown = this.bookmarks.syncBookmarkIfMismatch(feed, bookmark);

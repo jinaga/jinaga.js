@@ -141,6 +141,110 @@ describe('AuthorizationWebSocketHandler', () => {
       client.close();
     });
   });
+
+  test('denies SUB when distribution rules fail and emits ERR', async () => {
+    const address = wss.address();
+    const port = typeof address === 'string' ? parseInt(address.split(':').pop() || '0', 10) : (address as any).port;
+    const wsUrl = `ws://127.0.0.1:${port}`;
+
+    const bookmarks = new BookmarkManager();
+
+    const authStub = {
+      async feed() { return { tuples: [], bookmark: '' }; },
+      async load() { return []; },
+      async getOrCreateUserFact() { return { type: 'User', hash: 'u1', predecessors: {}, fields: {} }; }
+    } as any;
+
+    const callbacks: Array<(results: any[]) => Promise<void>> = [];
+    const engine = new InverseSpecificationEngine(
+      (_spec, onResult) => {
+        callbacks.push(onResult);
+        return { onResult } as any;
+      },
+      (_listener) => { /* no-op */ }
+    );
+
+    const denyDistributionEngine = {
+      async canDistributeToAll() {
+        return { type: 'failure', reason: 'No rules apply' } as const;
+      }
+    } as any;
+
+    const feedSpec: Specification = { given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } };
+    const resolveFeed = (_: string): Specification => feedSpec;
+    const resolveFeedInfo = (_: string) => ({ specification: feedSpec, namedStart: {} as any });
+
+    wss.once('connection', (socket) => {
+      const handler = new AuthorizationWebSocketHandler(authStub, resolveFeed, engine, bookmarks, denyDistributionEngine, resolveFeedInfo);
+      handler.handleConnection(socket as any, null);
+    });
+
+    const client = new WebSocket(wsUrl);
+    const received: string[] = [];
+    client.on('message', (d) => received.push(typeof d === 'string' ? d : String(d)));
+    await new Promise<void>(resolve => client.once('open', () => resolve()));
+
+    client.send(`SUB\n${JSON.stringify('feedX')}\n${JSON.stringify('')}\n\n`);
+
+    await waitFor(() => received.some(m => m.startsWith('ERR\n') && m.includes('feedX') && m.includes('Not authorized')));
+
+    // Ensure no listeners were registered (callbacks should remain empty)
+    expect(callbacks.length).toBe(0);
+
+    await new Promise<void>(resolve => { client.once('close', () => resolve()); client.close(); });
+  });
+
+  test('allows SUB when distribution rules pass', async () => {
+    const address = wss.address();
+    const port = typeof address === 'string' ? parseInt(address.split(':').pop() || '0', 10) : (address as any).port;
+    const wsUrl = `ws://127.0.0.1:${port}`;
+
+    const bookmarks = new BookmarkManager();
+
+    const authStub = {
+      async feed() { return { tuples: [], bookmark: '' }; },
+      async load() { return []; },
+      async getOrCreateUserFact() { return { type: 'User', hash: 'u1', predecessors: {}, fields: {} }; }
+    } as any;
+
+    const callbacks: Array<(results: any[]) => Promise<void>> = [];
+    const engine = new InverseSpecificationEngine(
+      (_spec, onResult) => {
+        callbacks.push(onResult);
+        return { onResult } as any;
+      },
+      (_listener) => { /* no-op */ }
+    );
+
+    const allowDistributionEngine = {
+      async canDistributeToAll() {
+        return { type: 'success' } as const;
+      }
+    } as any;
+
+    const feedSpec: Specification = { given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } };
+    const resolveFeed = (_: string): Specification => feedSpec;
+    const resolveFeedInfo = (_: string) => ({ specification: feedSpec, namedStart: {} as any });
+
+    wss.once('connection', (socket) => {
+      const handler = new AuthorizationWebSocketHandler(authStub, resolveFeed, engine, bookmarks, allowDistributionEngine, resolveFeedInfo);
+      handler.handleConnection(socket as any, null);
+    });
+
+    const client = new WebSocket(wsUrl);
+    const received: string[] = [];
+    client.on('message', (d) => received.push(typeof d === 'string' ? d : String(d)));
+    await new Promise<void>(resolve => client.once('open', () => resolve()));
+
+    client.send(`SUB\n${JSON.stringify('feedY')}\n${JSON.stringify('')}\n\n`);
+
+    // Expect no ERR; allow time for subscription to register (callbacks length > 0 eventually)
+    await waitFor(() => callbacks.length > 0);
+    const hasErr = received.some(m => m.startsWith('ERR\n'));
+    expect(hasErr).toBe(false);
+
+    await new Promise<void>(resolve => { client.once('close', () => resolve()); client.close(); });
+  });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs = 2000, intervalMs = 20): Promise<void> {
