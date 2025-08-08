@@ -168,8 +168,8 @@ export interface FactFeed {
 
 - [x] Create InverseSpecificationEngine
 - [x] Use `invertSpecification()` for reactive updates
-- [ ] Set up specification listeners removal on UNSUB/close
-- [x] Handle add/remove operations (add only for now)
+- [x] Set up specification listeners removal on UNSUB/close
+- [x] Handle add/remove operations
 
 ### Phase 5: Bookmark Management 🔄
 
@@ -198,7 +198,7 @@ export interface FactFeed {
 - [x] Client uses standard Jinaga browser factory without Authorization knowledge
 - [x] Server injects Authorization implementation into WebSocket handler
 - [x] Initial feed loading uses `authorization.feed()`
-- [x] Reactive updates use `invertSpecification()` (add operations)
+- [x] Reactive updates use `invertSpecification()` (add/remove operations)
 - [x] Bookmarks are properly managed and advanced
 - [ ] Test scenario validates all integration points
 - [ ] Enhanced FactFeed interface is backward compatible

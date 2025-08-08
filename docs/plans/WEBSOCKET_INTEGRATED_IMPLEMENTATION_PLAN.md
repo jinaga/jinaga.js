@@ -75,8 +75,8 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 #### 3.3 Inverse Specification Integration
 - [x] Create `InverseSpecificationEngine`
 - [x] Use `invertSpecification()` for reactive updates (add only)
-- [ ] Set up listener removal on UNSUB/close
-- [ ] Handle remove operations
+- [x] Set up listener removal on UNSUB/close
+- [x] Handle remove operations
 
 #### 3.4 Bookmark Management Integration
 - [x] Create `BookmarkManager`
@@ -174,8 +174,8 @@ Coordinated implementation of both WebSocket Protocol Refactoring and Authorizat
 - [x] Initial feed loading uses `authorization.feed()`
 - [x] Reactive updates use `invertSpecification()` for adds
 - [x] Bookmarks properly managed and advanced
-- [ ] Listener lifecycle handled for UNSUB/close
-- [ ] Remove operations processed
+- [x] Listener lifecycle handled for UNSUB/close
+- [x] Remove operations processed
 
 ### Phase 4 Success Criteria
 - [ ] Enhanced FactFeed interface is backward compatible

@@ -7,12 +7,13 @@ import { FactEnvelope, FactReference, ProjectedResult } from "../storage";
 import { UserIdentity } from "../user-identity";
 import { InverseSpecificationEngine } from "./inverse-specification-engine";
 import { BookmarkManager } from "./bookmark-manager";
+import { SpecificationListener } from "../observable/observable";
 
 export type FeedResolver = (feed: string) => Specification;
 
 type Subscription = {
   feed: string;
-  listeners: any[]; // SpecificationListener[] but avoid import cycle from index
+  listeners: SpecificationListener[];
 };
 
 export class AuthorizationWebSocketHandler {
@@ -33,6 +34,11 @@ export class AuthorizationWebSocketHandler {
 
     socket.on("close", () => {
       // Cleanup all listeners on disconnect
+      for (const sub of this.subscriptions.values()) {
+        for (const token of sub.listeners) {
+          this.inverseEngine.removeSpecificationListener(token);
+        }
+      }
       this.subscriptions.clear();
     });
   }
@@ -79,7 +85,7 @@ export class AuthorizationWebSocketHandler {
 
       // Register inverse specification listeners for reactive updates
       const inverses = invertSpecification(specification);
-      const listenerTokens: any[] = [];
+      const listenerTokens: SpecificationListener[] = [];
       for (const inv of inverses) {
         const token = this.inverseEngine.addSpecificationListener(inv.inverseSpecification, async (results: ProjectedResult[]) => {
           if (inv.operation === "add") {
@@ -87,9 +93,13 @@ export class AuthorizationWebSocketHandler {
             if (refs.length > 0) {
               const envs = await this.authorization.load(userIdentity, refs);
               socket.send(serializeGraph(envs));
-              const advanced = await this.bookmarks.advanceBookmark(feed);
-              socket.send(`BOOK\n${JSON.stringify(feed)}\n${JSON.stringify(advanced)}\n\n`);
             }
+            const advanced = await this.bookmarks.advanceBookmark(feed);
+            socket.send(`BOOK\n${JSON.stringify(feed)}\n${JSON.stringify(advanced)}\n\n`);
+          } else if (inv.operation === "remove") {
+            // No facts to send; just advance bookmark to signal change
+            const advanced = await this.bookmarks.advanceBookmark(feed);
+            socket.send(`BOOK\n${JSON.stringify(feed)}\n${JSON.stringify(advanced)}\n\n`);
           }
         });
         listenerTokens.push(token);
@@ -104,7 +114,9 @@ export class AuthorizationWebSocketHandler {
   private handleUnsub(feed: string) {
     const sub = this.subscriptions.get(feed);
     if (sub) {
-      // We assume inverseEngine can remove by token if needed; for now, just drop references
+      for (const token of sub.listeners) {
+        this.inverseEngine.removeSpecificationListener(token);
+      }
       this.subscriptions.delete(feed);
     }
   }
