@@ -1,4 +1,5 @@
 import { Condition, ExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
+import { detectDisconnectedSpecification } from "./UnionFind";
 
 type InverseOperation = "add" | "remove";
 
@@ -20,6 +21,9 @@ interface InverterContext {
 }
 
 export function invertSpecification(specification: Specification): SpecificationInverse[] {
+    // Detect disconnected specifications before inversion
+    detectDisconnectedSpecification(specification);
+    
     // Turn each given into a match.
     const emptyMatches: Match[] = specification.given.map(g => ({
         unknown: g,

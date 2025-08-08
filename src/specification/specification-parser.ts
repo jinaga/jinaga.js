@@ -4,7 +4,7 @@ import { computeHash } from "../fact/hash";
 import { PurgeConditions } from "../purge/purgeConditions";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
-import { Condition, ExistentialCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification, detectDisconnectedSpecification } from "./specification";
+import { Condition, ExistentialCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 
 type FieldValue = string | number | boolean;
 
@@ -426,9 +426,6 @@ export class SpecificationParser {
         const { matches, labels } = this.parseMatches(given);
         const projection = this.parseProjection(labels);
         const specification = { given, matches, projection };
-        
-        // Detect disconnected specifications early
-        detectDisconnectedSpecification(specification);
         
         return specification;
     }

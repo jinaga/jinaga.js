@@ -1,4 +1,4 @@
-import { DisconnectedSpecificationError, Specification, SpecificationParser, buildModel } from "../../src";
+import { DisconnectedSpecificationError, Specification, SpecificationParser, buildModel, invertSpecification } from "../../src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
@@ -52,35 +52,41 @@ describe("Disconnected specification detection", () => {
 
     it("detects disconnected specification with isolated given", () => {
         // p2 is isolated and only referenced in projection
-        expect(() => parseSpecification(`
-            (p1: GameHub.Player, p2: GameHub.Playground) {
-                u1: GameHub.Join [
-                    u1->player:GameHub.Player = p1
-                ]
-                u3: GameHub.Challenge [
-                    u3->opponentJoin:GameHub.Join = u1
-                ]
-            } => {
-                playgroundCode = p2.code
-            }`)).toThrow(DisconnectedSpecificationError);
+        expect(() => {
+            const spec = parseSpecification(`
+                (p1: GameHub.Player, p2: GameHub.Playground) {
+                    u1: GameHub.Join [
+                        u1->player:GameHub.Player = p1
+                    ]
+                    u3: GameHub.Challenge [
+                        u3->opponentJoin:GameHub.Join = u1
+                    ]
+                } => {
+                    playgroundCode = p2.code
+                }`);
+            invertSpecification(spec);
+        }).toThrow(DisconnectedSpecificationError);
     });
 
     it("detects disconnected specification with multiple isolated clusters", () => {
         // Two separate match clusters: p1 connects to u1, p3 connects to u2, but no connection between clusters
-        expect(() => parseSpecification(`
-            (p1: GameHub.Player, p3: GameHub.Game) {
-                u1: GameHub.Join [
-                    u1->player:GameHub.Player = p1
-                ]
-                u2: GameHub.Level [
-                    u2->game:GameHub.Game = p3
-                ]
-            }`)).toThrow(DisconnectedSpecificationError);
+        expect(() => {
+            const spec = parseSpecification(`
+                (p1: GameHub.Player, p3: GameHub.Game) {
+                    u1: GameHub.Join [
+                        u1->player:GameHub.Player = p1
+                    ]
+                    u2: GameHub.Level [
+                        u2->game:GameHub.Game = p3
+                    ]
+                }`);
+            invertSpecification(spec);
+        }).toThrow(DisconnectedSpecificationError);
     });
 
     it("provides clear error message for disconnected specifications", () => {
         try {
-            parseSpecification(`
+            const spec = parseSpecification(`
                 (p1: GameHub.Player, p2: GameHub.Playground) {
                     u1: GameHub.Join [
                         u1->player:GameHub.Player = p1
@@ -88,6 +94,7 @@ describe("Disconnected specification detection", () => {
                 } => {
                     playgroundCode = p2.code
                 }`);
+            invertSpecification(spec);
             fail("Expected DisconnectedSpecificationError to be thrown");
         } catch (error: any) {
             expect(error).toBeInstanceOf(DisconnectedSpecificationError);
@@ -95,6 +102,8 @@ describe("Disconnected specification detection", () => {
             expect(error.message).toContain("2 disconnected subgraphs");
             expect(error.message).toContain("Subgraph 1");
             expect(error.message).toContain("Subgraph 2");
+            // Expect the error message to include label types
+            expect(error.message).toMatch(/'[^']+:GameHub\.(Player|Join|Playground)'/);
         }
     });
 
@@ -112,19 +121,22 @@ describe("Disconnected specification detection", () => {
     });
 
     it("detects disconnected specifications with existential conditions", () => {
-        expect(() => parseSpecification(`
-            (p1: GameHub.Player, p2: GameHub.Playground) {
-                u1: GameHub.Join [
-                    u1->player:GameHub.Player = p1
-                    !E {
-                        revoked: GameHub.Join.Revoked [
-                            revoked->join:GameHub.Join = u1
-                        ]
-                    }
-                ]
-            } => {
-                playgroundCode = p2.code
-            }`)).toThrow(DisconnectedSpecificationError);
+        expect(() => {
+            const spec = parseSpecification(`
+                (p1: GameHub.Player, p2: GameHub.Playground) {
+                    u1: GameHub.Join [
+                        u1->player:GameHub.Player = p1
+                        !E {
+                            revoked: GameHub.Join.Revoked [
+                                revoked->join:GameHub.Join = u1
+                            ]
+                        }
+                    ]
+                } => {
+                    playgroundCode = p2.code
+                }`);
+            invertSpecification(spec);
+        }).toThrow(DisconnectedSpecificationError);
     });
 
     it("allows connected specifications with existential conditions", () => {
@@ -157,18 +169,21 @@ describe("Disconnected specification detection", () => {
     });
 
     it("detects disconnected specifications with nested projections", () => {
-        expect(() => parseSpecification(`
-            (p1: GameHub.Player, p2: GameHub.Playground) {
-                u1: GameHub.Join [
-                    u1->player:GameHub.Player = p1
-                ]
-            } => {
-                playgrounds = {
-                    playground: GameHub.Playground [
-                        playground->playground:GameHub.Playground = p2
+        expect(() => {
+            const spec = parseSpecification(`
+                (p1: GameHub.Player, p2: GameHub.Playground) {
+                    u1: GameHub.Join [
+                        u1->player:GameHub.Player = p1
                     ]
-                }
-            }`)).toThrow(DisconnectedSpecificationError);
+                } => {
+                    playgrounds = {
+                        playground: GameHub.Playground [
+                            playground->playground:GameHub.Playground = p2
+                        ]
+                    }
+                }`);
+            invertSpecification(spec);
+        }).toThrow(DisconnectedSpecificationError);
     });
 
     it("handles specification projections correctly - should be connected if nested matches connect to main graph", () => {
@@ -189,18 +204,21 @@ describe("Disconnected specification detection", () => {
     });
 
     it("detects disconnected specification projections", () => {
-        expect(() => parseSpecification(`
-            (p1: GameHub.Player, p2: GameHub.Playground) {
-                u1: GameHub.Join [
-                    u1->player:GameHub.Player = p1
-                ]
-            } => {
-                playgroundChallenges = {
-                    challenge: GameHub.Challenge [
-                        challenge->playground:GameHub.Playground = p2
+        expect(() => {
+            const spec = parseSpecification(`
+                (p1: GameHub.Player, p2: GameHub.Playground) {
+                    u1: GameHub.Join [
+                        u1->player:GameHub.Player = p1
                     ]
-                }
-            }`)).toThrow(DisconnectedSpecificationError);
+                } => {
+                    playgroundChallenges = {
+                        challenge: GameHub.Challenge [
+                            challenge->playground:GameHub.Playground = p2
+                        ]
+                    }
+                }`);
+            invertSpecification(spec);
+        }).toThrow(DisconnectedSpecificationError);
     });
 
     it("detects disconnected specifications when using Model API with match()", () => {
@@ -213,9 +231,10 @@ describe("Disconnected specification detection", () => {
 
         expect(() => {
             // Create a disconnected specification: p1 connects to join, but p2 is isolated
-            model.given(Player, Playground).match((player, playground, r) => 
+            const spec = model.given(Player, Playground).match((player, playground, r) => 
                 r.ofType(Join).join(j => j.player, player)
             );
+            invertSpecification(spec.specification);
         }).toThrow(DisconnectedSpecificationError);
     });
 
