@@ -20,6 +20,7 @@ type Subscription = {
 
 export class AuthorizationWebSocketHandler {
   private readonly subscriptions = new Map<string, Subscription>();
+  private readonly buffers = new WeakMap<WebSocket, string>();
 
   constructor(
     private readonly authorization: Authorization,
@@ -31,9 +32,10 @@ export class AuthorizationWebSocketHandler {
   ) {}
 
   handleConnection(socket: WebSocket, userIdentity: UserIdentity | null) {
+    this.buffers.set(socket, "");
     socket.on("message", async (data: any) => {
       const text = typeof data === "string" ? data : String(data);
-      await this.processIncoming(socket, userIdentity, text);
+      await this.pushChunk(socket, userIdentity, text);
     });
 
     socket.on("close", () => {
@@ -47,25 +49,64 @@ export class AuthorizationWebSocketHandler {
     });
   }
 
-  private async processIncoming(socket: WebSocket, userIdentity: UserIdentity | null, chunk: string) {
-    const lines = chunk.split(/\r?\n/);
+  private async pushChunk(socket: WebSocket, userIdentity: UserIdentity | null, chunk: string) {
+    // Append to per-socket buffer and attempt to parse complete frames
+    const existing = this.buffers.get(socket) ?? "";
+    let buffer = existing + chunk;
+    const parts = buffer.split(/\r?\n/);
+    buffer = parts.pop() ?? ""; // remainder without trailing newline
+
     let i = 0;
-    while (i < lines.length) {
-      const line = lines[i++];
-      if (line === "SUB") {
-        const feed = JSON.parse(lines[i++] || "\"\"");
-        const bookmark = JSON.parse(lines[i++] || "\"\"");
-        i++; // blank line
-        await this.handleSub(socket, userIdentity, feed, bookmark);
+    while (i < parts.length) {
+      const line = parts[i];
+      if (line === "SUB" || line === "UNSUB") {
+        const keyword = line;
+        i++;
+        const payload: string[] = [];
+        while (i < parts.length) {
+          const next = parts[i];
+          if (next === "") {
+            break;
+          }
+            payload.push(next);
+            i++;
+        }
+        // If we have a blank line terminator, ensure we have enough payload lines; otherwise treat as incomplete
+        if (i >= parts.length || parts[i] !== "") {
+          // No terminator present; reconstruct remainder and exit
+          const remainder = [keyword, ...payload].join("\n");
+          buffer = remainder + (buffer ? "\n" + buffer : "");
+          break;
+        }
+        const required = keyword === "SUB" ? 2 : 1;
+        if (payload.length < required) {
+          // Not enough payload yet; push back without consuming terminator
+          const remainder = [keyword, ...payload].join("\n");
+          buffer = remainder + (buffer ? "\n" + buffer : "");
+          break;
+        }
+        // Consume blank terminator
+        i++;
+        try {
+          if (keyword === "SUB") {
+            const feed = JSON.parse(payload[0] || '""');
+            const bookmark = JSON.parse(payload[1] || '""');
+            await this.handleSub(socket, userIdentity, feed, bookmark);
+          } else {
+            const feed = JSON.parse(payload[0] || '""');
+            this.handleUnsub(feed);
+          }
+        } catch {
+          // Ignore malformed frame
+        }
         continue;
       }
-      if (line === "UNSUB") {
-        const feed = JSON.parse(lines[i++] || "\"\"");
-        i++; // blank line
-        this.handleUnsub(feed);
-        continue;
-      }
+      // Unknown line; ignore
+      i++;
     }
+
+    // Save updated buffer
+    this.buffers.set(socket, buffer);
   }
 
   private async handleSub(socket: WebSocket, userIdentity: UserIdentity | null, feed: string, bookmark: string) {

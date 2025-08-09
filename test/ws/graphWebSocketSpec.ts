@@ -1,11 +1,15 @@
 import { WebSocketServer } from 'ws';
 import WebSocket from 'ws';
 import { MemoryStore } from '../../src/memory/memory-store';
-import { FactEnvelope, FactRecord } from '../../src/storage';
-import { serializeGraph } from '../../src/http/serializer';
+import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
 import { computeHash } from '../../src/fact/hash';
 import { Subscriber } from '../../src/observer/subscriber';
 import { WsGraphNetwork } from '../../src/ws/wsGraphNetwork';
+import { AuthorizationWebSocketHandler } from '../../src/ws/authorization-websocket-handler';
+import { BookmarkManager } from '../../src/ws/bookmark-manager';
+import { ObservableSource } from '../../src/observable/observable';
+import { InverseSpecificationEngine } from '../../src/ws/inverse-specification-engine';
+import { Specification } from '../../src/specification/specification';
 
 jest.setTimeout(15000);
 
@@ -82,14 +86,26 @@ describe('WebSocket Graph E2E', () => {
     const httpStub: any = createHttpStub();
     const network = new WsGraphNetwork(httpStub, store, wsUrl);
 
-    // Server: upon client connect, after short delay, send graph and BOOK
+    // Server: upon client connect, attach AuthorizationWebSocketHandler that serves initial feed
     wss.once('connection', (socket) => {
-      setTimeout(() => {
-        const body = serializeGraph([envelope]);
-        socket.send(body);
-        const bookFrame = `BOOK\n${JSON.stringify('feed1')}\n${JSON.stringify('b1')}\n\n`;
-        socket.send(bookFrame);
-      }, 50);
+      const serverStore = new MemoryStore();
+      const observable = new ObservableSource(serverStore);
+      const engine = new InverseSpecificationEngine(
+        observable.addSpecificationListener.bind(observable),
+        observable.removeSpecificationListener.bind(observable)
+      );
+      const bookmarks = new BookmarkManager();
+      const authStub = {
+        async feed(_user: any, _spec: Specification, _start: FactReference[], _bookmark: string) {
+          return { tuples: [{ facts: [envelope.fact], bookmark: 't1' }], bookmark: 'b1' };
+        },
+        async load(_user: any, refs: FactReference[]) {
+          return refs.length ? [envelope] : [];
+        }
+      };
+      const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'Test.Fact' }], matches: [], projection: { type: 'composite', components: [] } });
+      const handler = new AuthorizationWebSocketHandler(authStub as any, resolveFeed, engine, bookmarks);
+      handler.handleConnection(socket as any, null);
     });
 
     const feedId = 'feed1';
