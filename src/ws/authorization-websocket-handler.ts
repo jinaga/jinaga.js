@@ -9,6 +9,7 @@ import { InverseSpecificationEngine } from "./inverse-specification-engine";
 import { BookmarkManager } from "./bookmark-manager";
 import { SpecificationListener } from "../observable/observable";
 import { DistributionEngine } from "../distribution/distribution-engine";
+import { Trace } from "../util/trace";
 
 export type FeedResolver = (feed: string) => Specification;
 export type FeedInfoResolver = (feed: string) => { specification: Specification; namedStart: ReferencesByName };
@@ -39,13 +40,22 @@ export class AuthorizationWebSocketHandler {
     });
 
     socket.on("close", () => {
-      // Cleanup all listeners on disconnect
-      for (const sub of this.subscriptions.values()) {
-        for (const token of sub.listeners) {
-          this.inverseEngine.removeSpecificationListener(token);
+      // Temporarily disable tracing during cleanup to prevent logging after tests complete
+      const currentTracer = Trace.getTracer();
+      Trace.off();
+      
+      try {
+        // Cleanup all listeners on disconnect
+        for (const sub of this.subscriptions.values()) {
+          for (const token of sub.listeners) {
+            this.inverseEngine.removeSpecificationListener(token);
+          }
         }
+        this.subscriptions.clear();
+      } finally {
+        // Restore original tracer
+        Trace.configure(currentTracer);
       }
-      this.subscriptions.clear();
     });
   }
 

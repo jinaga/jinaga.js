@@ -68,6 +68,10 @@ export class Trace {
         Trace.tracer = new NoOpTracer();
     }
 
+    static getTracer(): Tracer {
+        return Trace.tracer;
+    }
+
     static info(message: string): void {
         this.tracer.info(message);
     }
