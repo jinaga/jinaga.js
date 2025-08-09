@@ -2,7 +2,6 @@ import { hydrateFromTree } from '../fact/hydrate';
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals, FactTuple, uniqueFactReferences } from '../storage';
-import { computeObjectHash } from '../fact/hash';
 
 export function getPredecessors(fact: FactRecord | null, role: string) {
     if (!fact) {
@@ -82,7 +81,13 @@ export class MemoryStore implements Storage {
         return this.runner.read(start, specification);
     }
 
-    async feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed> {
+    async feed(feed: Specification, start: FactReference[], _bookmark: string): Promise<FactFeed> {
+        // TODO: Implement monotonic bookmarks defined by the store.
+        // Bookmarks must be monotonically increasing quantities with a store-defined
+        // format and comparison function. Fact hashes are not monotonic, so prior
+        // implementations that derived bookmarks from hashes have been removed.
+        // For now, feeds ignore bookmarks and always return empty bookmark values.
+
         // Compute projected results using the same engine as application reads
         const results: ProjectedResult[] = await this.runner.read(start, feed);
 
@@ -90,24 +95,10 @@ export class MemoryStore implements Storage {
         const tuples: FactTuple[] = results.map(result => {
             const references = Object.values(result.tuple);
             const unique = uniqueFactReferences(references);
-            const sorted = unique.slice().sort((a, b) => {
-                if (a.type < b.type) return -1;
-                if (a.type > b.type) return 1;
-                if (a.hash < b.hash) return -1;
-                if (a.hash > b.hash) return 1;
-                return 0;
-            });
-            const tupleBookmark = computeObjectHash({ facts: sorted });
-            return { facts: sorted, bookmark: tupleBookmark };
+            return { facts: unique, bookmark: '' };
         });
 
-        // Derive stable overall bookmark from tuple bookmarks and incoming bookmark
-        const overallBookmark = computeObjectHash({
-            prior: bookmark || '',
-            tuples: tuples.map(t => t.bookmark)
-        });
-
-        return { tuples, bookmark: overallBookmark };
+        return { tuples, bookmark: '' };
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
