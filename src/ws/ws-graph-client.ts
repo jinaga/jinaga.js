@@ -6,8 +6,22 @@ import { ControlFrameHandler } from "./control-frame-handler";
 import { UserIdentity } from "../user-identity";
 
 // Avoid DOM lib dependency; define minimal WebSocket ctor type
-declare const WebSocket: any;
 
+// Minimal WebSocket instance interface for this file
+interface MinimalWebSocket {
+  readonly readyState: number;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  onopen: ((this: MinimalWebSocket, ev: any) => any) | null;
+  onclose: ((this: MinimalWebSocket, ev: any) => any) | null;
+  onerror: ((this: MinimalWebSocket, ev: any) => any) | null;
+  onmessage: ((this: MinimalWebSocket, ev: { data: string }) => any) | null;
+}
+
+// Minimal WebSocket constructor type
+declare const WebSocket: {
+  new (url: string): MinimalWebSocket;
+};
 type BookmarkListener = (feed: string, bookmark: string) => void;
 
 type ActiveFeed = {
