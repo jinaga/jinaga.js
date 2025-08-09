@@ -138,7 +138,21 @@ function createNetwork(
         if (config.wsEndpoint && typeof (globalThis as any).WebSocket !== 'undefined') {
             try {
                 const httpNetwork = new HttpNetwork(webClient);
-                const network: Network = new WsGraphNetwork(httpNetwork, store, config.wsEndpoint);
+                // Derive Authorization header via the HTTP auth provider, convert to token for WS query param
+                const provider = config.httpAuthenticationProvider;
+                const getAuthorizationHeader = provider
+                    ? async () => {
+                        const headers = await provider.getHeaders();
+                        return headers["Authorization"] || null;
+                    }
+                    : undefined;
+                const network: Network = new WsGraphNetwork(
+                    httpNetwork,
+                    store,
+                    config.wsEndpoint,
+                    undefined,
+                    getAuthorizationHeader
+                );
                 return network;
             }
             catch {

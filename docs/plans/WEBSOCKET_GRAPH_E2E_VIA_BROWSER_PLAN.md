@@ -9,13 +9,13 @@ This plan selects the higher-fidelity options:
 - Use a full HTTP + WS server setup for maximum production fidelity.
 
 ## Progress Summary
-- 🔄 **Phase 0: Browser Wiring & WS Auth Hook**
-- ❌ **Phase 1: Storage Feed Support**
+- ✅ **Phase 0: Browser Wiring & WS Auth Hook**
+- 🔄 **Phase 1: Storage Feed Support**
 - ❌ **Phase 2: Server Wiring & Protocol**
 - ❌ **Phase 3: Full HTTP + WS Test Harness (incl. Observer Notification Bridge)**
 - ❌ **Phase 4: E2E via `JinagaBrowser.subscribe`**
 
-**Current Status**: Planning complete; implementation pending.
+**Current Status**: Phase 0 complete; tests pass with WS URL auth propagation ready.
 
 ## Prerequisites
 - [ ] Node test environment with `ws` available and `globalThis.WebSocket` set in tests
@@ -23,22 +23,22 @@ This plan selects the higher-fidelity options:
 - [ ] Access to `AuthorizationNoOp`, `MemoryStore`, `ObservableSource`, `InverseSpecificationEngine`, `AuthorizationWebSocketHandler`
 - [ ] Deterministic mapping from feed IDs to `Specification` on the server (`resolveFeed`)
 
-## Phase 0: Browser Wiring & WS Auth Hook 🔄
+## Phase 0: Browser Wiring & WS Auth Hook ✅
 ### 0.1 Ensure `WsGraphNetwork` is constructed when `wsEndpoint` is set
 **Location**: `src/jinaga-browser.ts`
 
 **Requirements**:
-- [ ] If `httpEndpoint` and `wsEndpoint` are provided and `WebSocket` is available, construct `HttpNetwork` and wrap it in `WsGraphNetwork` (same as applications).
-- [ ] No test-only branches.
+- [x] If `httpEndpoint` and `wsEndpoint` are provided and `WebSocket` is available, construct `HttpNetwork` and wrap it in `WsGraphNetwork` (same as applications).
+- [x] No test-only branches.
 
 ### 0.2 WebSocket authentication aligned with HTTP
 **Locations**: `src/jinaga-browser.ts`, `src/ws/wsGraphNetwork.ts`, `src/ws/ws-graph-client.ts`
 
 **Requirements**:
-- [ ] Reuse `httpAuthenticationProvider` to obtain the Authorization value when opening WS connection.
-- [ ] Propagate async `getAuthorizationHeader` (or equivalent) into `WsGraphNetwork` → `WsGraphClient`.
-- [ ] Append token to WS URL as a query parameter (e.g., `authorization`), since browsers cannot set custom WS headers.
-- [ ] Server accepts/validates this token equivalently to HTTP Authorization (test server may simulate).
+- [x] Reuse `httpAuthenticationProvider` to obtain the Authorization value when opening WS connection.
+- [x] Propagate async `getAuthorizationHeader` (or equivalent) into `WsGraphNetwork` → client URL builder.
+- [x] Append token to WS URL as a query parameter (e.g., `authorization`), since browsers cannot set custom WS headers.
+- [ ] Server accepts/validates this token equivalently to HTTP Authorization (to be covered in Phase 3 harness).
 
 ## Phase 1: Storage Feed Support 🔄
 ### 1.1 Implement `MemoryStore.feed` (better fidelity)
@@ -47,10 +47,10 @@ This plan selects the higher-fidelity options:
 **Objective**: Provide initial feed tuples using the same read engine as apps.
 
 **Required Steps**:
-- [ ] Use `SpecificationRunner.read(start, specification)` to compute `ProjectedResult[]`
-- [ ] Map each `ProjectedResult` to a `FactTuple` by extracting fact references from `result.tuple`
-- [ ] Return `FactFeed` with tuples and a stable bookmark string
-- [ ] Ensure idempotence and predictable ordering
+- [x] Use `SpecificationRunner.read(start, specification)` to compute `ProjectedResult[]`
+- [x] Map each `ProjectedResult` to a `FactTuple` by extracting fact references from `result.tuple`
+- [x] Return `FactFeed` with tuples and a stable bookmark string
+- [x] Ensure idempotence and predictable ordering
 
 **Notes**:
 - Bookmark format may be a stable string derived from the result set; server will still advance bookmarks via `BookmarkManager` during reactive updates.

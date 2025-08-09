@@ -13,17 +13,39 @@ export class WsGraphNetwork implements Network {
     private readonly httpNetwork: HttpNetwork,
     store: Storage,
     wsEndpoint: string,
-    getUserIdentity?: () => Promise<UserIdentity | null>
+    getUserIdentity?: () => Promise<UserIdentity | null>,
+    getAuthorizationHeader?: () => Promise<string | null>
   ) {
     const getWsUrl = async () => {
-      if (!getUserIdentity) return wsEndpoint;
       try {
-        const id = await getUserIdentity();
-        if (!id) return wsEndpoint;
         const url = new URL(wsEndpoint);
-        url.searchParams.set("uid", `${encodeURIComponent(id.provider)}:${encodeURIComponent(id.id)}`);
+        // Append Authorization token if provided (browsers cannot set custom WS headers)
+        if (getAuthorizationHeader) {
+          try {
+            const auth = await getAuthorizationHeader();
+            if (auth) {
+              url.searchParams.set("authorization", auth);
+            }
+          }
+          catch {
+            // ignore auth retrieval failures
+          }
+        }
+        // Optionally append user identity
+        if (getUserIdentity) {
+          try {
+            const id = await getUserIdentity();
+            if (id) {
+              url.searchParams.set("uid", `${encodeURIComponent(id.provider)}:${encodeURIComponent(id.id)}`);
+            }
+          }
+          catch {
+            // ignore identity retrieval failures
+          }
+        }
         return url.toString();
-      } catch {
+      }
+      catch {
         return wsEndpoint;
       }
     };

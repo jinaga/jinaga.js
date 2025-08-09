@@ -1,7 +1,8 @@
 import { hydrateFromTree } from '../fact/hydrate';
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
-import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals, FactTuple, uniqueFactReferences } from '../storage';
+import { computeObjectHash } from '../fact/hash';
 
 export function getPredecessors(fact: FactRecord | null, role: string) {
     if (!fact) {
@@ -81,8 +82,32 @@ export class MemoryStore implements Storage {
         return this.runner.read(start, specification);
     }
 
-    feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed> {
-        throw new Error('Method not implemented.');
+    async feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed> {
+        // Compute projected results using the same engine as application reads
+        const results: ProjectedResult[] = await this.runner.read(start, feed);
+
+        // Map each projected result to a tuple of fact references
+        const tuples: FactTuple[] = results.map(result => {
+            const references = Object.values(result.tuple);
+            const unique = uniqueFactReferences(references);
+            const sorted = unique.slice().sort((a, b) => {
+                if (a.type < b.type) return -1;
+                if (a.type > b.type) return 1;
+                if (a.hash < b.hash) return -1;
+                if (a.hash > b.hash) return 1;
+                return 0;
+            });
+            const tupleBookmark = computeObjectHash({ facts: sorted });
+            return { facts: sorted, bookmark: tupleBookmark };
+        });
+
+        // Derive stable overall bookmark from tuple bookmarks and incoming bookmark
+        const overallBookmark = computeObjectHash({
+            prior: bookmark || '',
+            tuples: tuples.map(t => t.bookmark)
+        });
+
+        return { tuples, bookmark: overallBookmark };
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
