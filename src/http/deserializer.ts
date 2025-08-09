@@ -12,7 +12,8 @@ export class GraphDeserializer implements GraphSource {
     private publicKeys: string[] = [];
 
     constructor(
-        private readonly readLine: () => Promise<string | null>
+        private readonly readLine: () => Promise<string | null>,
+        private readonly flushThreshold: number = 20
     ) {}
 
     async read(
@@ -66,11 +67,7 @@ export class GraphDeserializer implements GraphSource {
         envelopes.push({ fact, signatures });
 
         // Periodically handle a batch of envelopes
-        if (envelopes.length >= 20) {
-            await onEnvelopes(envelopes);
-            envelopes = [];
-        } else {
-            // Flush after each fact to ensure timely persistence in streaming scenarios
+        if (envelopes.length >= this.flushThreshold) {
             await onEnvelopes(envelopes);
             envelopes = [];
         }

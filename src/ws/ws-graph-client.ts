@@ -168,9 +168,13 @@ export class WsGraphClient {
   }
 
   private startGraphReader() {
-    const deserializer = new GraphDeserializer(async () => {
-      return await this.readLine();
-    });
+    const deserializer = new GraphDeserializer(
+      async () => {
+        return await this.readLine();
+      },
+      // In a live WebSocket stream there is no natural end-of-stream; flush each fact immediately
+      1
+    );
 
     (async () => {
       try {
