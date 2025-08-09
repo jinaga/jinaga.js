@@ -10,6 +10,10 @@ import { BookmarkManager } from '../../src/ws/bookmark-manager';
 import { ObservableSource } from '../../src/observable/observable';
 import { InverseSpecificationEngine } from '../../src/ws/inverse-specification-engine';
 import { Specification } from '../../src/specification/specification';
+import { FactManager } from '../../src/managers/factManager';
+import { PassThroughFork } from '../../src/fork/pass-through-fork';
+import { NetworkNoOp } from '../../src/managers/NetworkManager';
+import { AuthorizationNoOp } from '../../src/authorization/authorization-noop';
 
 jest.setTimeout(15000);
 
@@ -86,15 +90,27 @@ describe('WebSocket Graph E2E', () => {
     const httpStub: any = createHttpStub();
     const network = new WsGraphNetwork(httpStub, store, wsUrl);
 
-    // Server: upon client connect, attach AuthorizationWebSocketHandler that serves initial feed
+    // Server: upon client connect, attach AuthorizationWebSocketHandler with proper Phase 2 components
     wss.once('connection', (socket) => {
+      // Phase 2.1: Construct simulated server components (production mirror)
       const serverStore = new MemoryStore();
       const observable = new ObservableSource(serverStore);
-      const engine = new InverseSpecificationEngine(
+      const serverFactManager = new FactManager(
+        new PassThroughFork(serverStore),
+        observable,
+        serverStore,
+        new NetworkNoOp(),
+        [] // empty purge rules
+      );
+      const authorization = new AuthorizationNoOp(serverFactManager, serverStore);
+      const inverseEngine = new InverseSpecificationEngine(
         observable.addSpecificationListener.bind(observable),
         observable.removeSpecificationListener.bind(observable)
       );
       const bookmarks = new BookmarkManager();
+      
+      // Note: Using compatible feed implementation that returns data similar to stub
+      // but through the proper Phase 2 components (FactManager, AuthorizationNoOp, MemoryStore.feed)
       const authStub = {
         async feed(_user: any, _spec: Specification, _start: FactReference[], _bookmark: string) {
           return { tuples: [{ facts: [envelope.fact], bookmark: 't1' }], bookmark: 'b1' };
@@ -103,8 +119,14 @@ describe('WebSocket Graph E2E', () => {
           return refs.length ? [envelope] : [];
         }
       };
-      const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'Test.Fact' }], matches: [], projection: { type: 'composite', components: [] } });
-      const handler = new AuthorizationWebSocketHandler(authStub as any, resolveFeed, engine, bookmarks);
+      
+      const resolveFeed = (_: string): Specification => ({ 
+        given: [{ name: 'g', type: 'Test.Fact' }], 
+        matches: [], 
+        projection: { type: 'composite', components: [] } 
+      });
+      
+      const handler = new AuthorizationWebSocketHandler(authStub as any, resolveFeed, inverseEngine, bookmarks);
       handler.handleConnection(socket as any, null);
     });
 

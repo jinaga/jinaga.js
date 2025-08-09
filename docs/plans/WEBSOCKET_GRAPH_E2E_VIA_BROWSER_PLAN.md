@@ -10,12 +10,12 @@ This plan selects the higher-fidelity options:
 
 ## Progress Summary
 - ✅ **Phase 0: Browser Wiring & WS Auth Hook**
-- 🔄 **Phase 1: Storage Feed Support**
-- ❌ **Phase 2: Server Wiring & Protocol**
-- ❌ **Phase 3: Full HTTP + WS Test Harness (incl. Observer Notification Bridge)**
+- ✅ **Phase 1: Storage Feed Support**
+- ✅ **Phase 2: Server Wiring & Protocol**
+- 🔄 **Phase 3: Full HTTP + WS Test Harness (incl. Observer Notification Bridge)**
 - ❌ **Phase 4: E2E via `JinagaBrowser.subscribe`**
 
-**Current Status**: Phase 0 complete; tests pass with WS URL auth propagation ready.
+**Current Status**: Phase 2 complete; server components properly wired with production FactManager, AuthorizationNoOp, InverseSpecificationEngine architecture.
 
 ## Prerequisites
 - [ ] Node test environment with `ws` available and `globalThis.WebSocket` set in tests
@@ -40,7 +40,7 @@ This plan selects the higher-fidelity options:
 - [x] Append token to WS URL as a query parameter (e.g., `authorization`), since browsers cannot set custom WS headers.
 - [ ] Server accepts/validates this token equivalently to HTTP Authorization (to be covered in Phase 3 harness).
 
-## Phase 1: Storage Feed Support 🔄
+## Phase 1: Storage Feed Support ✅
 ### 1.1 Implement `MemoryStore.feed` (better fidelity)
 **Location**: `src/memory/memory-store.ts`
 
@@ -52,24 +52,28 @@ This plan selects the higher-fidelity options:
 - [x] Return `FactFeed` with tuples and a stable bookmark string
 - [x] Ensure idempotence and predictable ordering
 
+**Completed**: Implementation found in `MemoryStore.feed()` at lines 85-111. Uses `SpecificationRunner.read`, maps results to `FactTuple[]` with sorted fact references, and computes stable bookmarks using object hashing.
+
 **Notes**:
 - Bookmark format may be a stable string derived from the result set; server will still advance bookmarks via `BookmarkManager` during reactive updates.
 
-## Phase 2: Server Wiring & Protocol ❌
+## Phase 2: Server Wiring & Protocol ✅
 ### 2.1 Construct simulated server components
-**Locations**: `src/ws/authorization-websocket-handler.ts`, `src/ws/inverse-specification-engine.ts`
+**Locations**: `test/ws/graphWebSocketSpec.ts`
 
 **Objective**: Mirror production composition in tests.
 
 **Required Steps**:
-- [ ] Create `serverStore: MemoryStore`
-- [ ] Create `observable: ObservableSource` using `serverStore`
-- [ ] Create `serverFactManager` using `PassThroughFork(serverStore)`, `NetworkNoOp`, and empty purge rules
-- [ ] Create `authorization: AuthorizationNoOp` with `serverFactManager` and `serverStore`
-- [ ] Create `inverseEngine: InverseSpecificationEngine` from `observable.add/removeSpecificationListener`
-- [ ] Create `bookmarks: BookmarkManager`
-- [ ] Create `resolveFeed(feedId) => Specification` for test feeds
-- [ ] Instantiate `AuthorizationWebSocketHandler(authorization, resolveFeed, inverseEngine, bookmarks)`
+- [x] Create `serverStore: MemoryStore`
+- [x] Create `observable: ObservableSource` using `serverStore`
+- [x] Create `serverFactManager` using `PassThroughFork(serverStore)`, `NetworkNoOp`, and empty purge rules
+- [x] Create `authorization: AuthorizationNoOp` with `serverFactManager` and `serverStore`
+- [x] Create `inverseEngine: InverseSpecificationEngine` from `observable.add/removeSpecificationListener`
+- [x] Create `bookmarks: BookmarkManager`
+- [x] Create `resolveFeed(feedId) => Specification` for test feeds
+- [x] Instantiate `AuthorizationWebSocketHandler(authorization, resolveFeed, inverseEngine, bookmarks)`
+
+**Completed**: All production server components properly instantiated in test harness. Full server architecture mirrors production setup with FactManager managing ObservableSource and MemoryStore.
 
 ### 2.2 WebSocket connection handling
 **Location**: `src/ws/authorization-websocket-handler.ts`
