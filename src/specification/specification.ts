@@ -424,3 +424,12 @@ function reduceComponent(component: NamedComponentProjection): NamedComponentPro
         return null;
     }
 }
+
+export class DisconnectedSpecificationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "DisconnectedSpecificationError";
+    }
+}
+
+export { detectDisconnectedSpecification } from './UnionFind';

@@ -425,7 +425,9 @@ export class SpecificationParser {
         const given = this.parseGiven();
         const { matches, labels } = this.parseMatches(given);
         const projection = this.parseProjection(labels);
-        return { given, matches, projection };
+        const specification = { given, matches, projection };
+        
+        return specification;
     }
 
     parseDeclaration(knownFacts: Declaration): Declaration {

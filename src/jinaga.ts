@@ -4,8 +4,9 @@ import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
-import { SpecificationOf, FactConstructor } from './specification/model';
+import { FactConstructor, SpecificationOf } from './specification/model';
 import { Projection } from './specification/specification';
+import { detectDisconnectedSpecification } from "./specification/UnionFind";
 import { FactEnvelope, FactReference, ProjectedResult } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
@@ -134,6 +135,10 @@ export class Jinaga {
      */
     async query<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<U[]> {
         const innerSpecification = specification.specification;
+        
+        // Safety check: detect disconnected specifications as a fallback
+        // (This should already be caught during specification creation, but ensures consistency)
+        detectDisconnectedSpecification(innerSpecification);
 
         if (!given || given.some(g => !g)) {
             return [];
