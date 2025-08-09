@@ -73,16 +73,18 @@ export class AuthorizationWebSocketHandler {
         }
         // If we have a blank line terminator, ensure we have enough payload lines; otherwise treat as incomplete
         if (i >= parts.length || parts[i] !== "") {
-          // No terminator present; reconstruct remainder and exit
-          const remainder = [keyword, ...payload].join("\n");
-          buffer = remainder + (buffer ? "\n" + buffer : "");
-          break;
+                     // No terminator present; reconstruct remainder and exit
+           // Preserve line break so next chunk starts on a new line
+           const remainder = [keyword, ...payload].join("\n") + "\n";
+           buffer = remainder + (buffer ? buffer : "");
+           break;
         }
         const required = keyword === "SUB" ? 2 : 1;
         if (payload.length < required) {
-          // Not enough payload yet; push back without consuming terminator
-          const remainder = [keyword, ...payload].join("\n");
-          buffer = remainder + (buffer ? "\n" + buffer : "");
+          // Not enough payload yet; push back without consuming terminator.
+          // Preserve line break so the next incoming payload line does not concatenate with the keyword or prior payload.
+          const remainder = [keyword, ...payload].join("\n") + "\n";
+          buffer = remainder + (buffer ? buffer : "");
           break;
         }
         // Consume blank terminator
