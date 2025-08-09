@@ -16,6 +16,7 @@ import { PassThroughFork } from '../../src/fork/pass-through-fork';
 import { NetworkNoOp } from '../../src/managers/NetworkManager';
 import { AuthorizationNoOp } from '../../src/authorization/authorization-noop';
 import { JinagaBrowser } from '../../src/jinaga-browser';
+import { Trace, Tracer } from '../../src';
 
 jest.setTimeout(15000);
 
@@ -41,8 +42,12 @@ describe('WebSocket Graph E2E', () => {
   let wss: WebSocketServer;
   let httpServer: Server;
   const sockets: Set<WebSocket> = new Set();
+  let originalTracer: Tracer;
 
   beforeAll(async () => {
+    // Silence tracing during this noisy E2E test; restore after
+    originalTracer = Trace.getTracer();
+    Trace.off();
     // Phase 3.1: Create HTTP server for feed resolution
     httpServer = createServer((req, res) => {
       res.setHeader('Content-Type', 'application/json');
@@ -110,6 +115,9 @@ describe('WebSocket Graph E2E', () => {
       new Promise<void>(resolve => wss.close(() => resolve())),
       new Promise<void>(resolve => httpServer.close(() => resolve()))
     ]);
+
+    // Restore tracer
+    Trace.configure(originalTracer);
   });
 
   test('streams graph facts and advances bookmark via BOOK', async () => {
