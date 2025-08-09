@@ -8,6 +8,7 @@ import { UserIdentity } from "../user-identity";
 
 export class WsGraphNetwork implements Network {
   private readonly wsClient: WsGraphClient;
+  private factsAddedListener?: (envelopes: FactEnvelope[]) => Promise<void>;
 
   constructor(
     private readonly httpNetwork: HttpNetwork,
@@ -54,7 +55,8 @@ export class WsGraphNetwork implements Network {
       store,
       (feed, bookmark) => this.onBookmarkAdvance(feed, bookmark),
       (err) => this.onGlobalError(err),
-      getUserIdentity
+      getUserIdentity,
+      (envelopes) => this.onFactsAdded(envelopes)
     );
   }
 
@@ -103,6 +105,18 @@ export class WsGraphNetwork implements Network {
     // Broadcast error to all active feeds
     for (const h of this.onErrorHandlers.values()) {
       h(err);
+    }
+  }
+
+  // Phase 3.4: Observer-notification bridge
+  setFactsAddedListener(listener: (envelopes: FactEnvelope[]) => Promise<void>) {
+    this.factsAddedListener = listener;
+  }
+
+  // Called by WsGraphClient when facts are added via WS
+  async onFactsAdded(envelopes: FactEnvelope[]) {
+    if (this.factsAddedListener) {
+      await this.factsAddedListener(envelopes);
     }
   }
 }

@@ -33,7 +33,8 @@ export class WsGraphClient {
     private readonly store: Storage,
     private readonly onBookmark: BookmarkListener,
     private readonly onErrorGlobal: (err: Error) => void,
-    private readonly getUserIdentity?: () => Promise<UserIdentity | null>
+    private readonly getUserIdentity?: () => Promise<UserIdentity | null>,
+    private readonly onFactsAdded?: (envelopes: FactEnvelope[]) => Promise<void>
   ) {}
 
   subscribe(feed: string, bookmark: string): () => void {
@@ -166,6 +167,10 @@ export class WsGraphClient {
           const saved = await savePromise;
           if (saved.length > 0) {
             Trace.counter("facts_saved", saved.length);
+            // Phase 3.4: Notify facts added listener for observer notifications
+            if (this.onFactsAdded) {
+              await this.onFactsAdded(saved);
+            }
           }
         });
       } catch (err) {

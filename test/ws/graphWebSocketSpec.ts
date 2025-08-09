@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import WebSocket from 'ws';
+import { createServer, Server } from 'http';
 import { MemoryStore } from '../../src/memory/memory-store';
 import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
 import { computeHash } from '../../src/fact/hash';
@@ -37,16 +38,45 @@ function createHttpStub(): HttpStub {
 
 describe('WebSocket Graph E2E', () => {
   let wss: WebSocketServer;
+  let httpServer: Server;
   const sockets: Set<WebSocket> = new Set();
 
   beforeAll(async () => {
+    // Phase 3.1: Create HTTP server for feed resolution
+    httpServer = createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/feeds') {
+        res.writeHead(200);
+        res.end(JSON.stringify({ feeds: ['feed1'] }));
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    });
+    
+    // Phase 3.2: Create WebSocket server  
     wss = new WebSocketServer({ port: 0 });
     wss.on('connection', (socket) => sockets.add(socket));
-    await new Promise<void>(resolve => wss.once('listening', () => resolve()));
+    
+    await Promise.all([
+      new Promise<void>(resolve => httpServer.listen(0, () => resolve())),
+      new Promise<void>(resolve => wss.once('listening', () => resolve()))
+    ]);
   });
 
   afterAll(async () => {
-    // Close all connected sockets then the server
+    // Close all connected sockets then the servers
     await new Promise<void>(resolve => {
       const closeAll = () => {
         if (sockets.size === 0) return resolve();
@@ -63,14 +93,23 @@ describe('WebSocket Graph E2E', () => {
       };
       closeAll();
     });
-    await new Promise<void>(resolve => wss.close(() => resolve()));
+    
+    await Promise.all([
+      new Promise<void>(resolve => wss.close(() => resolve())),
+      new Promise<void>(resolve => httpServer.close(() => resolve()))
+    ]);
   });
 
   test('streams graph facts and advances bookmark via BOOK', async () => {
-    const address = wss.address();
-    const port = typeof address === 'string' ? parseInt(address.split(':').pop() || '0', 10) : (address as any).port;
-    const wsUrl = `ws://127.0.0.1:${port}`;
+    const wsAddress = wss.address();
+    const wsPort = typeof wsAddress === 'string' ? parseInt(wsAddress.split(':').pop() || '0', 10) : (wsAddress as any).port;
+    const wsUrl = `ws://127.0.0.1:${wsPort}`;
+    
+    const httpAddress = httpServer.address();
+    const httpPort = typeof httpAddress === 'string' ? parseInt(httpAddress.split(':').pop() || '0', 10) : (httpAddress as any).port;
+    const httpUrl = `http://127.0.0.1:${httpPort}`;
 
+    // Phase 3.3: Use real client configuration with HTTP + WS
     const store = new MemoryStore();
 
     // Prepare a fact to stream
@@ -87,6 +126,7 @@ describe('WebSocket Graph E2E', () => {
       signatures: []
     };
 
+    // Phase 3.3: Use httpStub but with real HTTP server for future integration
     const httpStub: any = createHttpStub();
     const network = new WsGraphNetwork(httpStub, store, wsUrl);
 

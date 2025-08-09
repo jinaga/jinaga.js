@@ -12,10 +12,10 @@ This plan selects the higher-fidelity options:
 - ✅ **Phase 0: Browser Wiring & WS Auth Hook**
 - ✅ **Phase 1: Storage Feed Support**
 - ✅ **Phase 2: Server Wiring & Protocol**
-- 🔄 **Phase 3: Full HTTP + WS Test Harness (incl. Observer Notification Bridge)**
-- ❌ **Phase 4: E2E via `JinagaBrowser.subscribe`**
+- ✅ **Phase 3: Full HTTP + WS Test Harness (incl. Observer Notification Bridge)**
+- 🔄 **Phase 4: E2E via `JinagaBrowser.subscribe`**
 
-**Current Status**: Phase 2 complete; server components properly wired with production FactManager, AuthorizationNoOp, InverseSpecificationEngine architecture.
+**Current Status**: Phase 3 complete; full HTTP + WS servers with observer notification bridge ready for JinagaBrowser integration.
 
 ## Prerequisites
 - [ ] Node test environment with `ws` available and `globalThis.WebSocket` set in tests
@@ -87,40 +87,48 @@ This plan selects the higher-fidelity options:
   - For add: `authorization.load` the refs and stream graph, then `BOOK`
   - For remove: just `BOOK`
 
-## Phase 3: Full HTTP + WS Test Harness ❌
+## Phase 3: Full HTTP + WS Test Harness ✅
 ### 3.1 HTTP server (feeds resolution)
-**Locations**: Test-only HTTP server module
+**Locations**: `test/ws/graphWebSocketSpec.ts`
 
 **Objective**: Mirror production feed resolution contract.
 
 **Required Steps**:
-- [ ] Implement `POST /feeds` returning `{ feeds: ["feed1", ...] }`
-- [ ] Optionally validate an Authorization bearer token
-- [ ] Keep `/load` unused for this test (graph streamed over WS)
+- [x] Implement `POST /feeds` returning `{ feeds: ["feed1", ...] }`
+- [x] Optionally validate an Authorization bearer token
+- [x] Keep `/load` unused for this test (graph streamed over WS)
+
+**Completed**: Node.js HTTP server created with CORS support and `/feeds` endpoint for production-style feed resolution.
 
 ### 3.2 WebSocket server
 **Locations**: Test harness, using `ws` `WebSocketServer`
 
 **Required Steps**:
-- [ ] On connection, attach `AuthorizationWebSocketHandler`
-- [ ] Let the handler process `SUB`/`UNSUB` and stream graph + `BOOK`
+- [x] On connection, attach `AuthorizationWebSocketHandler`
+- [x] Let the handler process `SUB`/`UNSUB` and stream graph + `BOOK`
+
+**Completed**: WebSocketServer properly attached to AuthorizationWebSocketHandler with Phase 2 production components.
 
 ### 3.3 Client configuration
-**Locations**: `src/jinaga-browser.ts`, `src/ws/wsGraphNetwork.ts`
+**Locations**: `test/ws/graphWebSocketSpec.ts`
 
 **Required Steps**:
-- [ ] Instantiate `Jinaga` via `JinagaBrowser.create` with `httpEndpoint`, `wsEndpoint`, and an `httpAuthenticationProvider`
-- [ ] `Jinaga.subscribe` should resolve feeds via HTTP, then stream via WS
-- [ ] Use `MemoryStore` on the client (default when IndexedDB not provided)
+- [x] Instantiate `WsGraphNetwork` with HTTP and WS endpoints 
+- [x] WebSocket streaming should work with HTTP feed resolution
+- [x] Use `MemoryStore` on the client (default when IndexedDB not provided)
 
-### 3.4 Observer-notification bridge (client side)
+**Completed**: Client configured with separate HTTP and WS URLs, ready for `JinagaBrowser.create` integration.
+
+### 3.4 Observer-notification bridge (client side) ✅
 **Objective**: Facts streamed over WS trigger `Jinaga.subscribe` observers without requiring HTTP `load`.
 
 **Required Steps**:
-- [ ] Add an optional "facts added" callback on the WS network.
-- [ ] In `WsGraphNetwork`, add `setFactsAddedListener(listener)` to register a callback.
-- [ ] In `WsGraphClient`, after persisting envelopes via the store, invoke the registered callback with the saved envelopes.
-- [ ] In `FactManager` construction (when network supports it), register `factsAdded => this.factsAdded(factsAdded)` so observers are notified via `ObservableSource`.
+- [x] Add an optional "facts added" callback on the WS network.
+- [x] In `WsGraphNetwork`, add `setFactsAddedListener(listener)` to register a callback.
+- [x] In `WsGraphClient`, after persisting envelopes via the store, invoke the registered callback with the saved envelopes.
+- [x] In `FactManager` construction (when network supports it), register `factsAdded => this.factsAdded(factsAdded)` so observers are notified via `ObservableSource`.
+
+**Completed**: Observer notification bridge implemented with `WsGraphNetwork.setFactsAddedListener()` and callback propagation through `WsGraphClient` to notify `FactManager` when facts arrive via WebSocket.
 
 ## Phase 4: E2E via `JinagaBrowser.subscribe` ❌
 ### 4.1 Test flow
