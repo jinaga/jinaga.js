@@ -20,7 +20,7 @@ import { JinagaBrowser } from '../../src/jinaga-browser';
 jest.setTimeout(15000);
 
 // Provide WebSocket global for client under test
-(global as any).WebSocket = WebSocket;
+(globalThis as any).WebSocket = WebSocket;
 
 // Minimal stub for HttpNetwork used by WsGraphNetwork
 type HttpStub = {
