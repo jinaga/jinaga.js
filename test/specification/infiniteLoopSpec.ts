@@ -55,6 +55,6 @@ describe("specification inverse infinite loop bug", () => {
 
         // This should throw an error (specific labels may vary due to processing order)
         expect(() => invertSpecification(specification))
-            .toThrow("are not connected to the rest of the graph");
+            .toThrow("Disconnected specification detected");
     });
 });

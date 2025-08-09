@@ -1,7 +1,7 @@
 import { hydrateFromTree } from '../fact/hydrate';
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
-import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals, FactTuple, uniqueFactReferences } from '../storage';
 
 export function getPredecessors(fact: FactRecord | null, role: string) {
     if (!fact) {
@@ -81,8 +81,24 @@ export class MemoryStore implements Storage {
         return this.runner.read(start, specification);
     }
 
-    feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed> {
-        throw new Error('Method not implemented.');
+    async feed(feed: Specification, start: FactReference[], _bookmark: string): Promise<FactFeed> {
+        // TODO: Implement monotonic bookmarks defined by the store.
+        // Bookmarks must be monotonically increasing quantities with a store-defined
+        // format and comparison function. Fact hashes are not monotonic, so prior
+        // implementations that derived bookmarks from hashes have been removed.
+        // For now, feeds ignore bookmarks and always return empty bookmark values.
+
+        // Compute projected results using the same engine as application reads
+        const results: ProjectedResult[] = await this.runner.read(start, feed);
+
+        // Map each projected result to a tuple of fact references
+        const tuples: FactTuple[] = results.map(result => {
+            const references = Object.values(result.tuple);
+            const unique = uniqueFactReferences(references);
+            return { facts: unique, bookmark: '' };
+        });
+
+        return { tuples, bookmark: '' };
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {

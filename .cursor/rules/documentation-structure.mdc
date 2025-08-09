@@ -1,0 +1,260 @@
+---
+description: "GameHub documentation structure standards for organizing project documentation into logical sections including implementation plans, technical architecture, user guides, and setup documentation. Emphasizes critical plan file requirements with progress tracking, checklists, phased work breakdowns, and project management focus. Includes file naming conventions, markdown formatting standards, content organization guidelines, and version control practices for maintaining documentation quality."
+alwaysApply: true
+---
+# Documentation Structure and Standards
+
+## Overview
+The `/docs` folder contains comprehensive documentation for the GameHub project, organized into logical sections for different types of documentation and audiences.
+
+## Documentation Structure
+
+### `/docs/plans/` - Implementation Plans ⭐ **CRITICAL**
+**Purpose**: Markdown files containing implementation plans, project roadmaps, and phased work breakdowns.
+
+**Key Requirements**:
+- ✅ **MUST contain checklists and phased work breakdowns**
+- ✅ **MUST include progress tracking and status indicators**
+- ✅ **MUST outline prerequisites and dependencies**
+- ✅ **MUST NOT contain source code or implementation details**
+- ✅ **MUST focus on planning, coordination, and project management**
+
+**Content Guidelines**:
+- Use checkboxes (`- [ ]` and `- [x]`) for task tracking
+- Include phase-by-phase breakdowns with clear objectives
+- Document prerequisites and system requirements
+- Track completion status with visual indicators (✅, ❌, 🔄)
+- Include progress summaries and current status
+- Focus on "what" and "when" rather than "how"
+
+**Example Structure**:
+```markdown
+# Project Implementation Plan
+
+## Progress Summary
+- ✅ **Phase 1: Foundation** - COMPLETED
+- 🔄 **Phase 2: Core Features** - IN PROGRESS
+- ❌ **Phase 3: Integration** - PENDING
+
+## Prerequisites
+- [ ] System requirement A
+- [ ] Dependency B installed
+- [ ] Service C running
+
+## Phase 1: Foundation ✅
+### 1.1 Setup Environment
+- [x] Install required tools
+- [x] Configure development environment
+- [x] Set up version control
+```
+
+### `/docs/prds/` - Product Requirements Documents
+**Purpose**: Detailed product requirements documents that define feature specifications, user stories, and functional requirements.
+
+**Content Types**:
+- Product feature specifications
+- User experience flows and wireframes
+- Functional requirements and acceptance criteria
+- User story definitions
+- Feature prioritization and scope
+- Non-functional requirements (performance, security, etc.)
+
+**Content Guidelines**:
+- Focus on "what" the product should do, not "how" to implement it
+- Include user personas and use cases
+- Define clear acceptance criteria
+- Document edge cases and error scenarios
+- Include mockups or wireframes when helpful
+- Reference related technical documentation
+
+### `/docs/models/` - Data Model Documentation
+**Purpose**: Visual and textual documentation of data models, entity relationships, and domain models.
+
+**Content Types**:
+- Entity relationship diagrams (DOT files, PlantUML, etc.)
+- Data model specifications
+- Domain model documentation
+- Database schema documentation
+- Jinaga fact model diagrams
+- Entity relationship mappings
+
+**Content Guidelines**:
+- Use standard diagram formats (DOT, PlantUML, Mermaid)
+- Include clear entity definitions
+- Document relationships and cardinality
+- Show inheritance and composition patterns
+- Include version history for model changes
+- Reference related implementation code
+
+### `/docs/architecture/` - Technical Architecture
+**Purpose**: Detailed technical documentation, system architecture, and design decisions.
+
+**Content Types**:
+- System architecture diagrams and descriptions
+- Technical design decisions and rationale
+- Component interaction patterns
+- Data flow documentation
+- Performance considerations
+
+### `/docs/getting-started/` - User Guides
+**Purpose**: Step-by-step guides for users and developers to get started with the project.
+
+**Content Types**:
+- Installation and setup instructions
+- Quick start guides
+- Tutorials and walkthroughs
+- Configuration guides
+- Troubleshooting documentation
+
+### `/docs/setup/` - Setup and Configuration
+**Purpose**: Detailed setup instructions and configuration documentation.
+
+**Content Types**:
+- Environment setup guides
+- Configuration file documentation
+- Deployment instructions
+- Environment-specific setup
+- Advanced configuration options
+
+## Documentation Standards
+
+### File Naming Convention
+- Use UPPERCASE with underscores for plan files: `PROJECT_NAME_PLAN.md`
+- Use UPPERCASE with underscores for PRD files: `FEATURE_NAME_PRD.md`
+- Use lowercase with hyphens for guides: `getting-started-guide.md`
+- Use descriptive names for model files: `domain-model.dot`, `entity-relationships.puml`
+- Use descriptive, clear names that indicate content type
+
+### Markdown Formatting
+- Use consistent heading hierarchy (H1 for title, H2 for major sections, etc.)
+- Include table of contents for longer documents
+- Use code blocks with language specification
+- Include links to related documentation
+- Use badges and status indicators for progress tracking
+
+### Content Organization
+- Start with an overview or summary
+- Include prerequisites when applicable
+- Break complex topics into logical sections
+- Include examples and code snippets where helpful
+- End with next steps or related resources
+
+### Version Control
+- Keep documentation in sync with code changes
+- Update plans as phases are completed
+- Maintain accurate status indicators
+- Archive completed plans rather than deleting them
+
+## Plan File Template
+
+```markdown
+# [Project Name] Implementation Plan
+
+## Overview
+Brief description of the project or feature being implemented.
+
+## Progress Summary
+- ✅ **Phase 1: [Phase Name]** - COMPLETED
+- 🔄 **Phase 2: [Phase Name]** - IN PROGRESS
+- ❌ **Phase 3: [Phase Name]** - PENDING
+
+**Current Status**: [Brief status description]
+
+## Prerequisites
+- [ ] Prerequisite A
+- [ ] Prerequisite B
+- [ ] Prerequisite C
+
+## Phase 1: [Phase Name] ✅
+### 1.1 [Task Group]
+**Location**: `path/to/relevant/files`
+
+**Required Steps**:
+- [x] Completed task
+- [ ] Pending task
+- [ ] Another task
+
+### 1.2 [Another Task Group]
+**Files**: `specific/files.md`
+
+**Required Changes**:
+- [ ] Change A
+- [ ] Change B
+
+## Phase 2: [Phase Name] 🔄
+[Continue with detailed breakdown...]
+
+## Success Criteria
+- [ ] Criterion A
+- [ ] Criterion B
+- [ ] Criterion C
+
+## Notes
+Additional context, decisions, or important information.
+```
+
+## PRD File Template
+
+```markdown
+# Product Requirements Document (PRD): [Feature Name]
+
+## Overview
+Brief description of the feature or product being defined.
+
+## Goals
+- Primary objective A
+- Primary objective B
+- Primary objective C
+
+## User Roles
+- **Role A**: Description of user type
+- **Role B**: Description of user type
+
+## Information Architecture
+
+### Routes
+- `/route-a` : Description
+- `/route-b` : Description
+
+### Entities
+- **Entity A**
+  - Property 1 (type, description)
+  - Property 2 (type, description)
+
+## User Experience
+
+### [Screen/Flow Name]
+- Feature description
+- User interaction details
+- Expected behavior
+
+## Non-Functional Requirements
+- Performance requirements
+- Security requirements
+- Accessibility requirements
+
+## Success Criteria
+- [ ] Criterion A
+- [ ] Criterion B
+- [ ] Criterion C
+```
+
+## Important Notes
+
+1. **Plans vs Implementation**: Plans in `/docs/plans/` should focus on project management, coordination, and tracking. Implementation details belong in code comments, architecture docs, or getting-started guides.
+
+2. **PRDs vs Technical Specs**: PRDs in `/docs/prds/` should focus on user experience and functional requirements. Technical implementation details belong in architecture docs or code comments.
+
+3. **Model Documentation**: Models in `/docs/models/` should focus on data relationships and domain concepts. Implementation details belong in code comments or architecture docs.
+
+4. **Status Tracking**: Always maintain accurate status indicators and progress summaries in plan files.
+
+5. **Cross-References**: Documentation should reference related files but not duplicate content across different types of docs.
+
+6. **Maintenance**: Update documentation as work progresses and features are completed.
+
+7. **Clarity**: All documentation should be clear enough for team members to understand what needs to be done and track progress effectively.
+
+8. **Maintenance**: Update plan files as work progresses and phases are completed.
+
+9. **Clarity**: Plans should be clear enough for team members to understand what needs to be done and track progress effectively.

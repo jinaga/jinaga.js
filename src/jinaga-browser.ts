@@ -21,7 +21,8 @@ import { ObservableSource } from "./observable/observable";
 import { PurgeConditions } from "./purge/purgeConditions";
 import { validatePurgeSpecification } from "./purge/validate";
 import { Specification } from "./specification/specification";
-import { Storage } from "./storage";
+import { FactEnvelope, Storage } from "./storage";
+import { WsGraphNetwork } from "./ws/wsGraphNetwork";
 
 export type JinagaBrowserConfig = {
     httpEndpoint?: string,
@@ -42,9 +43,18 @@ export class JinagaBrowser {
         const webClient = createWebClient(config, syncStatusNotifier);
         const fork = createFork(config, store, webClient);
         const authentication = createAuthentication(config, webClient);
-        const network = createNetwork(webClient);
+        const network = createNetwork(config, webClient, store);
         const purgeConditions = createPurgeConditions(config);
         const factManager = new FactManager(fork, observableSource, store, network, purgeConditions, config.feedRefreshIntervalSeconds);
+        
+        // Phase 3.4: Connect observer notification bridge if network supports it
+        if (network && 'setFactsAddedListener' in network && typeof network.setFactsAddedListener === 'function') {
+            (network as any).setFactsAddedListener(async (envelopes: FactEnvelope[]) => {
+                // Notify FactManager about facts added via WebSocket
+                (factManager as any).factsAdded(envelopes);
+            });
+        }
+        
         return new Jinaga(authentication, factManager, syncStatusNotifier);
     }
 }
@@ -128,11 +138,39 @@ function createAuthentication(
 }
 
 function createNetwork(
-    webClient: WebClient | null
+    config: JinagaBrowserConfig,
+    webClient: WebClient | null,
+    store: Storage
 ): Network {
     if (webClient) {
-        const network = new HttpNetwork(webClient);
-        return network;
+        // Prefer WebSocket graph when endpoint provided and environment supports WebSocket
+        if (config.wsEndpoint && typeof (globalThis as any).WebSocket !== 'undefined') {
+            try {
+                const httpNetwork = new HttpNetwork(webClient);
+                // Derive Authorization header via the HTTP auth provider, convert to token for WS query param
+                const provider = config.httpAuthenticationProvider;
+                const getAuthorizationHeader = provider
+                    ? async () => {
+                        const headers = await provider.getHeaders();
+                        return headers["Authorization"] || null;
+                    }
+                    : undefined;
+                const network: Network = new WsGraphNetwork(
+                    httpNetwork,
+                    store,
+                    config.wsEndpoint,
+                    undefined,
+                    getAuthorizationHeader
+                );
+                return network;
+            }
+            catch {
+                // Fallback to HTTP network on construction error
+                return new HttpNetwork(webClient);
+            }
+        }
+        // Fallback to HTTP streaming
+        return new HttpNetwork(webClient);
     }
     else {
         return new NetworkNoOp();

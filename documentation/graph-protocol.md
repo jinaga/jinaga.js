@@ -29,7 +29,8 @@ Facts can reference other facts through **predecessor relationships**:
 The protocol uses a line-based text format where each line contains either:
 1. JSON-encoded data
 2. Protocol control markers (e.g., `PK0`, `PK1`)
-3. Empty lines as separators
+3. WebSocket control frames (e.g., `SUB`, `UNSUB`, `BOOK`, `ERR`)
+4. Empty lines as separators
 
 ### Basic Format
 
@@ -311,6 +312,58 @@ The deserializer processes facts in batches (default: 20 facts) for efficiency.
 - No need to buffer entire graph in memory
 - Supports incremental processing
 - Public keys are processed dynamically as declarations are encountered
+
+## WebSocket Transport
+
+### Overview
+
+When transported over WebSockets, the graph is a single, continuous stream of fact blocks and public key declarations. There is no special framing to begin or end a graph. The stream may also contain control frames that manage feed subscriptions and bookmarks. Facts are global and not scoped to any one feed; only bookmarks are per-feed.
+
+### Control Frames
+
+Control frames are uppercase keywords followed by one or more JSON lines, terminated by a single empty line. Control frames appear only between fact blocks (never inside a block).
+
+- SUB: Subscribe the client to a feed at a given bookmark
+  ```
+  SUB
+  "<feed-id>"
+  "<bookmark>"
+  
+  ```
+
+- UNSUB: Unsubscribe the client from a feed
+  ```
+  UNSUB
+  "<feed-id>"
+  
+  ```
+
+- BOOK: Server informs the client that a feed has advanced to a bookmark. All facts necessary to reach this bookmark must have already been sent on the stream as normal graph blocks.
+  ```
+  BOOK
+  "<feed-id>"
+  "<bookmark>"
+  
+  ```
+
+- ERR: Server reports a per-feed error (optional)
+  ```
+  ERR
+  "<feed-id>"
+  "<message>"
+  
+  ```
+
+### Ordering and Semantics
+
+- The stream of facts (graph) is continuous. Public keys (`PK{index}`) and fact blocks follow the format in this document.
+- Control frames may appear between fact blocks. They are delimited by a single empty line and never interleave within a fact block.
+- For a given feed, `BOOK` must be sent only after all relevant facts have been streamed.
+- Clients persist facts as soon as they are deserialized, then update feed bookmarks upon receiving `BOOK`.
+
+### Reconnection
+
+After a reconnect, the client resends `SUB` for each active feed with the last persisted bookmark. The server resumes by streaming any missing facts followed by `BOOK` updates.
 
 ### Deduplication
 - Facts with identical type and hash are automatically deduplicated

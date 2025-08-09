@@ -12,7 +12,8 @@ export class GraphDeserializer implements GraphSource {
     private publicKeys: string[] = [];
 
     constructor(
-        private readonly readLine: () => Promise<string | null>
+        private readonly readLine: () => Promise<string | null>,
+        private readonly flushThreshold: number = 20
     ) {}
 
     async read(
@@ -21,6 +22,10 @@ export class GraphDeserializer implements GraphSource {
         let envelopes: FactEnvelope[] = [];
         let line: string | null;
         while ((line = await this.readLine()) !== null) {
+            if (line === "") {
+                // Skip stray blank lines between blocks
+                continue;
+            }
             if (line.startsWith("PK")) {
                 const index = parseInt(line.substring(2));
                 await this.readPublicKey(index);
@@ -62,7 +67,7 @@ export class GraphDeserializer implements GraphSource {
         envelopes.push({ fact, signatures });
 
         // Periodically handle a batch of envelopes
-        if (envelopes.length >= 20) {
+        if (envelopes.length >= this.flushThreshold) {
             await onEnvelopes(envelopes);
             envelopes = [];
         }
