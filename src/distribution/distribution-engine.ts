@@ -18,7 +18,8 @@ export type DistributionResult = DistributionSuccess | DistributionFailure;
 export class DistributionEngine {
   constructor(
     private distributionRules: DistributionRules,
-    private store: Storage
+    private store: Storage,
+    private isTest: boolean = false
   ) { }
 
   async canDistributeToAll(targetFeeds: Specification[], namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
@@ -83,6 +84,15 @@ export class DistributionEngine {
                     type: 'success'
                   };
                 }
+                
+                if (this.isTest) {
+                  reasons.push(
+                    `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
+                    `User fact: ${JSON.stringify(user, null, 2)}`
+                  );
+                } else {
+                  reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
+                }
               }
               else {
                 // Find the set of users to whom we can distribute this feed.
@@ -96,9 +106,17 @@ export class DistributionEngine {
                     type: 'success'
                   };
                 }
+                
+                if (this.isTest) {
+                  reasons.push(
+                    `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
+                    `Matching set: ${JSON.stringify(results, null, 2)}\n` +
+                    `User fact: ${JSON.stringify(user, null, 2)}`
+                  );
+                } else {
+                  reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
+                }
               }
-
-              reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
             }
           }
         }
