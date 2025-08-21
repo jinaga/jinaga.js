@@ -16,6 +16,23 @@ describe("Distribution rules in unit tests", () => {
         const names = await jinaga.query(namesSpec, loggedInUser);
         expect(names).toStrictEqual([]);
     });
+
+    it("should throw when querying as a different user", async () => {
+        const user1 = new User("user1");
+        const user2 = new User("user2");
+        const jinaga = JinagaTest.create({
+            model,
+            user: user2,
+            distribution,
+            initialState: [
+                user1,
+                user2
+            ]
+        });
+
+        const namesSpec = model.given(User).match(user => UserName.current(user));
+        await expect(jinaga.query(namesSpec, user1)).rejects.toThrow();
+    });
 });
 
 class UserName {
