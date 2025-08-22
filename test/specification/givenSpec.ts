@@ -2,8 +2,16 @@ import { SpecificationOf, User } from "../../src";
 import { Company, Office, OfficeClosed, OfficeReopened, President, UserName, model } from "../companyModel";
 
 describe("given", () => {
-    it("should parse an identity specification", () => {
-        const specification = model.given(Company).select((company, facts) => company);
+    it("should parse an identity specification using select", () => {
+        const specification = model.given(Company).select((company) => company);
+
+        expectSpecification(specification, `
+            (p1: Company) {
+            } => p1`);
+    });
+
+    it("should parse an identity specification using match", () => {
+        const specification = model.given(Company).match((company) => company);
 
         expectSpecification(specification, `
             (p1: Company) {

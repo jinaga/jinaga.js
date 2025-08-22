@@ -102,8 +102,9 @@ class Given<T extends any[]> {
             return createFactProxy(factRepository, this.factTypeMap, name, [], factType);
         });
         const result = (definition as any)(...labels, factRepository);
-        const matches = result.matches ?? [];
-        const projection = result.projection;
+        const traversal = ensureTraversal(result);
+        const matches = traversal.matches;
+        const projection = traversal.projection;
         const given = this.factTypes.map((type, i) => {
             const name = `p${i + 1}`;
             return { name, type };
@@ -448,6 +449,15 @@ function lookupRoleType(factTypeMap: FactTypeMap, factType: string, role: string
         return undefined;
     }
     return roleType;
+}
+
+function ensureTraversal<U>(definition: LabelOf<U> | Traversal<U>): Traversal<U> {
+    if (isLabel<U>(definition)) {
+        return traversalFromDefinition(definition as U, []);
+    }
+    else {
+        return definition;
+    }
 }
 
 function traversalFromDefinition<U>(definition: U, matches: Match[]): Traversal<U> {

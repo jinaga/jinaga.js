@@ -136,8 +136,6 @@ export class Jinaga {
     async query<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<U[]> {
         const innerSpecification = specification.specification;
         
-        // Safety check: detect disconnected specifications as a fallback
-        // (This should already be caught during specification creation, but ensures consistency)
         detectDisconnectedSpecification(innerSpecification);
 
         if (!given || given.some(g => !g)) {
