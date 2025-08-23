@@ -29,8 +29,8 @@ describe("DistributionEngine direct usage", () => {
     expect(result.type).toBe('failure');
     if (result.type === 'failure') {
       expect(result.reason).toContain("The user does not match");
-      expect(result.reason).toContain("Matching set:");
-      expect(result.reason).toContain("User fact:");
+      expect(result.reason).toContain("Expected hashes: []");
+      expect(result.reason).toContain("User hash:");
     }
   });
 
@@ -79,8 +79,8 @@ describe("DistributionEngine direct usage", () => {
     expect(result.type).toBe('failure');
     if (result.type === 'failure') {
       expect(result.reason).toContain("The user does not match");
-      expect(result.reason).not.toContain("Matching set:");
-      expect(result.reason).not.toContain("User fact:");
+      expect(result.reason).not.toContain("Expected hashes:");
+      expect(result.reason).not.toContain("User hash:");
     }
   });
 });

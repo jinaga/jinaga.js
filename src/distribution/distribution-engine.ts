@@ -88,7 +88,8 @@ export class DistributionEngine {
                 if (this.isTest) {
                   reasons.push(
                     `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
-                    `User fact: ${JSON.stringify(user, null, 2)}`
+                    `User hash: ${user.hash}\n` +
+                    `Expected hash: ${userReference.hash}`
                   );
                 } else {
                   reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
@@ -110,8 +111,8 @@ export class DistributionEngine {
                 if (this.isTest) {
                   reasons.push(
                     `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
-                    `Matching set: ${JSON.stringify(results, null, 2)}\n` +
-                    `User fact: ${JSON.stringify(user, null, 2)}`
+                    `User hash: ${user.hash}\n` +
+                    `Expected hashes: [${results.map(r => r.hash).join(", ")}]`
                   );
                 } else {
                   reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);

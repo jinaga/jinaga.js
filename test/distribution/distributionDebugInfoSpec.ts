@@ -35,15 +35,11 @@ describe("distribution debug information", () => {
       expect(error.message).toContain("The user does not match");
       
       // Check for enhanced debug information that should be present in test mode
-      expect(error.message).toContain("Matching set:");
-      expect(error.message).toContain("User fact:");
-      
-      // Verify that the error message contains JSON formatted data
-      expect(error.message).toMatch(/Matching set:\s*\[/);
-      expect(error.message).toMatch(/User fact:\s*{/);
-      
-      // Verify the user fact contains the reader's information
-      expect(error.message).toContain('"reader"');
+      expect(error.message).toContain("Expected hashes:");
+      expect(error.message).toContain("User hash:");
+
+      // Verify the user fact contains the reader's hash
+      expect(error.message).toContain(j.hash(reader));
     }
   });
 
@@ -76,11 +72,11 @@ describe("distribution debug information", () => {
       expect(error.message).toContain("The user does not match");
       
       // Verify that detailed debug information is present
-      expect(error.message).toContain("Matching set:");
-      expect(error.message).toContain("User fact:");
-      
+      expect(error.message).toContain("Expected hashes:");
+      expect(error.message).toContain("User hash:");
+
       // Verify the user fact contains the reader's information
-      expect(error.message).toContain('"reader"');
+      expect(error.message).toContain(j.hash(reader));
     }
   });
 });
