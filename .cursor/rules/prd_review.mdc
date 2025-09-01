@@ -1,0 +1,182 @@
+---
+alwaysApply: false
+---
+# PRD Review and Compliance Rule
+
+## Purpose
+This rule instructs models to critically review Product Requirements Documents (PRDs) against established documentation standards and codebase consistency. The model must identify issues and recommend changes to bring PRDs into compliance, close gaps, ensure consistency with existing code, simplify over-engineered designs, and improve implementation feasibility.
+
+## Review Criteria
+
+### 1. Documentation Standards Compliance ⭐ **CRITICAL**
+**MUST verify the PRD follows the established structure:**
+- [ ] **Overview section** with clear product description
+- [ ] **Goals section** with specific, measurable objectives
+- [ ] **User Roles section** defining target users
+- [ ] **Information Architecture** with routes and entities
+- [ ] **User Experience** with specific flows and interactions
+- [ ] **Non-Functional Requirements** (performance, security, accessibility)
+- [ ] **Success Criteria** with testable acceptance criteria
+- [ ] **User Stories** with Given-When-Then format
+- [ ] **Technical Considerations** and dependencies
+- [ ] **Related Documentation** references
+
+**Content Guidelines Compliance:**
+- [ ] Focuses on "what" the product should do, not "how" to implement
+- [ ] Includes user personas and use cases
+- [ ] Defines clear acceptance criteria
+- [ ] Documents edge cases and error scenarios
+- [ ] References related technical documentation appropriately
+- [ ] **NO implementation details** - these belong in architecture docs or code
+
+### 2. Codebase Consistency Review
+**MUST compare PRD requirements against existing implementation:**
+- [ ] **Frontend Architecture**: Verify React component structure matches PRD
+- [ ] **Backend Architecture**: Check API endpoints and services alignment
+- [ ] **Data Models**: Ensure entity definitions match existing code
+- [ ] **UI Components**: Verify component hierarchy and responsibilities
+- [ ] **API Integration**: Check endpoint specifications against backend routes
+- [ ] **State Management**: Verify state structure matches component requirements
+- [ ] **Error Handling**: Ensure error scenarios align with existing patterns
+
+**Identify Inconsistencies:**
+- [ ] Missing components or services referenced in PRD
+- [ ] Mismatched API endpoint specifications
+- [ ] Inconsistent data model definitions
+- [ ] UI component structure misalignment
+- [ ] State management pattern conflicts
+
+### 3. Gap Analysis
+**MUST identify missing requirements or incomplete specifications:**
+- [ ] **Missing User Stories**: Incomplete user journey coverage
+- [ ] **Unspecified Edge Cases**: Missing error handling scenarios
+- [ ] **Incomplete API Specs**: Missing endpoint parameters or responses
+- [ ] **UI State Gaps**: Missing loading, error, or success states
+- [ ] **Data Validation**: Missing input validation requirements
+- [ ] **Accessibility Requirements**: Missing accessibility specifications
+- [ ] **Performance Requirements**: Missing performance benchmarks
+- [ ] **Security Considerations**: Missing security requirements
+
+### 4. Over-Engineering Detection
+**MUST identify and simplify overly complex designs:**
+- [ ] **Unnecessary Complexity**: Features that don't serve core goals
+- [ ] **Over-Abstracted Components**: Components that could be simplified
+- [ ] **Excessive Dependencies**: Unnecessary external libraries or services
+- [ ] **Complex State Management**: Over-engineered state patterns
+- [ ] **Unrealistic Requirements**: Features beyond current technical capabilities
+- [ ] **Scope Creep**: Requirements outside the core product vision
+
+### 5. Feasibility Assessment
+**MUST evaluate implementation feasibility:**
+- [ ] **Technical Feasibility**: Requirements within current tech stack capabilities
+- [ ] **Resource Feasibility**: Requirements within team capacity and timeline
+- [ ] **Dependency Feasibility**: External dependencies and integration complexity
+- [ ] **Performance Feasibility**: Requirements within performance constraints
+- [ ] **Maintenance Feasibility**: Long-term maintenance and support requirements
+
+## Review Process
+
+### Step 1: Standards Compliance Check
+1. Verify PRD follows required structure and sections
+2. Check content guidelines compliance
+3. Identify missing required sections
+4. Flag any implementation details that should be removed
+
+### Step 2: Codebase Analysis
+1. Examine existing frontend components and structure
+2. Review backend API routes and services
+3. Compare data models and entity definitions
+4. Identify architectural inconsistencies
+
+### Step 3: Gap Identification
+1. Map PRD requirements to existing code
+2. Identify missing implementations
+3. Flag incomplete specifications
+4. Note validation and error handling gaps
+
+### Step 4: Complexity Assessment
+1. Identify over-engineered features
+2. Suggest simplifications
+3. Flag unrealistic requirements
+4. Recommend scope reductions
+
+### Step 5: Feasibility Evaluation
+1. Assess technical implementation complexity
+2. Evaluate resource requirements
+3. Consider dependency risks
+4. Recommend phased implementation approach
+
+## Required Output Format
+
+### Compliance Summary
+- [ ] **Standards Compliance**: [COMPLIANT/PARTIALLY COMPLIANT/NON-COMPLIANT]
+- [ ] **Codebase Consistency**: [CONSISTENT/PARTIALLY CONSISTENT/INCONSISTENT]
+- [ ] **Implementation Feasibility**: [FEASIBLE/PARTIALLY FEASIBLE/INFEASIBLE]
+
+### Critical Issues Found
+1. **Issue Category**: [Specific issue description]
+   - **Impact**: [High/Medium/Low]
+   - **Recommendation**: [Specific change needed]
+
+### Required Changes
+1. **Structural Changes**: [List of section additions/modifications]
+2. **Content Updates**: [Specific content changes needed]
+3. **Scope Adjustments**: [Features to add/remove/modify]
+4. **Implementation Simplifications**: [Complex features to simplify]
+
+### Gap Closures
+1. **Missing Requirements**: [List of requirements to add]
+2. **Incomplete Specifications**: [Areas needing more detail]
+3. **Validation Requirements**: [Missing validation rules]
+4. **Error Handling**: [Missing error scenarios]
+
+### Feasibility Improvements
+1. **Technical Simplifications**: [Complex requirements to simplify]
+2. **Phased Implementation**: [Recommended implementation phases]
+3. **Dependency Reductions**: [External dependencies to minimize]
+4. **Resource Optimizations**: [Requirements to reduce resource needs]
+
+## Example Review Response
+
+```
+## Compliance Summary
+- **Standards Compliance**: PARTIALLY COMPLIANT
+- **Codebase Consistency**: CONSISTENT  
+- **Implementation Feasibility**: FEASIBLE
+
+## Critical Issues Found
+1. **Missing Success Criteria**: PRD lacks testable acceptance criteria
+   - **Impact**: High - cannot validate implementation completion
+   - **Recommendation**: Add specific, measurable success criteria for each feature
+
+2. **Implementation Details**: PRD contains technical implementation specifics
+   - **Impact**: Medium - violates documentation standards
+   - **Recommendation**: Move implementation details to architecture documentation
+
+## Required Changes
+1. **Add Success Criteria section** with testable acceptance criteria
+2. **Remove technical implementation details** from PRD
+3. **Add missing error handling scenarios** for API failures
+4. **Include accessibility requirements** for UI components
+
+## Gap Closures
+1. **Add input validation requirements** for user inputs
+2. **Specify error message requirements** for different failure modes
+3. **Include performance benchmarks** for token generation
+4. **Add security requirements** for API key handling
+
+## Feasibility Improvements
+1. **Simplify streaming implementation** to use Server-Sent Events instead of WebSockets
+2. **Phase token probability visualization** - start with basic display, add hover details later
+3. **Reduce external dependencies** by using built-in browser features for tooltips
+4. **Optimize state management** by using simpler React patterns
+```
+
+## Enforcement
+- **MUST** complete all review criteria checks
+- **MUST** provide specific, actionable recommendations
+- **MUST** reference existing code when identifying inconsistencies
+- **MUST** suggest concrete changes to improve feasibility
+- **MUST** maintain focus on user experience and business value
+- **MUST NOT** suggest adding implementation details to PRD
+- **MUST NOT** ignore existing codebase when making recommendations
