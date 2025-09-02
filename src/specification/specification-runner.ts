@@ -1,6 +1,6 @@
 import { FactRecord, FactReference, factReferenceEquals, ProjectedResult, ReferencesByName } from "../storage";
 import { flattenAsync, mapAsync } from "../util/fn";
-import { ComponentProjection, Condition, Label, Match, PathCondition, Projection, Role, SingularProjection, Specification } from "./specification";
+import { ComponentProjection, Condition, Label, Match, PathCondition, Projection, Role, SingularProjection, Specification, SpecificationGiven } from "./specification";
 
 export interface FactSource {
   findFact(reference: FactReference): Promise<FactRecord | null>;
@@ -18,7 +18,23 @@ export class SpecificationRunner {
     if (start.length !== specification.given.length) {
       throw new Error(`The number of start references (${start.length}) must match the number of given facts (${specification.given.length}).`);
     }
-    const references = start.reduce((references, reference, index) => ({
+    
+    // Filter start references based on given conditions
+    const validStart: FactReference[] = [];
+    for (let i = 0; i < start.length; i++) {
+      const reference = start[i];
+      const given = specification.given[i];
+      
+      const isValid = await this.validateGiven(reference, given);
+      if (isValid) {
+        validStart.push(reference);
+      } else {
+        // If any given fails its conditions, return empty results
+        return [];
+      }
+    }
+    
+    const references = validStart.reduce((references, reference, index) => ({
       ...references,
       [specification.given[index].label.name]: {
         type: reference.type,
@@ -27,6 +43,35 @@ export class SpecificationRunner {
     }), {} as ReferencesByName);
     const products = await this.executeMatchesAndProjection(references, specification.matches, specification.projection);
     return products;
+  }
+
+  private async validateGiven(reference: FactReference, given: SpecificationGiven): Promise<boolean> {
+    // If no conditions are specified, the given is always valid (backward compatibility)
+    if (given.conditions.length === 0) {
+      return true;
+    }
+    
+    // Check all existential conditions on the given
+    for (const condition of given.conditions) {
+      if (condition.type !== "existential") {
+        throw new Error(`Invalid condition type on given '${given.label.name}': expected 'existential', got '${condition.type}'`);
+      }
+      
+      const references: ReferencesByName = {
+        [given.label.name]: reference
+      };
+      
+      const matches = await this.executeMatches(references, condition.matches);
+      const conditionSatisfied = condition.exists ? 
+        matches.length > 0 : 
+        matches.length === 0;
+      
+      if (!conditionSatisfied) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   private async executeMatchesAndProjection(references: ReferencesByName, matches: Match[], projection: Projection): Promise<ProjectedResult[]> {
