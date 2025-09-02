@@ -1,7 +1,7 @@
 import { ComponentProjection, ExistentialCondition, SpecificationGiven, Label, Match, Specification, emptySpecification, isExistentialCondition, isPathCondition, specificationIsNotDeterministic } from "./specification";
 
 export function buildFeeds(specification: Specification): Specification[] {
-    const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given, specification.matches);
+    const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given.map(g => g.label), specification.matches);
 
     // The final feed represents the complete tuple.
     // Build projections onto that one.
@@ -47,7 +47,7 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
                     type: "existential",
                     exists: false,
                     matches: []
-                }, existentialCondition.matches, specification.given, unusedGivens);
+                }, existentialCondition.matches, specification.given.map(g => g.label), unusedGivens);
                 specification = withCondition(specification, newGivens, newExistentialCondition);
                 unusedGivens = newUnusedGivens;
             }
@@ -120,7 +120,7 @@ function withMatch(specification: Specification, match: Match): Specification {
 function withGiven(specification: Specification, label: Label): Specification {
     return {
         ...specification,
-        given: [...specification.given, { name: label.name, type: label.type, conditions: [] }]
+        given: [...specification.given, { label: label, conditions: [] }]
     };
 }
 

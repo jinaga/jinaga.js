@@ -19,8 +19,8 @@ describe("Given Conditions", () => {
         `);
 
         expect(specification.given.length).toBe(1);
-        expect(specification.given[0].name).toBe("office");
-        expect(specification.given[0].type).toBe("Office");
+        expect(specification.given[0].label.name).toBe("office");
+        expect(specification.given[0].label.type).toBe("Office");
         expect(specification.given[0].conditions.length).toBe(0);
     });
 
@@ -38,8 +38,8 @@ describe("Given Conditions", () => {
 
         expect(specification.given.length).toBe(1);
         const given = specification.given[0];
-        expect(given.name).toBe("office");
-        expect(given.type).toBe("Office");
+        expect(given.label.name).toBe("office");
+        expect(given.label.type).toBe("Office");
         expect(given.conditions.length).toBe(1);
         
         const condition = given.conditions[0];
@@ -77,8 +77,8 @@ describe("Given Conditions", () => {
 
         expect(specification.given.length).toBe(1);
         const given = specification.given[0];
-        expect(given.name).toBe("office");
-        expect(given.type).toBe("Office");
+        expect(given.label.name).toBe("office");
+        expect(given.label.type).toBe("Office");
         expect(given.conditions.length).toBe(1);
         
         const condition = given.conditions[0];
@@ -89,8 +89,10 @@ describe("Given Conditions", () => {
     it("should describe given with existential condition correctly", () => {
         const specification: Specification = {
             given: [{
-                name: "office",
-                type: "Office",
+                label: {
+                    name: "office",
+                    type: "Office"
+                },
                 conditions: [{
                     type: "existential",
                     exists: false,
@@ -140,12 +142,12 @@ describe("Given Conditions", () => {
         expect(specification.given.length).toBe(2);
         
         const firstGiven = specification.given[0];
-        expect(firstGiven.name).toBe("office");
+        expect(firstGiven.label.name).toBe("office");
         expect(firstGiven.conditions.length).toBe(1);
         
         const secondGiven = specification.given[1];
-        expect(secondGiven.name).toBe("user");
-        expect(secondGiven.type).toBe("User");
+        expect(secondGiven.label.name).toBe("user");
+        expect(secondGiven.label.type).toBe("User");
         expect(secondGiven.conditions.length).toBe(0);
     });
 });

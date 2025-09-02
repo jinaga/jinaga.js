@@ -49,9 +49,9 @@ export class ObserverImpl<T> implements Observer<T> {
         resultAdded: ResultAddedFunc<T>
     ) {
         // Map the given facts to a tuple.
-        const tuple = specification.given.reduce((tuple, given, index) => ({
+        const tuple = specification.given.reduce((tuple, g, index) => ({
             ...tuple,
-            [given.label.name]: given[index]
+            [g.label.name]: given[index]
         }), {} as ReferencesByName);
         this.givenHash = computeObjectHash(tuple);
 
@@ -63,7 +63,7 @@ export class ObserverImpl<T> implements Observer<T> {
         });
 
         // Identify the specification by its hash.
-        const declarationString = describeDeclaration(given, specification.given);
+        const declarationString = describeDeclaration(given, specification.given.map(g => g.label));
         const specificationString = describeSpecification(specification, 0);
         const request = `${declarationString}\n${specificationString}`;
         this.specificationHash = computeStringHash(request);

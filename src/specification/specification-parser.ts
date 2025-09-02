@@ -453,7 +453,7 @@ export class SpecificationParser {
 
     parseSpecification(): Specification {
         const given = this.parseGiven();
-        const { matches, labels } = this.parseMatches(given);
+        const { matches, labels } = this.parseMatches(given.map(g => g.label));
         const projection = this.parseProjection(labels);
         return { given, matches, projection };
     }

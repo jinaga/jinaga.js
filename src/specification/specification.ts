@@ -32,6 +32,17 @@ export function isPathCondition(condition: Condition): condition is PathConditio
     return condition.type === "path";
 }
 
+/**
+ * Type guard that checks if the given condition is an existential condition.
+ * @param condition The condition to check.
+ * @returns True if the condition is an ExistentialCondition, false otherwise.
+ * @example
+ * const condition: Condition = { type: "existential", exists: true, matches: [] };
+ * if (isExistentialCondition(condition)) {
+ *     // condition is now typed as ExistentialCondition
+ *     console.log(condition.exists);
+ * }
+ */
 export function isExistentialCondition(condition: Condition): condition is ExistentialCondition {
     return condition.type === "existential";
 }

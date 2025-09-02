@@ -1,4 +1,4 @@
-import { Condition, ExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
+import { Condition, ExistentialCondition, isExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
 
 type InverseOperation = "add" | "remove";
 
@@ -22,8 +22,8 @@ interface InverterContext {
 export function invertSpecification(specification: Specification): SpecificationInverse[] {
     // Turn each given into a match.
     const emptyMatches: Match[] = specification.given.map(g => ({
-        unknown: g,
-        conditions: []
+        unknown: g.label,
+        conditions: g.conditions
     }));
     const matches: Match[] = [...emptyMatches, ...specification.matches];
 
@@ -170,7 +170,7 @@ function invertExistentialConditions(outerMatches: Match[], conditions: Conditio
                 matches = shakeTree(matches, match.unknown.name);
                 const matchesWithoutCondition: Match[] = removeCondition(matches.slice(1), condition);
                 const inverseSpecification: Specification = {
-                    given: [{ name: match.unknown.name, type: match.unknown.type, conditions: [] }],
+                    given: [{ label: match.unknown, conditions: match.conditions.filter(c => isExistentialCondition(c)) as ExistentialCondition[] }],
                     matches: matchesWithoutCondition,
                     projection: context.projection
                 };

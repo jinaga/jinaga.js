@@ -12,7 +12,7 @@ export function validatePurgeSpecification(specification: Specification): string
     var failures: string[] = specification.matches.map(match => match.conditions
         .filter(isNegativeExistentialCondition)
         .map(condition =>
-            `A specified purge condition would reverse the purge of ${purgeRoot.type} with ${describeTuple(condition.matches)}.`
+            `A specified purge condition would reverse the purge of ${purgeRoot.label.type} with ${describeTuple(condition.matches)}.`
         )
     ).flat();
     return failures;

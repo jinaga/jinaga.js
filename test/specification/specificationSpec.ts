@@ -329,8 +329,7 @@ describe("Specification parser", () => {
             given: [
                 {
                     name: "user",
-                    type: "Jinaga.User"
-                ,
+                    type: "Jinaga.User",
                     conditions: []
                 }
             ],
@@ -523,8 +522,7 @@ describe("Specification parser", () => {
             given: [
                 {
                     name: "user",
-                    type: "Jinaga.User"
-                ,
+                    type: "Jinaga.User",
                     conditions: []
                 }
             ],
@@ -577,8 +575,7 @@ describe("Specification parser", () => {
             given: [
                 {
                     name: "user",
-                    type: "Jinaga.User"
-                ,
+                    type: "Jinaga.User",
                     conditions: []
                 }
             ],
@@ -628,8 +625,7 @@ describe("Specification parser", () => {
             given: [
                 {
                     name: "user",
-                    type: "Jinaga.User"
-                ,
+                    type: "Jinaga.User",
                     conditions: []
                 }
             ],
@@ -673,8 +669,7 @@ describe("Specification parser", () => {
             given: [
                 {
                     name: "user",
-                    type: "Jinaga.User"
-                ,
+                    type: "Jinaga.User",
                     conditions: []
                 }
             ],
