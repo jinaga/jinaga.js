@@ -236,4 +236,159 @@ describe("SpecificationRunner Given Conditions", () => {
         ], specification);
         expect(result2.length).toBe(0);
     });
+
+    it("should handle error cases for invalid condition types", async () => {
+        const specification: Specification = {
+            given: [{
+                label: { name: "office", type: "Office" },
+                conditions: [{
+                    type: "invalid" as any, // Invalid condition type
+                    exists: false,
+                    matches: []
+                }]
+            }],
+            matches: [],
+            projection: { type: "fact", label: "office" }
+        };
+
+        await expect(
+            runner.read([{ type: "Office", hash: "office1" }], specification)
+        ).rejects.toThrow("Invalid condition type on given 'office': expected 'existential', got 'invalid'");
+    });
+
+    it("should handle nested existential conditions within givens", async () => {
+        // Add a reopened fact
+        const reopened: FactRecord = {
+            type: "Office.Reopened",
+            hash: "reopened1",
+            fields: { date: "2023-02-01" }
+        };
+        source.addFact(reopened);
+
+        // Link reopened to the closure
+        source.addRelation(
+            { type: "Office.Reopened", hash: "reopened1" },
+            "officeClosed",
+            { type: "Office.Closed", hash: "closure1" }
+        );
+
+        // Specification that only accepts offices that are closed but NOT reopened
+        const specification: Specification = {
+            given: [{
+                label: { name: "office", type: "Office" },
+                conditions: [{
+                    type: "existential",
+                    exists: true, // Must be closed
+                    matches: [{
+                        unknown: { name: "closure", type: "Office.Closed" },
+                        conditions: [
+                            {
+                                type: "path",
+                                rolesLeft: [{ name: "office", predecessorType: "Office" }],
+                                labelRight: "office",
+                                rolesRight: []
+                            },
+                            {
+                                type: "existential",
+                                exists: false, // But NOT reopened
+                                matches: [{
+                                    unknown: { name: "reopened", type: "Office.Reopened" },
+                                    conditions: [{
+                                        type: "path",
+                                        rolesLeft: [{ name: "officeClosed", predecessorType: "Office.Closed" }],
+                                        labelRight: "closure",
+                                        rolesRight: []
+                                    }]
+                                }]
+                            }
+                        ]
+                    }]
+                }]
+            }],
+            matches: [],
+            projection: { type: "fact", label: "office" }
+        };
+
+        // office1 (not closed) should be filtered out
+        const result1 = await runner.read([{ type: "Office", hash: "office1" }], specification);
+        expect(result1.length).toBe(0);
+
+        // office2 (closed but reopened) should be filtered out
+        const result2 = await runner.read([{ type: "Office", hash: "office2" }], specification);
+        expect(result2.length).toBe(0);
+
+        // Add another closed office that is NOT reopened
+        const office3: FactRecord = {
+            type: "Office",
+            hash: "office3",
+            fields: { identifier: "Office3" }
+        };
+        const closure2: FactRecord = {
+            type: "Office.Closed",
+            hash: "closure2",
+            fields: { date: "2023-01-02" }
+        };
+        source.addFact(office3);
+        source.addFact(closure2);
+        source.addRelation(
+            { type: "Office.Closed", hash: "closure2" },
+            "office",
+            { type: "Office", hash: "office3" }
+        );
+
+        // office3 (closed but not reopened) should pass
+        const result3 = await runner.read([{ type: "Office", hash: "office3" }], specification);
+        expect(result3.length).toBe(1);
+    });
+
+    it("should maintain performance with early filtering", async () => {
+        // This test verifies that when a given condition fails,
+        // the matches and projection are not executed (performance optimization)
+        
+        let matchExecuted = false;
+        const originalExecuteMatches = (runner as any).executeMatchesAndProjection;
+        (runner as any).executeMatchesAndProjection = async (...args: any[]) => {
+            matchExecuted = true;
+            return originalExecuteMatches.apply(runner, args);
+        };
+
+        const specification: Specification = {
+            given: [{
+                label: { name: "office", type: "Office" },
+                conditions: [{
+                    type: "existential",
+                    exists: false, // Must NOT be closed
+                    matches: [{
+                        unknown: { name: "closure", type: "Office.Closed" },
+                        conditions: [{
+                            type: "path",
+                            rolesLeft: [{ name: "office", predecessorType: "Office" }],
+                            labelRight: "office",
+                            rolesRight: []
+                        }]
+                    }]
+                }]
+            }],
+            matches: [
+                // Add some matches that would be expensive to execute
+                {
+                    unknown: { name: "someExpensiveMatch", type: "SomeType" },
+                    conditions: [{
+                        type: "path",
+                        rolesLeft: [],
+                        labelRight: "office",
+                        rolesRight: [{ name: "someRole", predecessorType: "SomeType" }]
+                    }]
+                }
+            ],
+            projection: { type: "fact", label: "office" }
+        };
+
+        // Test with office2 (closed) - should return empty without executing matches
+        matchExecuted = false;
+        const result = await runner.read([{ type: "Office", hash: "office2" }], specification);
+        
+        expect(result.length).toBe(0);
+        expect(matchExecuted).toBe(false); // Matches should not be executed due to early filtering
+    });
 });
