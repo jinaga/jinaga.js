@@ -182,19 +182,25 @@ export class SpecificationParser {
 
     private parseExistentialCondition(labels: Label[], unknown: Label, exists: boolean): ExistentialCondition {
         const { matches } = this.parseMatches([...labels, unknown]);
-        if (!matches.some(match =>
+
+        const hasValidPath = matches.some(match =>
             match.conditions.some(condition =>
                 condition.type === "path" &&
                 condition.labelRight === unknown.name
             )
-        )) {
+        );
+
+        if (!hasValidPath) {
+            Trace.error(`Invalid existential condition: no path condition references unknown '${unknown.name}'`);
             throw new Invalid(`The existential condition must be based on the unknown '${unknown.name}'`);
         }
-        return {
-            type: "existential",
+
+        const result = {
+            type: "existential" as const,
             exists,
             matches
         };
+        return result;
     }
 
     parseCondition(unknown: Label, labels: Label[]): Condition {
