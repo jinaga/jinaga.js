@@ -191,7 +191,6 @@ export class SpecificationParser {
         );
 
         if (!hasValidPath) {
-            Trace.error(`Invalid existential condition: no path condition references unknown '${unknown.name}'`);
             throw new Invalid(`The existential condition must be based on the unknown '${unknown.name}'`);
         }
 
