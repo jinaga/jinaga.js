@@ -12,8 +12,10 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "root",
-                    type: "Root",
+                    label: {
+                        name: "root",
+                        type: "Root"
+                    },
                     conditions: []
                 }
             ],
@@ -36,9 +38,10 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "parent",
-                    type: "MyApp.Parent"
-                ,
+                    label: {
+                        name: "parent",
+                        type: "MyApp.Parent"
+                    },
                     conditions: []
                 }
             ],
@@ -144,14 +147,17 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
-                ,
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
                     conditions: []
                 },
                 {
-                    name: "company",
-                    type: "MyApp.Company",
+                    label: {
+                        name: "company",
+                        type: "MyApp.Company"
+                    },
                     conditions: []
                 }
             ],
@@ -215,14 +221,17 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
-                ,
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
                     conditions: []
                 },
                 {
-                    name: "company",
-                    type: "MyApp.Company",
+                    label: {
+                        name: "company",
+                        type: "MyApp.Company"
+                    },
                     conditions: []
                 }
             ],
@@ -328,8 +337,10 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User",
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
                     conditions: []
                 }
             ],
@@ -414,9 +425,10 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
-                ,
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
                     conditions: []
                 }
             ],
@@ -521,8 +533,10 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User",
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
                     conditions: []
                 }
             ],
@@ -574,8 +588,10 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User",
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
                     conditions: []
                 }
             ],
@@ -624,8 +640,10 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User",
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
                     conditions: []
                 }
             ],
@@ -668,8 +686,10 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User",
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
                     conditions: []
                 }
             ],
