@@ -34,10 +34,7 @@ describe("Given Conditions - Negative Existential", () => {
     it("should filter offices that do NOT have closure facts (negative existential)", async () => {
         const specification = SpecificationTemplates.officesNotClosed();
 
-        const openOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(openOffice)[0].hash
-        };
+        const openOfficeRef: FactReference = dehydrateFact(openOffice)[0];
 
         const results = await store.read([openOfficeRef], specification);
 
@@ -49,10 +46,7 @@ describe("Given Conditions - Negative Existential", () => {
     it("should not return offices that have closure facts", async () => {
         const specification = SpecificationTemplates.officesNotClosed();
 
-        const closedOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(closedOffice)[0].hash
-        };
+        const closedOfficeRef: FactReference = dehydrateFact(closedOffice)[0];
 
         const results = await store.read([closedOfficeRef], specification);
 
@@ -80,34 +74,22 @@ describe("Given Conditions - Negative Existential", () => {
         const specification = SpecificationTemplates.officesNotClosed();
 
         // Query with open office - should return the office
-        const openOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(openOffice)[0].hash
-        };
+        const openOfficeRef: FactReference = dehydrateFact(openOffice)[0];
         const openResults = await store.read([openOfficeRef], specification);
         expect(openResults.length).toBe(1);
 
         // Query with closed office - should return empty
-        const closedOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(closedOffice)[0].hash
-        };
+        const closedOfficeRef: FactReference = dehydrateFact(closedOffice)[0];
         const closedResults = await store.read([closedOfficeRef], specification);
         expect(closedResults.length).toBe(0);
 
         // Query with another open office - should return the office
-        const anotherOpenOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(anotherOpenOffice)[0].hash
-        };
+        const anotherOpenOfficeRef: FactReference = dehydrateFact(anotherOpenOffice)[0];
         const anotherOpenResults = await store.read([anotherOpenOfficeRef], specification);
         expect(anotherOpenResults.length).toBe(1);
 
         // Query with another closed office - should return empty
-        const anotherClosedOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(anotherClosedOffice)[0].hash
-        };
+        const anotherClosedOfficeRef: FactReference = dehydrateFact(anotherClosedOffice)[0];
         const anotherClosedResults = await store.read([anotherClosedOfficeRef], specification);
         expect(anotherClosedResults.length).toBe(0);
     });
@@ -133,25 +115,16 @@ describe("Given Conditions - Negative Existential", () => {
         const specification = SpecificationTemplates.officesNotClosed();
 
         // Both closed offices should be filtered out
-        const oldOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(oldClosedOffice)[0].hash
-        };
+        const oldOfficeRef: FactReference = dehydrateFact(oldClosedOffice)[0];
         const oldResults = await store.read([oldOfficeRef], specification);
         expect(oldResults.length).toBe(0);
 
-        const recentOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(recentClosedOffice)[0].hash
-        };
+        const recentOfficeRef: FactReference = dehydrateFact(recentClosedOffice)[0];
         const recentResults = await store.read([recentOfficeRef], specification);
         expect(recentResults.length).toBe(0);
 
         // Original open office should still pass
-        const openOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(openOffice)[0].hash
-        };
+        const openOfficeRef: FactReference = dehydrateFact(openOffice)[0];
         const openResults = await store.read([openOfficeRef], specification);
         expect(openResults.length).toBe(1);
     });
@@ -160,18 +133,12 @@ describe("Given Conditions - Negative Existential", () => {
         const specification = SpecificationTemplates.officesNotClosed();
 
         // Test with open office (should pass)
-        const openOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(openOffice)[0].hash
-        };
+        const openOfficeRef: FactReference = dehydrateFact(openOffice)[0];
         const openResults = await store.read([openOfficeRef], specification);
         expect(openResults.length).toBe(1);
 
         // Test with closed office (should fail)
-        const closedOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(closedOffice)[0].hash
-        };
+        const closedOfficeRef: FactReference = dehydrateFact(closedOffice)[0];
         const closedResults = await store.read([closedOfficeRef], specification);
         expect(closedResults.length).toBe(0);
 

@@ -51,26 +51,17 @@ describe("Given Conditions - Mixed Conditions", () => {
         const specification = SpecificationTemplates.officesClosedNotReopened();
 
         // Test closed office without reopening (should pass)
-        const closedOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(closedOffice)[0].hash
-        };
+        const closedOfficeRef: FactReference = dehydrateFact(closedOffice)[0];
         const closedResults = await store.read([closedOfficeRef], specification);
         expect(closedResults.length).toBe(1); // Closed but not reopened
 
         // Test reopened office (should fail - closed AND reopened)
-        const reopenedOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(reopenedOffice)[0].hash
-        };
+        const reopenedOfficeRef: FactReference = dehydrateFact(reopenedOffice)[0];
         const reopenedResults = await store.read([reopenedOfficeRef], specification);
         expect(reopenedResults.length).toBe(0); // Closed and reopened
 
         // Test open office (should fail - not closed at all)
-        const openOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(openOffice)[0].hash
-        };
+        const openOfficeRef: FactReference = dehydrateFact(openOffice)[0];
         const openResults = await store.read([openOfficeRef], specification);
         expect(openResults.length).toBe(0); // Not closed
     });
@@ -106,26 +97,17 @@ describe("Given Conditions - Mixed Conditions", () => {
         const specification = SpecificationTemplates.officesClosedNotReopened();
 
         // Office A (not closed) - should fail first condition
-        const officeARef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(offices[0])[0].hash
-        };
+        const officeARef: FactReference = dehydrateFact(offices[0])[0];
         const resultsA = await store.read([officeARef], specification);
         expect(resultsA.length).toBe(0);
 
         // Office B (closed, not reopened) - should pass both conditions
-        const officeBRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(offices[1])[0].hash
-        };
+        const officeBRef: FactReference = dehydrateFact(offices[1])[0];
         const resultsB = await store.read([officeBRef], specification);
         expect(resultsB.length).toBe(1);
 
         // Office C (closed, reopened) - should pass first condition, fail second
-        const officeCRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(offices[2])[0].hash
-        };
+        const officeCRef: FactReference = dehydrateFact(offices[2])[0];
         const resultsC = await store.read([officeCRef], specification);
         expect(resultsC.length).toBe(0);
     });
@@ -149,10 +131,7 @@ describe("Given Conditions - Mixed Conditions", () => {
         const specification = SpecificationTemplates.officesClosedNotReopened();
 
         // Test office that is closed but not reopened
-        const testOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(testOffice)[0].hash
-        };
+        const testOfficeRef: FactReference = dehydrateFact(testOffice)[0];
         const results = await store.read([testOfficeRef], specification);
 
         // Should pass: EXISTS(closure) AND NOT EXISTS(reopening)
@@ -185,18 +164,12 @@ describe("Given Conditions - Mixed Conditions", () => {
         const specification = SpecificationTemplates.officesClosedNotReopened();
 
         // Original closed office (no reopening) - should pass
-        const closedOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(closedOffice)[0].hash
-        };
+        const closedOfficeRef: FactReference = dehydrateFact(closedOffice)[0];
         const closedResults = await store.read([closedOfficeRef], specification);
         expect(closedResults.length).toBe(1);
 
         // Original open office - should fail
-        const openOfficeRef: FactReference = {
-            type: "Office",
-            hash: dehydrateFact(openOffice)[0].hash
-        };
+        const openOfficeRef: FactReference = dehydrateFact(openOffice)[0];
         const openResults = await store.read([openOfficeRef], specification);
         expect(openResults.length).toBe(0);
 
