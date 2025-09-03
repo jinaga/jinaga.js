@@ -1,8 +1,5 @@
-import { MemoryStore } from "../../../../../src/memory/memory-store";
-import { FactReference } from "../../../../../src/storage";
-import { dehydrateFact } from "../../../../../src/fact/hydrate";
-import { SpecificationParser } from "../../../../../src/specification/specification-parser";
-import { User, Company, Office, OfficeClosed, OfficeReopened, Administrator, Manager, Employee } from "../../../../companyModel";
+import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
+import { Administrator, Company, Employee, Manager, Office, OfficeClosed, OfficeReopened, User } from "../../../../companyModel";
 import { createComplexCompanyScenario } from "../../setup/test-helpers";
 
 describe("Given Conditions - Runtime Errors", () => {

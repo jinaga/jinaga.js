@@ -1,6 +1,4 @@
-import { SpecificationParser } from "../../src/specification/specification-parser";
-import { describeSpecification } from "../../src/specification/description";
-import { Specification } from "../../src/specification/specification";
+import { describeSpecification, Specification, SpecificationParser } from "@src";
 
 describe("Given Conditions", () => {
     function parseSpecification(input: string): Specification {

@@ -1,5 +1,4 @@
-import { Specification } from "../../../../src/specification/specification";
-import { SpecificationParser } from "../../../../src/specification/specification-parser";
+import { Specification, SpecificationParser } from "@src";
 
 /**
  * Specification templates using the SpecificationParser for parsing text-based specifications

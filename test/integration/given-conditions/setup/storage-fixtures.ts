@@ -1,7 +1,4 @@
-import { MemoryStore } from "../../../../src/memory/memory-store";
-import { FactEnvelope } from "../../../../src/storage";
-import { dehydrateFact, Dehydration } from "../../../../src/fact/hydrate";
-import { User, Company, Office, OfficeClosed, OfficeReopened, Administrator, Manager, Employee } from "../../../companyModel";
+import { dehydrateFact, Dehydration, FactEnvelope, MemoryStore } from "@src";
 import { GeneratedData } from "./data-generators";
 
 /**

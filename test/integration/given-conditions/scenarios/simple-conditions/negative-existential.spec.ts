@@ -1,9 +1,7 @@
-import { MemoryStore } from "../../../../../src/memory/memory-store";
-import { FactReference } from "../../../../../src/storage";
-import { dehydrateFact } from "../../../../../src/fact/hydrate";
-import { User, Company, Office, OfficeClosed } from "../../../../companyModel";
-import { createBasicCompanyScenario } from "../../setup/test-helpers";
+import { dehydrateFact, FactReference, MemoryStore } from "@src";
+import { Company, Office, OfficeClosed, User } from "../../../../companyModel";
 import { SpecificationTemplates } from "../../setup/specification-builders";
+import { createBasicCompanyScenario } from "../../setup/test-helpers";
 
 describe("Given Conditions - Negative Existential", () => {
     let store: MemoryStore;

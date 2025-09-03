@@ -1,5 +1,5 @@
-import { Jinaga, JinagaTest } from "../../../../src";
-import { User, Company, Office, OfficeClosed, OfficeReopened, Administrator, Manager, Employee } from "../../../companyModel";
+import { Jinaga, JinagaTest } from "@src";
+import { Administrator, Company, Employee, Manager, Office, OfficeClosed, OfficeReopened, User } from "../../../companyModel";
 
 /**
  * Test helper utilities for given conditions integration tests

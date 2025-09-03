@@ -1,4 +1,4 @@
-import { Dehydration, HashMap } from "../../src/fact/hydrate";
+import { Dehydration, HashMap } from "@src";
 
 describe("Known hash", () => {
     it("String field", () => {

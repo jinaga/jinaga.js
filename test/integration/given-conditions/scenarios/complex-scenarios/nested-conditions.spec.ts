@@ -1,10 +1,6 @@
-import { MemoryStore } from "../../../../../src/memory/memory-store";
-import { FactReference } from "../../../../../src/storage";
-import { dehydrateFact } from "../../../../../src/fact/hydrate";
-import { SpecificationParser } from "../../../../../src/specification/specification-parser";
-import { User, Company, Office, OfficeClosed, OfficeReopened, Administrator, Manager } from "../../../../companyModel";
+import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
+import { Administrator, Company, Manager, Office, OfficeClosed, OfficeReopened, User } from "../../../../companyModel";
 import { createComplexCompanyScenario } from "../../setup/test-helpers";
-import { SpecificationTemplates } from "../../setup/specification-builders";
 
 describe("Given Conditions - Nested Conditions", () => {
     let store: MemoryStore;

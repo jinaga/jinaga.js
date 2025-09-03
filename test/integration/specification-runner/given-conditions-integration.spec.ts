@@ -1,8 +1,5 @@
-import { MemoryStore } from "../../../src/memory/memory-store";
-import { FactReference } from "../../../src/storage";
-import { dehydrateFact } from "../../../src/fact/hydrate";
-import { SpecificationParser } from "../../../src/specification/specification-parser";
-import { User, Company, Office, OfficeClosed, OfficeReopened } from "../../companyModel";
+import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
+import { Company, Office, OfficeClosed, OfficeReopened, User } from "../../companyModel";
 
 /**
  * Integration test suite for SpecificationRunner Given Conditions

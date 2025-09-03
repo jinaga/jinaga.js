@@ -1,8 +1,5 @@
-import { IndexedDBStore } from "../../../../../src/indexeddb/indexeddb-store";
-import { FactEnvelope, FactReference } from "../../../../../src/storage";
-import { dehydrateFact, Dehydration } from "../../../../../src/fact/hydrate";
-import { User, Company, Office, OfficeClosed, OfficeReopened, Administrator, Manager, Employee } from "../../../../companyModel";
-import { GeneratedData, generateSmallCompanyNetwork, generateMediumCompanyNetwork } from "../../setup/data-generators";
+import { dehydrateFact, Dehydration, FactEnvelope, FactReference, IndexedDBStore } from "@src";
+import { GeneratedData, generateMediumCompanyNetwork, generateSmallCompanyNetwork } from "../../setup/data-generators";
 import { SpecificationTemplates } from "../../setup/specification-builders";
 
 /**

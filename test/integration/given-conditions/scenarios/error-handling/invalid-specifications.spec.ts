@@ -1,8 +1,5 @@
-import { SpecificationParser } from "../../../../../src/specification/specification-parser";
-import { MemoryStore } from "../../../../../src/memory/memory-store";
-import { FactReference } from "../../../../../src/storage";
-import { dehydrateFact } from "../../../../../src/fact/hydrate";
-import { User, Company, Office } from "../../../../companyModel";
+import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
+import { Company, Office, User } from "../../../../companyModel";
 
 describe("Given Conditions - Invalid Specifications", () => {
     let store: MemoryStore;

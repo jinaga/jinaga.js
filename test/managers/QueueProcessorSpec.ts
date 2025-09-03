@@ -1,5 +1,4 @@
-import { QueueProcessor, Saver } from "../../src/managers/QueueProcessor";
-import { delay } from "../../src/util/promise";
+import { delay, QueueProcessor, Saver } from "@src";
 
 describe("QueueProcessor", () => {
     // Mock implementation of the Saver interface

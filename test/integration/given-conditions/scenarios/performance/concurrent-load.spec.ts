@@ -1,7 +1,5 @@
-import { MemoryStore } from "../../../../../src/memory/memory-store";
-import { FactReference } from "../../../../../src/storage";
-import { dehydrateFact } from "../../../../../src/fact/hydrate";
-import { User, Company, Office, OfficeClosed, OfficeReopened } from "../../../../companyModel";
+import { dehydrateFact, FactReference, MemoryStore } from "@src";
+import { Company, Office } from "../../../../companyModel";
 import { GeneratedData, generateLargeCompanyNetwork } from "../../setup/data-generators";
 import { SpecificationTemplates } from "../../setup/specification-builders";
 
