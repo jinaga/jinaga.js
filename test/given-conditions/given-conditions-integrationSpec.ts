@@ -1,5 +1,5 @@
 import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
-import { Company, Office, OfficeClosed, OfficeReopened, User } from "../../companyModel";
+import { Company, Office, OfficeClosed, OfficeReopened, User } from "../companyModel";
 
 /**
  * Integration test suite for SpecificationRunner Given Conditions

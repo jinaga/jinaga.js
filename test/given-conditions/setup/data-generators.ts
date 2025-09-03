@@ -1,4 +1,4 @@
-import { User, Company, Office, OfficeClosed, OfficeReopened, Administrator, Manager, Employee } from "../../../companyModel";
+import { User, Company, Office, OfficeClosed, OfficeReopened, Administrator, Manager, Employee } from "../../companyModel";
 
 /**
  * Data generators for creating realistic test scenarios

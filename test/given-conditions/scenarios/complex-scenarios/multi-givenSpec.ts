@@ -1,6 +1,6 @@
 import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
-import { Administrator, Company, Employee, Manager, Office, OfficeClosed, OfficeReopened, User } from "../../../../companyModel";
-import { createComplexCompanyScenario } from "../../setup/test-helpers";
+import { Administrator, Company, Employee, Manager, Office, OfficeClosed, OfficeReopened, User } from "../../../companyModel";
+import { createComplexCompanyScenario } from "../../setup/test-data-factories";
 
 describe("Given Conditions - Multi-Given Scenarios", () => {
     let store: MemoryStore;

@@ -1,5 +1,5 @@
 import { dehydrateFact, FactReference, MemoryStore } from "@src";
-import { Company, Office } from "../../../../companyModel";
+import { Company, Office } from "../../../companyModel";
 import { GeneratedData, generateLargeCompanyNetwork } from "../../setup/data-generators";
 import { SpecificationTemplates } from "../../setup/specification-builders";
 

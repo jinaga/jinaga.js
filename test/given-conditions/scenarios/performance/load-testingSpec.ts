@@ -1,5 +1,5 @@
 import { dehydrateFact, FactReference, MemoryStore } from "@src";
-import { Administrator, Company, Employee, Manager, Office, OfficeClosed, OfficeReopened, User } from "../../../../companyModel";
+import { Administrator, Company, Employee, Manager, Office, OfficeClosed, OfficeReopened, User } from "../../../companyModel";
 import { SpecificationTemplates } from "../../setup/specification-builders";
 
 /**
