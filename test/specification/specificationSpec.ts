@@ -1,10 +1,5 @@
-import { Specification, SpecificationParser } from "../../src";
-
-function parseSpecification(input: string): Specification {
-    const parser = new SpecificationParser(input);
-    parser.skipWhitespace();
-    return parser.parseSpecification();
-}
+import { Specification } from "../../src";
+import { parseSpecification } from "../setup/specification-helpers";
 
 describe("Specification parser", () => {
     it("parses an identity specification", () => {

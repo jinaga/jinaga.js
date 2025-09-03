@@ -1,5 +1,6 @@
-import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
+import { dehydrateFact, FactReference, MemoryStore } from "@src";
 import { Company, Office, OfficeClosed, OfficeReopened, User } from "../companyModel";
+import { parseSpecification } from "../setup/specification-helpers";
 
 /**
  * Integration test suite for SpecificationRunner Given Conditions
@@ -39,10 +40,10 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
     });
 
     it("should pass given without conditions (backward compatibility)", async () => {
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office) {
             } => office
-        `).parseSpecification();
+        `);
 
         // Both offices should pass (no conditions to filter them)
         const office1Ref: FactReference = {
@@ -63,14 +64,14 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
     });
 
     it("should filter given with negative existential condition", async () => {
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [!E {
                 closure: Office.Closed [
                     closure = office
                 ]
             }]) {
             } => office
-        `).parseSpecification();
+        `);
 
         // office1 (not closed) should pass
         const office1Ref: FactReference = {
@@ -90,14 +91,14 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
     });
 
     it("should filter given with positive existential condition", async () => {
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [E {
                 closure: Office.Closed [
                     closure = office
                 ]
             }]) {
             } => office
-        `).parseSpecification();
+        `);
 
         // office1 (not closed) should be filtered out
         const office1Ref: FactReference = {
@@ -117,7 +118,7 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
     });
 
     it("should handle multiple givens where one fails condition", async () => {
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (company: Company, office: Office [!E {
                 closure: Office.Closed [
                     closure = office
@@ -127,7 +128,7 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
                 company = company
                 office = office
             }
-        `).parseSpecification();
+        `);
 
         // company + office1 (not closed) should pass
         const companyRef: FactReference = {
@@ -179,7 +180,7 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
 
     it("should handle nested existential conditions within givens", async () => {
         // Specification that only accepts offices that are closed but NOT reopened
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [E {
                 closure: Office.Closed [
                     closure = office
@@ -191,7 +192,7 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
                 ]
             }]) {
             } => office
-        `).parseSpecification();
+        `);
 
         // office1 (not closed) should be filtered out
         const office1Ref: FactReference = {
@@ -237,7 +238,7 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
         // This test verifies that when a given condition fails,
         // the matches and projection are not executed (performance optimization)
 
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [!E {
                 closure: Office.Closed [
                     closure = office
@@ -247,7 +248,7 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
                     someMatch = office
                 ]
             } => office
-        `).parseSpecification();
+        `);
 
         // Test with office2 (closed) - should return empty without executing matches
         const office2Ref: FactReference = {
@@ -302,10 +303,10 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
     });
 
     it("should validate memory usage patterns", async () => {
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office) {
             } => office
-        `).parseSpecification();
+        `);
 
         const office1Ref: FactReference = {
             type: "Office",
@@ -326,14 +327,14 @@ describe("SpecificationRunner Given Conditions - Integration", () => {
     });
 
     it("should handle concurrent queries with given conditions", async () => {
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [!E {
                 closure: Office.Closed [
                     closure = office
                 ]
             }]) {
             } => office
-        `).parseSpecification();
+        `);
 
         const office1Ref: FactReference = {
             type: "Office",

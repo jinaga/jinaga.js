@@ -1,11 +1,7 @@
-import { describeSpecification, Specification, SpecificationParser } from "@src";
+import { describeSpecification, Specification } from "@src";
+import { parseSpecification } from "../setup/specification-helpers";
 
 describe("Given Conditions", () => {
-    function parseSpecification(input: string): Specification {
-        const parser = new SpecificationParser(input);
-        parser.skipWhitespace();
-        return parser.parseSpecification();
-    }
 
     it("should parse simple given without conditions", () => {
         const specification = parseSpecification(`

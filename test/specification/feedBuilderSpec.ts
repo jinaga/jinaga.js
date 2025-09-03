@@ -1,4 +1,5 @@
-import { SpecificationParser, buildFeeds, describeSpecification } from "../../src";
+import { buildFeeds, describeSpecification } from "../../src";
+import { parseSpecification } from "../setup/specification-helpers";
 
 describe("feed generator", () => {
     it("should produce no feeds for an identity specification", () => {
@@ -229,10 +230,7 @@ describe("feed generator", () => {
 });
 
 function getSpecification(input: string) {
-    const parser = new SpecificationParser(input);
-    parser.skipWhitespace();
-    const specification = parser.parseSpecification();
-    return specification;
+    return parseSpecification(input);
 }
 
 function getFeeds(input: string): string[] {

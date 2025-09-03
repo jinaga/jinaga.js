@@ -1,4 +1,5 @@
-import { Specification, SpecificationParser } from "@src";
+import { Specification } from "@src";
+import { parseSpecification } from "../../setup/specification-helpers";
 
 /**
  * Specification templates using the SpecificationParser for parsing text-based specifications
@@ -12,7 +13,7 @@ export class SpecificationTemplates {
    * Creates a specification that finds offices that are NOT closed
    */
   static officesNotClosed(): Specification {
-    const parser = new SpecificationParser(`
+    return parseSpecification(`
       (office: Office [!E {
         closure: Office.Closed [
           closure = office
@@ -20,14 +21,13 @@ export class SpecificationTemplates {
       }]) {
       } => office
     `);
-    return parser.parseSpecification();
   }
 
   /**
    * Creates a specification that finds offices that ARE closed
    */
   static officesClosed(): Specification {
-    const parser = new SpecificationParser(`
+    return parseSpecification(`
       (office: Office [E {
         closure: Office.Closed [
           closure = office
@@ -35,14 +35,13 @@ export class SpecificationTemplates {
       }]) {
       } => office
     `);
-    return parser.parseSpecification();
   }
 
   /**
    * Creates a specification that finds offices that are closed but NOT reopened
    */
   static officesClosedNotReopened(): Specification {
-    const parser = new SpecificationParser(`
+    return parseSpecification(`
       (office: Office [E {
         closure: Office.Closed [
           closure = office
@@ -55,14 +54,13 @@ export class SpecificationTemplates {
       }]) {
       } => office
     `);
-    return parser.parseSpecification();
   }
 
   /**
    * Creates a specification with multiple givens (company + office)
    */
   static companyOfficesNotClosed(): Specification {
-    const parser = new SpecificationParser(`
+    return parseSpecification(`
       (company: Company, office: Office [!E {
         closure: Office.Closed [
           closure = office
@@ -73,18 +71,16 @@ export class SpecificationTemplates {
         office = office
       }
     `);
-    return parser.parseSpecification();
   }
 
   /**
    * Creates a specification with no given conditions (backward compatibility)
    */
   static officesNoConditions(): Specification {
-    const parser = new SpecificationParser(`
+    return parseSpecification(`
       (office: Office) {
       } => office
     `);
-    return parser.parseSpecification();
   }
 }
 

@@ -1,4 +1,5 @@
-import { Skeleton, SpecificationParser, skeletonOfSpecification } from "../../src";
+import { Skeleton, skeletonOfSpecification } from "../../src";
+import { parseSpecification } from "../setup/specification-helpers";
 
 describe("skeleton", () => {
     it("should produce an empty skeleton for an identity specification", () => {
@@ -282,9 +283,7 @@ describe("skeleton", () => {
 });
 
 function getSkeleton(input: string) {
-    const parser = new SpecificationParser(input);
-    parser.skipWhitespace();
-    const specification = parser.parseSpecification();
+    const specification = parseSpecification(input);
     const skeleton = skeletonOfSpecification(specification);
     return skeleton;
 }

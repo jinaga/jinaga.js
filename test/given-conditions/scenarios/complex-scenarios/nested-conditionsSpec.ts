@@ -1,6 +1,7 @@
-import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
+import { dehydrateFact, FactReference, MemoryStore } from "@src";
 import { Administrator, Company, Manager, Office, OfficeClosed, OfficeReopened, User } from "../../../companyModel";
 import { createComplexCompanyScenario } from "../../setup/test-data-factories";
+import { parseSpecification } from "../../../setup/specification-helpers";
 
 describe("Given Conditions - Nested Conditions", () => {
     let store: MemoryStore;
@@ -41,7 +42,7 @@ describe("Given Conditions - Nested Conditions", () => {
 
     it("should handle deeply nested existential conditions", async () => {
         // Create a specification for offices that are closed, not reopened, and have administrators
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [E {
                 closure: Office.Closed [
                     closure = office
@@ -63,7 +64,7 @@ describe("Given Conditions - Nested Conditions", () => {
                 ]
             }]) {
             } => office
-        `).parseSpecification();
+        `);
 
         // Test with offices that meet all nested conditions
         const closedOfficeWithAdmin = offices.find(office =>
@@ -82,7 +83,7 @@ describe("Given Conditions - Nested Conditions", () => {
 
     it("should validate nested condition evaluation order", async () => {
         // Test that conditions are evaluated in the correct order (outer to inner)
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [E {
                 closure: Office.Closed [
                     closure = office
@@ -94,7 +95,7 @@ describe("Given Conditions - Nested Conditions", () => {
                 ]
             }]) {
             } => office
-        `).parseSpecification();
+        `);
 
         // Test office that is closed but reopened (should fail inner condition)
         const reopenedOffice = offices.find(office =>
@@ -112,7 +113,7 @@ describe("Given Conditions - Nested Conditions", () => {
 
     it("should handle multiple levels of nested conditions", async () => {
         // Create specification with 3 levels of nesting
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (company: Company [E {
                 office: Office [
                     office.company = company
@@ -134,7 +135,7 @@ describe("Given Conditions - Nested Conditions", () => {
                 ]
             }]) {
             } => company
-        `).parseSpecification();
+        `);
 
         // Test companies that have offices meeting all conditions
         const qualifyingCompany = companies.find(company =>
@@ -156,7 +157,7 @@ describe("Given Conditions - Nested Conditions", () => {
 
     it("should validate short-circuiting in nested conditions", async () => {
         // Test that if outer condition fails, inner conditions aren't evaluated
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [E {
                 closure: Office.Closed [
                     closure = office
@@ -168,7 +169,7 @@ describe("Given Conditions - Nested Conditions", () => {
                 ]
             }]) {
             } => office
-        `).parseSpecification();
+        `);
 
         // Test with office that has no closure at all
         const openOffice = offices.find(office =>
@@ -185,7 +186,7 @@ describe("Given Conditions - Nested Conditions", () => {
 
     it("should handle complex nested condition combinations", async () => {
         // Create specification with mixed EXISTS and NOT EXISTS at multiple levels
-        const specification = new SpecificationParser(`
+        const specification = parseSpecification(`
             (office: Office [E {
                 closure: Office.Closed [
                     closure = office
@@ -207,7 +208,7 @@ describe("Given Conditions - Nested Conditions", () => {
                 ]
             }]) {
             } => office
-        `).parseSpecification();
+        `);
 
         // This tests offices that are closed, not reopened, have admins but no managers
         const qualifyingOffice = offices.find(office =>

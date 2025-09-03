@@ -1,5 +1,6 @@
-import { dehydrateFact, FactReference, MemoryStore, SpecificationParser } from "@src";
+import { dehydrateFact, FactReference, MemoryStore } from "@src";
 import { Administrator, Company, Employee, Manager, Office, OfficeClosed, OfficeReopened, User } from "../companyModel";
+import { parseSpecification } from "../setup/specification-helpers";
 
 /**
  * Comprehensive runtime integration tests for Given Conditions
@@ -54,10 +55,10 @@ describe("Given Conditions Runtime - Integration", () => {
     describe("Backward Compatibility", () => {
         it("should work with backward compatibility (no given conditions)", async () => {
             // Test that existing specifications without given conditions continue to work
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const openOfficeRef: FactReference = {
                 type: "Office",
@@ -78,19 +79,19 @@ describe("Given Conditions Runtime - Integration", () => {
 
         it("should handle mixed scenarios with and without given conditions", async () => {
             // Test both types of specifications work together
-            const withConditions = new SpecificationParser(`
+            const withConditions = parseSpecification(`
                 (office: Office [!E {
                     closure: Office.Closed [
                         closure = office
                     ]
                 }]) {
                 } => office
-            `).parseSpecification();
+            `);
 
-            const withoutConditions = new SpecificationParser(`
+            const withoutConditions = parseSpecification(`
                 (office: Office) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const openOfficeRef: FactReference = {
                 type: "Office",
@@ -109,14 +110,14 @@ describe("Given Conditions Runtime - Integration", () => {
 
     describe("Positive Existential Conditions", () => {
         it("should filter offices that have closure facts", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office [E {
                     closure: Office.Closed [
                         closure = office
                     ]
                 }]) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const openOfficeRef: FactReference = {
                 type: "Office",
@@ -134,14 +135,14 @@ describe("Given Conditions Runtime - Integration", () => {
         });
 
         it("should filter offices that have administrator facts", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (company: Company [E {
                     admin: Administrator [
                         admin.company = company
                     ]
                 }]) {
                 } => company
-            `).parseSpecification();
+            `);
 
             const companyRef: FactReference = {
                 type: "Company",
@@ -154,14 +155,14 @@ describe("Given Conditions Runtime - Integration", () => {
 
     describe("Negative Existential Conditions", () => {
         it("should filter offices that do NOT have closure facts", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office [!E {
                     closure: Office.Closed [
                         closure = office
                     ]
                 }]) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const openOfficeRef: FactReference = {
                 type: "Office",
@@ -179,7 +180,7 @@ describe("Given Conditions Runtime - Integration", () => {
         });
 
         it("should filter offices that are closed but NOT reopened", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office [E {
                     closure: Office.Closed [
                         closure = office
@@ -191,7 +192,7 @@ describe("Given Conditions Runtime - Integration", () => {
                     ]
                 }]) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const closedOfficeRef: FactReference = {
                 type: "Office",
@@ -211,7 +212,7 @@ describe("Given Conditions Runtime - Integration", () => {
 
     describe("Multi-Given Scenarios", () => {
         it("should handle company and office with correlated conditions", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (company: Company, office: Office [E {
                     closure: Office.Closed [
                         closure = office
@@ -222,7 +223,7 @@ describe("Given Conditions Runtime - Integration", () => {
                     company = company
                     office = office
                 }
-            `).parseSpecification();
+            `);
 
             const companyRef: FactReference = {
                 type: "Company",
@@ -239,7 +240,7 @@ describe("Given Conditions Runtime - Integration", () => {
         });
 
         it("should validate that all givens must satisfy their conditions", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (company: Company [E {
                     admin: Administrator [
                         admin.company = company
@@ -253,7 +254,7 @@ describe("Given Conditions Runtime - Integration", () => {
                     company = company
                     office = office
                 }
-            `).parseSpecification();
+            `);
 
             const companyRef: FactReference = {
                 type: "Company",
@@ -280,7 +281,7 @@ describe("Given Conditions Runtime - Integration", () => {
 
     describe("Performance and Memory", () => {
         it("should maintain performance with early filtering", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office [!E {
                     closure: Office.Closed [
                         closure = office
@@ -290,7 +291,7 @@ describe("Given Conditions Runtime - Integration", () => {
                         manager.office = office
                     ]
                 } => office
-            `).parseSpecification();
+            `);
 
             const closedOfficeRef: FactReference = {
                 type: "Office",
@@ -307,10 +308,10 @@ describe("Given Conditions Runtime - Integration", () => {
         });
 
         it("should handle concurrent queries efficiently", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const openOfficeRef: FactReference = {
                 type: "Office",
@@ -337,14 +338,14 @@ describe("Given Conditions Runtime - Integration", () => {
         });
 
         it("should validate memory usage patterns", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office [E {
                     closure: Office.Closed [
                         closure = office
                     ]
                 }]) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const closedOfficeRef: FactReference = {
                 type: "Office",
@@ -396,14 +397,14 @@ describe("Given Conditions Runtime - Integration", () => {
         });
 
         it("should handle empty result sets gracefully", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office [E {
                     nonexistent: NonExistentType [
                         nonexistent = office
                     ]
                 }]) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const openOfficeRef: FactReference = {
                 type: "Office",
@@ -415,7 +416,7 @@ describe("Given Conditions Runtime - Integration", () => {
         });
 
         it("should handle complex nested conditions", async () => {
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (company: Company [E {
                     admin: Administrator [
                         admin.company = company
@@ -432,7 +433,7 @@ describe("Given Conditions Runtime - Integration", () => {
                     ]
                 }]) {
                 } => company
-            `).parseSpecification();
+            `);
 
             const companyRef: FactReference = {
                 type: "Company",
@@ -446,7 +447,7 @@ describe("Given Conditions Runtime - Integration", () => {
     describe("Real-World Scenarios", () => {
         it("should handle office management workflow", async () => {
             // Scenario: Find companies with offices that are open and have active managers
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (company: Company [E {
                     office: Office [
                         office.company = company
@@ -463,7 +464,7 @@ describe("Given Conditions Runtime - Integration", () => {
                     ]
                 }]) {
                 } => company
-            `).parseSpecification();
+            `);
 
             const companyRef: FactReference = {
                 type: "Company",
@@ -475,7 +476,7 @@ describe("Given Conditions Runtime - Integration", () => {
 
         it("should validate employee assignment rules", async () => {
             // Scenario: Find offices that have employees but are not closed
-            const specification = new SpecificationParser(`
+            const specification = parseSpecification(`
                 (office: Office [E {
                     employee: Employee [
                         employee.office = office
@@ -486,7 +487,7 @@ describe("Given Conditions Runtime - Integration", () => {
                     ]
                 }]) {
                 } => office
-            `).parseSpecification();
+            `);
 
             const openOfficeRef: FactReference = {
                 type: "Office",
