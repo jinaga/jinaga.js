@@ -6,4 +6,7 @@ module.exports = {
     '**/test/**/*Spec.ts',
   ],
   reporters: ['jest-progress-bar-reporter'],
+  moduleNameMapper: {
+    '^@src$': '<rootDir>/src',
+  },
 };
