@@ -1,4 +1,4 @@
-import { Jinaga, JinagaTest, User } from "../../src";
+import { Jinaga, JinagaTest, User } from "@src";
 import { Company, Office, model } from "../companyModel";
 
 describe("missing fact handling", () => {

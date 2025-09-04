@@ -1,4 +1,4 @@
-import { SpecificationOf, User } from "../../src";
+import { SpecificationOf, User } from "@src";
 import { Company, Office, OfficeClosed, OfficeReopened, President, UserName, model } from "../companyModel";
 
 describe("given", () => {

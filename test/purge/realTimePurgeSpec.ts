@@ -1,4 +1,4 @@
-import { JinagaClient, Model, PurgeConditions } from "../../src";
+import { JinagaClient, Model, PurgeConditions } from "@src";
 import { createModel, Item, Order, OrderCancelled, OrderCancelledReason, Product, Store } from "../orderModel";
 
 describe("Real-time purge", () => {

@@ -1,4 +1,4 @@
-import { AuthorizationRules, buildModel, Jinaga, JinagaTest, describeAuthorizationRules } from '../../src';
+import { AuthorizationRules, buildModel, describeAuthorizationRules, Jinaga, JinagaTest } from '@src';
 
 describe("Feedback authorization from specification", () => {
   describe("as a user", () => {

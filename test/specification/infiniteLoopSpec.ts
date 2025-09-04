@@ -1,5 +1,4 @@
-import { invertSpecification } from "../../src/specification/inverse";
-import { Specification } from "../../src/specification/specification";
+import { invertSpecification, Specification } from "@src";
 
 // Test case to reproduce the infinite loop issue
 describe("specification inverse infinite loop bug", () => {

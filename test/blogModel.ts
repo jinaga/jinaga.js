@@ -1,4 +1,4 @@
-import { DistributionRules, User, buildModel } from "../src";
+import { DistributionRules, User, buildModel } from "@src";
 
 export class Blog {
   static Type = "Blog" as const;

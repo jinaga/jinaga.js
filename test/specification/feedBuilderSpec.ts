@@ -1,4 +1,4 @@
-import { SpecificationParser, buildFeeds, describeSpecification } from "../../src";
+import { SpecificationParser, buildFeeds, describeSpecification } from "@src";
 
 describe("feed generator", () => {
     it("should produce no feeds for an identity specification", () => {

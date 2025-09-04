@@ -1,4 +1,4 @@
-import { buildModel, DistributionRules, JinagaTest, LabelOf, User } from "../../src";
+import { buildModel, DistributionRules, JinagaTest, LabelOf, User } from "@src";
 
 describe("Distribution rules in unit tests", () => {
     it("should pass when distribution rule allows", async () => {

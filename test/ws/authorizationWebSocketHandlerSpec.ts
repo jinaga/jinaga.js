@@ -1,13 +1,5 @@
-import { WebSocketServer } from 'ws';
-import WebSocket from 'ws';
-import { AuthorizationWebSocketHandler } from '../../src/ws/authorization-websocket-handler';
-import { BookmarkManager } from '../../src/ws/bookmark-manager';
-import { InverseSpecificationEngine } from '../../src/ws/inverse-specification-engine';
-import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
-import { Specification } from '../../src/specification/specification';
-import { serializeGraph } from '../../src/http/serializer';
-import { MemoryStore } from '../../src/memory/memory-store';
-import { ObservableSource } from '../../src/observable/observable';
+import { AuthorizationWebSocketHandler, BookmarkManager, FactEnvelope, FactRecord, FactReference, InverseSpecificationEngine, MemoryStore, ObservableSource, Specification } from '@src';
+import WebSocket, { WebSocketServer } from 'ws';
 
 jest.setTimeout(15000);
 

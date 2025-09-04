@@ -1,4 +1,4 @@
-import { Jinaga, JinagaTest, User } from "../../src";
+import { Jinaga, JinagaTest, User } from "@src";
 import { Company, Employee, Office, OfficeClosed, OfficeReopened, President, model } from "../companyModel";
 
 describe("specification query", () => {

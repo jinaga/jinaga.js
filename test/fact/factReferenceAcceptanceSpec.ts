@@ -1,6 +1,4 @@
-import { Jinaga } from '../../src';
-import { JinagaTest } from '../../src/jinaga-test';
-import { User } from '../../src/model/user';
+import { Jinaga, JinagaTest, User } from '@src';
 import { Company, model } from '../companyModel';
 
 describe('factReference acceptance criteria', () => {

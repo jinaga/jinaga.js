@@ -1,7 +1,4 @@
-import { Jinaga } from '../../src/jinaga';
-import { JinagaTest } from '../../src/jinaga-test';
-import { buildModel } from '../../src/specification/model';
-import { User } from '../../src/model/user';
+import { buildModel, Jinaga, JinagaTest, User } from '@src';
 
 class Task {
     static Type = "IntegrationTest.Task" as const;

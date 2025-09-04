@@ -1,4 +1,4 @@
-import { Specification, SpecificationParser } from "../../src";
+import { Specification, SpecificationParser } from "@src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);

@@ -1,4 +1,4 @@
-import { FactEnvelope, GraphDeserializer } from "../../src";
+import { FactEnvelope, GraphDeserializer } from "@src";
 
 describe("GraphDeserializer", () => {
     it("should read an empty graph", async () => {

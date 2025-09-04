@@ -1,5 +1,4 @@
-import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
-import { IndexedDBQueue } from '../../src/indexeddb/indexeddb-queue';
+import { FactEnvelope, FactRecord, FactReference, IndexedDBQueue } from '@src';
 import * as driver from '../../src/indexeddb/driver';
 
 // Mock the IndexedDB driver functions

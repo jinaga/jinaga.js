@@ -1,22 +1,6 @@
-import { WebSocketServer } from 'ws';
-import WebSocket from 'ws';
+import { AuthorizationNoOp, AuthorizationWebSocketHandler, BookmarkManager, computeHash, FactEnvelope, FactManager, FactRecord, FactReference, InverseSpecificationEngine, JinagaBrowser, MemoryStore, NetworkNoOp, ObservableSource, PassThroughFork, Specification, Subscriber, Trace, Tracer, WsGraphNetwork } from '@src';
 import { createServer, Server } from 'http';
-import { MemoryStore } from '../../src/memory/memory-store';
-import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
-import { computeHash } from '../../src/fact/hash';
-import { Subscriber } from '../../src/observer/subscriber';
-import { WsGraphNetwork } from '../../src/ws/wsGraphNetwork';
-import { AuthorizationWebSocketHandler } from '../../src/ws/authorization-websocket-handler';
-import { BookmarkManager } from '../../src/ws/bookmark-manager';
-import { ObservableSource } from '../../src/observable/observable';
-import { InverseSpecificationEngine } from '../../src/ws/inverse-specification-engine';
-import { Specification } from '../../src/specification/specification';
-import { FactManager } from '../../src/managers/factManager';
-import { PassThroughFork } from '../../src/fork/pass-through-fork';
-import { NetworkNoOp } from '../../src/managers/NetworkManager';
-import { AuthorizationNoOp } from '../../src/authorization/authorization-noop';
-import { JinagaBrowser } from '../../src/jinaga-browser';
-import { Trace, Tracer } from '../../src';
+import WebSocket, { WebSocketServer } from 'ws';
 
 jest.setTimeout(15000);
 

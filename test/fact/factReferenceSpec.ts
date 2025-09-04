@@ -1,5 +1,4 @@
-import { Jinaga } from '../../src/jinaga';
-import { JinagaTest } from '../../src/jinaga-test';
+import { Jinaga, JinagaTest } from '@src';
 
 // Test fact classes
 class TestFact {

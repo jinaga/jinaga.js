@@ -1,4 +1,4 @@
-import { buildModel, FactRepository, LabelOf, ModelBuilder, User } from "../src";
+import { buildModel, FactRepository, LabelOf, ModelBuilder, User } from "@src";
 
 export class UserName {
     static Type = "User.Name" as const;

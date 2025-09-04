@@ -1,4 +1,4 @@
-import { AuthenticationTest, FactManager, Jinaga, MemoryStore, ObservableSource, PassThroughFork, User } from '../../src';
+import { AuthenticationTest, FactManager, Jinaga, MemoryStore, ObservableSource, PassThroughFork, User } from '@src';
 
 // Define a test fact type that will be owned by the single-use principal
 class TestFact {

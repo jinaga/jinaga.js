@@ -1,4 +1,4 @@
-import { FactRecord, KeyPair, dehydrateFact, generateKeyPair, signFacts, verifyEnvelopes } from "../../src";
+import { FactRecord, KeyPair, dehydrateFact, generateKeyPair, signFacts, verifyEnvelopes } from "@src";
 
 describe("keyPair", () => {
     it("should generate consistent signature", async () => {

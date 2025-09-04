@@ -1,6 +1,4 @@
-import { computeHash, verifyHash } from '../../src/fact/hash';
-import { dehydrateFact, Hydration } from '../../src/fact/hydrate';
-import { JinagaTest } from '../../src/jinaga-test';
+import { computeHash, dehydrateFact, Hydration, JinagaTest, verifyHash } from '@src';
 
 describe ('Hash', () => {
     it('should be independent of field order', () => {

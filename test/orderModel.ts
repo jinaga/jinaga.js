@@ -1,4 +1,4 @@
-import { buildModel } from "../src";
+import { buildModel } from "@src";
 
 export function createModel() {
     return buildModel(b => b

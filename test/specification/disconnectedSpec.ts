@@ -1,4 +1,4 @@
-import { DisconnectedSpecificationError, Specification, SpecificationParser, buildModel, invertSpecification } from "../../src";
+import { DisconnectedSpecificationError, Specification, SpecificationParser, buildModel, invertSpecification } from "@src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
