@@ -11,7 +11,7 @@ export function describeDeclaration(references: FactReference[], labels: Label[]
 
 export function describeSpecification(specification: Specification, depth: number) {
     const indent = "    ".repeat(depth);
-    const given = specification.given.map(given => describeGiven(given)).join(", ");
+    const given = specification.given.map(given => describeGiven(given.label)).join(", ");
     const matches = specification.matches.map(match => describeMatch(match, depth + 1)).join("");
     const projection = (specification.projection.type === "composite" && specification.projection.components.length === 0) ? "" :
         " => " + describeProjection(specification.projection, depth);

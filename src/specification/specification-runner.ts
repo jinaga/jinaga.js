@@ -30,7 +30,7 @@ export class SpecificationRunner {
     
     const references = start.reduce((references, reference, index) => ({
       ...references,
-      [specification.given[index].name]: {
+      [specification.given[index].label.name]: {
         type: reference.type,
         hash: reference.hash
       }

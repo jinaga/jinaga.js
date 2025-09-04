@@ -12,8 +12,11 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "root",
-                    type: "Root"
+                    label: {
+                        name: "root",
+                        type: "Root"
+                    },
+                    conditions: []
                 }
             ],
             matches: [],
@@ -35,8 +38,11 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "parent",
-                    type: "MyApp.Parent"
+                    label: {
+                        name: "parent",
+                        type: "MyApp.Parent"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -141,12 +147,18 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
                 },
                 {
-                    name: "company",
-                    type: "MyApp.Company"
+                    label: {
+                        name: "company",
+                        type: "MyApp.Company"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -209,12 +221,18 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
                 },
                 {
-                    name: "company",
-                    type: "MyApp.Company"
+                    label: {
+                        name: "company",
+                        type: "MyApp.Company"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -319,8 +337,11 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -404,8 +425,11 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -509,8 +533,11 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -561,8 +588,11 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -610,8 +640,11 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -653,8 +686,11 @@ describe("Specification parser", () => {
         const expected: Specification = {
             given: [
                 {
-                    name: "user",
-                    type: "Jinaga.User"
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
                 }
             ],
             matches: [
@@ -681,6 +717,61 @@ describe("Specification parser", () => {
             projection: {
                 type: "fact",
                 label: "name"
+            }
+        };
+        expect(specification).toEqual(expected);
+    });
+
+    it("parses a given with existential conditions", () => {
+        const specification = parseSpecification(`
+            (office: Office [
+                !E {
+                    closed: Office.Closed [
+                        closed->office: Office = office
+                    ]
+                }
+            ]) {} => office`);
+
+        const expected: Specification = {
+            given: [
+                {
+                    label: {
+                        name: "office",
+                        type: "Office"
+                    },
+                    conditions: [
+                        {
+                            type: "existential",
+                            exists: false,
+                            matches: [
+                                {
+                                    conditions: [
+                                        {
+                                            type: "path",
+                                            rolesLeft: [
+                                                {
+                                                    name: "office",
+                                                    predecessorType: "Office"
+                                                }
+                                            ],
+                                            labelRight: "office",
+                                            rolesRight: []
+                                        }
+                                    ],
+                                    unknown: {
+                                        name: "closed",
+                                        type: "Office.Closed"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            matches: [],
+            projection: {
+                type: "fact",
+                label: "office"
             }
         };
         expect(specification).toEqual(expected);

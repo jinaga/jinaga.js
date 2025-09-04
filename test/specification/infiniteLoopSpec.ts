@@ -5,7 +5,7 @@ describe("specification inverse infinite loop bug", () => {
     it("should not cause infinite loop with complex match structures", () => {
         // Create a specification that previously caused infinite loop
         const specification: Specification = {
-            given: [{ name: "p1", type: "User" }],
+            given: [{ label: { name: "p1", type: "User" }, conditions: [] }],
             matches: [
                 {
                     unknown: { name: "u1", type: "GameChallenge" },

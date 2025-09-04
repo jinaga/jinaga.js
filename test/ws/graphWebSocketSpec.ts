@@ -165,7 +165,7 @@ describe('WebSocket Graph E2E', () => {
       };
       
       const resolveFeed = (_: string): Specification => ({ 
-        given: [{ name: 'g', type: 'Test.Fact' }], 
+        given: [{ label: { name: 'g', type: 'Test.Fact' }, conditions: [] }], 
         matches: [], 
         projection: { type: 'composite', components: [] } 
       });

@@ -26,13 +26,13 @@ export function invertSpecification(specification: Specification): Specification
     
     // Turn each given into a match.
     const emptyMatches: Match[] = specification.given.map(g => ({
-        unknown: g,
-        conditions: []
+        unknown: g.label,
+        conditions: g.conditions
     }));
     const matches: Match[] = [...emptyMatches, ...specification.matches];
 
-    const labels: Label[] = [...specification.given, ...specification.matches.map(m => m.unknown)];
-    const givenSubset: string[] = specification.given.map(g => g.name);
+    const labels: Label[] = [...specification.given.map(g => g.label), ...specification.matches.map(m => m.unknown)];
+    const givenSubset: string[] = specification.given.map(g => g.label.name);
     const matchLabels: Label[] = specification.matches.map(m => m.unknown);
     const resultSubset: string[] = [ ...givenSubset, ...matchLabels.map(l => l.name) ];
     const context: InverterContext = {
@@ -59,7 +59,7 @@ function invertMatches(matches: Match[], labels: Label[], context: InverterConte
         const simplified: Match[] | null = simplifyMatches(matches, label.name);
         if (simplified !== null) {
             const inverseSpecification: Specification = {
-                given: [label],
+                given: [{label, conditions: []}],
                 matches: simplified.slice(1),
                 projection: context.projection
             };
@@ -183,7 +183,7 @@ function invertExistentialConditions(outerMatches: Match[], conditions: Conditio
                 matches = shakeTree(matches, match.unknown.name);
                 const matchesWithoutCondition: Match[] = removeCondition(matches.slice(1), condition);
                 const inverseSpecification: Specification = {
-                    given: [match.unknown],
+                    given: [{ label: match.unknown, conditions: [] }],
                     matches: matchesWithoutCondition,
                     projection: context.projection
                 };

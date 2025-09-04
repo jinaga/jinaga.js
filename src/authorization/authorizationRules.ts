@@ -201,7 +201,7 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
             throw new Error('The head of the specification must project a fact.');
         }
         let results = graph.executeSpecification(
-            head.given[0].name,
+            head.given[0].label.name,
             head.matches,
             head.projection.label,
             fact);
@@ -257,7 +257,7 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
             throw new Error('The head of the specification must project a fact.');
         }
         const results = graph.executeSpecification(
-            head.given[0].name,
+            head.given[0].label.name,
             head.matches,
             head.projection.label,
             fact);

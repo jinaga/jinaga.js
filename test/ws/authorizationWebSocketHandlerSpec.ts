@@ -35,7 +35,7 @@ describe('AuthorizationWebSocketHandler', () => {
       observable.removeSpecificationListener.bind(observable)
     );
 
-    const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } });
+    const resolveFeed = (_: string): Specification => ({ given: [{ label: { name: 'g', type: 'T' }, conditions: [] }], matches: [], projection: { type: 'composite', components: [] } });
 
     wss.once('connection', (socket) => {
       const handler = new AuthorizationWebSocketHandler(authStub, resolveFeed, engine, bookmarks);
@@ -83,7 +83,7 @@ describe('AuthorizationWebSocketHandler', () => {
       async load(_id: any, refs: FactReference[]) { return refs.length ? [envelope] : []; }
     } as any;
 
-    const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'Test.Fact' }], matches: [], projection: { type: 'composite', components: [] } });
+    const resolveFeed = (_: string): Specification => ({ given: [{ label: { name: 'g', type: 'Test.Fact' }, conditions: [] }], matches: [], projection: { type: 'composite', components: [] } });
 
     wss.once('connection', (socket) => {
       const handler = new AuthorizationWebSocketHandler(authStub, resolveFeed, engine, bookmarks);
@@ -139,7 +139,7 @@ describe('AuthorizationWebSocketHandler', () => {
       }
     } as any;
 
-    const feedSpec: Specification = { given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } };
+    const feedSpec: Specification = { given: [{ label: { name: 'g', type: 'T' }, conditions: [] }], matches: [], projection: { type: 'composite', components: [] } };
     const resolveFeed = (_: string): Specification => feedSpec;
     const resolveFeedInfo = (_: string) => ({ specification: feedSpec, namedStart: {} as any });
 
@@ -185,7 +185,7 @@ describe('AuthorizationWebSocketHandler', () => {
       }
     } as any;
 
-    const feedSpec: Specification = { given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } };
+    const feedSpec: Specification = { given: [{ label: { name: 'g', type: 'T' }, conditions: [] }], matches: [], projection: { type: 'composite', components: [] } };
     const resolveFeed = (_: string): Specification => feedSpec;
     const resolveFeedInfo = (_: string) => ({ specification: feedSpec, namedStart: {} as any });
 
