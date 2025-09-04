@@ -1,4 +1,4 @@
-import { Condition, ExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
+import { Condition, ExistentialCondition, isExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
 import { detectDisconnectedSpecification } from "./UnionFind";
 
 type InverseOperation = "add" | "remove";
@@ -59,7 +59,7 @@ function invertMatches(matches: Match[], labels: Label[], context: InverterConte
         const simplified: Match[] | null = simplifyMatches(matches, label.name);
         if (simplified !== null) {
             const inverseSpecification: Specification = {
-                given: [{label, conditions: []}],
+                given: [{label, conditions: simplified[0].conditions.filter(isExistentialCondition) as ExistentialCondition[]}],
                 matches: simplified.slice(1),
                 projection: context.projection
             };
@@ -183,7 +183,7 @@ function invertExistentialConditions(outerMatches: Match[], conditions: Conditio
                 matches = shakeTree(matches, match.unknown.name);
                 const matchesWithoutCondition: Match[] = removeCondition(matches.slice(1), condition);
                 const inverseSpecification: Specification = {
-                    given: [{ label: match.unknown, conditions: [] }],
+                    given: [{ label: match.unknown, conditions: match.conditions.filter(isExistentialCondition) as ExistentialCondition[] }],
                     matches: matchesWithoutCondition,
                     projection: context.projection
                 };
