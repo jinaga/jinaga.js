@@ -35,6 +35,29 @@ export class SpecificationRunner {
         hash: reference.hash
       }
     }), {} as ReferencesByName);
+
+    // Evaluate given conditions
+    for (let i = 0; i < specification.given.length; i++) {
+      const given = specification.given[i];
+      const givenReference = references[given.label.name];
+
+      for (const condition of given.conditions) {
+        if (condition.type === "existential") {
+          const matches = await this.executeMatches(
+            references,
+            condition.matches
+          );
+          const conditionSatisfied = condition.exists ?
+            matches.length > 0 :
+            matches.length === 0;
+
+          if (!conditionSatisfied) {
+            return [];
+          }
+        }
+      }
+    }
+
     const products = await this.executeMatchesAndProjection(references, specification.matches, specification.projection);
     return products;
   }
