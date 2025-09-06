@@ -1,10 +1,11 @@
 import { dehydrateReference, Dehydration, FactEnvelope, MemoryStore, SpecificationParser, User } from "@src";
-import { Company, Office, OfficeClosed } from "../companyModel";
+import { Company, Office, OfficeClosed, OfficeReopened } from "../companyModel";
 
 describe("query given conditions", () => {
     let store: MemoryStore;
     let office: Office;
     let closedOffice!: Office;
+    let anotherClosedOffice!: Office;
     let company: Company;
 
     beforeEach(async () => {
@@ -15,7 +16,10 @@ describe("query given conditions", () => {
         company = new Company(creator, "TestCo");
         office = new Office(company, "TestOffice");
         closedOffice = new Office(company, "ClosedOffice");
+        anotherClosedOffice = new Office(company, "AnotherClosedOffice");
         const closed = new OfficeClosed(closedOffice, new Date());
+        const anotherClosed = new OfficeClosed(anotherClosedOffice, new Date());
+        const reopened = new OfficeReopened(closed);
 
         // Save facts to store
         const dehydration = new Dehydration();
@@ -24,6 +28,9 @@ describe("query given conditions", () => {
         dehydration.dehydrate(office);
         dehydration.dehydrate(closedOffice);
         dehydration.dehydrate(closed);
+        dehydration.dehydrate(anotherClosedOffice);
+        dehydration.dehydrate(anotherClosed);
+        dehydration.dehydrate(reopened);
         await store.save(dehydration.factRecords().map((f: any) => <FactEnvelope>({
             fact: f,
             signatures: []
@@ -126,6 +133,112 @@ describe("query given conditions", () => {
         expect(results.length).toBe(1);
         expect(results[0].result.type).toBe("Office");
         expect(results[0].result.identifier).toBe("TestOffice");
+    });
+
+    it("should match if positive existential condition is satisfied", async () => {
+        const results = await parseAndExecute(`
+            (office: Office [
+                E {
+                    closure: Office.Closed [
+                        closure->office: Office = office
+                    ]
+                }
+            ]) {
+            } => office
+        `, [closedOffice]);
+
+        // Assert that the query returns a result because closedOffice has a closure (satisfies E)
+        expect(results.length).toBe(1);
+        expect(results[0].result.type).toBe("Office");
+        expect(results[0].result.identifier).toBe("ClosedOffice");
+    });
+
+    it("should handle multiple conditions on same given", async () => {
+        const results = await parseAndExecute(`
+            (office: Office [
+                E {
+                    closure: Office.Closed [
+                        closure->office: Office = office
+                    ]
+                }
+                !E {
+                    president: President [
+                        president->office: Office = office
+                    ]
+                }
+            ]) {
+            } => office
+        `, [closedOffice]);
+
+        // Assert that the query returns a result because closedOffice has closure but no president
+        expect(results.length).toBe(1);
+        expect(results[0].result.type).toBe("Office");
+        expect(results[0].result.identifier).toBe("ClosedOffice");
+    });
+
+    it("should handle mixed condition types on single given", async () => {
+        const results = await parseAndExecute(`
+            (office: Office [
+                E {
+                    closure: Office.Closed [
+                        closure->office: Office = office
+                    ]
+                }
+                !E {
+                    president: President [
+                        president->office: Office = office
+                    ]
+                }
+            ]) {
+            } => office
+        `, [office]);
+
+        // Assert that the query returns no results because office has no closure (violates E)
+        expect(results.length).toBe(0);
+    });
+
+    it("should handle nested existential conditions", async () => {
+        const results = await parseAndExecute(`
+            (office: Office [
+                E {
+                    closure: Office.Closed [
+                        closure->office: Office = office
+                        !E {
+                            reopened: Office.Reopened [
+                                reopened->officeClosed: Office.Closed = closure
+                            ]
+                        }
+                    ]
+                }
+            ]) {
+            } => office
+        `, [closedOffice]);
+
+        // Assert that the query returns no results because closedOffice has closure with reopened (violates !E)
+        expect(results.length).toBe(0);
+    });
+
+    it("should handle nested existential conditions when not reopened", async () => {
+        const results = await parseAndExecute(`
+            (office: Office [
+                E {
+                    closure: Office.Closed [
+                        closure->office: Office = office
+                        !E {
+                            reopened: Office.Reopened [
+                                reopened->officeClosed: Office.Closed = closure
+                            ]
+                        }
+                    ]
+                }
+            ]) {
+            } => office
+        `, [anotherClosedOffice]);
+
+        // Assert that the query returns a result because anotherClosedOffice has closure with no reopened
+        expect(results.length).toBe(1);
+        expect(results[0].result.type).toBe("Office");
+        expect(results[0].result.identifier).toBe("AnotherClosedOffice");
     });
 
     async function parseAndExecute(specText: string, given: any[]) {
