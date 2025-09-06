@@ -9,4 +9,5 @@ module.exports = {
   moduleNameMapper: {
     '^@src$': '<rootDir>/src',
   },
+  setupFilesAfterEnv: ['<rootDir>/test/setup/indexeddb-setup.ts'],
 };
