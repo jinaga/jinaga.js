@@ -109,6 +109,25 @@ describe("query given conditions", () => {
         expect(results[0].result.identifier).toBe("ClosedOffice");
     });
 
+    it("should handle conditions that reference prior givens", async () => {
+        const results = await parseAndExecute(`
+            (office: Office, company: Company [
+                E {
+                    o: Office [
+                        o->company: Company = company
+                        o = office
+                    ]
+                }
+            ]) {
+            } => office
+        `, [office, company]);
+
+        // Assert that the query returns a result because office belongs to company
+        expect(results.length).toBe(1);
+        expect(results[0].result.type).toBe("Office");
+        expect(results[0].result.identifier).toBe("TestOffice");
+    });
+
     async function parseAndExecute(specText: string, given: any[]) {
         // Parse the specification from text
         const parser = new SpecificationParser(specText);

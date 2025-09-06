@@ -150,4 +150,32 @@ describe("Given Conditions", () => {
         expect(secondGiven.label.type).toBe("User");
         expect(secondGiven.conditions.length).toBe(0);
     });
+
+    it("should parse given conditions that reference prior givens", () => {
+        const specification = parseSpecification(`
+            (office: Office, company: Company [
+                E {
+                    o: Office [
+                        o->company: Company = company
+                        o = office
+                    ]
+                }
+            ]) {
+            } => office
+        `);
+
+        expect(specification.given.length).toBe(2);
+        
+        const firstGiven = specification.given[0];
+        expect(firstGiven.label.name).toBe("office");
+        expect(firstGiven.conditions.length).toBe(0);
+        
+        const secondGiven = specification.given[1];
+        expect(secondGiven.label.name).toBe("company");
+        expect(secondGiven.conditions.length).toBe(1);
+        
+        const condition = secondGiven.conditions[0];
+        expect(condition.type).toBe("existential");
+        expect(condition.exists).toBe(true);
+    });
 });
