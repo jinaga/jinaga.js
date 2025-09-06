@@ -114,29 +114,34 @@ export class SpecificationParser {
             throw new Invalid("The specification must contain at least one given label");
         }
         const givens = [];
-        givens.push(this.parseGivenLabel());
+        let labels: Label[] = [];
+        const firstGiven = this.parseGivenLabel(labels);
+        givens.push(firstGiven);
+        labels.push(firstGiven.label);
         while (this.consume(",")) {
-            givens.push(this.parseGivenLabel());
+            const given = this.parseGivenLabel(labels);
+            givens.push(given);
+            labels.push(given.label);
         }
         this.expect(")");
         return givens;
     }
 
-    parseGivenLabel(): SpecificationGiven {
+    parseGivenLabel(labels: Label[]): SpecificationGiven {
         const label = this.parseLabel();
         const conditions: ExistentialCondition[] = [];
-        
+
         // Check if there are conditions on this given
         if (this.consume("[")) {
             if (this.continues("]")) {
                 throw new Invalid(`The given '${label.name}' has no conditions`);
             }
             while (!this.consume("]")) {
-                const condition = this.parseGivenCondition(label, []);
+                const condition = this.parseGivenCondition(label, labels);
                 conditions.push(condition);
             }
         }
-        
+
         return {
             label,
             conditions
