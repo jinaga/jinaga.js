@@ -1,11 +1,11 @@
 ---
-description: "GameHub documentation structure standards for organizing project documentation into logical sections including implementation plans, technical architecture, user guides, and setup documentation. Emphasizes critical plan file requirements with progress tracking, checklists, phased work breakdowns, and project management focus. Includes file naming conventions, markdown formatting standards, content organization guidelines, and version control practices for maintaining documentation quality."
+description: "Documentation structure standards for organizing project documentation into logical sections including implementation plans, technical architecture, user guides, and setup documentation. Emphasizes critical plan file requirements with progress tracking, checklists, phased work breakdowns, and project management focus. Includes file naming conventions, markdown formatting standards, content organization guidelines, and version control practices for maintaining documentation quality."
 alwaysApply: true
 ---
 # Documentation Structure and Standards
 
 ## Overview
-The `/docs` folder contains comprehensive documentation for the GameHub project, organized into logical sections for different types of documentation and audiences.
+The `/docs` folder contains comprehensive documentation for the project, organized into logical sections for different types of documentation and audiences.
 
 ## Documentation Structure
 
@@ -16,6 +16,7 @@ The `/docs` folder contains comprehensive documentation for the GameHub project,
 - ✅ **MUST contain checklists and phased work breakdowns**
 - ✅ **MUST include progress tracking and status indicators**
 - ✅ **MUST outline prerequisites and dependencies**
+- ✅ **MUST include incremental acceptance criteria and testing requirements**
 - ✅ **MUST NOT contain source code or implementation details**
 - ✅ **MUST focus on planning, coordination, and project management**
 
@@ -26,6 +27,8 @@ The `/docs` folder contains comprehensive documentation for the GameHub project,
 - Track completion status with visual indicators (✅, ❌, 🔄)
 - Include progress summaries and current status
 - Focus on "what" and "when" rather than "how"
+- **MUST include testable acceptance criteria for each phase**
+- **MUST specify testing approach and validation steps**
 
 **Example Structure**:
 ```markdown
@@ -46,6 +49,49 @@ The `/docs` folder contains comprehensive documentation for the GameHub project,
 - [x] Install required tools
 - [x] Configure development environment
 - [x] Set up version control
+
+### 1.2 Acceptance Criteria
+- [x] All tools install without errors
+- [x] Environment configuration validated
+- [x] Version control repository accessible
+```
+
+### Plan Testing Requirements ⭐ **CRITICAL**
+**Plans MUST include**:
+- [ ] **Incremental acceptance criteria for each phase** - Specific, testable criteria
+- [ ] **Test specifications or validation steps** - How to verify completion
+- [ ] **Success metrics that can be objectively measured** - Quantifiable outcomes
+- [ ] **Testing approach specification** - Automated, manual, integration, or combination
+
+**Acceptance Criteria Guidelines**:
+- Each phase should have 3-5 specific, testable criteria
+- Criteria should be written as "Given X, when Y, then Z" statements
+- Include both functional and non-functional requirements
+- Specify testing approach (automated tests, manual validation, integration tests)
+- Define what constitutes "done" for each phase
+
+**Testing Documentation Requirements**:
+- **Unit Tests**: Specify which functions/classes need unit test coverage
+- **Integration Tests**: Define how components work together
+- **Manual Validation**: List steps for manual testing and verification
+- **Performance Tests**: Include performance benchmarks where applicable
+- **Error Handling**: Specify error scenarios and expected behavior
+
+**Example Acceptance Criteria**:
+```markdown
+### Phase 1: Core Implementation ✅
+**Acceptance Criteria**:
+- [x] Function `handle_tiktok_url()` exists and is callable
+- [x] TikTok URL detection patterns correctly identify all supported formats
+- [x] URL normalization produces consistent, comparable results
+- [x] Caching system prevents duplicate downloads
+- [x] Error handling gracefully manages invalid URLs
+
+**Testing Approach**:
+- Unit tests for URL pattern matching functions
+- Integration tests for caching system
+- Manual validation with sample TikTok URLs
+- Error handling tests with malformed URLs
 ```
 
 ### `/docs/prds/` - Product Requirements Documents
@@ -174,7 +220,19 @@ Brief description of the project or feature being implemented.
 - [ ] Pending task
 - [ ] Another task
 
-### 1.2 [Another Task Group]
+### 1.2 Acceptance Criteria
+**Functional Requirements**:
+- [ ] Criterion A - specific, testable outcome
+- [ ] Criterion B - specific, testable outcome
+- [ ] Criterion C - specific, testable outcome
+
+**Testing Approach**:
+- [ ] Unit tests for [specific functions]
+- [ ] Integration tests for [component interactions]
+- [ ] Manual validation steps: [list specific steps]
+- [ ] Error handling tests: [specific error scenarios]
+
+### 1.3 [Another Task Group]
 **Files**: `specific/files.md`
 
 **Required Changes**:
@@ -258,3 +316,5 @@ Brief description of the feature or product being defined.
 8. **Maintenance**: Update plan files as work progresses and phases are completed.
 
 9. **Clarity**: Plans should be clear enough for team members to understand what needs to be done and track progress effectively.
+
+10. **Testing Requirements**: Plans MUST include specific, testable acceptance criteria and testing approaches. Without these, implementation cannot be properly validated or considered complete.

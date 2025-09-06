@@ -1,0 +1,70 @@
+---
+alwaysApply: false
+---
+# Implementation Rule
+
+## Requirements
+Review the mentioned section of the plan against the current application as implemented. Identify any issues, inconsistencies, or points of confusion.
+
+## Clarification Process
+If the instructions are unclear:
+1. Respond with "Before we implement the plan" followed by your question or clarification.
+2. If the user insists that we proceed, then proceed with the plan as documented with no further questions.
+3. If the user provides the necessary clarification, update the plan and then proceed.
+
+## Scope Management
+If you would like to extend or deviate from the plan:
+1. Explain to the user the extension or deviation you would like to take, and ask their advice.
+2. If the user agrees, update the plan and then proceed.
+3. If the user disagrees, proceed with the plan as documented.
+
+## Implementation Steps
+If the instructions are clear, or if we are to proceed, then:
+1. Implement the plan faithfully as documented - NO ADDITIONS
+2. Update the plan to indicate progress
+3. Report progress to the user
+4. Suggest a concise commit description for the progress achieved
+
+## Progress Tracking Requirements ⭐ **CRITICAL**
+**NEVER mark a task as complete without actual implementation:**
+
+### Code Implementation Tasks
+- ✅ **ONLY mark complete** after the actual code/function is written and saved to the file
+- ✅ **ONLY mark complete** after verifying the code compiles/runs without syntax errors
+- ✅ **ONLY mark complete** after confirming the function exists in the correct file location
+
+### Testing Tasks  
+- ✅ **ONLY mark complete** after actual test files are created and saved
+- ✅ **ONLY mark complete** after test framework is set up and configured
+- ✅ **ONLY mark complete** after tests are written and can be executed
+- ❌ **NEVER mark complete** based on "planning to test" or "testing approach defined"
+
+### Integration Tasks
+- ✅ **ONLY mark complete** after actual integration code is implemented
+- ✅ **ONLY mark complete** after verifying components work together
+- ✅ **ONLY mark complete** after confirming no breaking changes
+
+### Documentation Tasks
+- ✅ **ONLY mark complete** after actual documentation is written and saved
+- ❌ **NEVER mark complete** based on "planning to document" or "documentation approach defined"
+
+### Verification Process
+Before marking any task complete:
+1. **Verify the actual code/function exists** in the specified file location
+2. **Check that it compiles/runs** without syntax errors
+3. **Confirm it meets the acceptance criteria** specified in the plan
+4. **Ensure it's properly integrated** if it's an integration task
+
+## Validation (ONLY if specified in plan)
+- Run tests ONLY if explicitly documented
+- If no tests specified: Skip testing and report "No testing required"
+- Testing means: executing functions, running scripts, integration checks
+- Testing does NOT mean: print statements, console output, status messages
+
+## Success Criteria
+- All plan checkboxes marked complete **ONLY after actual implementation**
+- All required functions exist and are syntactically correct
+- Plan file updated with **accurate** completion status
+- No syntax errors in modified files
+- **No premature completion marking** - implementation must be real and verifiable
+- No syntax errors in modified files
