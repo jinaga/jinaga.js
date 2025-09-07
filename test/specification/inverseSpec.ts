@@ -76,13 +76,7 @@ describe("specification inverse", () => {
         const formatted = formatInverses(inverses);
 
         expect(formatted).toEqual([`
-            (u1: Office [
-                !E {
-                    u2: Office.Closed [
-                        u2->office: Office = u1
-                    ]
-                }
-            ]) {
+            (u1: Office) {
                 p1: Company [
                     p1 = u1->company: Company
                 ]
@@ -146,29 +140,12 @@ describe("specification inverse", () => {
         const formatted = formatInverses(inverses);
 
         expect(formatted).toEqual([`
-            (u1: Office [
-                !E {
-                    u2: Office.Closed [
-                        u2->office: Office = u1
-                        !E {
-                            u3: Office.Reopened [
-                                u3->officeClosed: Office.Closed = u2
-                            ]
-                        }
-                    ]
-                }
-            ]) {
+            (u1: Office) {
                 p1: Company [
                     p1 = u1->company: Company
                 ]
             } => u1`,`
-            (u2: Office.Closed [
-                !E {
-                    u3: Office.Reopened [
-                        u3->officeClosed: Office.Closed = u2
-                    ]
-                }
-            ]) {
+            (u2: Office.Closed) {
                 u1: Office [
                     u1 = u2->office: Office
                 ]

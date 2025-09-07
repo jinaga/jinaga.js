@@ -181,10 +181,15 @@ function invertExistentialConditions(outerMatches: Match[], conditions: Conditio
             let matches = [ ...outerMatches, ...condition.matches ];
             for (const match of condition.matches) {
                 matches = shakeTree(matches, match.unknown.name);
-                const matchesWithoutCondition: Match[] = removeCondition(matches.slice(1), condition);
+                const matchesWithoutCondition: Match[] = removeCondition(matches, condition);
+                const simplifiedMatches: Match[] | null = simplifyMatches(matchesWithoutCondition, match.unknown.name);
+                if (simplifiedMatches === null) {
+                    // The matches in the existential condition are unsatisfiable.
+                    continue;
+                }
                 const inverseSpecification: Specification = {
-                    given: [{ label: match.unknown, conditions: match.conditions.filter(isExistentialCondition) as ExistentialCondition[] }],
-                    matches: matchesWithoutCondition,
+                    given: [{ label: match.unknown, conditions: simplifiedMatches[0].conditions.filter(isExistentialCondition) as ExistentialCondition[] }],
+                    matches: simplifiedMatches.slice(1),
                     projection: context.projection
                 };
                 const operation = inferOperation(parentOperation, condition.exists);
@@ -284,23 +289,51 @@ function simplifyMatch(match: Match, given: string): Match | null {
             return null;
         }
 
+        let simplifiedCondition: Condition = condition;
         if (condition.type === "existential") {
-            const anyExpectsSuccessor = condition.matches.some(m =>
-                m.conditions.some(c => expectsSuccessor(c, given)));
-            if (anyExpectsSuccessor && condition.exists) {
-                // This existential condition expects successors of the given.
-                // There are no successors yet, so the condition is unsatisfiable.
-                return null;
+            // Simplify the matches in the existential condition.
+            const simplifiedMatches: Match[] | null = simplifyMatches(condition.matches, given);
+            if (simplifiedMatches === null) {
+                if (condition.exists) {
+                    // The matches in the existential condition are unsatisfiable.
+                    return null;
+                }
+                else {
+                    // The matches in the existential condition are unsatisfiable.
+                    // The existential condition is always true, so we can skip it.
+                    continue;
+                }
             }
+            const anyExpectsSuccessor = simplifiedMatches.some(m =>
+                m.conditions.some(c => expectsSuccessor(c, given)));
+            if (anyExpectsSuccessor) {
+                if (condition.exists) {
+                    // This existential condition expects successors of the given.
+                    // There are no successors yet, so the condition is unsatisfiable.
+                    return null;
+                }
+                else {
+                    // This existential condition expects successors of the given.
+                    // There are no successors yet, so the condition is always true.
+                    continue;
+                }
+            }
+            simplifiedCondition = {
+                type: "existential",
+                exists: condition.exists,
+                matches: simplifiedMatches
+            };
         }
 
-        simplifiedConditions.push(condition);
+        simplifiedConditions.push(simplifiedCondition);
     }
 
-    return {
+    const simplifiedMatch: Match = {
         unknown: match.unknown,
         conditions: simplifiedConditions
     };
+
+    return simplifiedMatch;
 }
 
 function expectsSuccessor(condition: Condition, given: string) {
