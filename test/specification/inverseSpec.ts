@@ -1,5 +1,5 @@
 import { describeSpecification, invertSpecification, SpecificationInverse, SpecificationOf, User } from "@src";
-import { Company, model, Office, OfficeClosed, OfficeReopened, President } from "../companyModel";
+import { Administrator, Company, model, Office, OfficeClosed, OfficeReopened, President } from "../companyModel";
 
 describe("specification inverse", () => {
     it("should invert successor", () => {
@@ -264,6 +264,82 @@ describe("specification inverse", () => {
             (u1: President) {
                 p1: Office [
                     p1->company: Company = u1->office: Office->company: Company
+                ]
+            } => u1`
+        ]);
+    });
+
+    it("should keep existential condition if based on predecessor", () => {
+        const specification = model.given(Company).match(company =>
+            company.successors(President, president => president.office.company)
+                .exists(president => president.office.successors(OfficeClosed, officeClosed => officeClosed.office)
+                    .notExists(officeClosed => officeClosed.successors(OfficeReopened, officeReopened => officeReopened.officeClosed))
+            )
+        );
+        const description = "\n" + describeSpecification(specification.specification, 3).trimEnd();
+        expect(description).toEqual(`
+            (p1: Company) {
+                u1: President [
+                    u1->office: Office->company: Company = p1
+                    E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1->office: Office
+                            !E {
+                                u3: Office.Reopened [
+                                    u3->officeClosed: Office.Closed = u2
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            } => u1`);
+
+        const inverses = fromSpecification(specification);
+
+        expect(inverses).toEqual([`
+            (u1: President [
+                E {
+                    u2: Office.Closed [
+                        u2->office: Office = u1->office: Office
+                        !E {
+                            u3: Office.Reopened [
+                                u3->officeClosed: Office.Closed = u2
+                            ]
+                        }
+                    ]
+                }
+            ]) {
+                p1: Company [
+                    p1 = u1->office: Office->company: Company
+                ]
+            } => u1`, `
+            (u2: Office.Closed) {
+                u1: President [
+                    u1->office: Office = u2->office: Office
+                ]
+                p1: Company [
+                    p1 = u1->office: Office->company: Company
+                ]
+            } => u1`, `
+            (u3: Office.Reopened) {
+                u2: Office.Closed [
+                    u2 = u3->officeClosed: Office.Closed
+                ]
+                u1: President [
+                    u1->office: Office = u2->office: Office
+                    E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1->office: Office
+                            !E {
+                                u3: Office.Reopened [
+                                    u3->officeClosed: Office.Closed = u2
+                                ]
+                            }
+                        ]
+                    }
+                ]
+                p1: Company [
+                    p1 = u1->office: Office->company: Company
                 ]
             } => u1`
         ]);
