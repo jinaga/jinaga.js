@@ -4,6 +4,15 @@
 
 Jinaga.js is an end-to-end application state management framework written in TypeScript. The library provides immutable data structures for distributed systems and can run in both browser and Node.js environments.
 
+## Jinaga Ecosystem
+
+This is the base project in a set of related projects:
+
+- **jinaga.js** (this project): Core client library for browsers and Node.js testing
+- **jinaga-server**: Server-side components with PostgreSQL store and networking infrastructure  
+- **jinaga-react**: React hooks for integration into front-end applications
+- **jinaga-replicator**: Docker container for data synchronization and storage
+
 ## Working Effectively
 
 ### Bootstrap and Build Process
@@ -41,7 +50,7 @@ npm test
 
 2. **Multi-Environment Testing**: Test both Node.js and browser compatibility since this library supports both environments.
 
-3. **State Management Scenarios**: Test creating facts, querying data, and observable subscriptions.
+3. **Production Component Testing**: Test with production components and avoid the use of mocks. Create real facts, execute actual queries, and test observable subscriptions with realistic scenarios. Mocks can hide integration issues and don't validate the full state management pipeline that defines Jinaga's core value proposition.
 
 ### CI Validation
 Always run before committing:
@@ -91,21 +100,51 @@ Create test instances for development and testing:
 const { JinagaTest } = require('./dist/index.js');
 const j = JinagaTest.create({
   // Optional configuration
-  initialState: [],
-  user: {},
-  device: {}
+  initialState: [], // Pre-populate with facts
 });
+```
+
+### Creating Facts
+Use proper constructors for fact types:
+```javascript
+// Import models (typically from your domain)
+const { User } = require('./dist/index.js');
+
+// Create facts with proper structure
+const user = new User("--- PUBLIC KEY GOES HERE ---");
+const createdUser = await j.fact(user);
 ```
 
 ### Facts and Queries
 Jinaga works with immutable "facts" - data structures representing state:
 ```javascript
-// Create a fact
-const user = { type: 'User', name: 'Test User' };
+// Create facts using proper constructors
+const user = new User("--- PUBLIC KEY GOES HERE ---");
 await j.fact(user);
 
-// Query facts (in tests)
-const users = await j.query({ type: 'User' });
+// Query facts using specifications and models
+const specification = model.given(Company).match((company, facts) =>
+    facts.ofType(Office)
+        .join(office => office.company, company)
+);
+const offices = await j.query(specification, company);
+```
+
+### Watch and Subscribe APIs
+Jinaga provides reactive APIs for real-time updates:
+```javascript
+// Watch for changes with immediate callback
+const observer = j.watch(specification, company, office => {
+    console.log('Office found:', office.identifier);
+});
+await observer.loaded(); // Wait for initial results
+observer.stop(); // Clean up when done
+
+// Subscribe for continuous updates
+const subscription = j.subscribe(specification, company, office => {
+    console.log('Office updated:', office.identifier);
+});
+subscription.stop(); // Clean up when done
 ```
 
 ### Replicator Connection
@@ -120,7 +159,8 @@ const j = JinagaBrowser.create({
 
 ### Browser vs Node.js
 - **Browser**: Use `JinagaBrowser.create()` for client applications
-- **Node.js**: Use `JinagaTest.create()` for testing and server scenarios
+- **Testing**: Use `JinagaTest.create()` for all testing scenarios
+- **Server**: Use the separate `jinaga-server` package for server-side scenarios with PostgreSQL store and networking components
 - **Dual Support**: Many modules have environment-specific optimizations
 
 ### Docker Replicator
@@ -146,6 +186,34 @@ docker run --name my-replicator -p8080:8080 jinaga/jinaga-replicator
 - Authorization and authentication tests
 - WebSocket protocol tests
 - HTTP client tests
+
+### Core API Testing Patterns
+Study the test files to understand all three core APIs:
+
+1. **Query API**: Execute specifications to retrieve current facts
+   ```javascript
+   const specification = model.given(Company).match((company, facts) =>
+       facts.ofType(Office).join(office => office.company, company)
+   );
+   const offices = await j.query(specification, company);
+   ```
+
+2. **Watch API**: Get immediate results plus notifications of changes
+   ```javascript
+   const observer = j.watch(specification, company, office => {
+       // Handle each office found or added
+   });
+   await observer.loaded(); // Wait for initial results
+   observer.stop(); // Clean up
+   ```
+
+3. **Subscribe API**: Get notifications of changes (no immediate results)
+   ```javascript
+   const subscription = j.subscribe(specification, company, office => {
+       // Handle each new office added
+   });
+   subscription.stop(); // Clean up
+   ```
 
 ## Common Development Tasks
 
