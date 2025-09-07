@@ -123,9 +123,8 @@ const user = new User("--- PUBLIC KEY GOES HERE ---");
 await j.fact(user);
 
 // Query facts using specifications and models
-const specification = model.given(Company).match((company, facts) =>
-    facts.ofType(Office)
-        .join(office => office.company, company)
+const specification = model.given(Company).match(company =>
+    company.successors(Office, office => office.company)
 );
 const offices = await j.query(specification, company);
 ```
@@ -192,8 +191,8 @@ Study the test files to understand all three core APIs:
 
 1. **Query API**: Execute specifications to retrieve current facts
    ```javascript
-   const specification = model.given(Company).match((company, facts) =>
-       facts.ofType(Office).join(office => office.company, company)
+   const specification = model.given(Company).match(company =>
+       company.successors(Office, office => office.company)
    );
    const offices = await j.query(specification, company);
    ```
