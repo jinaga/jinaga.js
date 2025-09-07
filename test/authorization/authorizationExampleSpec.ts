@@ -1,4 +1,4 @@
-import { AuthorizationRules, buildModel, Jinaga, JinagaTest } from '../../src';
+import { AuthorizationRules, buildModel, Jinaga, JinagaTest } from '@src';
 
 describe("Feedback authorization", () => {
   let j: Jinaga;

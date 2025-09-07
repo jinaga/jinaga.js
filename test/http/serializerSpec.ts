@@ -1,4 +1,4 @@
-import { GraphSerializer } from "../../src";
+import { GraphSerializer } from "@src";
 
 describe("GraphSerializer", () => {
     it("should write an empty graph", () => {

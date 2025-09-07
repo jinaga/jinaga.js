@@ -107,7 +107,7 @@ class Given<T extends any[]> {
         const projection = traversal.projection;
         const given = this.factTypes.map((type, i) => {
             const name = `p${i + 1}`;
-            return { name, type };
+            return { label: {name, type}, conditions: [] };
         });
         const specification: Specification = {
             given,
@@ -130,7 +130,7 @@ class Given<T extends any[]> {
         const projection = traversal.projection;
         const given = this.factTypes.map((type, i) => {
             const name = `p${i + 1}`;
-            return { name, type };
+            return { label: { name, type }, conditions: [] };
         });
         const specification: Specification = {
             given,

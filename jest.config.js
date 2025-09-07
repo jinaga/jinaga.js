@@ -6,4 +6,8 @@ module.exports = {
     '**/test/**/*Spec.ts',
   ],
   reporters: ['jest-progress-bar-reporter'],
+  moduleNameMapper: {
+    '^@src$': '<rootDir>/src',
+  },
+  setupFilesAfterEnv: ['<rootDir>/test/setup/indexeddb-setup.ts'],
 };

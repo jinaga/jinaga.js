@@ -1,4 +1,4 @@
-import { DistributionRules, describeDistributionRules } from "../../src";
+import { DistributionRules, describeDistributionRules } from "@src";
 import { distribution } from "../blogModel";
 
 describe("Distribution rules from description", () => {

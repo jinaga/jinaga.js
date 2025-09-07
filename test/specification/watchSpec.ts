@@ -1,4 +1,4 @@
-import { Jinaga, JinagaTest, User } from "../../src";
+import { Jinaga, JinagaTest, User } from "@src";
 import { Company, Employee, Manager, ManagerName, ManagerTerminated, Office, OfficeClosed, OfficeReopened, President, UserName, model } from "../companyModel";
 
 describe("specification watch", () => {

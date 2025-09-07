@@ -1,7 +1,6 @@
-import { hydrateFromTree, dehydrateFact } from '../../src/fact/hydrate';
-import { FactRecord, FactReference } from '../../src/storage';
+import { dehydrateFact, FactRecord, FactReference } from '@src';
 
-import { TopologicalSorter } from '../../src/fact/sorter';
+import { TopologicalSorter } from '@src';
 
 describe('Topological sorter', () => {
     it('should accept empty array', () => {

@@ -1,4 +1,11 @@
-import { Specification, Match, Projection, DisconnectedSpecificationError } from "./specification";
+import { Match, Projection, Specification } from "./specification";
+
+export class DisconnectedSpecificationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "DisconnectedSpecificationError";
+    }
+}
 
 /**
  * Union-Find (Disjoint Set) data structure for efficiently managing
@@ -156,8 +163,8 @@ export function detectDisconnectedSpecification(specification: Specification): v
 
     // Add given labels
     for (const given of specification.given) {
-        allLabels.add(given.name);
-        labelTypes.set(given.name, given.type);
+        allLabels.add(given.label.name);
+        labelTypes.set(given.label.name, given.label.type);
     }
 
     // Build connections and collect labels in one pass

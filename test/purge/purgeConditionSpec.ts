@@ -1,5 +1,5 @@
-import { JinagaClient, PurgeConditions } from "../../src";
-import { createModel, Store, Order, OrderCancelled, OrderCancelledReason, OrderShipped, Product, Item } from "../orderModel";
+import { JinagaClient, PurgeConditions } from "@src";
+import { createModel, Item, Order, OrderCancelled, OrderCancelledReason, OrderShipped, Product, Store } from "../orderModel";
 
 describe("Purge conditions", () => {
     it("should allow a specification when no purge conditions are specified", async () => {

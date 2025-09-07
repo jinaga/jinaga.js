@@ -46,9 +46,9 @@ export class NetworkDistribution implements Network {
 
     async feeds(start: FactReference[], specification: Specification): Promise<string[]> {
         const feeds = buildFeeds(specification);
-        const namedStart = specification.given.reduce((map, label, index) => ({
+        const namedStart = specification.given.reduce((map, given, index) => ({
             ...map,
-            [label.name]: start[index]
+            [given.label.name]: start[index]
         }), {} as ReferencesByName);
         const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
         if (canDistribute.type === 'failure') {
@@ -315,7 +315,7 @@ export class NetworkManager {
 }
 
 function getSpecificationHash(start: FactReference[], specification: Specification) {
-    const declarationString = describeDeclaration(start, specification.given);
+    const declarationString = describeDeclaration(start, specification.given.map(g => g.label));
     const specificationString = describeSpecification(specification, 0);
     const request = `${declarationString}\n${specificationString}`;
     const hash = computeStringHash(request);

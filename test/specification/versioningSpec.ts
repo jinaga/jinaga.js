@@ -1,4 +1,4 @@
-import { JinagaTest, buildModel } from "../../src";
+import { JinagaTest, buildModel } from "@src";
 
 class Parent {
   static Type = "Parent";

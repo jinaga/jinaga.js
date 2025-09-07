@@ -1,4 +1,4 @@
-import { SpecificationOf, User } from "../../src";
+import { SpecificationOf, User } from "@src";
 import { Company, Office, OfficeClosed, OfficeReopened, President, UserName, model } from "../companyModel";
 
 describe("given", () => {
@@ -755,6 +755,100 @@ describe("given", () => {
                     }
                 ]
             } => u1`);
+    });
+
+    it("should parse existential condition on given (negative)", () => {
+        // This test would require parsing syntax like:
+        // (office: Office [!E { closure: Office.Closed [closure->office: Office = office] }])
+        // For now, let's test by manually constructing the specification
+        const specification: SpecificationOf<[Office], Office> = new SpecificationOf({
+            given: [{
+                label: {
+                    name: "p1",
+                    type: "Office"
+                },
+                conditions: [{
+                    type: "existential",
+                    exists: false,
+                    matches: [{
+                        unknown: {
+                            name: "u1",
+                            type: "Office.Closed"
+                        },
+                        conditions: [{
+                            type: "path",
+                            rolesLeft: [],
+                            labelRight: "p1",
+                            rolesRight: [{
+                                name: "office",
+                                predecessorType: "Office"
+                            }]
+                        }]
+                    }]
+                }]
+            }],
+            matches: [],
+            projection: {
+                type: "fact",
+                label: "p1"
+            }
+        });
+
+        expectSpecification(specification, `
+            (p1: Office [
+                !E {
+                    u1: Office.Closed [
+                        u1 = p1->office: Office
+                    ]
+                }
+            ]) {
+            } => p1`);
+    });
+
+    it("should parse existential condition on given (positive)", () => {
+        // Similar to above but with positive existential condition
+        const specification: SpecificationOf<[Office], Office> = new SpecificationOf({
+            given: [{
+                label: {
+                    name: "p1",
+                    type: "Office"
+                },
+                conditions: [{
+                    type: "existential",
+                    exists: true,
+                    matches: [{
+                        unknown: {
+                            name: "u1",
+                            type: "Office.Closed"
+                        },
+                        conditions: [{
+                            type: "path",
+                            rolesLeft: [],
+                            labelRight: "p1", 
+                            rolesRight: [{
+                                name: "office",
+                                predecessorType: "Office"
+                            }]
+                        }]
+                    }]
+                }]
+            }],
+            matches: [],
+            projection: {
+                type: "fact",
+                label: "p1"
+            }
+        });
+
+        expectSpecification(specification, `
+            (p1: Office [
+                E {
+                    u1: Office.Closed [
+                        u1 = p1->office: Office
+                    ]
+                }
+            ]) {
+            } => p1`);
     });
 });
 

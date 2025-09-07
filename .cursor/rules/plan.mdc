@@ -1,0 +1,281 @@
+---
+alwaysApply: false
+---
+
+# Plan Creation Rule
+
+When asked to create a plan for a feature, system, or project, you MUST follow these requirements:
+
+## Plan Structure Requirements
+
+### 1. File Location
+- Place all plans in `/docs/plans/` directory
+- Use UPPERCASE naming: `FEATURE_NAME_PLAN.md`
+
+### 2. Required Components
+Every plan MUST include:
+
+#### Progress Summary Section
+- Clear status indicators (✅ COMPLETED, 🔄 IN PROGRESS, ❌ PENDING)
+- Current status description
+- Overall progress tracking
+
+#### Prerequisites Section
+- System requirements
+- Dependencies
+- Pre-existing conditions
+- Setup requirements
+
+#### Phase-by-Phase Breakdown
+- Logical, incremental phases
+- Clear objectives for each phase
+- Dependencies between phases
+- Estimated effort/complexity
+
+#### Acceptance Criteria (CRITICAL)
+- **MUST include 3-5 specific, testable criteria per phase**
+- Use "Given X, when Y, then Z" format
+- Include both functional and non-functional requirements
+- Define what constitutes "done" for each phase
+
+#### Testing Requirements (CRITICAL)
+- **MUST specify testing approach for each phase**
+- Include unit tests, integration tests, manual validation
+- Define error handling test scenarios
+- Specify performance benchmarks where applicable
+- List manual testing steps for validation
+
+### 3. Content Guidelines
+
+#### What to Include
+- Task breakdowns with checkboxes (`- [ ]` and `- [x]`)
+- File paths and locations for changes
+- Prerequisites and dependencies
+- Success metrics and validation steps
+- Testing specifications and approaches
+
+#### What to Exclude
+- Source code implementation details
+- Technical implementation specifics
+- Code snippets or algorithms
+- Detailed technical architecture
+
+### 4. Template Structure
+Follow this exact structure:
+
+```markdown
+# [Feature Name] Implementation Plan
+
+## Overview
+Brief description of the feature being implemented.
+
+## Progress Summary
+- ✅ **Phase 1: [Phase Name]** - COMPLETED
+- 🔄 **Phase 2: [Phase Name]** - IN PROGRESS
+- ❌ **Phase 3: [Phase Name]** - PENDING
+
+**Current Status**: [Brief status description]
+
+## Prerequisites
+- [ ] Prerequisite A
+- [ ] Prerequisite B
+
+## Phase 1: [Phase Name] ✅
+### 1.1 [Task Group]
+**Location**: `path/to/relevant/files`
+
+**Required Steps**:
+- [x] Completed task
+- [ ] Pending task
+
+### 1.2 Acceptance Criteria
+**Functional Requirements**:
+- [ ] Criterion A - specific, testable outcome
+- [ ] Criterion B - specific, testable outcome
+
+**Testing Approach**:
+- [ ] Unit tests for [specific functions]
+- [ ] Integration tests for [component interactions]
+- [ ] Manual validation steps: [list specific steps]
+- [ ] Error handling tests: [specific error scenarios]
+
+## Success Criteria
+- [ ] Overall criterion A
+- [ ] Overall criterion B
+```
+
+### 5. Quality Requirements
+
+#### Acceptance Criteria Must Be:
+- **Specific**: Clear, unambiguous requirements
+- **Testable**: Can be verified objectively
+- **Measurable**: Success can be quantified
+- **Realistic**: Achievable within scope
+- **Time-bound**: Clear completion timeline
+
+#### Testing Must Include:
+- **Unit Tests**: Specific functions/classes to test
+- **Integration Tests**: Component interaction testing
+- **Manual Validation**: Step-by-step verification
+- **Error Handling**: Edge case and failure scenarios
+- **Performance Tests**: Benchmarks and metrics
+
+### 6. Validation Checklist
+Before considering a plan complete, ensure it has:
+- [ ] Progress summary with status indicators
+- [ ] Prerequisites clearly defined
+- [ ] Phase-by-phase breakdown
+- [ ] 3-5 acceptance criteria per phase
+- [ ] Testing approach specified for each phase
+- [ ] Success criteria defined
+- [ ] No implementation code details
+- [ ] Clear file paths and locations
+- [ ] Dependencies between phases identified
+
+## Enforcement
+- **NEVER create a plan without acceptance criteria**
+- **NEVER create a plan without testing requirements**
+- **NEVER include implementation code in plans**
+- **ALWAYS follow the template structure**
+- **ALWAYS place plans in `/docs/plans/` directory**
+- **ALWAYS use proper naming conventions**
+
+This rule ensures all plans are comprehensive, actionable, and properly structured for implementation tracking and validation.# Plan Creation Rule
+
+When asked to create a plan for a feature, system, or project, you MUST follow these requirements:
+
+## Plan Structure Requirements
+
+### 1. File Location
+- Place all plans in `/docs/plans/` directory
+- Use UPPERCASE naming: `FEATURE_NAME_PLAN.md`
+
+### 2. Required Components
+Every plan MUST include:
+
+#### Progress Summary Section
+- Clear status indicators (✅ COMPLETED, 🔄 IN PROGRESS, ❌ PENDING)
+- Current status description
+- Overall progress tracking
+
+#### Prerequisites Section
+- System requirements
+- Dependencies
+- Pre-existing conditions
+- Setup requirements
+
+#### Phase-by-Phase Breakdown
+- Logical, incremental phases
+- Clear objectives for each phase
+- Dependencies between phases
+- Estimated effort/complexity
+
+#### Acceptance Criteria (CRITICAL)
+- **MUST include 3-5 specific, testable criteria per phase**
+- Use "Given X, when Y, then Z" format
+- Include both functional and non-functional requirements
+- Define what constitutes "done" for each phase
+
+#### Testing Requirements (CRITICAL)
+- **MUST specify testing approach for each phase**
+- Include unit tests, integration tests, manual validation
+- Define error handling test scenarios
+- Specify performance benchmarks where applicable
+- List manual testing steps for validation
+
+### 3. Content Guidelines
+
+#### What to Include
+- Task breakdowns with checkboxes (`- [ ]` and `- [x]`)
+- File paths and locations for changes
+- Prerequisites and dependencies
+- Success metrics and validation steps
+- Testing specifications and approaches
+
+#### What to Exclude
+- Source code implementation details
+- Technical implementation specifics
+- Code snippets or algorithms
+- Detailed technical architecture
+
+### 4. Template Structure
+Follow this exact structure:
+
+```markdown
+# [Feature Name] Implementation Plan
+
+## Overview
+Brief description of the feature being implemented.
+
+## Progress Summary
+- ✅ **Phase 1: [Phase Name]** - COMPLETED
+- 🔄 **Phase 2: [Phase Name]** - IN PROGRESS
+- ❌ **Phase 3: [Phase Name]** - PENDING
+
+**Current Status**: [Brief status description]
+
+## Prerequisites
+- [ ] Prerequisite A
+- [ ] Prerequisite B
+
+## Phase 1: [Phase Name] ✅
+### 1.1 [Task Group]
+**Location**: `path/to/relevant/files`
+
+**Required Steps**:
+- [x] Completed task
+- [ ] Pending task
+
+### 1.2 Acceptance Criteria
+**Functional Requirements**:
+- [ ] Criterion A - specific, testable outcome
+- [ ] Criterion B - specific, testable outcome
+
+**Testing Approach**:
+- [ ] Unit tests for [specific functions]
+- [ ] Integration tests for [component interactions]
+- [ ] Manual validation steps: [list specific steps]
+- [ ] Error handling tests: [specific error scenarios]
+
+## Success Criteria
+- [ ] Overall criterion A
+- [ ] Overall criterion B
+```
+
+### 5. Quality Requirements
+
+#### Acceptance Criteria Must Be:
+- **Specific**: Clear, unambiguous requirements
+- **Testable**: Can be verified objectively
+- **Measurable**: Success can be quantified
+- **Realistic**: Achievable within scope
+- **Time-bound**: Clear completion timeline
+
+#### Testing Must Include:
+- **Unit Tests**: Specific functions/classes to test
+- **Integration Tests**: Component interaction testing
+- **Manual Validation**: Step-by-step verification
+- **Error Handling**: Edge case and failure scenarios
+- **Performance Tests**: Benchmarks and metrics
+
+### 6. Validation Checklist
+Before considering a plan complete, ensure it has:
+- [ ] Progress summary with status indicators
+- [ ] Prerequisites clearly defined
+- [ ] Phase-by-phase breakdown
+- [ ] 3-5 acceptance criteria per phase
+- [ ] Testing approach specified for each phase
+- [ ] Success criteria defined
+- [ ] No implementation code details
+- [ ] Clear file paths and locations
+- [ ] Dependencies between phases identified
+
+## Enforcement
+- **NEVER create a plan without acceptance criteria**
+- **NEVER create a plan without testing requirements**
+- **NEVER include implementation code in plans**
+- **ALWAYS follow the template structure**
+- **ALWAYS place plans in `/docs/plans/` directory**
+- **ALWAYS use proper naming conventions**
+
+This rule ensures all plans are comprehensive, actionable, and properly structured for implementation tracking and validation.

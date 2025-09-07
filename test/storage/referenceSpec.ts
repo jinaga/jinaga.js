@@ -1,6 +1,6 @@
 import 'source-map-support/register';
 
-import { uniqueFactReferences } from '../../src/storage';
+import { uniqueFactReferences } from '@src';
 
 describe('Fact reference', () => {
 

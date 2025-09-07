@@ -1,9 +1,4 @@
-import { FactRepository, LabelOf, User, buildModel } from "../../src";
-import { AuthorizationRules } from '../../src/authorization/authorizationRules';
-import { dehydrateFact } from '../../src/fact/hydrate';
-import { MemoryStore } from '../../src/memory/memory-store';
-import { FactRecord, FactReference, factReferenceEquals } from '../../src/storage';
-import { Trace } from '../../src/util/trace';
+import { AuthorizationRules, FactRecord, FactReference, FactRepository, LabelOf, MemoryStore, Trace, User, buildModel, dehydrateFact, factReferenceEquals } from "@src";
 
 
 function givenUserFact(identity = 'authorized-user') {

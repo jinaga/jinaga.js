@@ -1,4 +1,4 @@
-import { Specification, describeSpecification, splitBeforeFirstSuccessor } from "../../src";
+import { Specification, describeSpecification, splitBeforeFirstSuccessor } from "@src";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
 
 describe('Split specification', () => {

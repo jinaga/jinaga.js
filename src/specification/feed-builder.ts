@@ -1,7 +1,7 @@
-import { ComponentProjection, ExistentialCondition, Label, Match, Specification, emptySpecification, isExistentialCondition, isPathCondition, specificationIsNotDeterministic } from "./specification";
+import { ComponentProjection, ExistentialCondition, Label, Match, Specification, SpecificationGiven, emptySpecification, isExistentialCondition, isPathCondition, specificationIsNotDeterministic } from "./specification";
 
 export function buildFeeds(specification: Specification): Specification[] {
-    const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given, specification.matches);
+    const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given.map(g => g.label), specification.matches);
 
     // The final feed represents the complete tuple.
     // Build projections onto that one.
@@ -57,7 +57,7 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
     return { specifications, unusedGivens };
 }
 
-function buildExistentialCondition(existentialCondition: ExistentialCondition, matches: Match[], givens: Label[], unusedGivens: Label[]): { existentialCondition: ExistentialCondition, givens: Label[], unusedGivens: Label[] } {
+function buildExistentialCondition(existentialCondition: ExistentialCondition, matches: Match[], givens: SpecificationGiven[], unusedGivens: Label[]): { existentialCondition: ExistentialCondition, givens: SpecificationGiven[], unusedGivens: Label[] } {
     for (const match of matches) {
         existentialCondition = {
             ...existentialCondition,
@@ -70,7 +70,7 @@ function buildExistentialCondition(existentialCondition: ExistentialCondition, m
             // If the right-hand side is a given, then add it to the feed parameters.
             const reference = unusedGivens.find(given => given.name === pathCondition.labelRight);
             if (reference) {
-                givens = [...givens, reference];
+                givens = [...givens, { label: reference, conditions: [] }];
                 unusedGivens = unusedGivens.filter(given => given.name !== reference.name);
             }
         }
@@ -120,11 +120,11 @@ function withMatch(specification: Specification, match: Match): Specification {
 function withGiven(specification: Specification, label: Label): Specification {
     return {
         ...specification,
-        given: [...specification.given, label]
+        given: [...specification.given, { label, conditions: [] }]
     };
 }
 
-function withCondition(specification: Specification, newGivens: Label[], newExistentialCondition: ExistentialCondition) {
+function withCondition(specification: Specification, newGivens: SpecificationGiven[], newExistentialCondition: ExistentialCondition) {
     return {
         ...specification,
         given: newGivens,

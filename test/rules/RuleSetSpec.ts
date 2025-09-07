@@ -1,4 +1,4 @@
-import { RuleSet } from "../../src";
+import { RuleSet } from "@src";
 
 describe("RuleSet", () => {
     it("should construct an empty rule set", () => {

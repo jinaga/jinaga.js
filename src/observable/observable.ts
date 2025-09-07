@@ -28,7 +28,7 @@ export class ObservableSource {
         if (specification.given.length !== 1) {
             throw new Error("Specification must have exactly one given fact");
         }
-        const givenType = specification.given[0].type;
+        const givenType = specification.given[0].label.type;
         const specificationKey = computeStringHash(describeSpecification(specification, 0));
 
         let listenersBySpecification = this.listenersByTypeAndSpecification.get(givenType);

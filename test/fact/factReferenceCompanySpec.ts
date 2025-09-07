@@ -1,4 +1,4 @@
-import { Jinaga, JinagaTest, User } from '../../src';
+import { Jinaga, JinagaTest, User } from '@src';
 import { Company, model } from '../companyModel';
 
 describe('factReference with company model', () => {

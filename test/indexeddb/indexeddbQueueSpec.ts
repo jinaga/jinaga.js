@@ -1,8 +1,6 @@
+import { FactEnvelope, FactRecord, FactReference, IndexedDBQueue } from '@src';
 import 'source-map-support/register';
-import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
-import { IndexedDBQueue } from '../../src/indexeddb/indexeddb-queue';
 import * as driver from '../../src/indexeddb/driver';
-import { TopologicalSorter } from '../../src/fact/sorter';
 
 // Mock the IndexedDB driver functions
 jest.mock('../../src/indexeddb/driver', () => {

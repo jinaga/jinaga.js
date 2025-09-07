@@ -45,7 +45,7 @@ export class DistributionEngine {
   }
 
   private async canDistributeTo(targetFeed: Specification, namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
-    const start = targetFeed.given.map(g => namedStart[g.name]);
+    const start = targetFeed.given.map(g => namedStart[g.label.name]);
     const targetSkeleton = skeletonOfSpecification(targetFeed);
     const reasons: string[] = [];
     for (const rule of this.distributionRules.rules) {
@@ -134,7 +134,7 @@ export class DistributionEngine {
 
     function executeDeterministicSpecification(specification: Specification, label: string, permutation: FactReference[]) {
       // If the label is a given, then return the associated fact reference.
-      const givenIndex = specification.given.findIndex(g => g.name === label);
+      const givenIndex = specification.given.findIndex(g => g.label.name === label);
       if (givenIndex !== -1) {
         const userReference = permutation[givenIndex];
         return userReference;
@@ -156,7 +156,7 @@ export class DistributionEngine {
       const referencedLabel = referencedLabels[0];
 
       // Find the given that the match references.
-      const index = specification.given.findIndex(g => g.name === referencedLabel);
+      const index = specification.given.findIndex(g => g.label.name === referencedLabel);
       if (index === -1) {
         throw new Error(`The user specification must have a given labeled '${label}'.`);
       }

@@ -1,4 +1,4 @@
-import { AuthenticationTest, FactEnvelope, FactManager, FactReference, Fork, Jinaga, MemoryStore, ObservableSource, User } from '../../src';
+import { AuthenticationTest, FactEnvelope, FactManager, FactReference, Fork, Jinaga, MemoryStore, ObservableSource, User } from '@src';
 
 // Define a fake Fork implementation that captures saved facts
 class FakeFork implements Fork {

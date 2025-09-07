@@ -1,13 +1,5 @@
-import { WebSocketServer } from 'ws';
-import WebSocket from 'ws';
-import { AuthorizationWebSocketHandler } from '../../src/ws/authorization-websocket-handler';
-import { BookmarkManager } from '../../src/ws/bookmark-manager';
-import { InverseSpecificationEngine } from '../../src/ws/inverse-specification-engine';
-import { FactEnvelope, FactRecord, FactReference } from '../../src/storage';
-import { Specification } from '../../src/specification/specification';
-import { serializeGraph } from '../../src/http/serializer';
-import { MemoryStore } from '../../src/memory/memory-store';
-import { ObservableSource } from '../../src/observable/observable';
+import { AuthorizationWebSocketHandler, BookmarkManager, FactEnvelope, FactRecord, FactReference, InverseSpecificationEngine, MemoryStore, ObservableSource, Specification } from '@src';
+import WebSocket, { WebSocketServer } from 'ws';
 
 jest.setTimeout(15000);
 
@@ -43,7 +35,7 @@ describe('AuthorizationWebSocketHandler', () => {
       observable.removeSpecificationListener.bind(observable)
     );
 
-    const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } });
+    const resolveFeed = (_: string): Specification => ({ given: [{ label: { name: 'g', type: 'T' }, conditions: [] }], matches: [], projection: { type: 'composite', components: [] } });
 
     wss.once('connection', (socket) => {
       const handler = new AuthorizationWebSocketHandler(authStub, resolveFeed, engine, bookmarks);
@@ -91,7 +83,7 @@ describe('AuthorizationWebSocketHandler', () => {
       async load(_id: any, refs: FactReference[]) { return refs.length ? [envelope] : []; }
     } as any;
 
-    const resolveFeed = (_: string): Specification => ({ given: [{ name: 'g', type: 'Test.Fact' }], matches: [], projection: { type: 'composite', components: [] } });
+    const resolveFeed = (_: string): Specification => ({ given: [{ label: { name: 'g', type: 'Test.Fact' }, conditions: [] }], matches: [], projection: { type: 'composite', components: [] } });
 
     wss.once('connection', (socket) => {
       const handler = new AuthorizationWebSocketHandler(authStub, resolveFeed, engine, bookmarks);
@@ -147,7 +139,7 @@ describe('AuthorizationWebSocketHandler', () => {
       }
     } as any;
 
-    const feedSpec: Specification = { given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } };
+    const feedSpec: Specification = { given: [{ label: { name: 'g', type: 'T' }, conditions: [] }], matches: [], projection: { type: 'composite', components: [] } };
     const resolveFeed = (_: string): Specification => feedSpec;
     const resolveFeedInfo = (_: string) => ({ specification: feedSpec, namedStart: {} as any });
 
@@ -193,7 +185,7 @@ describe('AuthorizationWebSocketHandler', () => {
       }
     } as any;
 
-    const feedSpec: Specification = { given: [{ name: 'g', type: 'T' }], matches: [], projection: { type: 'composite', components: [] } };
+    const feedSpec: Specification = { given: [{ label: { name: 'g', type: 'T' }, conditions: [] }], matches: [], projection: { type: 'composite', components: [] } };
     const resolveFeed = (_: string): Specification => feedSpec;
     const resolveFeedInfo = (_: string) => ({ specification: feedSpec, namedStart: {} as any });
 

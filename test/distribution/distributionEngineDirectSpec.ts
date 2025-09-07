@@ -1,7 +1,5 @@
-import { DistributionEngine, DistributionRules, User } from "../../src";
-import { MemoryStore } from "../../src/memory/memory-store";
+import { DistributionEngine, DistributionRules, MemoryStore, User, dehydrateFact } from "@src";
 import { Blog, Post, distribution, model } from "../blogModel";
-import { dehydrateFact } from "../../src/fact/hydrate";
 
 describe("DistributionEngine direct usage", () => {
   const creator = new User("creator");

@@ -1,4 +1,4 @@
-import { Skeleton, SpecificationParser, skeletonOfSpecification } from "../../src";
+import { Skeleton, SpecificationParser, skeletonOfSpecification } from "@src";
 
 describe("skeleton", () => {
     it("should produce an empty skeleton for an identity specification", () => {
