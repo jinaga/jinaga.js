@@ -31,8 +31,8 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule - Mathem
 
       // Validate structure matches documentation example
       expect(result.given).toHaveLength(2);
-      expect(result.given[1].name).toBe("distributionUser");
-      expect(result.given[1].type).toBe(User.Type);
+      expect(result.given[1].label.name).toBe("distributionUser");
+      expect(result.given[1].label.type).toBe(User.Type);
 
       // Check existential condition structure
       expect(result.matches).toHaveLength(1);
@@ -79,10 +79,10 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule - Mathem
 
       // While the exact structure may differ, both should be valid intersections
       expect(result1.given).toContainEqual(
-        expect.objectContaining({ name: "distributionUser", type: User.Type })
+        expect.objectContaining({ label: { name: "distributionUser", type: User.Type }, conditions: [] })
       );
       expect(result2.given).toContainEqual(
-        expect.objectContaining({ name: "distributionUser", type: User.Type })
+        expect.objectContaining({ label: { name: "distributionUser", type: User.Type }, conditions: [] })
       );
     });
 
@@ -199,8 +199,8 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule - Mathem
        const result2 = engine.intersectSpecificationWithDistributionRule(specification, ruleSpec2);
 
       // Both results should have distribution user
-      expect(result1.given[1].name).toBe("distributionUser");
-      expect(result2.given[1].name).toBe("distributionUser");
+      expect(result1.given[1].label.name).toBe("distributionUser");
+      expect(result2.given[1].label.name).toBe("distributionUser");
 
       // Both rules should have the same structure
       const existential1 = result1.matches[0].conditions[1] as any;
@@ -233,7 +233,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule - Mathem
     it("should validate algorithm produces mathematically correct results", () => {
        // Test with empty specification
        const emptySpec: Specification = {
-         given: [{ name: "blog", type: "Blog" }],
+         given: [{ label: { name: "blog", type: "Blog" }, conditions: [] }],
          matches: [],
          projection: { type: "fact", label: "blog" } as FactProjection
        };
@@ -244,7 +244,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule - Mathem
 
       // Should still add distribution user and existential condition
       expect(result.given).toHaveLength(2);
-      expect(result.given[1].name).toBe("distributionUser");
+      expect(result.given[1].label.name).toBe("distributionUser");
       expect(result.matches).toHaveLength(1);
       expect(result.matches[0].conditions).toHaveLength(1); // only existential
     });
@@ -268,7 +268,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule - Mathem
        const result = engine.intersectSpecificationWithDistributionRule(noGivenSpec, ruleSpec);
 
        expect(result.given).toHaveLength(1); // only distribution user added
-       expect(result.given[0].name).toBe("distributionUser");
+       expect(result.given[0].label.name).toBe("distributionUser");
 
        // Edge case 2: Rule specification with complex conditions
        const complexRuleSpec = model.given(Blog).match(blog => blog.creator.predecessor()).specification;

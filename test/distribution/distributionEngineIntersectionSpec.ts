@@ -29,8 +29,8 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
       const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
       expect(result.given).toHaveLength(2);
-      expect(result.given[1].name).toBe("distributionUser");
-      expect(result.given[1].type).toBe(User.Type);
+      expect(result.given[1].label.name).toBe("distributionUser");
+      expect(result.given[1].label.type).toBe(User.Type);
     });
 
     it("should create existential condition properly structured with distribution rule specification", () => {
@@ -77,7 +77,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
   describe("Edge case tests", () => {
     it("should handle empty specifications", () => {
       const specification: Specification = {
-        given: [{ name: "blog", type: "Blog" }],
+        given: [{ label: { name: "blog", type: "Blog" }, conditions: [] }],
         matches: [],
         projection: { type: "fact", label: "blog" } as FactProjection
       };
@@ -90,7 +90,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
       const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
       expect(result.given).toHaveLength(2);
-      expect(result.given[1].name).toBe("distributionUser");
+      expect(result.given[1].label.name).toBe("distributionUser");
       expect(result.matches).toHaveLength(1);
       expect(result.matches[0].unknown.name).toBe("dummy");
     });
@@ -111,7 +111,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
       const specification = model.given(Blog).select(blog => blog).specification;
 
       const ruleSpecification: Specification = {
-        given: [{ name: "blog", type: "Blog" }],
+        given: [{ label: { name: "blog", type: "Blog" }, conditions: [] }],
         matches: [{
           unknown: { name: "user", type: User.Type },
           conditions: []
@@ -135,7 +135,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
       ).specification;
 
       const ruleSpecification: Specification = {
-        given: [{ name: "blog", type: "Blog" }],
+        given: [{ label: { name: "blog", type: "Blog" }, conditions: [] }],
         matches: [{
           unknown: { name: "user", type: User.Type },
           conditions: []
@@ -146,7 +146,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
       const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
       expect(result.given).toHaveLength(2); // original givens + distributionUser
-      expect(result.given[1].name).toBe("distributionUser");
+      expect(result.given[1].label.name).toBe("distributionUser");
       expect(result.matches).toHaveLength(1);
       expect(result.matches[0].conditions).toHaveLength(2); // original + existential
     });

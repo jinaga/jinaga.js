@@ -63,7 +63,7 @@ export class DistributionEngine {
       name: 'distributionUser',
       type: User.Type
     };
-    const newGiven = [...specification.given, distributionUserLabel];
+    const newGiven = [...specification.given, { label: distributionUserLabel, conditions: [] }];
 
     // 2. Create existential condition from distribution rule specification
     // 3. Add path condition equating projected user with distribution user
@@ -118,6 +118,13 @@ export class DistributionEngine {
 
     // 6. Return empty results when distribution condition fails
     // If the existential condition is not satisfied, the query will return no results
+
+    // Verify conditions collections remain empty as required
+    newGiven.forEach((given, index) => {
+      if (given.conditions.length > 0) {
+        console.warn(`Warning: conditions collection at index ${index} is not empty:`, given.conditions);
+      }
+    });
 
     return {
       given: newGiven,
