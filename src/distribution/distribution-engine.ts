@@ -1,6 +1,7 @@
 import { describeSpecification } from "../specification/description";
 import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
 import { Specification, isPathCondition, specificationIsIdentity, Label, Match, PathCondition, ExistentialCondition, Projection, SpecificationGiven } from "../specification/specification";
+import { alphaTransform } from "../specification/alpha";
 import { FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { DistributionRules } from "./distribution-rules";
 import { User } from "../model/user";
@@ -70,12 +71,63 @@ export class DistributionEngine {
       throw new Error("Distribution rule specification must project a user fact.");
     }
 
+    // Collect all labels from both specifications to avoid conflicts
+    const originalLabels = new Set<string>();
+    function collectLabels(spec: Specification) {
+      spec.given.forEach(g => originalLabels.add(g.label.name));
+      spec.matches.forEach(m => originalLabels.add(m.unknown.name));
+      if (spec.projection.type === 'fact') {
+        originalLabels.add(spec.projection.label);
+      } else if (spec.projection.type === 'composite') {
+        spec.projection.components.forEach(c => {
+          if (c.type === 'fact' || c.type === 'field' || c.type === 'hash') {
+            originalLabels.add(c.label);
+          }
+        });
+      }
+    }
+    collectLabels(specification);
+    collectLabels(ruleSpecification);
+
+    // Collect unknown labels from rule specification (those not in given)
+    const ruleUnknowns = new Set<string>();
+    ruleSpecification.matches.forEach(m => {
+      if (!ruleSpecification.given.some(g => g.label.name === m.unknown.name)) {
+        ruleUnknowns.add(m.unknown.name);
+      }
+    });
+
+    // Create mapping for alpha transformation with "dist_" prefix
+    const mapping: Record<string, string> = {};
+    for (const unknown of ruleUnknowns) {
+      let newName = "dist_" + unknown;
+      let counter = 1;
+      while (originalLabels.has(newName)) {
+        newName = "dist_" + unknown + counter;
+        counter++;
+      }
+      mapping[unknown] = newName;
+      originalLabels.add(newName); // Prevent conflicts with subsequent mappings
+    }
+
+    // Apply alpha transformation to rule specification
+    const transformedRuleSpec = alphaTransform(ruleSpecification, mapping);
+
+    // Find the distribution user match in the transformed spec
+    if (transformedRuleSpec.projection.type !== 'fact') {
+      throw new Error("Transformed rule specification must have a fact projection.");
+    }
+    const transformedDistributionUserMatch = transformedRuleSpec.matches.find(match => match.unknown.name === (transformedRuleSpec.projection as any).label);
+    if (!transformedDistributionUserMatch) {
+      throw new Error("Transformed rule specification must have a match for the projected user fact.");
+    }
+
     // Replace the distribution user match with one that has an extra path condition:
     // that the distribution user is equal to the `distributionUser` given fact.
     const updatedDistributionUserMatch: Match = {
-      ...distributionUserMatch,
+      ...transformedDistributionUserMatch,
       conditions: [
-        ...distributionUserMatch.conditions,
+        ...transformedDistributionUserMatch.conditions,
         {
           type: "path",
           labelRight: "distributionUser",
@@ -84,8 +136,8 @@ export class DistributionEngine {
         }
       ]
     };
-    const updatedMatches = ruleSpecification.matches.map(match =>
-      match === distributionUserMatch ? updatedDistributionUserMatch : match
+    const updatedMatches = transformedRuleSpec.matches.map(match =>
+      match === transformedDistributionUserMatch ? updatedDistributionUserMatch : match
     );
 
     // Create an existential condition for the `distributionUser` given.

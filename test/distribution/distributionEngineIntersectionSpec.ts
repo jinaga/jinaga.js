@@ -31,9 +31,9 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
             expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
                 (p1: Blog, distributionUser: Jinaga.User [
                     E {
-                        u1: Jinaga.User [
-                            u1 = p1->creator: Jinaga.User
-                            u1 = distributionUser
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
                         ]
                     }
                 ]) {
@@ -61,8 +61,9 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
             expect(result.matches).toHaveLength(1);
-            expect(result.matches[0].conditions).toHaveLength(2); // original path + existential
-            const existentialCondition = result.matches[0].conditions[1] as any;
+            expect(result.matches[0].conditions).toHaveLength(1); // original path
+            expect(result.given).toHaveLength(2);
+            const existentialCondition = result.given[1].conditions[0] as any;
             expect(existentialCondition.type).toBe("existential");
             expect(existentialCondition.exists).toBe(true);
             expect(existentialCondition.matches).toHaveLength(1);
@@ -81,7 +82,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            const existentialCondition = result.matches[0].conditions[1] as any;
+            const existentialCondition = result.given[1].conditions[0] as any;
             const pathCondition = existentialCondition.matches[0].conditions[1];
             expect(pathCondition.type).toBe("path");
             expect(pathCondition.labelRight).toBe("distributionUser");
@@ -181,8 +182,8 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            expect(result.matches[0].conditions).toHaveLength(3);
-            const existential = result.matches[0].conditions[2] as any;
+            expect(result.matches[0].conditions).toHaveLength(2);
+            const existential = result.given[1].conditions[0] as any;
             expect(existential.matches[0].conditions).toHaveLength(2);
         });
 
