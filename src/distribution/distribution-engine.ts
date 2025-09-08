@@ -22,11 +22,10 @@ export class DistributionEngine {
     private distributionRules: DistributionRules
   ) { }
 
-  async canDistributeToAll(targetFeeds: Specification[], namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
-    // TODO: Minimize the number hits to the database.
+  canDistributeToAll(targetFeeds: Specification[], namedStart: ReferencesByName, user: FactReference | null): DistributionResult {
     const reasons: string[] = [];
     for (const targetFeed of targetFeeds) {
-      const feedResult = await this.canDistributeTo(targetFeed, namedStart, user);
+      const feedResult = this.canDistributeTo(targetFeed, namedStart, user);
       if (feedResult.type === 'failure') {
         reasons.push(feedResult.reason);
       }
@@ -168,7 +167,7 @@ export class DistributionEngine {
     return updatedSpecification;
   }
 
-  private async canDistributeTo(targetFeed: Specification, namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
+  private canDistributeTo(targetFeed: Specification, namedStart: ReferencesByName, user: FactReference | null): DistributionResult {
     const start = targetFeed.given.map(g => namedStart[g.label.name]);
     const targetSkeleton = skeletonOfSpecification(targetFeed);
     for (const rule of this.distributionRules.rules) {

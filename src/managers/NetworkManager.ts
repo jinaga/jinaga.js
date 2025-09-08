@@ -50,7 +50,7 @@ export class NetworkDistribution implements Network {
             ...map,
             [given.label.name]: start[index]
         }), {} as ReferencesByName);
-        const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
+        const canDistribute = this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
         if (canDistribute.type === 'failure') {
             throw new Error(`Not authorized: ${canDistribute.reason}`);
         }
@@ -62,7 +62,7 @@ export class NetworkDistribution implements Network {
         if (!feedObject) {
             throw new Error(`Feed ${feed} not found`);
         }
-        const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user);
+        const canDistribute = this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user);
 
         if (canDistribute.type === 'failure') {
             throw new Error(`Not authorized: ${canDistribute.reason}`);
@@ -81,18 +81,13 @@ export class NetworkDistribution implements Network {
             onError(new Error(`Feed ${feed} not found`));
             return () => { };
         }
-        this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user)
-            .then(canDistribute => {
-                if (canDistribute.type === 'failure') {
-                    onError(new Error(`Not authorized: ${canDistribute.reason}`));
-                    return;
-                }
-                // Pretend that we are at the end of the feed.
-                onResponse([], bookmark);
-            })
-            .catch(err => {
-                onError(err);
-            });
+        const canDistribute = this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user);
+        if (canDistribute.type === 'failure') {
+            onError(new Error(`Not authorized: ${canDistribute.reason}`));
+            return () => { };
+        }
+        // Pretend that we are at the end of the feed.
+        onResponse([], bookmark);
         return () => { };
     }
 
