@@ -55,6 +55,7 @@ export { FeedCache, FeedObject } from "./specification/feed-cache";
 export { invertSpecification, SpecificationInverse } from "./specification/inverse";
 export { buildModel, FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf } from './specification/model';
 export { EdgeDescription, emptySkeleton, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, skeletonOfSpecification } from './specification/skeleton';
+export { alphaTransform } from './specification/alpha';
 export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, specificationIsDeterministic, specificationIsNotDeterministic, SpecificationProjection, splitBeforeFirstSuccessor } from './specification/specification';
 export { Invalid, SpecificationParser } from './specification/specification-parser';
 export { detectDisconnectedSpecification, DisconnectedSpecificationError } from "./specification/UnionFind";
