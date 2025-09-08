@@ -8,7 +8,11 @@ function parseSpecification(input: string): Specification {
 
 describe("Alpha transformation", () => {
     it("transforms specification labels with a mapping", () => {
-        const specification = parseSpecification(`(user: Jinaga.User) { assignment: MyApp.Assignment [ assignment->user:Jinaga.User = user ] }`);
+        const specification = parseSpecification(`(user: Jinaga.User) {
+            assignment: MyApp.Assignment [
+                assignment->user:Jinaga.User = user
+            ]
+        }`);
 
         // This test will fail until the alpha transformation function is properly implemented
         // The function should rename labels according to a mapping while preserving uniqueness
@@ -20,7 +24,11 @@ describe("Alpha transformation", () => {
         const result = alphaTransform(specification, mapping);
 
         // Create expected transformed specification
-        const expected = parseSpecification(`(u: Jinaga.User) { a: MyApp.Assignment [ a->user:Jinaga.User = u ] }`);
+        const expected = parseSpecification(`(u: Jinaga.User) {
+            a: MyApp.Assignment [
+                a->user:Jinaga.User = u
+            ]
+        }`);
 
         expect(result).toEqual(expected);
     });
@@ -32,7 +40,11 @@ describe("Alpha transformation", () => {
     });
 
     it("throws Invalid error when mapping would create duplicate label names", () => {
-        const specification = parseSpecification(`(user: Jinaga.User) { assignment: MyApp.Assignment [ assignment->user:Jinaga.User = user ] }`);
+        const specification = parseSpecification(`(user: Jinaga.User) {
+            assignment: MyApp.Assignment [
+                assignment->user:Jinaga.User = user
+            ]
+        }`);
 
         // Mapping that would create duplicate labels: both user and assignment map to "u"
         const mapping = { user: "u", assignment: "u" };
@@ -41,7 +53,8 @@ describe("Alpha transformation", () => {
     });
 
     it("transforms specifications with nested existential conditions", () => {
-        const specification = parseSpecification(`(user: Jinaga.User) { post: MyApp.Post [
+        const specification = parseSpecification(`(user: Jinaga.User) {
+        post: MyApp.Post [
             post->user:Jinaga.User = user
             E {
                 comment: MyApp.Comment [
@@ -59,7 +72,8 @@ describe("Alpha transformation", () => {
 
         const result = alphaTransform(specification, mapping);
 
-        const expected = parseSpecification(`(u: Jinaga.User) { p: MyApp.Post [
+        const expected = parseSpecification(`(u: Jinaga.User) {
+        p: MyApp.Post [
             p->user:Jinaga.User = u
             E {
                 c: MyApp.Comment [
@@ -97,13 +111,21 @@ describe("Alpha transformation", () => {
     });
 
     it("integrates parsing and alpha transformation", () => {
-        const input = `(user: Jinaga.User) { assignment: MyApp.Assignment [ assignment->user:Jinaga.User = user ] }`;
+        const input = `(user: Jinaga.User) {
+            assignment: MyApp.Assignment [
+                assignment->user:Jinaga.User = user
+            ]
+        }`;
         const specification = parseSpecification(input);
 
         const mapping = { user: "u", assignment: "a" };
         const transformed = alphaTransform(specification, mapping);
 
-        const expected = parseSpecification(`(u: Jinaga.User) { a: MyApp.Assignment [ a->user:Jinaga.User = u ] }`);
+        const expected = parseSpecification(`(u: Jinaga.User) {
+            a: MyApp.Assignment [
+                a->user:Jinaga.User = u
+            ]
+        }`);
 
         expect(transformed).toEqual(expected);
     });
