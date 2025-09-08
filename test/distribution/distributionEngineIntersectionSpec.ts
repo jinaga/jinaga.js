@@ -1,7 +1,5 @@
-import { describeSpecification, DistributionEngine, DistributionRules, User } from "../../src";
-import { MemoryStore } from "../../src/memory/memory-store";
-import { Blog, Post, Publish, Comment, model } from "../blogModel";
-import { Specification, FactProjection } from "../../src/specification/specification";
+import { describeSpecification, DistributionEngine, DistributionRules, FactProjection, MemoryStore, Specification, User } from "@src";
+import { Blog, model, Post, Publish } from "../blogModel";
 
 describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => {
     let engine: DistributionEngine;
@@ -41,10 +39,6 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
                         u1->blog: Blog = p1
                     ]
                 } => u1`);
-
-            expect(result.given).toHaveLength(2);
-            expect(result.given[1].label.name).toBe("distributionUser");
-            expect(result.given[1].label.type).toBe(User.Type);
         });
 
         it("should create existential condition properly structured with distribution rule specification", () => {
@@ -60,13 +54,19 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            expect(result.matches).toHaveLength(1);
-            expect(result.matches[0].conditions).toHaveLength(1); // original path
-            expect(result.given).toHaveLength(2);
-            const existentialCondition = result.given[1].conditions[0] as any;
-            expect(existentialCondition.type).toBe("existential");
-            expect(existentialCondition.exists).toBe(true);
-            expect(existentialCondition.matches).toHaveLength(1);
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                    u1: Post [
+                        u1->blog: Blog = p1
+                    ]
+                } => u1`);
         });
 
         it("should equate projected user with distribution user in path condition", () => {
@@ -82,19 +82,28 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            const existentialCondition = result.given[1].conditions[0] as any;
-            const pathCondition = existentialCondition.matches[0].conditions[1];
-            expect(pathCondition.type).toBe("path");
-            expect(pathCondition.labelRight).toBe("distributionUser");
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                    u1: Post [
+                        u1->blog: Blog = p1
+                    ]
+                } => u1`);
         });
     });
 
     describe("Edge case tests", () => {
         it("should handle empty specifications", () => {
             const specification: Specification = {
-                given: [{ label: { name: "blog", type: "Blog" }, conditions: [] }],
+                given: [{ label: { name: "p1", type: "Blog" }, conditions: [] }],
                 matches: [],
-                projection: { type: "fact", label: "blog" } as FactProjection
+                projection: { type: "fact", label: "p1" } as FactProjection
             };
 
             const ruleSpecification = model.given(Blog).match((blog, facts) =>
@@ -104,10 +113,16 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            expect(result.given).toHaveLength(2);
-            expect(result.given[1].label.name).toBe("distributionUser");
-            expect(result.matches).toHaveLength(1);
-            expect(result.matches[0].unknown.name).toBe("dummy");
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                } => p1`);
         });
 
         it("should throw error for invalid rules with non-fact projections", () => {
@@ -126,7 +141,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
             const specification = model.given(Blog).select(blog => blog).specification;
 
             const ruleSpecification: Specification = {
-                given: [{ label: { name: "blog", type: "Blog" }, conditions: [] }],
+                given: [{ label: { name: "p1", type: "Blog" }, conditions: [] }],
                 matches: [{
                     unknown: { name: "user", type: User.Type },
                     conditions: []
@@ -136,9 +151,15 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            expect(result.matches).toHaveLength(1);
-            expect(result.matches[0].unknown.name).toBe("dummy");
-            expect(result.matches[0].conditions).toHaveLength(1);
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_user: Jinaga.User [
+                            dist_user = distributionUser
+                        ]
+                    }
+                ]) {
+                } => p1`);
         });
     });
 
@@ -150,7 +171,7 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
             ).specification;
 
             const ruleSpecification: Specification = {
-                given: [{ label: { name: "blog", type: "Blog" }, conditions: [] }],
+                given: [{ label: { name: "p1", type: "Blog" }, conditions: [] }],
                 matches: [{
                     unknown: { name: "user", type: User.Type },
                     conditions: []
@@ -160,10 +181,18 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            expect(result.given).toHaveLength(2); // original givens + distributionUser
-            expect(result.given[1].label.name).toBe("distributionUser");
-            expect(result.matches).toHaveLength(1);
-            expect(result.matches[0].conditions).toHaveLength(2); // original + existential
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_user: Jinaga.User [
+                            dist_user = distributionUser
+                        ]
+                    }
+                ]) {
+                    u1: Post [
+                        u1->blog: Blog = p1
+                    ]
+                } => u1`);
         });
 
         it("should handle complex nested specifications", () => {
@@ -182,9 +211,24 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            expect(result.matches[0].conditions).toHaveLength(2);
-            const existential = result.given[1].conditions[0] as any;
-            expect(existential.matches[0].conditions).toHaveLength(2);
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                    u1: Post [
+                        u1->blog: Blog = p1
+                        E {
+                            u2: Publish [
+                                u2->post: Post = u1
+                            ]
+                        }
+                    ]
+                } => u1`);
         });
 
         it("should handle multiple distribution rules", () => {
@@ -200,8 +244,19 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
 
-            const existential = result.matches[0].conditions[1] as any;
-            expect(existential.matches).toHaveLength(1);
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                    u1: Post [
+                        u1->blog: Blog = p1
+                    ]
+                } => u1`);
         });
     });
 
@@ -244,8 +299,24 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
             const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
             const endTime = Date.now();
 
-            expect(result.given).toHaveLength(2);
-            expect(result.matches).toHaveLength(1);
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                    u1: Post [
+                        u1->blog: Blog = p1
+                        E {
+                            u2: Publish [
+                                u2->post: Post = u1
+                            ]
+                        }
+                    ]
+                } => u1`);
             expect(endTime - startTime).toBeLessThan(100); // Should complete quickly
         });
     });
