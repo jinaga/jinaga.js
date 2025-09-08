@@ -1,5 +1,5 @@
 import { describeSpecification, DistributionEngine, DistributionRules, FactProjection, MemoryStore, Specification, User } from "@src";
-import { Blog, model, Post, Publish } from "../blogModel";
+import { Blog, Comment, model, Post, Publish } from "../blogModel";
 
 describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => {
     let engine: DistributionEngine;
@@ -255,6 +255,96 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
                 ]) {
                     u1: Post [
                         u1->blog: Blog = p1
+                    ]
+                } => u1`);
+        });
+
+        it("should validate intersection preserves original specification semantics", () => {
+            const originalSpec = model.given(Blog).match((blog, facts) =>
+                facts.ofType(Post)
+                    .join(post => post.blog, blog)
+                    .exists(post => facts.ofType(Publish)
+                        .join(publish => publish.post, post)
+                    )
+            ).specification;
+
+            const ruleSpec = model.given(Blog).match(blog => blog.creator.predecessor()).specification;
+
+            const result = engine.intersectSpecificationWithDistributionRule(originalSpec, ruleSpec);
+
+            // Validate the complete specification structure with nested existential
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                    u1: Post [
+                        u1->blog: Blog = p1
+                        E {
+                            u2: Publish [
+                                u2->post: Post = u1
+                            ]
+                        }
+                    ]
+                } => u1`);
+        });
+
+        it("should handle complex rule specifications correctly", () => {
+            // Test with rule specification that has complex conditions
+            const complexRuleSpec = model.given(Blog).match(blog => blog.creator.predecessor()).specification;
+
+            const simpleSpec = model.given(Blog).select(blog => blog).specification;
+
+            const result = engine.intersectSpecificationWithDistributionRule(simpleSpec, complexRuleSpec);
+
+            // Validate the specification structure with no matches
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                } => p1`);
+        });
+
+        it("should validate intersection with self-referencing specifications", () => {
+            // Create a specification that references itself
+            const selfRefSpec = model.given(Blog).match((blog, facts) =>
+                facts.ofType(Post)
+                    .join(post => post.blog, blog)
+                    .exists(post => facts.ofType(Comment)
+                        .join(comment => comment.post, post)
+                    )
+            ).specification;
+
+            const ruleSpec = model.given(Blog).match(blog => blog.creator.predecessor()).specification;
+
+            const result = engine.intersectSpecificationWithDistributionRule(selfRefSpec, ruleSpec);
+
+            // Validate the complete specification structure with self-referencing elements
+            expect("\n" + describeSpecification(result, 4).trimEnd()).toBe(`
+                (p1: Blog, distributionUser: Jinaga.User [
+                    E {
+                        dist_u1: Jinaga.User [
+                            dist_u1 = p1->creator: Jinaga.User
+                            dist_u1 = distributionUser
+                        ]
+                    }
+                ]) {
+                    u1: Post [
+                        u1->blog: Blog = p1
+                        E {
+                            u2: Comment [
+                                u2->post: Post = u1
+                            ]
+                        }
                     ]
                 } => u1`);
         });
