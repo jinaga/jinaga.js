@@ -1,15 +1,13 @@
-import { describeSpecification, DistributionEngine, DistributionRules, FactProjection, MemoryStore, Specification, User } from "@src";
+import { describeSpecification, DistributionEngine, DistributionRules, FactProjection, Specification, User } from "@src";
 import { Blog, Comment, model, Post, Publish } from "../blogModel";
 
 describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => {
     let engine: DistributionEngine;
-    let store: MemoryStore;
     let distributionRules: DistributionRules;
 
     beforeEach(() => {
-        store = new MemoryStore();
         distributionRules = new DistributionRules([]);
-        engine = new DistributionEngine(distributionRules, store);
+        engine = new DistributionEngine(distributionRules);
     });
 
     describe("Basic functionality tests", () => {

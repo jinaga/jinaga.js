@@ -64,7 +64,7 @@ export class JinagaTest {
   static createNetwork(config: JinagaTestConfig, store: MemoryStore): Network {
     if (config.distribution) {
       const distributionRules = config.distribution(new DistributionRules([]));
-      const distributionEngine = new DistributionEngine(distributionRules, store, true);
+      const distributionEngine = new DistributionEngine(distributionRules);
       return new NetworkDistribution(distributionEngine, this.getUserFact(config));
     }
     else {

@@ -1,10 +1,10 @@
+import { User } from "../model/user";
+import { alphaTransform } from "../specification/alpha";
 import { describeSpecification } from "../specification/description";
 import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
-import { Specification, isPathCondition, specificationIsIdentity, Label, Match, PathCondition, ExistentialCondition, Projection, SpecificationGiven } from "../specification/specification";
-import { alphaTransform } from "../specification/alpha";
-import { FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
+import { ExistentialCondition, Match, Specification, SpecificationGiven } from "../specification/specification";
+import { FactReference, ReferencesByName } from "../storage";
 import { DistributionRules } from "./distribution-rules";
-import { User } from "../model/user";
 
 export interface DistributionSuccess {
   type: 'success';
@@ -19,9 +19,7 @@ export type DistributionResult = DistributionSuccess | DistributionFailure;
 
 export class DistributionEngine {
   constructor(
-    private distributionRules: DistributionRules,
-    private store: Storage,
-    private isTest: boolean = false
+    private distributionRules: DistributionRules
   ) { }
 
   async canDistributeToAll(targetFeeds: Specification[], namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
@@ -179,9 +177,18 @@ export class DistributionEngine {
         const permutations = permutationsOf(start, ruleSkeleton, targetSkeleton);
         for (const permutation of permutations) {
           if (skeletonsEqual(ruleSkeleton, targetSkeleton)) {
-            return {
-              type: 'success'
-            };
+            // Check if the user is authorized for this rule
+            if (rule.user === null) {
+              // Rule allows everyone
+              return {
+                type: 'success'
+              };
+            }
+            if (user) {
+              return {
+                type: 'success'
+              };
+            }
           }
         }
       }

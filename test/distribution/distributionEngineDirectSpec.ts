@@ -12,7 +12,7 @@ describe("DistributionEngine direct usage", () => {
     const distributionRules = distribution(new DistributionRules([]));
     
     // Create engine with isTest=true
-    const engine = new DistributionEngine(distributionRules, store, true);
+    const engine = new DistributionEngine(distributionRules);
     
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Post)
@@ -37,7 +37,7 @@ describe("DistributionEngine direct usage", () => {
     const distributionRules = distribution(new DistributionRules([]));
     
     // Create engine with isTest=false (default)
-    const engine = new DistributionEngine(distributionRules, store, false);
+    const engine = new DistributionEngine(distributionRules);
     
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Post)
@@ -62,7 +62,7 @@ describe("DistributionEngine direct usage", () => {
     const distributionRules = distribution(new DistributionRules([]));
     
     // Create engine without isTest parameter (should default to false)
-    const engine = new DistributionEngine(distributionRules, store);
+    const engine = new DistributionEngine(distributionRules);
     
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Post)
