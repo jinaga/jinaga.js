@@ -1,6 +1,6 @@
 import { describeSpecification } from "../specification/description";
 import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
-import { Specification, isPathCondition, specificationIsIdentity, Label, Match, PathCondition, ExistentialCondition, Projection } from "../specification/specification";
+import { Specification, isPathCondition, specificationIsIdentity, Label, Match, PathCondition, ExistentialCondition, Projection, SpecificationGiven } from "../specification/specification";
 import { FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { DistributionRules } from "./distribution-rules";
 import { User } from "../model/user";
@@ -46,91 +46,76 @@ export class DistributionEngine {
   }
 
   intersectSpecificationWithDistributionRule(specification: Specification, ruleSpecification: Specification): Specification {
-    // Handle edge cases: empty specs
-    if (specification.given.length === 0 && specification.matches.length === 0) {
-      return specification;
+    // Ensure that the rule specification has the same givens as the original specification.
+    if (specification.given.length !== ruleSpecification.given.length) {
+      throw new Error("The number of givens in the rule specification must match the number of givens in the original specification.");
+    }
+    if (!specification.given.every((given, index) => {
+      const ruleGiven = ruleSpecification.given[index];
+      return given.label.name === ruleGiven.label.name && given.label.type === ruleGiven.label.type;
+    })) {
+      throw new Error("The givens in the rule specification must match the givens in the original specification.");
     }
 
-    // Handle invalid rules: no projection or not a fact projection
-    if (ruleSpecification.projection.type !== 'fact') {
-      throw new Error('Distribution rule specification must have a fact projection');
+    // Ensure that the rule specification projects a user fact.
+    const ruleProjection = ruleSpecification.projection;
+    if (ruleProjection.type !== 'fact') {
+      throw new Error("Distribution rule specification must have a fact projection.");
+    }
+    const distributionUserMatch = ruleSpecification.matches.find(match => match.unknown.name === ruleProjection.label);
+    if (!distributionUserMatch) {
+      throw new Error("Distribution rule specification must have a match for the projected user fact.");
+    }
+    if (distributionUserMatch.unknown.type !== User.Type) {
+      throw new Error("Distribution rule specification must project a user fact.");
     }
 
-    const userLabel = ruleSpecification.projection.label;
-
-    // 1. Add distribution user as new given with type Jinaga.User
-    const distributionUserLabel: Label = {
-      name: 'distributionUser',
-      type: User.Type
-    };
-    const newGiven = [...specification.given, { label: distributionUserLabel, conditions: [] }];
-
-    // 2. Create existential condition from distribution rule specification
-    // 3. Add path condition equating projected user with distribution user
-    const pathCondition: PathCondition = {
-      type: 'path',
-      rolesLeft: [],
-      labelRight: 'distributionUser',
-      rolesRight: []
-    };
-
-    // Find the match that defines the user label and add the path condition
-    const updatedRuleMatches = ruleSpecification.matches.map(match => {
-      if (match.unknown.name === userLabel) {
-        return {
-          ...match,
-          conditions: [...match.conditions, pathCondition]
-        };
-      }
-      return match;
-    });
-
-    const existentialCondition: ExistentialCondition = {
-      type: 'existential',
-      exists: true,
-      matches: updatedRuleMatches
-    };
-
-    // Add the existential condition to the original specification's matches
-    // For simplicity, add it to the first match if exists, or create a new match
-    let newMatches: Match[];
-    if (specification.matches.length > 0) {
-      newMatches = specification.matches.map((match, index) => {
-        if (index === 0) {
-          return {
-            ...match,
-            conditions: [...match.conditions, existentialCondition]
-          };
+    // Replace the distribution user match with one that has an extra path condition:
+    // that the distribution user is equal to the `distributionUser` given fact.
+    const updatedDistributionUserMatch: Match = {
+      ...distributionUserMatch,
+      conditions: [
+        ...distributionUserMatch.conditions,
+        {
+          type: "path",
+          labelRight: "distributionUser",
+          rolesLeft: [],
+          rolesRight: []
         }
-        return match;
-      });
-    } else {
-      // If no matches, create a dummy match to hold the existential condition
-      const dummyMatch: Match = {
-        unknown: { name: 'dummy', type: 'Dummy' },
-        conditions: [existentialCondition]
-      };
-      newMatches = [dummyMatch];
-    }
-
-    // 5. Preserve original specification semantics when condition is satisfied
-    // The existential condition ensures the rule is satisfied, so original semantics are preserved
-
-    // 6. Return empty results when distribution condition fails
-    // If the existential condition is not satisfied, the query will return no results
-
-    // Verify conditions collections remain empty as required
-    newGiven.forEach((given, index) => {
-      if (given.conditions.length > 0) {
-        console.warn(`Warning: conditions collection at index ${index} is not empty:`, given.conditions);
-      }
-    });
-
-    return {
-      given: newGiven,
-      matches: newMatches,
-      projection: specification.projection
+      ]
     };
+    const updatedMatches = ruleSpecification.matches.map(match =>
+      match === distributionUserMatch ? updatedDistributionUserMatch : match
+    );
+
+    // Create an existential condition for the `distributionUser` given.
+    // That is, there exists a fact defined by the rule specification where the distribution user
+    // match unknown is equal to the `distributionUser` given.
+    const existentialCondition: ExistentialCondition = {
+      type: "existential",
+      exists: true,
+      matches: updatedMatches
+    };
+
+    // Create a new given that represents the user running the specification.
+    const distributionUserGiven: SpecificationGiven = {
+      label: {
+        name: "distributionUser",
+        type: User.Type
+      },
+      conditions: [existentialCondition]
+    };
+
+    // Insert the new given into the original specification's givens.
+    const updatedSpecification: Specification = {
+      ...specification,
+      given: [
+        ...specification.given,
+        distributionUserGiven
+      ]
+    };
+
+    return updatedSpecification;
   }
 
   private async canDistributeTo(targetFeed: Specification, namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
