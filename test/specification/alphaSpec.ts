@@ -75,4 +75,24 @@ describe("Alpha transformation", () => {
 
         expect(result).toEqual(expected);
     });
+
+    it("transforms field projections", () => {
+        const specification = parseSpecification(`(user: Jinaga.User) {
+            name: MyApp.User.Name [
+                name->user:Jinaga.User = user
+            ]
+        } => name.value`);
+
+        const mapping = { user: "u", name: "n" };
+
+        const result = alphaTransform(specification, mapping);
+
+        const expected = parseSpecification(`(u: Jinaga.User) {
+            n: MyApp.User.Name [
+                n->user:Jinaga.User = u
+            ]
+        } => n.value`);
+
+        expect(result).toEqual(expected);
+    });
 });
