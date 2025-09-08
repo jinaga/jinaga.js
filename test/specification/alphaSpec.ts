@@ -95,4 +95,16 @@ describe("Alpha transformation", () => {
 
         expect(result).toEqual(expected);
     });
+
+    it("integrates parsing and alpha transformation", () => {
+        const input = `(user: Jinaga.User) { assignment: MyApp.Assignment [ assignment->user:Jinaga.User = user ] }`;
+        const specification = parseSpecification(input);
+
+        const mapping = { user: "u", assignment: "a" };
+        const transformed = alphaTransform(specification, mapping);
+
+        const expected = parseSpecification(`(u: Jinaga.User) { a: MyApp.Assignment [ a->user:Jinaga.User = u ] }`);
+
+        expect(transformed).toEqual(expected);
+    });
 });
