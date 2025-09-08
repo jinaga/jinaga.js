@@ -173,122 +173,24 @@ export class DistributionEngine {
   private async canDistributeTo(targetFeed: Specification, namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
     const start = targetFeed.given.map(g => namedStart[g.label.name]);
     const targetSkeleton = skeletonOfSpecification(targetFeed);
-    const reasons: string[] = [];
     for (const rule of this.distributionRules.rules) {
       for (const ruleFeed of rule.feeds) {
         const ruleSkeleton = skeletonOfSpecification(ruleFeed);
         const permutations = permutationsOf(start, ruleSkeleton, targetSkeleton);
         for (const permutation of permutations) {
           if (skeletonsEqual(ruleSkeleton, targetSkeleton)) {
-            // If this rule applies to any user, then we can distribute.
-            if (rule.user === null) {
-              return {
-                type: 'success'
-              };
-            }
-
-            // If there is no user logged in, then we cannot distribute.
-            if (user === null) {
-              if (reasons.length === 0) {
-                reasons.push(`User is not logged in.`);
-              }
-            }
-            else {
-              // The projection must be a singular label.
-              if (rule.user.projection.type !== 'fact') {
-                throw new Error('The projection must be a singular label.');
-              }
-              const label = rule.user.projection.label;
-
-              // If the user specification is deterministic, then pick the labeled given.
-              if (specificationIsIdentity(rule.user)) {
-                const userReference = executeDeterministicSpecification(rule.user, label, permutation);
-                // If the user matches the given, then we can distribute to the user.
-                const authorized = factReferenceEquals(user)(userReference);
-                if (authorized) {
-                  return {
-                    type: 'success'
-                  };
-                }
-                
-                if (this.isTest) {
-                  reasons.push(
-                    `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
-                    `User hash: ${user.hash}\n` +
-                    `Expected hash: ${userReference.hash}`
-                  );
-                } else {
-                  reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
-                }
-              }
-              else {
-                // Find the set of users to whom we can distribute this feed.
-                const users = await this.store.read(permutation, rule.user);
-                const results = users.map(user => user.tuple[label])
-
-                // If any of the results match the user, then we can distribute to the user.
-                const authorized = results.some(factReferenceEquals(user));
-                if (authorized) {
-                  return {
-                    type: 'success'
-                  };
-                }
-                
-                if (this.isTest) {
-                  reasons.push(
-                    `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
-                    `User hash: ${user.hash}\n` +
-                    `Expected hashes: [${results.map(r => r.hash).join(", ")}]`
-                  );
-                } else {
-                  reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
-                }
-              }
-            }
+            return {
+              type: 'success'
+            };
           }
         }
       }
     }
 
-    if (reasons.length === 0) {
-      reasons.push("No rules apply to this feed.");
-    }
     return {
       type: 'failure',
-      reason: `Cannot distribute to ${describeSpecification(targetFeed, 0)}${reasons.join('\n')}`
+      reason: `Cannot distribute to ${describeSpecification(targetFeed, 0)}\nNo rules apply to this feed.`
     };
-
-    function executeDeterministicSpecification(specification: Specification, label: string, permutation: FactReference[]) {
-      // If the label is a given, then return the associated fact reference.
-      const givenIndex = specification.given.findIndex(g => g.label.name === label);
-      if (givenIndex !== -1) {
-        const userReference = permutation[givenIndex];
-        return userReference;
-      }
-
-      // Find the match with the unknown matching the projected label.
-      const match = specification.matches.find(m => m.unknown.name === label);
-      if (!match) {
-        throw new Error(`The user specification must have a match with an unknown labeled '${label}'.`);
-      }
-
-      // Find the right-hand side of the path condition in that match.
-      const referencedLabels = match.conditions
-        .filter(isPathCondition)
-        .map(c => c.labelRight);
-      if (referencedLabels.length !== 1) {
-        throw new Error(`The user specification must have exactly one path condition with an unknown labeled '${label}'.`);
-      }
-      const referencedLabel = referencedLabels[0];
-
-      // Find the given that the match references.
-      const index = specification.given.findIndex(g => g.label.name === referencedLabel);
-      if (index === -1) {
-        throw new Error(`The user specification must have a given labeled '${label}'.`);
-      }
-      const userReference = permutation[index];
-      return userReference;
-    }
   }
 }
 
