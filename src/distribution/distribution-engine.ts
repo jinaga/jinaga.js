@@ -1,6 +1,7 @@
 import { User } from "../model/user";
 import { alphaTransform } from "../specification/alpha";
 import { describeSpecification } from "../specification/description";
+import { buildFeeds } from "../specification/feed-builder";
 import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
 import { ExistentialCondition, Match, Specification, SpecificationGiven } from "../specification/specification";
 import { FactReference, ReferencesByName } from "../storage";
@@ -41,6 +42,41 @@ export class DistributionEngine {
         type: 'success'
       };
     }
+  }
+
+  getIntersectedSpecification(specification: Specification, user: FactReference | null): Specification | null {
+    // Find a distribution rule that matches the given specification
+    for (let i = 0; i < this.distributionRules.rules.length; i++) {
+      const rule = this.distributionRules.rules[i];
+      
+      // Check if this rule applies to the current specification
+      if (this.specificationsEqual(specification, rule.specification)) {
+        
+        // Check if this rule has intersected specifications
+        if (rule.intersectedSpecifications && rule.intersectedSpecifications.length > i) {
+          
+          // If this is a withEveryone rule (rule.user === null), always return the intersected spec
+          if (rule.user === null) {
+            return rule.intersectedSpecifications[i];
+          }
+          
+          // If this is a user-specific rule and we have a user, return the intersected spec
+          // The intersected spec should have the authorization constraints built in
+          if (rule.user !== null && user) {
+            return rule.intersectedSpecifications[i];
+          }
+        }
+      }
+    }
+    
+    // No matching rule found, return null to use original specification
+    return null;
+  }
+
+  private specificationsEqual(spec1: Specification, spec2: Specification): boolean {
+    // Simple equality check - in a real implementation, this might need to be more sophisticated
+    // For now, compare the string representations
+    return describeSpecification(spec1, 0) === describeSpecification(spec2, 0);
   }
 
   intersectSpecificationWithDistributionRule(specification: Specification, ruleSpecification: Specification): Specification {

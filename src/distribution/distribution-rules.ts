@@ -4,10 +4,12 @@ import { buildFeeds } from "../specification/feed-builder";
 import { SpecificationOf } from "../specification/model";
 import { Specification } from "../specification/specification";
 import { SpecificationParser } from "../specification/specification-parser";
+import { DistributionEngine } from "./distribution-engine";
 
 interface DistributionRule {
   specification: Specification;
   feeds: Specification[];
+  intersectedSpecifications?: Specification[];
   user: Specification | null;
 }
 
@@ -18,22 +20,70 @@ class ShareTarget<T, U> {
   ) { }
 
   with(user: SpecificationOf<T, User>): DistributionRules {
+    const engine = new DistributionEngine(new DistributionRules(this.rules));
+    const intersectedSpecifications: Specification[] = [];
+
+    for (const rule of this.rules) {
+      if (rule.user !== null) {
+        try {
+          const intersected = engine.intersectSpecificationWithDistributionRule(this.specification, rule.user);
+          intersectedSpecifications.push(intersected);
+        } catch {
+          // If intersection fails, use the shared specification as intersected
+          intersectedSpecifications.push(this.specification);
+        }
+      } else {
+        // For withEveryone rules, no intersection
+        intersectedSpecifications.push(this.specification);
+      }
+    }
+
+    if (this.rules.length === 0) {
+      // No existing rules
+      intersectedSpecifications.push(this.specification);
+    }
+
     return new DistributionRules([
       ...this.rules,
       {
         specification: this.specification,
         feeds: buildFeeds(this.specification),
+        intersectedSpecifications,
         user: user.specification
       }
     ]);
   }
 
   withEveryone(): DistributionRules {
+    const engine = new DistributionEngine(new DistributionRules(this.rules));
+    const intersectedSpecifications: Specification[] = [];
+
+    for (const rule of this.rules) {
+      if (rule.user !== null) {
+        try {
+          const intersected = engine.intersectSpecificationWithDistributionRule(this.specification, rule.user);
+          intersectedSpecifications.push(intersected);
+        } catch {
+          // If intersection fails, use the shared specification as intersected
+          intersectedSpecifications.push(this.specification);
+        }
+      } else {
+        // For withEveryone rules, no intersection
+        intersectedSpecifications.push(this.specification);
+      }
+    }
+
+    if (this.rules.length === 0) {
+      // No existing rules
+      intersectedSpecifications.push(this.specification);
+    }
+
     return new DistributionRules([
       ...this.rules,
       {
         specification: this.specification,
         feeds: buildFeeds(this.specification),
+        intersectedSpecifications,
         user: null
       }
     ]);
@@ -74,11 +124,35 @@ export class DistributionRules {
   }
 
   public static combine(distributionRules: DistributionRules, specification: Specification, user: Specification | null) {
+    const engine = new DistributionEngine(distributionRules);
+    const intersectedSpecifications: Specification[] = [];
+
+    for (const rule of distributionRules.rules) {
+      if (rule.user !== null) {
+        try {
+          const intersected = engine.intersectSpecificationWithDistributionRule(specification, rule.user);
+          intersectedSpecifications.push(intersected);
+        } catch {
+          // If intersection fails, use the shared specification as intersected
+          intersectedSpecifications.push(specification);
+        }
+      } else {
+        // For withEveryone rules, no intersection
+        intersectedSpecifications.push(specification);
+      }
+    }
+
+    if (distributionRules.rules.length === 0) {
+      // No existing rules
+      intersectedSpecifications.push(specification);
+    }
+
     return new DistributionRules([
       ...distributionRules.rules,
       {
         specification,
         feeds: buildFeeds(specification),
+        intersectedSpecifications,
         user
       }
     ]);
