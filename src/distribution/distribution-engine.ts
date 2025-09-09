@@ -44,33 +44,33 @@ export class DistributionEngine {
     }
   }
 
-  getIntersectedSpecification(specification: Specification, user: FactReference | null): Specification | null {
+  getIntersectedFeeds(specification: Specification, user: FactReference | null): Specification[] {
     // Find a distribution rule that matches the given specification
     for (let i = 0; i < this.distributionRules.rules.length; i++) {
       const rule = this.distributionRules.rules[i];
-      
+
       // Check if this rule applies to the current specification
       if (this.specificationsEqual(specification, rule.specification)) {
-        
-        // Check if this rule has intersected specifications
-        if (rule.intersectedSpecifications && rule.intersectedSpecifications.length > i) {
-          
-          // If this is a withEveryone rule (rule.user === null), always return the intersected spec
+
+        // Check if this rule has intersected feeds
+        if (rule.intersectedFeeds.length > 0) {
+
+          // If this is a withEveryone rule (rule.user === null), always return the intersected feeds
           if (rule.user === null) {
-            return rule.intersectedSpecifications[i];
+            return rule.intersectedFeeds;
           }
-          
-          // If this is a user-specific rule and we have a user, return the intersected spec
-          // The intersected spec should have the authorization constraints built in
+
+          // If this is a user-specific rule and we have a user, return the intersected feeds
+          // The intersected feeds should have the authorization constraints built in
           if (rule.user !== null && user) {
-            return rule.intersectedSpecifications[i];
+            return rule.intersectedFeeds;
           }
         }
       }
     }
-    
-    // No matching rule found, return null to use original specification
-    return null;
+
+    // No matching rule found, use original specification
+    return buildFeeds(specification);
   }
 
   private specificationsEqual(spec1: Specification, spec2: Specification): boolean {

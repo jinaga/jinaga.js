@@ -45,23 +45,22 @@ export class NetworkDistribution implements Network {
     ) { }
 
     async feeds(start: FactReference[], specification: Specification): Promise<string[]> {
-        // Try to get intersected specification from distribution rules first
-        const intersectedSpec = this.distributionEngine.getIntersectedSpecification(specification, this.user);
-        
-        // Use intersected specification if available, otherwise use original specification
-        const effectiveSpec = intersectedSpec || specification;
-        const feeds = buildFeeds(effectiveSpec);
-        
-        const namedStart = effectiveSpec.given.reduce((map, given, index) => ({
+        // Try to get intersected feeds from distribution rules first
+        const intersectedFeeds = this.distributionEngine.getIntersectedFeeds(specification, this.user);
+
+        // Use intersected feeds if available, otherwise build feeds from original specification
+        const effectiveFeeds = intersectedFeeds.length > 0 ? intersectedFeeds : buildFeeds(specification);
+
+        const namedStart = specification.given.reduce((map, given, index) => ({
             ...map,
             [given.label.name]: start[index]
         }), {} as ReferencesByName);
-        
-        const canDistribute = this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
+
+        const canDistribute = this.distributionEngine.canDistributeToAll(effectiveFeeds, namedStart, this.user);
         if (canDistribute.type === 'failure') {
             throw new Error(`Not authorized: ${canDistribute.reason}`);
         }
-        return this.feedCache.addFeeds(feeds, namedStart);
+        return this.feedCache.addFeeds(effectiveFeeds, namedStart);
     }
 
     async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
