@@ -10,6 +10,8 @@ const nonPublishedPostsInBlog = model.given(Blog).match(blog =>
         .notExists(post => post.successors(Publish, publish => publish.post))
 );
 
+const blogCreator = model.given(Blog).match(blog => blog.creator.predecessor());
+
 describe("Distribution engine feeds", () => {
     it("should return a simple feed if allowed for everyone", () => {
         const distribution = (d: DistributionRules) => d
@@ -18,7 +20,8 @@ describe("Distribution engine feeds", () => {
 
         const engine = new DistributionEngine(distribution(new DistributionRules([])));
 
-        const feeds = engine.getFeeds(postsInBlog.specification, null);
+        const namedStart = {};
+        const feeds = engine.getFeeds(postsInBlog.specification, namedStart, null);
         expect(feeds).toHaveLength(1);
         expect("\n" + describeSpecification(feeds[0], 3).trimEnd()).toBe(`
             (p1: Blog) {
@@ -36,7 +39,8 @@ describe("Distribution engine feeds", () => {
 
         const engine = new DistributionEngine(distribution(new DistributionRules([])));
 
-        const feeds = engine.getFeeds(nonPublishedPostsInBlog.specification, null);
+        const namedStart = {};
+        const feeds = engine.getFeeds(nonPublishedPostsInBlog.specification, namedStart, null);
         expect(feeds).toHaveLength(2);
         expect("\n" + describeSpecification(feeds[0], 3).trimEnd()).toBe(`
             (p1: Blog) {
@@ -60,5 +64,31 @@ describe("Distribution engine feeds", () => {
                 ]
             }`
         );
+    });
+
+    it("should return an intersected feed if allowed for predecessor", () => {
+        const distribution = (d: DistributionRules) => d
+            .share(postsInBlog)
+            .with(blogCreator);
+
+        const engine = new DistributionEngine(distribution(new DistributionRules([])));
+
+        const namedStart = {};
+        const feeds = engine.getFeeds(postsInBlog.specification, namedStart, null);
+        expect(feeds).toHaveLength(1);
+        expect("\n" + describeSpecification(feeds[0], 3).trimEnd()).toBe(`
+            (p1: Blog, distributionUser: Jinaga.User [
+                E {
+                    dist_u1: Jinaga.User [
+                        dist_u1 = p1->creator: Jinaga.User
+                        dist_u1 = distributionUser
+                    ]
+                }
+            ]) {
+                u1: Post [
+                    u1->blog: Blog = p1
+                ]
+            }`
+        )
     });
 });
