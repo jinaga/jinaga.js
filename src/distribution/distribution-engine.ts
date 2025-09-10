@@ -72,41 +72,6 @@ export class DistributionEngine {
         }
     }
 
-    getIntersectedFeeds(specification: Specification, user: FactReference | null): Specification[] {
-        // Find a distribution rule that matches the given specification
-        for (let i = 0; i < this.distributionRules.rules.length; i++) {
-            const rule = this.distributionRules.rules[i];
-
-            // Check if this rule applies to the current specification
-            if (this.specificationsEqual(specification, rule.specification)) {
-
-                // Check if this rule has intersected feeds
-                if (rule.intersectedFeeds.length > 0) {
-
-                    // If this is a withEveryone rule (rule.user === null), always return the intersected feeds
-                    if (rule.user === null) {
-                        return rule.intersectedFeeds;
-                    }
-
-                    // If this is a user-specific rule and we have a user, return the intersected feeds
-                    // The intersected feeds should have the authorization constraints built in
-                    if (rule.user !== null && user) {
-                        return rule.intersectedFeeds;
-                    }
-                }
-            }
-        }
-
-        // No matching rule found, use original specification
-        return buildFeeds(specification);
-    }
-
-    private specificationsEqual(spec1: Specification, spec2: Specification): boolean {
-        // Simple equality check - in a real implementation, this might need to be more sophisticated
-        // For now, compare the string representations
-        return describeSpecification(spec1, 0) === describeSpecification(spec2, 0);
-    }
-
     intersectSpecificationWithDistributionRule(specification: Specification, ruleSpecification: Specification): Specification {
         // Ensure that the rule specification has the same givens as the original specification.
         return intersectSpecificationWithDistributionRule(specification, ruleSpecification);
