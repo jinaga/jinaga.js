@@ -17,21 +17,24 @@ describe("Distribution rules in unit tests", () => {
         expect(names).toStrictEqual([]);
     });
 
-    it("should throw when querying as a different user", async () => {
+    it("should return empty result when querying as a different user", async () => {
         const user1 = new User("user1");
         const user2 = new User("user2");
+        const userName = new UserName(user1, "User One", []);
         const jinaga = JinagaTest.create({
             model,
             user: user2,
             distribution,
             initialState: [
                 user1,
-                user2
+                user2,
+                userName
             ]
         });
 
         const namesSpec = model.given(User).match(user => UserName.current(user));
-        await expect(jinaga.query(namesSpec, user1)).rejects.toThrow();
+        const result = await jinaga.query(namesSpec, user1);
+        expect(result).toStrictEqual([]);
     });
 });
 

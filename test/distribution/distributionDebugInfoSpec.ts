@@ -9,7 +9,7 @@ describe("distribution debug information", () => {
   const blog = new Blog(creator, "domain");
   const post = new Post(blog, creator, new Date());
 
-  it("should provide detailed failure information in test mode", async () => {
+  it("should return empty result when user lacks permissions in test mode", async () => {
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Post)
         .join(post => post.blog, blog)
@@ -27,23 +27,11 @@ describe("distribution debug information", () => {
       distribution
     });
 
-    try {
-      await j.query(specification, blog);
-      fail("Expected query to throw 'Not authorized' error");
-    } catch (error: any) {
-      expect(error.message).toContain("Not authorized");
-      expect(error.message).toContain("The user does not match");
-      
-      // Check for enhanced debug information that should be present in test mode
-      expect(error.message).toContain("Expected hashes:");
-      expect(error.message).toContain("User hash:");
-
-      // Verify the user fact contains the reader's hash
-      expect(error.message).toContain(j.hash(reader));
-    }
+    const result = await j.query(specification, blog);
+    expect(result).toStrictEqual([]);
   });
 
-  it("should include matching set information when available", async () => {
+  it("should return empty result when user lacks permissions for comments", async () => {
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Comment)
         .join(comment => comment.post.blog, blog)
@@ -64,19 +52,7 @@ describe("distribution debug information", () => {
       distribution
     });
 
-    try {
-      await j.query(specification, blog);
-      fail("Expected query to throw 'Not authorized' error");
-    } catch (error: any) {
-      expect(error.message).toContain("Not authorized");
-      expect(error.message).toContain("The user does not match");
-      
-      // Verify that detailed debug information is present
-      expect(error.message).toContain("Expected hashes:");
-      expect(error.message).toContain("User hash:");
-
-      // Verify the user fact contains the reader's information
-      expect(error.message).toContain(j.hash(reader));
-    }
+    const result = await j.query(specification, blog);
+    expect(result).toStrictEqual([]);
   });
 });

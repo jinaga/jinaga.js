@@ -57,14 +57,15 @@ describe("distribution rules", () => {
     expect(result).toHaveLength(1);
   });
 
-  it("should not permit a reader to access all posts", async () => {
+  it("should return empty result when reader tries to access all posts", async () => {
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Post)
         .join(post => post.blog, blog)
     );
 
     const j = givenLoggedIn(reader);
-    await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
+    const result = await j.query(specification, blog);
+    expect(result).toStrictEqual([]);
   });
 
   it("should permit reader to access publications", async () => {
@@ -113,24 +114,26 @@ describe("distribution rules", () => {
     await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
   });
 
-  it("should not permit reader to access all comments", async () => {
+  it("should return empty result when reader tries to access all comments", async () => {
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Comment)
         .join(comment => comment.post.blog, blog)
     );
 
     const j = givenLoggedIn(reader);
-    await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
+    const result = await j.query(specification, blog);
+    expect(result).toStrictEqual([]);
   });
 
-  it("should not permit commenter to access all comments", async () => {
+  it("should return empty result when commenter tries to access all comments", async () => {
     const specification = model.given(Blog).match((blog, facts) =>
       facts.ofType(Comment)
         .join(comment => comment.post.blog, blog)
     );
 
     const j = givenLoggedIn(commenter);
-    await expect(() => j.query(specification, blog)).rejects.toThrow("Not authorized");
+    const result = await j.query(specification, blog);
+    expect(result).toStrictEqual([]);
   });
 
   it("should permit commenter to access their own comments", async () => {
