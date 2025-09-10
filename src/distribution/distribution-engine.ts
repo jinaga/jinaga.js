@@ -24,17 +24,20 @@ export class DistributionEngine {
     ) {}
 
     getFeeds(specification: Specification, namedStart: ReferencesByName, user: FactReference | null): Specification[] {
+        const reasons: string[] = [];
         let feeds: Specification[] = [];
         const targetFeeds = buildFeeds(specification);
         for (const targetFeed of targetFeeds) {
             const start = targetFeed.given.map(g => namedStart[g.label.name]);
             const targetSkeleton = skeletonOfSpecification(targetFeed);
+            let foundMatch = false;
             for (const rule of this.distributionRules.rules) {
                 for (const ruleFeed of rule.feeds) {
                     const ruleSkeleton = skeletonOfSpecification(ruleFeed);
                     const permutations = permutationsOf(start, ruleSkeleton, targetSkeleton);
                     for (const permutation of permutations) {
                         if (skeletonsEqual(ruleSkeleton, targetSkeleton)) {
+                            foundMatch = true;
                             if (rule.user === null) {
                                 feeds = [...feeds, ruleFeed];
                             }
@@ -47,6 +50,13 @@ export class DistributionEngine {
                     }
                 }
             }
+            if (!foundMatch) {
+                reasons.push(`Cannot distribute to ${describeSpecification(targetFeed, 0)}\nNo rules apply to this feed.`);
+            }
+        }
+
+        if (reasons.length > 0) {
+            throw new Error(reasons.join('\n\n'));
         }
         return feeds;
     }
