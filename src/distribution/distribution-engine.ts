@@ -23,6 +23,10 @@ export class DistributionEngine {
     private distributionRules: DistributionRules
   ) { }
 
+  getFeeds(specification: Specification, user: FactReference | null): Specification[] {
+    return [specification];
+  }
+
   canDistributeToAll(targetFeeds: Specification[], namedStart: ReferencesByName, user: FactReference | null): DistributionResult {
     const reasons: string[] = [];
     for (const targetFeed of targetFeeds) {
