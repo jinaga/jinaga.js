@@ -35,7 +35,8 @@ export class DistributionEngine {
                 for (const ruleFeed of rule.feeds) {
                     const ruleSkeleton = skeletonOfSpecification(ruleFeed);
                     const permutations = permutationsOf(start, ruleSkeleton, targetSkeleton);
-                    for (const permutation of permutations) {
+                    // TODO: Roll this into skeletonsEqual to avoid unnecessary computation of permutations.
+                    if (permutations.length > 0) {
                         if (skeletonsEqual(ruleSkeleton, targetSkeleton)) {
                             foundMatch = true;
                             if (rule.user === null) {
