@@ -24,7 +24,7 @@ export class DistributionEngine {
   ) { }
 
   getFeeds(specification: Specification, user: FactReference | null): Specification[] {
-    return [specification];
+    return buildFeeds(specification);
   }
 
   canDistributeToAll(targetFeeds: Specification[], namedStart: ReferencesByName, user: FactReference | null): DistributionResult {
