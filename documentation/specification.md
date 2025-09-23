@@ -8,12 +8,76 @@ The server will push fact references as they arrive.
 The client will update its own bookmark.
 It will reconnect after the connection is broken and send the last bookmark that it received.
 
+## Quick Start
+
+### TypeScript API
+
+```typescript
+import { JinagaBrowser } from "jinaga";
+
+const j = JinagaBrowser.create({
+  httpEndpoint: "http://localhost:8080/jinaga"
+});
+
+// Define your data model
+interface User {
+  type: "User";
+  publicKey: string;
+}
+
+interface Post {
+  type: "Post";
+  author: User;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+// Create a specification
+const userPosts = j.for(User).match(user =>
+  user.successors(Post, post => post.author)
+);
+
+// Execute the query
+const posts = await j.query(userPosts, user);
+```
+
+### Traditional Format
+
+The same specification can be written in the traditional format:
+
+```
+(user: Jinaga.User) {
+    post: Post [
+        post->author: User = user
+    ]
+} => {
+    post
+}
+```
+
 ## Given
 
 The given section of a specification lists the labels that must be provided.
 At least one label must be given.
 The block immediately following the given contains a sequence of match clauses.
 The block after the arrow contains a sequence of projections.
+
+### TypeScript Given
+
+```typescript
+// Single input
+const spec = j.for(User).match(user => {
+  // match clauses go here
+});
+
+// Multiple inputs
+const spec = j.for(User, Site).match((user, site) => {
+  // match clauses go here
+});
+```
+
+### Traditional Given
 
 ```
 (user: Jinaga.User) {
