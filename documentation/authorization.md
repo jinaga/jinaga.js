@@ -14,8 +14,63 @@ the comment.
 
 ![Blog model](./diagrams/blog.png)
 
+### Data Model
+
+```typescript
+interface User {
+  type: "User";
+  publicKey: string;
+}
+
+interface Site {
+  type: "Site";
+  creator: User;
+  domain: string;
+}
+
+interface Post {
+  type: "Post";
+  author: User;
+  site: Site;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+interface Comment {
+  type: "Comment";
+  post: Post;
+  author: User;
+  text: string;
+  createdAt: string;
+}
+```
+
+### Authorization Rules in TypeScript
+
 To express the first rule, we write a specification that takes a Post and
 returns the creator of the blog site.
+
+```typescript
+// Only the site creator can create posts
+const postAuthorization = j.for(Post).match(post =>
+  post.site.creator
+);
+```
+
+To express the second rule, we write a specification that takes a Comment
+and returns the author of the comment.
+
+```typescript
+// Only the comment author can create comments
+const commentAuthorization = j.for(Comment).match(comment =>
+  comment.author
+);
+```
+
+### Traditional Specification Format
+
+The same rules can also be expressed in the traditional specification format:
 
 ```
 (post: Post) {
@@ -24,9 +79,6 @@ returns the creator of the blog site.
   ]
 } => user
 ```
-
-To express the second rule, we write a specification that takes a Comment
-and returns the author of the comment.
 
 ```
 (comment: Comment) {

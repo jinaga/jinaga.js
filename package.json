@@ -1,14 +1,26 @@
 {
   "name": "jinaga",
   "version": "6.7.9",
-  "description": "Data management for web and mobile applications.",
+  "description": "End-to-end application state management framework with immutable facts, distributed architecture, and real-time synchronization for web and mobile applications.",
   "keywords": [
     "state",
     "immutable",
     "middleware",
     "api",
     "offline",
-    "pwa"
+    "pwa",
+    "distributed",
+    "facts",
+    "dag",
+    "cryptography",
+    "replication",
+    "synchronization",
+    "typescript",
+    "reactive",
+    "real-time",
+    "authorization",
+    "specifications",
+    "queries"
   ],
   "homepage": "http://jinaga.com",
   "bugs": {
@@ -55,5 +67,16 @@
   },
   "engines": {
     "node": "^12.13.0 || ^14.15.0 || ^16.10.0 || >=17.0.0"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "funding": {
+    "url": "https://github.com/sponsors/michaelperry"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
