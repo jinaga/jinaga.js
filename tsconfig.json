@@ -12,6 +12,7 @@
         "skipLibCheck": true,
         "esModuleInterop": true,
         "outDir": "dist",
+        "rootDir": "src",
         "baseUrl": ".",
         "paths": {
             "@src": ["./src"],
@@ -22,8 +23,7 @@
         }
     },
     "include": [
-        "src/**/*.ts",
-        "test/**/*.ts"
+        "src/**/*.ts"
     ],
     "exclude": [
         "node_modules",
