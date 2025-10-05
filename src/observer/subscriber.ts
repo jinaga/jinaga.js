@@ -14,7 +14,7 @@ export class Subscriber {
     private readonly network: Network,
     private readonly store: Storage,
     private readonly notifyFactsAdded: (envelopes: FactEnvelope[]) => Promise<void>,
-    private readonly refreshIntervalSeconds: number
+    private readonly refreshIntervalSeconds: number = 90
   ) {}
 
   addRef() {
