@@ -72,6 +72,7 @@ describe("Subscriber", () => {
             // Then: setInterval should be called with 90000 milliseconds (90 seconds)
             expect(capturedInterval).toBe(90000);
         });
+    });
 
     describe("connection retry behavior", () => {
         it("should retry connection on failure and resolve start() promise only on success", async () => {
@@ -157,5 +158,72 @@ describe("Subscriber", () => {
             }
         });
     });
+
+    describe("cancellation behavior", () => {
+        it("should clear timer and reject start() promise when stop() is called before connection succeeds", async () => {
+            // Given: Mock setInterval and clearInterval to verify timer management
+            const originalSetInterval = global.setInterval;
+            const originalClearInterval = global.clearInterval;
+            let capturedTimerId: any;
+            const clearIntervalSpy = jest.fn();
+            
+            global.setInterval = jest.fn((callback: any, interval: number) => {
+                capturedTimerId = 12345;
+                return capturedTimerId;
+            }) as any;
+            
+            global.clearInterval = clearIntervalSpy as any;
+
+            // Given: A network that never calls onResponse or onError (hanging connection)
+            const mockDisconnect = jest.fn();
+            mockNetwork.streamFeed = jest.fn((feed, bookmark, onResponse, onError) => {
+                // Simulate a hanging connection - never call onResponse or onError
+                return mockDisconnect;
+            });
+
+            // Given: Storage with a bookmark
+            mockStorage.loadBookmark = jest.fn().mockResolvedValue("test-bookmark");
+            mockStorage.whichExist = jest.fn().mockResolvedValue([]);
+            mockStorage.save = jest.fn().mockResolvedValue([]);
+            mockStorage.saveBookmark = jest.fn().mockResolvedValue(undefined);
+
+            // Given: Network load returns empty
+            mockNetwork.load = jest.fn().mockResolvedValue([]);
+
+            try {
+                // When: Create a subscriber and start it
+                const subscriber = new Subscriber(
+                    "test-feed",
+                    mockNetwork,
+                    mockStorage,
+                    notifyFactsAdded,
+                    90 // feedRefreshIntervalSeconds
+                );
+
+                const startPromise = subscriber.start();
+
+                // When: Wait for microtasks to allow timer setup
+                await new Promise(resolve => setTimeout(resolve, 10));
+
+                // Then: Verify timer was set up
+                expect(global.setInterval).toHaveBeenCalled();
+
+                // When: Call stop() before the connection succeeds
+                subscriber.stop();
+
+                // Then: The start() promise should be rejected
+                await expect(startPromise).rejects.toThrow();
+
+                // Then: clearInterval should have been called to stop the timer
+                expect(clearIntervalSpy).toHaveBeenCalledWith(capturedTimerId);
+
+                // Then: The disconnect function should have been called
+                expect(mockDisconnect).toHaveBeenCalled();
+            } finally {
+                // Clean up
+                global.setInterval = originalSetInterval;
+                global.clearInterval = originalClearInterval;
+            }
+        });
     });
 });
