@@ -75,6 +75,116 @@ describe("Subscriber", () => {
     });
 
     describe("connection retry behavior", () => {
+        it("should retry failed connections with exponential backoff before falling back to periodic timer", async () => {
+            // Given: Mock setTimeout and setInterval to control retry timing
+            const originalSetTimeout = global.setTimeout;
+            const originalSetInterval = global.setInterval;
+            const scheduledTimeouts: Array<{ callback: () => void; delay: number; id: number }> = [];
+            const scheduledIntervals: Array<{ callback: () => void; delay: number; id: number }> = [];
+            let nextId = 1;
+
+            global.setTimeout = jest.fn((callback: any, delay: number) => {
+                const id = nextId++;
+                scheduledTimeouts.push({ callback, delay, id });
+                return id as any;
+            }) as any;
+
+            global.setInterval = jest.fn((callback: any, delay: number) => {
+                const id = nextId++;
+                scheduledIntervals.push({ callback, delay, id });
+                return id as any;
+            }) as any;
+
+            global.clearInterval = jest.fn((id: any) => {
+                const index = scheduledIntervals.findIndex(t => t.id === id);
+                if (index >= 0) {
+                    scheduledIntervals.splice(index, 1);
+                }
+            }) as any;
+
+            try {
+                // Given: Mock network that always fails
+                mockNetwork.streamFeed = jest.fn((feed, bookmark, onResponse, onError) => {
+                    // Always fail immediately
+                    onError(new Error("Connection failed"));
+                    return () => {};
+                });
+
+                // Given: Mock storage with bookmark
+                mockStorage.loadBookmark = jest.fn().mockResolvedValue("test-bookmark");
+                mockStorage.whichExist = jest.fn().mockResolvedValue([]);
+                mockStorage.save = jest.fn().mockResolvedValue([]);
+                mockStorage.saveBookmark = jest.fn().mockResolvedValue(undefined);
+                mockNetwork.load = jest.fn().mockResolvedValue([]);
+
+                // When: Create subscriber and start it
+                const subscriber = new Subscriber(
+                    "test-feed",
+                    mockNetwork,
+                    mockStorage,
+                    notifyFactsAdded,
+                    90 // feedRefreshIntervalSeconds
+                );
+
+                const startPromise = subscriber.start(); // Don't await since it will never resolve with failing network
+
+                // Wait for initial async operations (bookmark load)
+                await new Promise(resolve => originalSetTimeout(resolve, 10));
+
+                // Then: First connection attempt should have happened
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(1);
+
+                // Then: setInterval should have been set up with 90 second interval
+                expect(scheduledIntervals.length).toBe(1);
+                expect(scheduledIntervals[0].delay).toBe(90000);
+
+                // Then: First retry should be scheduled with 1 second delay (2^0 * 1000)
+                expect(scheduledTimeouts.length).toBeGreaterThan(0);
+                expect(scheduledTimeouts[0].delay).toBe(1000);
+
+                // When: Execute first retry
+                scheduledTimeouts[0].callback();
+                await new Promise(resolve => originalSetTimeout(resolve, 10));
+
+                // Then: Second connection attempt should have happened
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(2);
+
+                // Then: Second retry should be scheduled with 2 second delay (2^1 * 1000)
+                expect(scheduledTimeouts[1].delay).toBe(2000);
+
+                // When: Execute second retry
+                scheduledTimeouts[1].callback();
+                await new Promise(resolve => originalSetTimeout(resolve, 10));
+
+                // Then: Third connection attempt should have happened
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(3);
+
+                // Then: Third retry should be scheduled with 4 second delay (2^2 * 1000)
+                expect(scheduledTimeouts[2].delay).toBe(4000);
+
+                // When: Execute third retry
+                scheduledTimeouts[2].callback();
+                await new Promise(resolve => originalSetTimeout(resolve, 10));
+
+                // Then: Fourth connection attempt should have happened (max immediate retries reached)
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(4);
+
+                // Then: No more immediate retries should be scheduled after max retries
+                // (Should fall back to periodic timer only)
+                expect(scheduledTimeouts.length).toBe(3); // Only 3 immediate retries scheduled
+
+                // Clean up
+                subscriber.stop();
+                
+                // Verify start promise is rejected when stopped
+                await expect(startPromise).rejects.toThrow();
+            } finally {
+                // Restore original timers
+                global.setTimeout = originalSetTimeout;
+                global.setInterval = originalSetInterval;
+            }
+        });
+
         it("should retry connection on failure and resolve start() promise only on success", async () => {
             // Given: A network that fails on first streamFeed call, succeeds on second
             let streamFeedCallCount = 0;
