@@ -29,16 +29,20 @@ export class Subscriber {
 
   async start(): Promise<void> {
     this.bookmark = await this.store.loadBookmark(this.feed);
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       this.resolved = false;
-      // Refresh the connection at the configured interval.
-      this.disconnect = this.connectToFeed(resolve, reject);
-      this.timer = setInterval(() => {
+      const attemptConnection = () => {
         if (this.disconnect) {
           this.disconnect();
         }
-        this.disconnect = this.connectToFeed(resolve, reject);
-      }, this.refreshIntervalSeconds * 1000);
+        this.disconnect = this.connectToFeed(resolve, () => {
+          // On error, do nothing; the timer will retry
+        });
+      };
+      // Set timer to retry every interval
+      this.timer = setInterval(attemptConnection, this.refreshIntervalSeconds * 1000);
+      // Initial attempt
+      attemptConnection();
     });
   }
 
@@ -53,7 +57,7 @@ export class Subscriber {
     }
   }
 
-  private connectToFeed(resolve: (value: void | PromiseLike<void>) => void, reject: (reason?: any) => void) {
+  private connectToFeed(resolve: (value: void | PromiseLike<void>) => void, onError: (err: Error) => void) {
     return this.network.streamFeed(this.feed, this.bookmark, async (factReferences, nextBookmark) => {
       const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
       const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
@@ -78,10 +82,8 @@ export class Subscriber {
         resolve();
       }
     }, err => {
-      if (!this.resolved) {
-        this.resolved = true;
-        reject(err);
-      }
+      Trace.warn(`Feed connection failed for ${this.feed}, will retry in ${this.refreshIntervalSeconds} seconds: ${err.message}`);
+      onError(err); // Log the error, but do not reject the start promise
     });
   }
 }

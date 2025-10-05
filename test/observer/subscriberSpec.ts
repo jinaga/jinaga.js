@@ -72,5 +72,90 @@ describe("Subscriber", () => {
             // Then: setInterval should be called with 90000 milliseconds (90 seconds)
             expect(capturedInterval).toBe(90000);
         });
+
+    describe("connection retry behavior", () => {
+        it("should retry connection on failure and resolve start() promise only on success", async () => {
+            // Given: A network that fails on first streamFeed call, succeeds on second
+            let streamFeedCallCount = 0;
+            let capturedIntervalCallback: (() => void) | undefined;
+            
+            mockNetwork.streamFeed = jest.fn((feed, bookmark, onResponse, onError) => {
+                streamFeedCallCount++;
+                
+                if (streamFeedCallCount === 1) {
+                    // First call: Simulate connection failure
+                    setTimeout(() => onError(new Error("Connection failed")), 0);
+                } else {
+                    // Second call: Simulate successful connection
+                    setTimeout(() => onResponse([], bookmark), 0);
+                }
+                
+                return () => {}; // Mock close function
+            });
+
+            // Mock storage with bookmark
+            mockStorage.loadBookmark = jest.fn().mockResolvedValue("test-bookmark");
+            mockStorage.whichExist = jest.fn().mockResolvedValue([]);
+            mockStorage.save = jest.fn().mockResolvedValue([]);
+            mockStorage.saveBookmark = jest.fn().mockResolvedValue(undefined);
+
+            // Mock network.load to return fact envelopes
+            mockNetwork.load = jest.fn().mockResolvedValue([]);
+
+            // Capture the setInterval callback
+            const originalSetInterval = global.setInterval;
+            global.setInterval = jest.fn((callback: any, interval: number) => {
+                capturedIntervalCallback = callback;
+                return 12345 as any;
+            }) as any;
+
+            try {
+                // When: Start the subscriber
+                const subscriber = new Subscriber(
+                    "test-feed",
+                    mockNetwork,
+                    mockStorage,
+                    notifyFactsAdded,
+                    90 // feedRefreshIntervalSeconds
+                );
+
+                const startPromise = subscriber.start();
+
+                // Flush initial microtasks to allow first connection attempt
+                await new Promise(resolve => setTimeout(resolve, 10));
+
+                // Then: Verify first streamFeed call happened and failed
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(1);
+
+                // Then: setInterval should have been called (timer is set up)
+                expect(global.setInterval).toHaveBeenCalled();
+
+                // Then: The start promise should still be pending (not resolved yet)
+                let promiseResolved = false;
+                startPromise.then(() => { promiseResolved = true; });
+                await new Promise(resolve => setTimeout(resolve, 10));
+                expect(promiseResolved).toBe(false);
+
+                // When: Trigger the retry by calling the interval callback
+                if (capturedIntervalCallback) {
+                    capturedIntervalCallback();
+                }
+
+                // Flush microtasks to allow retry to execute
+                await new Promise(resolve => setTimeout(resolve, 10));
+
+                // Then: Verify second streamFeed call happened (retry)
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(2);
+
+                // Then: Wait for the promise to resolve after successful connection
+                await startPromise;
+
+                // Clean up
+                subscriber.stop();
+            } finally {
+                global.setInterval = originalSetInterval;
+            }
+        });
+    });
     });
 });
