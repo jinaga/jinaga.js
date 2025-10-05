@@ -8,6 +8,7 @@ export class Subscriber {
   private resolved: boolean = false;
   private disconnect: (() => void) | undefined;
   private timer: NodeJS.Timer | undefined;
+  private rejectStart?: (reason?: any) => void;
 
   constructor(
     private readonly feed: string,
@@ -31,6 +32,7 @@ export class Subscriber {
     this.bookmark = await this.store.loadBookmark(this.feed);
     return new Promise<void>((resolve, reject) => {
       this.resolved = false;
+      this.rejectStart = reject; // Store reject for later use in stop()
       const attemptConnection = () => {
         if (this.disconnect) {
           this.disconnect();
@@ -54,6 +56,11 @@ export class Subscriber {
     if (this.disconnect) {
       this.disconnect();
       this.disconnect = undefined;
+    }
+    // Reject the start promise if it hasn't resolved yet
+    if (!this.resolved && this.rejectStart) {
+      this.rejectStart(new Error('Subscriber stopped before connection established'));
+      this.rejectStart = undefined;
     }
   }
 
@@ -79,6 +86,7 @@ export class Subscriber {
       }
       if (!this.resolved) {
         this.resolved = true;
+        this.rejectStart = undefined;
         resolve();
       }
     }, err => {
