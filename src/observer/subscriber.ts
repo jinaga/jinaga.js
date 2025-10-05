@@ -9,6 +9,9 @@ export class Subscriber {
   private disconnect: (() => void) | undefined;
   private timer: NodeJS.Timer | undefined;
   private reject: ((reason?: any) => void) | undefined;
+  private retryCount = 0;
+  private maxImmediateRetries = 3;
+  private isConnecting = false; // Guard flag to prevent concurrent connection attempts
 
   constructor(
     private readonly feed: string,
@@ -34,14 +37,50 @@ export class Subscriber {
       await new Promise<void>((resolve, reject) => {
         this.resolved = false;
         this.reject = reject;
-        // Refresh the connection at the configured interval.
-        this.disconnect = this.connectToFeed(resolve, reject);
-        this.timer = setInterval(() => {
+        this.retryCount = 0;
+        this.isConnecting = false;
+
+        const attemptConnection = () => {
+          Trace.info(`[Subscriber] attemptConnection called - feed: ${this.feed}, retryCount: ${this.retryCount}, isConnecting: ${this.isConnecting}`);
+
+          // Guard: Prevent concurrent connection attempts
+          if (this.isConnecting) {
+            Trace.warn(`[Subscriber] Connection attempt already in progress, skipping - feed: ${this.feed}`);
+            return;
+          }
+
+          this.isConnecting = true;
+
           if (this.disconnect) {
             this.disconnect();
           }
-          this.disconnect = this.connectToFeed(resolve, reject);
+
+          this.disconnect = this.connectToFeed(resolve, (err) => {
+            Trace.warn(`[Subscriber] Connection error - feed: ${this.feed}, retryCount: ${this.retryCount}, error: ${err.message}`);
+
+            if (this.retryCount < this.maxImmediateRetries) {
+              const delay = Math.pow(2, this.retryCount) * 1000; // 1s, 2s, 4s...
+              Trace.info(`[Subscriber] Scheduling retry - feed: ${this.feed}, retryCount: ${this.retryCount}, delay: ${delay}ms`);
+              setTimeout(() => {
+                this.retryCount++;
+                this.isConnecting = false; // Clear flag before retry
+                attemptConnection();
+              }, delay);
+            } else {
+              // Fall back to periodic timer after max immediate retries
+              Trace.info(`[Subscriber] Max retries reached - feed: ${this.feed}, falling back to periodic timer`);
+              this.retryCount = 0;
+              this.isConnecting = false; // Clear flag to allow interval timer to retry
+            }
+          });
+        };
+
+        this.timer = setInterval(() => {
+          Trace.info(`[Subscriber] Interval timer triggered - feed: ${this.feed}, resolved: ${this.resolved}`);
+          attemptConnection();
         }, this.refreshIntervalSeconds * 1000);
+
+        attemptConnection();
       });
     } finally {
       // Clear the reject reference so we don't hold a closure after start() settles.
@@ -66,7 +105,7 @@ export class Subscriber {
     }
   }
 
-  private connectToFeed(resolve: (value: void | PromiseLike<void>) => void, reject: (reason?: any) => void) {
+  private connectToFeed(resolve: (value: void | PromiseLike<void>) => void, onError: (err: Error) => void) {
     return this.network.streamFeed(this.feed, this.bookmark, async (factReferences, nextBookmark) => {
       const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
       const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
@@ -88,14 +127,17 @@ export class Subscriber {
       }
       if (!this.resolved) {
         this.resolved = true;
+        this.isConnecting = false; // Clear flag on successful connection
+        this.retryCount = 0;
         resolve();
       }
     }, err => {
-      // Do not reject on errors to allow FetchConnection's retry logic to work.
-      // The promise will resolve when the first successful data is received.
       // Don't log AbortError as it's expected during periodic reconnection.
       if (err.name !== 'AbortError') {
-        Trace.warn(`Subscriber connection error: ${err}`);
+        Trace.warn(`[Subscriber] Feed connection failed for ${this.feed}: ${err.message}`);
+        onError(err);
+      } else {
+        this.isConnecting = false;
       }
     }, this.refreshIntervalSeconds);
   }
