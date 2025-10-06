@@ -143,13 +143,16 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private async read() {
+        // Establish listeners BEFORE reading data to prevent race condition
+        // where facts arrive during the read operation but after data is loaded
+        this.addSpecificationListeners();
+        
         const projectedResults = await this.factManager.read(this.given, this.specification);
         if (this.stopped) {
             // The observer was stopped before the read completed.
             return;
         }
 
-        this.addSpecificationListeners();
         const givenSubset = this.specification.given.map(g => g.label.name);
         await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
     }
