@@ -114,6 +114,6 @@ export class Subscriber {
     }, err => {
       Trace.warn(`Feed connection failed for ${this.feed}, will retry in ${this.refreshIntervalSeconds} seconds: ${err.message}`);
       onError(err); // Log the error, but do not reject the start promise
-    });
+    }, this.refreshIntervalSeconds);
   }
 }

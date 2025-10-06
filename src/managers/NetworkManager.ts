@@ -12,7 +12,7 @@ import { Trace } from "../util/trace";
 export interface Network {
     feeds(start: FactReference[], specification: Specification): Promise<string[]>;
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>;
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void;
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds?: number): () => void;
     load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
 
 }
@@ -26,7 +26,7 @@ export class NetworkNoOp implements Network {
         return Promise.resolve({ references: [], bookmark });
     }
 
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds?: number): () => void {
         // Do nothing.
         return () => { };
     }
@@ -75,7 +75,7 @@ export class NetworkDistribution implements Network {
         };
     }
 
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds?: number): () => void {
         const feedObject = this.feedCache.getFeed(feed);
         if (!feedObject) {
             onError(new Error(`Feed ${feed} not found`));

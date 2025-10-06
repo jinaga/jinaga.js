@@ -23,10 +23,10 @@ export class HttpNetwork implements Network {
         return response;
     }
 
-    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
+    streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds?: number): () => void {
         return this.webClient.streamFeed(feed, bookmark, async (response: FeedResponse) => {
             await onResponse(response.references, response.bookmark);
-        }, onError);
+        }, onError, feedRefreshIntervalSeconds);
     }
 
     async load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
