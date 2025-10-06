@@ -273,6 +273,63 @@ describe("Subscriber", () => {
                 global.setTimeout = originalSetTimeout;
             }
         });
+
+        it("should not create tight loop when errors occur synchronously after max retries", async () => {
+            // Track all streamFeed calls
+            let callCount = 0;
+            let subscriber: Subscriber | null = null;
+            
+            // Given: Mock network that synchronously calls onError (simulating NetworkDistribution.streamFeed behavior)
+            mockNetwork.streamFeed = jest.fn((feed, bookmark, onResponse, onError) => {
+                callCount++;
+                // Synchronously call onError to simulate immediate failure
+                onError(new Error("Connection failed"));
+                return () => {};
+            });
+
+            // Given: Mock storage with bookmark
+            mockStorage.loadBookmark = jest.fn().mockResolvedValue("test-bookmark");
+            mockStorage.whichExist = jest.fn().mockResolvedValue([]);
+            mockStorage.save = jest.fn().mockResolvedValue([]);
+            mockStorage.saveBookmark = jest.fn().mockResolvedValue(undefined);
+            mockNetwork.load = jest.fn().mockResolvedValue([]);
+
+            try {
+                // When: Create subscriber with short refresh interval (1 second for faster testing)
+                subscriber = new Subscriber(
+                    "test-feed",
+                    mockNetwork,
+                    mockStorage,
+                    notifyFactsAdded,
+                    1 // feedRefreshIntervalSeconds - 1 second for faster testing
+                );
+
+                // When: Start the subscriber
+                const startPromise = subscriber.start().catch(() => {});
+
+                // Wait for all retries and some interval-based attempts (total ~8 seconds)
+                // 1 initial + 3 retries (1s + 2s + 4s = 7s) + a couple interval cycles
+                await new Promise(resolve => setTimeout(resolve, 8500));
+
+                // Clean up BEFORE assertions
+                subscriber.stop();
+                await startPromise.catch(() => {});
+                
+                // Allow final cleanup
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // Then: Verify callCount proves no tight loop
+                // Should have: 1 initial + 3 immediate retries + a few interval-based retries
+                // Should be around 4-10 calls total, definitely not hundreds
+                expect(callCount).toBeGreaterThanOrEqual(4); // At least initial + 3 retries
+                expect(callCount).toBeLessThan(20); // But not a tight loop
+            } finally {
+                // Ensure cleanup even if test fails
+                if (subscriber) {
+                    subscriber.stop();
+                }
+            }
+        }, 15000); // 15 second timeout for this test
     });
 
     describe("cancellation behavior", () => {
