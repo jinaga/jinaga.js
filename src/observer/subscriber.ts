@@ -80,7 +80,10 @@ export class Subscriber {
     }, err => {
       // Do not reject on errors to allow FetchConnection's retry logic to work.
       // The promise will resolve when the first successful data is received.
-      Trace.warn(`Subscriber connection error: ${err}`);
+      // Don't log AbortError as it's expected during periodic reconnection.
+      if (err.name !== 'AbortError') {
+        Trace.warn(`Subscriber connection error: ${err}`);
+      }
     }, this.refreshIntervalSeconds);
   }
 }
