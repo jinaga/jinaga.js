@@ -78,10 +78,9 @@ export class Subscriber {
         resolve();
       }
     }, err => {
-      if (!this.resolved) {
-        this.resolved = true;
-        reject(err);
-      }
+      // Do not reject on errors to allow FetchConnection's retry logic to work.
+      // The promise will resolve when the first successful data is received.
+      Trace.warn(`Subscriber connection error: ${err}`);
     }, this.refreshIntervalSeconds);
   }
 }
