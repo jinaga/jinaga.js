@@ -464,6 +464,7 @@ describe("Subscriber", () => {
                 // Restore original timers
                 global.setInterval = originalSetInterval;
             }
+        });
 
         it("should skip interval triggers while connection is in progress", async () => {
             // Given: Track streamFeed calls
@@ -519,6 +520,60 @@ describe("Subscriber", () => {
                 }
             }
         }, 5000); // 5 second timeout for this test
-        });
+        it("should clear isConnecting flag after successful connection", async () => {
+            // Given: Track how many times streamFeed is called
+            let streamFeedCallCount = 0;
+            let subscriber: Subscriber | null = null;
+            
+            // Given: A network where streamFeed calls onResponse successfully after a short delay
+            mockNetwork.streamFeed = jest.fn((feed, bookmark, onResponse, onError) => {
+                streamFeedCallCount++;
+                // Simulate successful connection after 10ms delay
+                setTimeout(() => onResponse([], bookmark), 10);
+                return () => {};
+            });
+
+            // Given: Storage with a bookmark
+            mockStorage.loadBookmark = jest.fn().mockResolvedValue("test-bookmark");
+            mockStorage.whichExist = jest.fn().mockResolvedValue([]);
+            mockStorage.save = jest.fn().mockResolvedValue([]);
+            mockStorage.saveBookmark = jest.fn().mockResolvedValue(undefined);
+            mockNetwork.load = jest.fn().mockResolvedValue([]);
+
+            try {
+                // When: Create subscriber with short refresh interval (0.1 seconds = 100ms)
+                subscriber = new Subscriber(
+                    "test-feed",
+                    mockNetwork,
+                    mockStorage,
+                    notifyFactsAdded,
+                    0.1 // feedRefreshIntervalSeconds - 100ms for faster testing
+                );
+
+                // When: Start the subscriber and await successful connection
+                await subscriber.start();
+
+                // Then: Verify first streamFeed call completed successfully
+                expect(streamFeedCallCount).toBe(1);
+
+                // When: Wait 150ms to allow the interval timer to fire again
+                await new Promise(resolve => setTimeout(resolve, 150));
+
+                // Clean up BEFORE assertions to stop timers
+                subscriber.stop();
+                
+                // Allow final cleanup
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                // Then: Verify streamFeed was called at least twice
+                // (proving the isConnecting flag was cleared after successful connection)
+                expect(streamFeedCallCount).toBeGreaterThanOrEqual(2);
+            } finally {
+                // Ensure cleanup even if test fails
+                if (subscriber) {
+                    subscriber.stop();
+                }
+            }
+        }, 5000); // 5 second timeout for this test
     });
 });
