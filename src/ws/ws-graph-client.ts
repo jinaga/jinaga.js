@@ -51,7 +51,7 @@ export class WsGraphClient {
     private readonly onFactsAdded?: (envelopes: FactEnvelope[]) => Promise<void>
   ) {}
 
-  subscribe(feed: string, bookmark: string, feedRefreshIntervalSeconds?: number): () => void {
+  subscribe(feed: string, bookmark: string, feedRefreshIntervalSeconds: number): () => void {
     this.activeFeeds.set(feed, { feed, bookmark });
     this.ensureConnected().then(() => this.sendSub(feed, bookmark)).catch(err => this.onErrorGlobal(err instanceof Error ? err : new Error(String(err))));
     return () => {

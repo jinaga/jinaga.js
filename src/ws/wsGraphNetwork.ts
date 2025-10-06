@@ -73,7 +73,7 @@ export class WsGraphNetwork implements Network {
     bookmark: string,
     onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>,
     onError: (err: Error) => void,
-    feedRefreshIntervalSeconds?: number
+    feedRefreshIntervalSeconds: number
   ): () => void {
     // Register a temporary handler for BOOK events for this feed
     this.onResponseHandlers.set(feed, onResponse);

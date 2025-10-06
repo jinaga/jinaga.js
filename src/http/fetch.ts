@@ -93,7 +93,7 @@ export class FetchConnection implements HttpConnection {
         }
     }
 
-    getStream(path: string, onResponse: (response: object) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds?: number): () => void {
+    getStream(path: string, onResponse: (response: object) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds: number): () => void {
         const controller = new AbortController();
         const signal = controller.signal;
         let closed = false;
@@ -101,7 +101,7 @@ export class FetchConnection implements HttpConnection {
         // Start a background task to read the stream.
         // This function will read one chunk and pass it to onResponse.
         // The function will then call itself to read the next chunk.
-        // If an error occurs, it will call onError.
+        // If an error occurs, it will retry after a delay.
         (async () => {
             let attempt = 0;
             const baseDelayMs = 1000;
@@ -174,16 +174,11 @@ export class FetchConnection implements HttpConnection {
                     if (err.name === 'AbortError') {
                         return;
                     }
-                    if (feedRefreshIntervalSeconds) {
-                        const exponentialDelay = baseDelayMs * Math.pow(2, attempt);
-                        const jitter = Math.random() * baseDelayMs;
-                        const delay = Math.min(exponentialDelay + jitter, feedRefreshIntervalSeconds * 1000);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        attempt++;
-                    } else {
-                        onError(err as Error);
-                        return;
-                    }
+                    const exponentialDelay = baseDelayMs * Math.pow(2, attempt);
+                    const jitter = Math.random() * baseDelayMs;
+                    const delay = Math.min(exponentialDelay + jitter, feedRefreshIntervalSeconds * 1000);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    attempt++;
                 }
             }
         })();
