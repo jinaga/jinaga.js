@@ -45,7 +45,7 @@ export type HttpResponse = HttpSuccess | HttpFailure | HttpRetry;
 
 export interface HttpConnection {
     get(path: string): Promise<{}>;
-    getStream(path: string, onResponse: (response: {}) => Promise<void>, onError: (err: Error) => void): () => void;
+    getStream(path: string, onResponse: (response: {}) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds: number): () => void;
     post(path: string, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<HttpResponse>;
     getAcceptedContentTypes(path: string): Promise<string[]>;
 }
@@ -113,8 +113,8 @@ export class WebClient {
         return <FeedResponse> await this.httpConnection.get(`/feeds/${feed}?b=${bookmark}`);
     }
 
-    streamFeed(feed: string, bookmark: string, onResponse: (response: FeedResponse) => Promise<void>, onError: (err: Error) => void): () => void {
-        return this.httpConnection.getStream(`/feeds/${feed}?b=${bookmark}`, r => onResponse(r as FeedResponse), onError);
+    streamFeed(feed: string, bookmark: string, onResponse: (response: FeedResponse) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds: number): () => void {
+        return this.httpConnection.getStream(`/feeds/${feed}?b=${bookmark}`, r => onResponse(r as FeedResponse), onError, feedRefreshIntervalSeconds);
     }
 
     private async post(path: string, contentType: PostContentType, accept: PostAccept, body: string) {

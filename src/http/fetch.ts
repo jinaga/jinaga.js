@@ -93,7 +93,7 @@ export class FetchConnection implements HttpConnection {
         }
     }
 
-    getStream(path: string, onResponse: (response: object) => Promise<void>, onError: (err: Error) => void): () => void {
+    getStream(path: string, onResponse: (response: object) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds: number): () => void {
         const controller = new AbortController();
         const signal = controller.signal;
         let closed = false;
@@ -101,76 +101,84 @@ export class FetchConnection implements HttpConnection {
         // Start a background task to read the stream.
         // This function will read one chunk and pass it to onResponse.
         // The function will then call itself to read the next chunk.
-        // If an error occurs, it will call onError.
+        // If an error occurs, it will retry after a delay.
         (async () => {
-            try {
-                const headers = await this.getHeaders();
-                if (closed) {
-                    return;
-                }
-
-                const response = await fetch(this.url + path, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/x-jinaga-feed-stream',
-                        ...headers
-                    },
-                    signal
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Unexpected status code ${response.status}: ${response.statusText}`);
-                }
-
-                const reader = response.body?.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                const read = async () => {
+            let attempt = 0;
+            const baseDelayMs = 1000;
+            while (!closed) {
+                try {
+                    const headers = await this.getHeaders();
                     if (closed) {
                         return;
                     }
 
-                    try {
-                        const { done, value } = await reader?.read()!;
-                        if (done) {
+                    const response = await fetch(this.url + path, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/x-jinaga-feed-stream',
+                            ...headers
+                        },
+                        signal
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Unexpected status code ${response.status}: ${response.statusText}`);
+                    }
+
+                    const reader = response.body?.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    const read = async () => {
+                        if (closed) {
                             return;
                         }
 
-                        buffer += decoder.decode(value, { stream: true });
-                        const lastNewline = buffer.lastIndexOf('\n');
-                        if (lastNewline >= 0) {
-                            const jsonText = buffer.substring(0, lastNewline);
-                            buffer = buffer.substring(lastNewline + 1);
-                            const lines = jsonText.split(/\r?\n/);
-                            for (const line of lines) {
-                                if (line.length > 0) {
-                                    try {
-                                        // As data comes in, parse non-blank lines to JSON and pass to onResponse.
-                                        const json = JSON.parse(line);
-                                        await onResponse(json);
-                                    } catch (err) {
-                                        onError(err as Error);
-                                    }
-                                }
-                                // Skip blank lines.
+                        try {
+                            const { done, value } = await reader?.read()!;
+                            if (done) {
+                                return;
                             }
+
+                            buffer += decoder.decode(value, { stream: true });
+                            const lastNewline = buffer.lastIndexOf('\n');
+                            if (lastNewline >= 0) {
+                                const jsonText = buffer.substring(0, lastNewline);
+                                buffer = buffer.substring(lastNewline + 1);
+                                const lines = jsonText.split(/\r?\n/);
+                                for (const line of lines) {
+                                    if (line.length > 0) {
+                                        try {
+                                            // As data comes in, parse non-blank lines to JSON and pass to onResponse.
+                                            const json = JSON.parse(line);
+                                            await onResponse(json);
+                                        } catch (err) {
+                                            onError(err as Error);
+                                        }
+                                    }
+                                    // Skip blank lines.
+                                }
+                            }
+
+                            // Continue reading the next chunk.
+                            read();
+                        } catch (err) {
+                            onError(err as Error);
                         }
+                    };
 
-                        // Continue reading the next chunk.
-                        read();
-                    } catch (err) {
-                        onError(err as Error);
+                    // Start reading the first chunk.
+                    read();
+                    break;
+                } catch (err: any) {
+                    if (err.name === 'AbortError') {
+                        return;
                     }
-                };
-
-                // Start reading the first chunk.
-                read();
-            } catch (err: any) {
-                if (err.name === 'AbortError') {
-                    // Request was aborted, do nothing
-                } else {
-                    onError(err as Error);
+                    const exponentialDelay = baseDelayMs * Math.pow(2, attempt);
+                    const jitter = Math.random() * baseDelayMs;
+                    const delay = Math.min(exponentialDelay + jitter, feedRefreshIntervalSeconds * 1000);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    attempt++;
                 }
             }
         })();

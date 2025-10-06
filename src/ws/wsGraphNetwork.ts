@@ -72,12 +72,13 @@ export class WsGraphNetwork implements Network {
     feed: string,
     bookmark: string,
     onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>,
-    onError: (err: Error) => void
+    onError: (err: Error) => void,
+    feedRefreshIntervalSeconds: number
   ): () => void {
     // Register a temporary handler for BOOK events for this feed
     this.onResponseHandlers.set(feed, onResponse);
     this.onErrorHandlers.set(feed, onError);
-    const unsubscribe = this.wsClient.subscribe(feed, bookmark);
+    const unsubscribe = this.wsClient.subscribe(feed, bookmark, feedRefreshIntervalSeconds);
     return () => {
       this.onResponseHandlers.delete(feed);
       this.onErrorHandlers.delete(feed);
