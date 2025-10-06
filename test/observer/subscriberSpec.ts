@@ -330,6 +330,97 @@ describe("Subscriber", () => {
                 }
             }
         }, 15000); // 15 second timeout for this test
+        
+        it("should clear isConnecting before executing scheduled retry", async () => {
+            // Given: Mock setTimeout to control retry timing
+            const originalSetTimeout = global.setTimeout;
+            const scheduledTimeouts: Array<{ callback: () => void; delay: number }> = [];
+            
+            global.setTimeout = jest.fn((callback: any, delay: number) => {
+                scheduledTimeouts.push({ callback, delay });
+                return 12345 as any;
+            }) as any;
+
+            // Given: Track the total number of streamFeed calls
+            let streamFeedCallCount = 0;
+            
+            // Given: Mock network where streamFeed calls onError for the first 2 attempts, then onResponse successfully on the third
+            mockNetwork.streamFeed = jest.fn((feed, bookmark, onResponse, onError) => {
+                streamFeedCallCount++;
+                
+                if (streamFeedCallCount <= 2) {
+                    // First two calls: fail immediately
+                    onError(new Error("Connection failed"));
+                } else {
+                    // Third call: succeed
+                    onResponse([], bookmark);
+                }
+                
+                return () => {};
+            });
+
+            // Given: Mock storage with bookmark
+            mockStorage.loadBookmark = jest.fn().mockResolvedValue("test-bookmark");
+            mockStorage.whichExist = jest.fn().mockResolvedValue([]);
+            mockStorage.save = jest.fn().mockResolvedValue([]);
+            mockStorage.saveBookmark = jest.fn().mockResolvedValue(undefined);
+            mockNetwork.load = jest.fn().mockResolvedValue([]);
+
+            try {
+                // When: Create subscriber with long refresh interval (90 seconds) so only retries happen
+                const subscriber = new Subscriber(
+                    "test-feed",
+                    mockNetwork,
+                    mockStorage,
+                    notifyFactsAdded,
+                    90 // feedRefreshIntervalSeconds - 90 seconds to avoid interval triggers during test
+                );
+
+                const startPromise = subscriber.start();
+
+                // Flush initial microtasks to allow first connection attempt
+                await new Promise(resolve => originalSetTimeout(resolve, 10));
+
+                // Then: Verify first streamFeed call happened and failed
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(1);
+
+                // Then: First retry should be scheduled with 1 second delay
+                expect(scheduledTimeouts.length).toBeGreaterThan(0);
+                expect(scheduledTimeouts[0].delay).toBe(1000);
+
+                // When: Execute first retry
+                scheduledTimeouts[0].callback();
+                
+                // Flush microtasks to allow retry to execute
+                await new Promise(resolve => originalSetTimeout(resolve, 10));
+
+                // Then: Verify second streamFeed call happened (first retry)
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(2);
+
+                // Then: Second retry should be scheduled with 2 second delay
+                expect(scheduledTimeouts[1].delay).toBe(2000);
+
+                // When: Execute second retry
+                scheduledTimeouts[1].callback();
+                
+                // Flush microtasks to allow retry to execute
+                await new Promise(resolve => originalSetTimeout(resolve, 10));
+
+                // Then: Verify third streamFeed call happened (second retry) and succeeded
+                expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(3);
+
+                // Then: Wait for the promise to resolve after successful connection
+                await startPromise;
+
+                // Then: Verify streamFeed was called exactly 3 times (1 initial + 2 retries)
+                expect(streamFeedCallCount).toBe(3);
+
+                // Clean up
+                subscriber.stop();
+            } finally {
+                global.setTimeout = originalSetTimeout;
+            }
+        });
     });
 
     describe("cancellation behavior", () => {
