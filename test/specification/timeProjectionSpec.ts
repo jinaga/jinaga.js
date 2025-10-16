@@ -90,6 +90,48 @@ describe("Time projection", () => {
         expect(sortedTimestamps[0]).toBe(time1.getTime());
         expect(sortedTimestamps[1]).toBe(time2.getTime());
     });
+
+    it("preserves original timestamp when duplicate fact is saved", async () => {
+        // Setup mocked time provider
+        let currentTime = new Date("2025-01-01T12:00:00Z");
+        const timeProvider = () => currentTime;
+        
+        // Create Jinaga instance with mocked time
+        const j = createJinagaWithTimeProvider(timeProvider);
+        
+        // Create a user fact
+        const user = await j.fact(new User("--- TEST PUBLIC KEY ---"));
+        
+        // Create name fact at time T1
+        const time1 = new Date("2025-01-01T12:00:00Z");
+        currentTime = time1;
+        await j.fact(new UserName(user, "Alice"));
+        
+        // Advance the mocked time to T2
+        const time2 = new Date("2025-01-01T13:00:00Z");
+        currentTime = time2;
+        
+        // Save the exact same name fact again (duplicate)
+        await j.fact(new UserName(user, "Alice"));
+        
+        // Parse specification with time projection
+        const parser = new SpecificationParser("(user: Jinaga.User) { name: UserName [name->user: Jinaga.User = user] } => @name");
+        parser.skipWhitespace();
+        const specification = parser.parseSpecification();
+        
+        // Query with time projection
+        const results = await j.query(new SpecificationOf(specification), user);
+        
+        // Verify only ONE result is returned (duplicates are deduplicated)
+        expect(results).toHaveLength(1);
+        
+        // Verify the result is a Date object
+        expect(results[0]).toBeInstanceOf(Date);
+        
+        // Verify the timestamp is T1 (not T2)
+        const timestamp = results[0] as Date;
+        expect(timestamp.getTime()).toBe(time1.getTime());
+    });
 });
 
 function createJinagaWithTimeProvider(timeProvider?: () => Date): Jinaga {
