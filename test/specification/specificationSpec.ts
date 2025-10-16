@@ -676,6 +676,52 @@ describe("Specification parser", () => {
         expect(specification).toEqual(expected);
     });
 
+    it("accepts time result", () => {
+        const specification = parseSpecification(`
+            (user: Jinaga.User) {
+                name: MyApp.User.Name [
+                    name->user:Jinaga.User = user
+                ]
+            } => @name`);
+        const expected: Specification = {
+            given: [
+                {
+                    label: {
+                        name: "user",
+                        type: "Jinaga.User"
+                    },
+                    conditions: []
+                }
+            ],
+            matches: [
+                {
+                    unknown: {
+                        name: "name",
+                        type: "MyApp.User.Name"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "user",
+                                    predecessorType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ],
+            projection: {
+                type: "time",
+                label: "name"
+            }
+        };
+        expect(specification).toEqual(expected);
+    });
+
     it("accepts fact result", () => {
         const specification = parseSpecification(`
             (user: Jinaga.User) {

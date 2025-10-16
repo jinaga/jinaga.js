@@ -64,6 +64,11 @@ export interface HashProjection {
     label: string
 }
 
+export interface TimeProjection {
+    type: "time",
+    label: string
+}
+
 export interface FactProjection {
     type: "fact",
     label: string
@@ -76,7 +81,7 @@ export interface CompositeProjection {
 
 export type NamedComponentProjection = { name: string } & ComponentProjection;
 export type ComponentProjection = SpecificationProjection | SingularProjection;
-export type SingularProjection = FieldProjection | HashProjection | FactProjection;
+export type SingularProjection = FieldProjection | HashProjection | TimeProjection | FactProjection;
 export type Projection = CompositeProjection | SingularProjection;
 
 export interface Match {

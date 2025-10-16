@@ -77,6 +77,9 @@ function describeProjection(projection: Projection, depth: number): string {
     else if (projection.type === "hash") {
         return `#${projection.label}`;
     }
+    else if (projection.type === "time") {
+        return `@${projection.label}`;
+    }
     else {
         const _exhaustiveCheck: never = projection;
         throw new Error(`Unknown projection type: ${(_exhaustiveCheck as any).type}`);
@@ -95,6 +98,9 @@ function describeComponentProjection(projection: ComponentProjection, depth: num
     }
     else if (projection.type === "hash") {
         return `#${projection.label}`;
+    }
+    else if (projection.type === "time") {
+        return `@${projection.label}`;
     }
     else {
         const _exhaustiveCheck: never = projection;

@@ -210,6 +210,14 @@ export class SpecificationRunner {
       const reference = tuple[projection.label];
       return reference.hash;
     }
+    else if (projection.type === "time") {
+      if (!tuple.hasOwnProperty(projection.label)) {
+        throw new Error(`The label ${projection.label} is not defined.`);
+      }
+      // TODO: Implement time projection runtime support
+      // Time projections require timestamp metadata that is not currently stored in FactRecord
+      throw new Error(`Time projection is not yet fully implemented at runtime.`);
+    }
     else {
       const _exhaustiveCheck: never = projection;
       throw new Error(`Unexpected child projection type: ${_exhaustiveCheck}`);
