@@ -3,6 +3,11 @@ import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals, FactTuple, uniqueFactReferences } from '../storage';
 
+// Internal types for time projection support
+type TimestampedFactRecord = FactRecord & { timestamp: Date };
+type TimestampedFactEnvelope = { fact: TimestampedFactRecord; signatures: FactEnvelope['signatures'] };
+type TimeProvider = () => Date;
+
 export function getPredecessors(fact: FactRecord | null, role: string) {
     if (!fact) {
         return [];
@@ -39,12 +44,14 @@ function loadAll(references: FactReference[], source: FactEnvelope[], target: Fa
 }
 
 export class MemoryStore implements Storage {
-    private factEnvelopes: FactEnvelope[] = [];
+    private factEnvelopes: TimestampedFactEnvelope[] = [];
     private bookmarksByFeed: { [feed: string]: string } = {};
     private runner: SpecificationRunner;
     private mruDateBySpecificationHash: { [specificationHash: string]: Date } = {};
+    private timeProvider: TimeProvider;
 
-    constructor() {
+    constructor(timeProvider?: TimeProvider) {
+        this.timeProvider = timeProvider ?? (() => new Date());
         this.runner = new SpecificationRunner({
             getPredecessors: this.getPredecessors.bind(this),
             getSuccessors: this.getSuccessors.bind(this),
@@ -59,14 +66,21 @@ export class MemoryStore implements Storage {
 
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const added: FactEnvelope[] = [];
+        const timestamp = this.timeProvider();
         for (const envelope of envelopes) {
             const isFact = factReferenceEquals(envelope.fact);
             const existing = this.factEnvelopes.find(e => isFact(e.fact));
             if (!existing) {
-                this.factEnvelopes.push(envelope);
+                // Add timestamp to new facts
+                const timestampedEnvelope: TimestampedFactEnvelope = {
+                    fact: { ...envelope.fact, timestamp },
+                    signatures: envelope.signatures
+                };
+                this.factEnvelopes.push(timestampedEnvelope);
                 added.push(envelope);
             }
             else {
+                // Preserve original timestamp for duplicates
                 const newSignatures = envelope.signatures.filter(s =>
                     !existing.signatures.some(s2 => s2.publicKey === s.publicKey));
                 if (newSignatures.length > 0) {

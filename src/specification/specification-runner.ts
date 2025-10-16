@@ -214,9 +214,17 @@ export class SpecificationRunner {
       if (!tuple.hasOwnProperty(projection.label)) {
         throw new Error(`The label ${projection.label} is not defined.`);
       }
-      // TODO: Implement time projection runtime support
-      // Time projections require timestamp metadata that is not currently stored in FactRecord
-      throw new Error(`Time projection is not yet fully implemented at runtime.`);
+      const reference = tuple[projection.label];
+      const fact = await this.source.findFact(reference);
+      if (fact === null) {
+        throw new Error(`The fact ${reference} is not defined.`);
+      }
+      // Access timestamp property if available
+      const timestampedFact = fact as FactRecord & { timestamp?: Date };
+      if (!timestampedFact.timestamp) {
+        throw new Error(`The fact ${reference.type}:${reference.hash} does not have timestamp metadata.`);
+      }
+      return timestampedFact.timestamp;
     }
     else {
       const _exhaustiveCheck: never = projection;
