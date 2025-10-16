@@ -1,0 +1,198 @@
+---
+alwaysApply: false
+---
+# Plan Review and Feasibility Assessment Rule
+
+## Purpose
+This rule instructs models to critically review implementation plans against established documentation standards and codebase consistency. The model must identify issues, assess feasibility, and recommend changes to ensure plans are implementable, well-structured, and aligned with existing code.
+
+## Review Criteria
+
+### 1. Documentation Standards Compliance ⭐ **CRITICAL**
+**MUST verify the plan follows the established structure:**
+- [ ] **Overview section** with clear project description
+- [ ] **Progress Summary** with status indicators and current status
+- [ ] **Prerequisites** with system requirements and dependencies
+- [ ] **Phased breakdown** with clear phase objectives
+- [ ] **Task groups** with specific, actionable steps
+- [ ] **Acceptance criteria** with testable requirements
+- [ ] **Testing approach** specification for each phase
+- [ ] **File locations** and implementation paths
+- [ ] **Progress tracking** with checkboxes and status indicators
+
+**Content Guidelines Compliance:**
+- [ ] Focuses on planning, coordination, and project management
+- [ ] Includes incremental acceptance criteria for each phase
+- [ ] Specifies testing approach and validation steps
+- [ ] Tracks completion status with visual indicators
+- [ ] **NO source code or implementation details** - these belong in code comments
+- [ ] **MUST include testable acceptance criteria** for each phase
+
+### 2. Codebase Feasibility Assessment ⭐ **CRITICAL**
+**MUST evaluate implementation feasibility against existing code:**
+- [ ] **File Structure Alignment**: Verify proposed file paths match existing structure
+- [ ] **Component Architecture**: Check if proposed components fit existing patterns
+- [ ] **Service Layer Consistency**: Verify service implementations align with existing services
+- [ ] **API Integration**: Ensure proposed API changes match backend capabilities
+- [ ] **State Management**: Verify state patterns align with existing implementation
+- [ ] **Dependencies**: Check if proposed dependencies are already available
+- [ ] **Build System**: Verify proposed file locations work with existing build configuration
+
+**Identify Implementation Barriers:**
+- [ ] **Missing Infrastructure**: Required services, utilities, or components not yet built
+- [ ] **Architectural Mismatches**: Proposed patterns don't align with existing code
+- [ ] **Dependency Gaps**: Required libraries or tools not available
+- [ ] **Build System Issues**: Proposed file locations conflict with build configuration
+- [ ] **API Mismatches**: Backend endpoints don't support proposed functionality
+
+### 3. Prerequisites Validation
+**MUST verify prerequisites are actually met:**
+- [ ] **System Requirements**: Check if listed prerequisites are accurate
+- [ ] **Dependency Status**: Verify if dependencies are actually available
+- [ ] **Service Availability**: Confirm if required services are operational
+- [ ] **Environment Setup**: Verify if development environment supports requirements
+- [ ] **Access Permissions**: Check if required file access and permissions exist
+
+**Identify Missing Prerequisites:**
+- [ ] **Unstated Dependencies**: Requirements not listed but needed
+- [ ] **Inaccurate Assumptions**: Prerequisites that don't match reality
+- [ ] **Missing Setup Steps**: Required configuration not documented
+- [ ] **Version Conflicts**: Dependency version incompatibilities
+
+### 4. Implementation Complexity Assessment
+**MUST evaluate the complexity of proposed changes:**
+- [ ] **Scope Appropriateness**: Phase size and complexity are manageable
+- [ ] **Dependency Chain**: Phase dependencies are logical and achievable
+- [ ] **Resource Requirements**: Effort estimates are realistic
+- [ ] **Risk Assessment**: High-risk changes are identified and mitigated
+- [ ] **Integration Complexity**: Changes integrate smoothly with existing code
+
+**Identify Over-Complexity:**
+- [ ] **Unrealistic Phase Sizes**: Phases that are too large or complex
+- [ ] **Circular Dependencies**: Phases that depend on each other
+- [ ] **Scope Creep**: Features beyond the core project scope
+- [ ] **Over-Engineering**: Solutions more complex than the problem requires
+
+### 5. Testing and Validation Feasibility
+**MUST verify testing approach is implementable:**
+- [ ] **Test Infrastructure**: Required testing tools and frameworks are available
+- [ ] **Test Data**: Required test data can be generated or obtained
+- [ ] **Mocking Capabilities**: External dependencies can be properly mocked
+- [ ] **Performance Testing**: Performance benchmarks are measurable
+- [ ] **Integration Testing**: End-to-end testing is feasible
+
+**Identify Testing Gaps:**
+- [ ] **Missing Test Tools**: Required testing frameworks not available
+- [ ] **Inadequate Test Coverage**: Testing approach doesn't cover critical scenarios
+- [ ] **Unrealistic Benchmarks**: Performance requirements can't be measured
+- [ ] **Integration Challenges**: End-to-end testing is too complex
+
+## Review Process
+
+### Step 1: Standards Compliance Check
+1. Verify plan follows required structure and sections
+2. Check content guidelines compliance
+3. Identify missing required sections
+4. Flag any implementation details that should be removed
+
+### Step 2: Codebase Analysis
+1. Examine existing file structure and organization
+2. Review existing component patterns and architecture
+3. Check service layer implementation and patterns
+4. Verify API endpoints and backend capabilities
+5. Assess state management patterns
+
+### Step 3: Feasibility Evaluation
+1. Map proposed changes to existing code structure
+2. Identify missing infrastructure or dependencies
+3. Assess architectural alignment and consistency
+4. Evaluate implementation complexity and risks
+5. Check prerequisite accuracy and completeness
+
+### Step 4: Testing Assessment
+1. Verify testing approach is implementable
+2. Check if required testing tools are available
+3. Assess test data and mocking requirements
+4. Evaluate performance testing feasibility
+
+### Step 5: Risk Identification
+1. Identify high-risk implementation areas
+2. Flag missing prerequisites or dependencies
+3. Note architectural mismatches or conflicts
+4. Highlight unrealistic complexity or scope
+
+## Required Output Format
+
+### Compliance Summary
+- [ ] **Standards Compliance**: [COMPLIANT/PARTIALLY COMPLIANT/NON-COMPLIANT]
+- [ ] **Codebase Feasibility**: [FEASIBLE/PARTIALLY FEASIBLE/INFEASIBLE]
+- [ ] **Implementation Complexity**: [APPROPRIATE/OVER-COMPLEX/UNDER-SCOPED]
+
+### Critical Issues Found
+1. **Issue Category**: [Specific issue description]
+   - **Impact**: [High/Medium/Low]
+   - **Recommendation**: [Specific change needed]
+
+### Required Changes
+1. **Structural Changes**: [List of section additions/modifications]
+2. **Content Updates**: [Specific content changes needed]
+3. **Prerequisite Updates**: [Prerequisites to add/modify/remove]
+4. **Phase Adjustments**: [Phases to split/combine/reorder]
+
+### Feasibility Improvements
+1. **Missing Infrastructure**: [Required components/services to build first]
+2. **Architectural Alignments**: [Changes needed to match existing patterns]
+3. **Dependency Additions**: [Missing dependencies to add]
+4. **Prerequisite Clarifications**: [Unclear or missing prerequisites]
+
+### Implementation Recommendations
+1. **Phase Simplification**: [Complex phases to break down]
+2. **Dependency Management**: [How to handle missing dependencies]
+3. **Testing Approach**: [Testing strategy improvements]
+4. **Risk Mitigation**: [How to address identified risks]
+
+## Example Review Response
+
+```
+## Compliance Summary
+- **Standards Compliance**: PARTIALLY COMPLIANT
+- **Codebase Feasibility**: PARTIALLY FEASIBLE
+- **Implementation Complexity**: OVER-COMPLEX
+
+## Critical Issues Found
+1. **Missing Infrastructure**: Plan assumes token analysis utilities exist but they don't
+   - **Impact**: High - Phase 1 cannot start without these utilities
+   - **Recommendation**: Add prerequisite phase to build foundational utilities
+
+2. **File Structure Mismatch**: Proposed utils directory doesn't exist in current structure
+   - **Impact**: Medium - file creation will fail
+   - **Recommendation**: Align file paths with existing frontend/src structure
+
+## Required Changes
+1. **Add Prerequisite Phase 0**: Build foundational utilities and directory structure
+2. **Update file paths**: Align with existing frontend/src organization
+3. **Add missing dependencies**: Specify required testing frameworks
+4. **Clarify prerequisites**: Document exact environment requirements
+
+## Feasibility Improvements
+1. **Build utils directory structure** before starting token analysis
+2. **Create foundational services** that other phases depend on
+3. **Add testing framework setup** to prerequisites
+4. **Verify build system compatibility** with proposed file locations
+
+## Implementation Recommendations
+1. **Split Phase 1** into smaller, more manageable tasks
+2. **Add dependency installation** steps to prerequisites
+3. **Include build verification** steps for each phase
+4. **Add rollback plan** for high-risk changes
+```
+
+## Enforcement
+- **MUST** complete all review criteria checks
+- **MUST** provide specific, actionable recommendations
+- **MUST** reference existing code structure when identifying issues
+- **MUST** suggest concrete changes to improve feasibility
+- **MUST** maintain focus on implementation readiness and risk mitigation
+- **MUST NOT** suggest adding implementation details to plan
+- **MUST NOT** ignore existing codebase when making recommendations
+- **MUST** identify missing prerequisites and infrastructure gaps

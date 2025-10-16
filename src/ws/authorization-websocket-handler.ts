@@ -126,7 +126,7 @@ export class AuthorizationWebSocketHandler {
             const userFact = await this.authorization.getOrCreateUserFact(userIdentity);
             userRef = { type: userFact.type, hash: userFact.hash };
           }
-          const result = await this.distributionEngine.canDistributeToAll([feedSpec], namedStart, userRef);
+          const result = this.distributionEngine.canDistributeToAll([feedSpec], namedStart, userRef);
           if (result.type === "failure") {
             const message = `Not authorized: ${result.reason}`;
             socket.send(`ERR\n${JSON.stringify(feed)}\n${JSON.stringify(message)}\n\n`);

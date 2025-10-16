@@ -1,5 +1,84 @@
-import { Condition, ExistentialCondition, isExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
+import { Condition, ExistentialCondition, isExistentialCondition, Label, Match, PathCondition, Projection, Role, Specification } from "./specification";
 import { detectDisconnectedSpecification } from "./UnionFind";
+
+function roleEqual(a: Role, b: Role): boolean {
+    return a.name === b.name && a.predecessorType === b.predecessorType;
+}
+
+function labelEqual(a: Label, b: Label): boolean {
+    return a.name === b.name && a.type === b.type;
+}
+
+function pathConditionEqual(a: PathCondition, b: PathCondition): boolean {
+    if (a.type !== b.type) return false;
+    if (a.labelRight !== b.labelRight) return false;
+
+    // Strict array comparison - order matters for roles
+    if (a.rolesLeft.length !== b.rolesLeft.length) return false;
+    for (let i = 0; i < a.rolesLeft.length; i++) {
+        if (!roleEqual(a.rolesLeft[i], b.rolesLeft[i])) return false;
+    }
+
+    if (a.rolesRight.length !== b.rolesRight.length) return false;
+    for (let i = 0; i < a.rolesRight.length; i++) {
+        if (!roleEqual(a.rolesRight[i], b.rolesRight[i])) return false;
+    }
+
+    return true;
+}
+
+function existentialConditionEqual(a: ExistentialCondition, b: ExistentialCondition): boolean {
+    if (a.type !== b.type) return false;
+    if (a.exists !== b.exists) return false;
+
+    if (a.matches.length !== b.matches.length) return false;
+
+    // Check that every match in a has a corresponding equal match in b
+    for (const matchA of a.matches) {
+        const hasMatch = b.matches.some(matchB => matchEqual(matchA, matchB));
+        if (!hasMatch) return false;
+    }
+
+    // Check that every match in b has a corresponding equal match in a
+    for (const matchB of b.matches) {
+        const hasMatch = a.matches.some(matchA => matchEqual(matchA, matchB));
+        if (!hasMatch) return false;
+    }
+
+    return true;
+}
+
+function conditionEqual(a: Condition, b: Condition): boolean {
+    if (a.type !== b.type) return false;
+
+    if (a.type === "path") {
+        return pathConditionEqual(a as PathCondition, b as PathCondition);
+    } else if (a.type === "existential") {
+        return existentialConditionEqual(a as ExistentialCondition, b as ExistentialCondition);
+    }
+
+    return false;
+}
+
+function matchEqual(a: Match, b: Match): boolean {
+    if (!labelEqual(a.unknown, b.unknown)) return false;
+
+    if (a.conditions.length !== b.conditions.length) return false;
+
+    // Check that every condition in a has a corresponding equal condition in b
+    for (const conditionA of a.conditions) {
+        const hasMatch = b.conditions.some(conditionB => conditionEqual(conditionA, conditionB));
+        if (!hasMatch) return false;
+    }
+
+    // Check that every condition in b has a corresponding equal condition in a
+    for (const conditionB of b.conditions) {
+        const hasMatch = a.conditions.some(conditionA => conditionEqual(conditionA, conditionB));
+        if (!hasMatch) return false;
+    }
+
+    return true;
+}
 
 type InverseOperation = "add" | "remove";
 
@@ -215,10 +294,10 @@ function invertExistentialConditions(outerMatches: Match[], conditions: Conditio
 
 function removeCondition(matches: Match[], condition: ExistentialCondition): Match[] {
     return matches.map(match =>
-        match.conditions.includes(condition) ?
+        match.conditions.some(c => conditionEqual(c, condition)) ?
             {
                 unknown: match.unknown,
-                conditions: match.conditions.filter(c => c !== condition)
+                conditions: match.conditions.filter(c => !conditionEqual(c, condition))
             } :
             match
     );
