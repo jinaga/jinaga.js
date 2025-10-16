@@ -10,6 +10,16 @@ class UserName {
     ) { }
 }
 
+class Event {
+    static Type = "IntegrationTest.TimeProjection.Event" as const;
+    type = Event.Type;
+
+    constructor(
+        public identifier: string,
+        public description: string
+    ) { }
+}
+
 describe("Time projection", () => {
     it("returns the time when a fact was learned", async () => {
         // Create Jinaga instance
@@ -131,6 +141,52 @@ describe("Time projection", () => {
         // Verify the timestamp is T1 (not T2)
         const timestamp = results[0] as Date;
         expect(timestamp.getTime()).toBe(time1.getTime());
+    });
+
+    it("returns time projection as component within composite object", async () => {
+        // Setup mocked time provider
+        let currentTime = new Date("2025-01-01T12:00:00Z");
+        const timeProvider = () => currentTime;
+        
+        // Create Jinaga instance with mocked time
+        const j = createJinagaWithTimeProvider(timeProvider);
+        
+        // Create an event fact
+        const eventTime = new Date("2025-01-01T12:30:00Z");
+        currentTime = eventTime;
+        const event = await j.fact(new Event("event-001", "Test event description"));
+        
+        // Parse specification with composite projection including time projection
+        const parser = new SpecificationParser(`
+            (event: IntegrationTest.TimeProjection.Event) {
+            } => {
+                identifier = event.identifier
+                description = event.description
+                timestamp = @event
+            }
+        `);
+        parser.skipWhitespace();
+        const specification = parser.parseSpecification();
+        
+        // Query with composite projection
+        const results = await j.query(new SpecificationOf(specification), event);
+        
+        // Verify we got exactly one result
+        expect(results).toHaveLength(1);
+        
+        // Verify the result is an object with all three properties
+        const result = results[0] as any;
+        expect(result).toHaveProperty('identifier');
+        expect(result).toHaveProperty('description');
+        expect(result).toHaveProperty('timestamp');
+        
+        // Verify field values are correct
+        expect(result.identifier).toBe("event-001");
+        expect(result.description).toBe("Test event description");
+        
+        // Verify timestamp is a Date object with correct value
+        expect(result.timestamp).toBeInstanceOf(Date);
+        expect(result.timestamp.getTime()).toBe(eventTime.getTime());
     });
 });
 
