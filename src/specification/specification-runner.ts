@@ -198,7 +198,7 @@ export class SpecificationRunner {
       const reference = tuple[projection.label];
       const fact = await this.source.findFact(reference);
       if (fact === null) {
-        throw new Error(`The fact ${reference} is not defined.`);
+        throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
       }
       const value: any = fact.fields[projection.field];
       return value;
@@ -209,6 +209,22 @@ export class SpecificationRunner {
       }
       const reference = tuple[projection.label];
       return reference.hash;
+    }
+    else if (projection.type === "time") {
+      if (!tuple.hasOwnProperty(projection.label)) {
+        throw new Error(`The label ${projection.label} is not defined.`);
+      }
+      const reference = tuple[projection.label];
+      const fact = await this.source.findFact(reference);
+      if (fact === null) {
+        throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
+      }
+      // Access timestamp property if available
+      const timestampedFact = fact as FactRecord & { timestamp?: Date };
+      if (!timestampedFact.timestamp) {
+        throw new Error(`The fact ${reference.type}:${reference.hash} does not have timestamp metadata.`);
+      }
+      return timestampedFact.timestamp;
     }
     else {
       const _exhaustiveCheck: never = projection;

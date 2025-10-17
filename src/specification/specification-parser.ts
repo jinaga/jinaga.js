@@ -259,6 +259,10 @@ export class SpecificationParser {
             const label = this.parseIdentifier();
             return { type: "hash", name, label };
         }
+        else if (this.consume("@")) {
+            const label = this.parseIdentifier();
+            return { type: "time", name, label };
+        }
         else {
             const label = this.parseIdentifier();
             if (this.consume(".")) {
@@ -294,6 +298,13 @@ export class SpecificationParser {
             const label = this.parseIdentifier();
             return {
                 type: "hash",
+                label
+            };
+        }
+        else if (this.consume("@")) {
+            const label = this.parseIdentifier();
+            return {
+                type: "time",
                 label
             };
         }
