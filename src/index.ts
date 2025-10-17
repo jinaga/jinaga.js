@@ -55,7 +55,7 @@ export { FeedCache, FeedObject } from "./specification/feed-cache";
 export { invertSpecification, SpecificationInverse } from "./specification/inverse";
 export { buildModel, FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf } from './specification/model';
 export { EdgeDescription, emptySkeleton, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, skeletonOfSpecification } from './specification/skeleton';
-export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationGiven, specificationIsDeterministic, specificationIsNotDeterministic, SpecificationProjection, splitBeforeFirstSuccessor } from './specification/specification';
+export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationGiven, specificationIsDeterministic, specificationIsNotDeterministic, SpecificationProjection, splitBeforeFirstSuccessor, TimeProjection } from './specification/specification';
 export { Invalid, SpecificationParser } from './specification/specification-parser';
 export { detectDisconnectedSpecification, DisconnectedSpecificationError } from "./specification/UnionFind";
 export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, uniqueFactReferences, validateGiven } from './storage';
