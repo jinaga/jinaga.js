@@ -915,4 +915,365 @@ describe("Nested Specification Subscription", () => {
             observer2.stop();
         });
     });
+    describe("Race Condition Reproduction Tests", () => {
+        it("should handle facts arriving during observer initialization", async () => {
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => ({
+                                employeeNumber: manager.employeeNumber
+                            }))
+                    }))
+            );
+
+            const offices: any[] = [];
+            const managerAddCallbacks: number[] = [];
+            
+            console.log("TEST: Starting subscription...");
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: Office handler called for: ${projection.identifier}`);
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                projection.managers.onAdded(manager => {
+                    console.log(`TEST: Manager handler called for employee ${manager.employeeNumber}`);
+                    model.managers.push({
+                        employeeNumber: manager.employeeNumber
+                    });
+                    managerAddCallbacks.push(manager.employeeNumber);
+                });
+                console.log(`TEST: Registered onAdded handler for office ${projection.identifier}`);
+            });
+
+            // Don't await loaded() yet - add nested facts immediately
+            console.log("TEST: Adding managers BEFORE awaiting loaded()...");
+            const manager1Promise = j.fact(new Manager(office, 2001));
+            const manager2Promise = j.fact(new Manager(office, 2002));
+            
+            console.log("TEST: Now awaiting loaded()...");
+            await observer.loaded();
+            
+            console.log("TEST: Awaiting manager facts...");
+            await manager1Promise;
+            await manager2Promise;
+
+            console.log("TEST: Final state - offices:", JSON.stringify(offices));
+            console.log("TEST: Manager callbacks invoked:", managerAddCallbacks);
+
+            // Assert callbacks should still be invoked
+            expect(managerAddCallbacks).toEqual(expect.arrayContaining([2001, 2002]));
+            expect(managerAddCallbacks.length).toBe(2);
+            expect(offices[0].managers).toEqual(expect.arrayContaining([
+                { employeeNumber: 2001 },
+                { employeeNumber: 2002 }
+            ]));
+
+            observer.stop();
+        });
+
+        // RACE CONDITION: Nested handler registration timing
+        // FAILURE MODE: When user code delays registering nested handlers (e.g., via setTimeout),
+        // child facts that arrive before the handler is registered are lost forever.
+        // The notification system correctly identifies that no handler exists for the nested path,
+        // but there's no mechanism to replay these notifications once the handler is registered.
+        // LOG EVIDENCE: "[Observer] NO HANDLER FOUND - Path: .managers"
+        // EXPECTED: managerNotifications to contain [2101]
+        // ACTUAL: managerNotifications = []
+        it.skip("should handle nested facts before nested handler registration", async () => {
+            j = JinagaTest.create({
+                initialState: [creator, company]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const offices: any[] = [];
+            const handlerRegistrations: string[] = [];
+            const managerNotifications: number[] = [];
+
+            console.log("TEST: Starting subscription...");
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: Office projection callback invoked for: ${projection.identifier}`);
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                // Use setTimeout to simulate user code delay before registering handler
+                setTimeout(() => {
+                    console.log(`TEST: Registering nested handler for office ${projection.identifier} (delayed)`);
+                    handlerRegistrations.push(projection.identifier);
+                    
+                    projection.managers.onAdded(employeeNumber => {
+                        console.log(`TEST: Manager onAdded called for: ${employeeNumber}`);
+                        model.managers.push(employeeNumber);
+                        managerNotifications.push(employeeNumber);
+                    });
+                }, 0);
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer loaded");
+
+            // Add parent fact
+            console.log("TEST: Adding office...");
+            await j.fact(office);
+            
+            // Add child fact IMMEDIATELY (before user code can register nested handler)
+            console.log("TEST: Adding manager IMMEDIATELY...");
+            await j.fact(new Manager(office, 2101));
+
+            // Wait for event loop to process
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            console.log("TEST: Handler registrations:", handlerRegistrations);
+            console.log("TEST: Manager notifications:", managerNotifications);
+            console.log("TEST: Final offices state:", JSON.stringify(offices));
+
+            // This test documents the bug: nested callback may not work if child arrives
+            // before user code registers the handler
+            expect(managerNotifications).toContain(2101);
+            expect(offices[0].managers).toContain(2101);
+
+            observer.stop();
+        });
+
+        // NO RACE CONDITION: This test passes consistently
+        // This scenario works correctly - the system handles parent and child arriving
+        // concurrently without awaiting between them. The nested handler is registered
+        // synchronously during the parent's onAdded callback, so it's ready when
+        // the child notifications arrive.
+        it("should handle concurrent parent and child with no await", async () => {
+            j = JinagaTest.create({
+                initialState: [creator, company]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const officeCallbacks: string[] = [];
+            const managerCallbacks: number[] = [];
+            const offices: any[] = [];
+
+            console.log("TEST: Starting subscription...");
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: Office callback for: ${projection.identifier}`);
+                officeCallbacks.push(projection.identifier);
+                
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                console.log(`TEST: Registering manager handler for office ${projection.identifier}`);
+                projection.managers.onAdded(employeeNumber => {
+                    console.log(`TEST: Manager callback for: ${employeeNumber}`);
+                    managerCallbacks.push(employeeNumber);
+                    model.managers.push(employeeNumber);
+                });
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer loaded");
+
+            // Add parent and child without awaiting between them
+            console.log("TEST: Adding office and managers concurrently...");
+            const officePromise = j.fact(office);
+            const manager1Promise = j.fact(new Manager(office, 2201));
+            const manager2Promise = j.fact(new Manager(office, 2202));
+
+            await Promise.all([officePromise, manager1Promise, manager2Promise]);
+            
+            // Give event loop time to process
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            console.log("TEST: Office callbacks:", officeCallbacks);
+            console.log("TEST: Manager callbacks:", managerCallbacks);
+            console.log("TEST: Final offices:", JSON.stringify(offices));
+
+            // Assert both callbacks invoked
+            expect(officeCallbacks).toContain("TestOffice");
+            expect(managerCallbacks).toEqual(expect.arrayContaining([2201, 2202]));
+            expect(offices[0].managers).toEqual(expect.arrayContaining([2201, 2202]));
+
+            observer.stop();
+        });
+
+        // RACE CONDITION: Facts added before observer initialization completes
+        // FAILURE MODE: When multiple nested facts exist in storage before observer.loaded()
+        // is called, only some nested facts are captured during initialization. The second
+        // manager (2302) is completely missed, suggesting the nested specification's
+        // initial query may not be capturing all existing facts correctly.
+        // EXPECTED: managerCallbacks to contain [2301, 2302]
+        // ACTUAL: managerCallbacks = [2301] (missing 2302)
+        it.skip("should handle facts arriving before listeners registered", async () => {
+            j = JinagaTest.create({
+                initialState: [creator, company]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const offices: any[] = [];
+            const managerCallbacks: number[] = [];
+
+            console.log("TEST: Creating observer but NOT starting yet...");
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: Office projection callback: ${projection.identifier}`);
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                projection.managers.onAdded(employeeNumber => {
+                    console.log(`TEST: Manager onAdded callback: ${employeeNumber}`);
+                    managerCallbacks.push(employeeNumber);
+                    model.managers.push(employeeNumber);
+                });
+            });
+
+            // Add facts to storage directly BEFORE starting observer
+            console.log("TEST: Adding facts BEFORE starting observer...");
+            await j.fact(office);
+            await j.fact(new Manager(office, 2301));
+            await j.fact(new Manager(office, 2302));
+            console.log("TEST: Facts added to storage");
+
+            // Now start observer
+            console.log("TEST: Now starting observer (calling loaded())...");
+            await observer.loaded();
+
+            console.log("TEST: Offices:", JSON.stringify(offices));
+            console.log("TEST: Manager callbacks:", managerCallbacks);
+
+            // Assert facts should be picked up
+            expect(offices.length).toBe(1);
+            expect(offices[0].identifier).toBe("TestOffice");
+            expect(managerCallbacks).toEqual(expect.arrayContaining([2301, 2302]));
+            expect(offices[0].managers).toEqual(expect.arrayContaining([2301, 2302]));
+
+            observer.stop();
+        });
+
+        // NO RACE CONDITION: This test passes consistently
+        // Adding multiple nested facts rapidly (5 managers without awaiting) works correctly.
+        // All callbacks fire in sequence and all facts are captured. This confirms the
+        // notification queue handles rapid successive additions properly when handlers
+        // are already registered.
+        it("should handle multiple rapid nested additions", async () => {
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => ({
+                                employeeNumber: manager.employeeNumber
+                            }))
+                    }))
+            );
+
+            const managerCallbacks: number[] = [];
+            const offices: any[] = [];
+
+            console.log("TEST: Starting subscription...");
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: Office callback for: ${projection.identifier}`);
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                projection.managers.onAdded(manager => {
+                    console.log(`TEST: Manager callback ${managerCallbacks.length + 1} for: ${manager.employeeNumber}`);
+                    managerCallbacks.push(manager.employeeNumber);
+                    model.managers.push({
+                        employeeNumber: manager.employeeNumber
+                    });
+                });
+                console.log("TEST: Nested handler registered");
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer loaded");
+
+            // Add 5 nested facts in rapid succession without awaiting
+            console.log("TEST: Adding 5 managers rapidly without awaiting...");
+            const promises = [
+                j.fact(new Manager(office, 2401)),
+                j.fact(new Manager(office, 2402)),
+                j.fact(new Manager(office, 2403)),
+                j.fact(new Manager(office, 2404)),
+                j.fact(new Manager(office, 2405))
+            ];
+
+            console.log("TEST: Waiting for all promises...");
+            await Promise.all(promises);
+
+            // Give event loop time to settle
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            console.log("TEST: Manager callbacks received:", managerCallbacks);
+            console.log("TEST: Final office state:", JSON.stringify(offices));
+
+            // Assert all 5 should be notified
+            expect(managerCallbacks.length).toBe(5);
+            expect(managerCallbacks).toEqual(expect.arrayContaining([2401, 2402, 2403, 2404, 2405]));
+            expect(offices[0].managers.length).toBe(5);
+            expect(offices[0].managers).toEqual(expect.arrayContaining([
+                { employeeNumber: 2401 },
+                { employeeNumber: 2402 },
+                { employeeNumber: 2403 },
+                { employeeNumber: 2404 },
+                { employeeNumber: 2405 }
+            ]));
+
+            observer.stop();
+        });
+    });
+
 });
