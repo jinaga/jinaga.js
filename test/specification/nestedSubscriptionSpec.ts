@@ -990,7 +990,7 @@ describe("Nested Specification Subscription", () => {
         // LOG EVIDENCE: "[Observer] NO HANDLER FOUND - Path: .managers"
         // EXPECTED: managerNotifications to contain [2101]
         // ACTUAL: managerNotifications = []
-        it.skip("should handle nested facts before nested handler registration", async () => {
+        it("should handle nested facts before nested handler registration", async () => {
             j = JinagaTest.create({
                 initialState: [creator, company]
             });
@@ -1135,7 +1135,7 @@ describe("Nested Specification Subscription", () => {
         // initial query may not be capturing all existing facts correctly.
         // EXPECTED: managerCallbacks to contain [2301, 2302]
         // ACTUAL: managerCallbacks = [2301] (missing 2302)
-        it.skip("should handle facts arriving before listeners registered", async () => {
+        it("should handle facts arriving before listeners registered", async () => {
             j = JinagaTest.create({
                 initialState: [creator, company]
             });
@@ -1281,7 +1281,7 @@ describe("Nested Specification Subscription", () => {
         // PURPOSE: Test if facts arriving between read start and listener registration are captured
         // HYPOTHESIS: Async delays in the read operation may cause a race condition where facts
         // arriving during the read but before listener registration are lost
-        it.skip("should capture facts arriving during read() with async delay", async () => {
+        it("should capture facts arriving during read() with async delay", async () => {
             j = JinagaTest.create({
                 initialState: [creator, company, office]
             });
@@ -1502,7 +1502,7 @@ describe("Nested Specification Subscription", () => {
         // PURPOSE: Test if notification system handles multiple nested levels when they arrive together
         // HYPOTHESIS: When Office, Manager, and ManagerName all arrive during initialization,
         // the notification system may fail to propagate through all levels correctly
-        it.skip("should handle multiple fact types arriving simultaneously during initialization", async () => {
+        it("should handle multiple fact types arriving simultaneously during initialization", async () => {
             console.log("\n=== TEST: Multiple fact types arriving during initialization ===");
             console.log("SCENARIO: Office, Manager, and ManagerName all arrive during observer setup");
             
@@ -1593,7 +1593,7 @@ describe("Nested Specification Subscription", () => {
         // TEST 5: Listener removal during notification
         // PURPOSE: Test if stopping observer while notifyFactSaved() is processing causes issues
         // HYPOTHESIS: Stopping observer mid-notification may leave orphaned handlers or cause errors
-        it.skip("should handle listener removal during notification processing", async () => {
+        it("should handle listener removal during notification processing", async () => {
             console.log("\n=== TEST: Listener removal during notification ===");
             console.log("SCENARIO: Stop observer while nested callbacks are being invoked");
             
