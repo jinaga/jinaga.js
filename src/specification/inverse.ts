@@ -1,5 +1,6 @@
 import { Condition, ExistentialCondition, isExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
 import { detectDisconnectedSpecification } from "./UnionFind";
+import { Trace } from "../util/trace";
 
 type InverseOperation = "add" | "remove";
 
@@ -21,6 +22,12 @@ interface InverterContext {
 }
 
 export function invertSpecification(specification: Specification): SpecificationInverse[] {
+    const givenTypes = specification.given.map(g => g.label.type).join(', ');
+    const givenNames = specification.given.map(g => g.label.name).join(', ');
+    const matchCount = specification.matches.length;
+    
+    Trace.info(`[InvertSpec] START - Given types: [${givenTypes}], Given names: [${givenNames}], Matches: ${matchCount}`);
+    
     // Detect disconnected specifications before inversion
     detectDisconnectedSpecification(specification);
     
@@ -42,8 +49,17 @@ export function invertSpecification(specification: Specification): Specification
         resultSubset,
         projection: specification.projection
     };
+    
+    Trace.info(`[InvertSpec] Inverting matches - Labels: ${labels.length}, Context path: "${context.path}"`);
     const inverses: SpecificationInverse[] = invertMatches(matches, labels, context);
+    Trace.info(`[InvertSpec] Match inverses generated: ${inverses.length}`);
+    
+    Trace.info(`[InvertSpec] Inverting projection - Projection type: ${specification.projection.type}`);
     const projectionInverses: SpecificationInverse[] = invertProjection(matches, context);
+    Trace.info(`[InvertSpec] Projection inverses generated: ${projectionInverses.length}`);
+    
+    const totalInverses = inverses.length + projectionInverses.length;
+    Trace.info(`[InvertSpec] COMPLETE - Total inverses: ${totalInverses} (${inverses.length} match + ${projectionInverses.length} projection)`);
     
     return [ ...inverses, ...projectionInverses ];
 }
@@ -242,22 +258,38 @@ function invertProjection(matches: Match[], context: InverterContext): Specifica
 
     // Produce inverses for all collections in the projection.
     if (context.projection.type === "composite") {
+        const specComponents = context.projection.components.filter(c => c.type === "specification");
+        Trace.info(`[InvertProjection] Processing composite projection - Path: "${context.path}", Spec components: ${specComponents.length}/${context.projection.components.length}`);
+        
         for (const component of context.projection.components) {
             if (component.type === "specification") {
                 const componentMatches = [ ...matches, ...component.matches ];
                 const componentLabels = component.matches.map(m => m.unknown);
+                const childPath = context.path + "." + component.name;
+                
+                Trace.info(`[InvertProjection] NESTED SPEC - Component: ${component.name}, Path: "${childPath}", Component matches: ${component.matches.length}, Component labels: ${componentLabels.length}`);
+                
                 const childContext: InverterContext = {
                     ...context,
-                    path: context.path + "." + component.name,
+                    path: childPath,
                     parentSubset: context.resultSubset,
                     resultSubset: [ ...context.resultSubset, ...componentLabels.map(l => l.name) ],
                     projection: component.projection
                 };
+                
+                Trace.info(`[InvertProjection] Child context - Path: "${childPath}", Parent subset: [${childContext.parentSubset.join(', ')}], Result subset: [${childContext.resultSubset.join(', ')}]`);
+                
                 const matchInverses = invertMatches(componentMatches, componentLabels, childContext);
+                Trace.info(`[InvertProjection] Generated ${matchInverses.length} match inverses for nested spec "${component.name}"`);
+                
                 const projectionInverses = invertProjection(componentMatches, childContext);
+                Trace.info(`[InvertProjection] Generated ${projectionInverses.length} projection inverses for nested spec "${component.name}"`);
+                
                 inverses.push(...matchInverses, ...projectionInverses);
             }
         }
+    } else {
+        Trace.info(`[InvertProjection] Non-composite projection - Path: "${context.path}", Type: ${context.projection.type}`);
     }
 
     return inverses;

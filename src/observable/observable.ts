@@ -29,7 +29,12 @@ export class ObservableSource {
             throw new Error("Specification must have exactly one given fact");
         }
         const givenType = specification.given[0].label.type;
+        const givenName = specification.given[0].label.name;
         const specificationKey = computeStringHash(describeSpecification(specification, 0));
+        const hasNestedSpecs = specification.projection.type === "composite" &&
+            specification.projection.components.some(c => c.type === "specification");
+
+        Trace.info(`[ObservableSource] ADD_LISTENER REQUEST - Type: ${givenType}, Name: ${givenName}, Spec key: ${specificationKey.substring(0, 8)}..., Has nested specs: ${hasNestedSpecs}`);
 
         let listenersBySpecification = this.listenersByTypeAndSpecification.get(givenType);
         if (!listenersBySpecification) {
@@ -57,7 +62,7 @@ export class ObservableSource {
         const totalListeners = Array.from(this.listenersByTypeAndSpecification.values())
             .reduce((total, map) => total + Array.from(map.values()).reduce((sum, l) => sum + l.listeners.length, 0), 0);
         
-        Trace.info(`[ObservableSource] Added listener - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Count for spec: ${listenerCount}, Total listeners: ${totalListeners}`);
+        Trace.info(`[ObservableSource] LISTENER ADDED - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Count for spec: ${listenerCount}, Total listeners: ${totalListeners}, Nested specs: ${hasNestedSpecs}`);
         
         return specificationListener;
     }
@@ -118,14 +123,29 @@ export class ObservableSource {
             
             let totalNotifications = 0;
             let specCount = 0;
+            let nestedSpecCount = 0;
             
             for (const [specificationKey, listeners] of listenersBySpecification) {
                 specCount++;
                 if (listeners && listeners.listeners.length > 0) {
                     const listenerCount = listeners.listeners.length;
-                    Trace.info(`[ObservableSource] Processing spec ${specCount}/${listenersBySpecification.size} - Key: ${specificationKey.substring(0, 8)}..., Listeners: ${listenerCount}`);
-                    
                     const specification = listeners.specification;
+                    const hasNestedSpecs = specification.projection.type === "composite" &&
+                        specification.projection.components.some(c => c.type === "specification");
+                    
+                    if (hasNestedSpecs) {
+                        nestedSpecCount++;
+                        const nestedSpecNames = specification.projection.type === "composite"
+                            ? specification.projection.components
+                                .filter(c => c.type === "specification")
+                                .map(c => c.name)
+                                .join(', ')
+                            : '';
+                        Trace.info(`[ObservableSource] NESTED SPEC DETECTED - Spec ${specCount}/${listenersBySpecification.size}, Key: ${specificationKey.substring(0, 8)}..., Nested components: [${nestedSpecNames}], Listeners: ${listenerCount}`);
+                    } else {
+                        Trace.info(`[ObservableSource] Processing spec ${specCount}/${listenersBySpecification.size} - Key: ${specificationKey.substring(0, 8)}..., Listeners: ${listenerCount}`);
+                    }
+                    
                     const givenReference = {
                         type: fact.type,
                         hash: fact.hash
@@ -135,7 +155,19 @@ export class ObservableSource {
                     const results = await this.store.read([givenReference], specification);
                     const readDuration = Date.now() - readStart;
                     
-                    Trace.info(`[ObservableSource] Store read completed - Results: ${results.length}, Duration: ${readDuration}ms`);
+                    if (hasNestedSpecs) {
+                        Trace.info(`[ObservableSource] Store read for NESTED spec - Results: ${results.length}, Duration: ${readDuration}ms`);
+                        // Log nested result structure if present
+                        if (results.length > 0 && specification.projection.type === "composite") {
+                            const nestedResults = specification.projection.components
+                                .filter(c => c.type === "specification")
+                                .map(c => `${c.name}: ${results[0].result[c.name]?.length || 0}`)
+                                .join(', ');
+                            Trace.info(`[ObservableSource] Nested results structure: {${nestedResults}}`);
+                        }
+                    } else {
+                        Trace.info(`[ObservableSource] Store read completed - Results: ${results.length}, Duration: ${readDuration}ms`);
+                    }
                     
                     // Create a snapshot of listeners to avoid modification during iteration
                     const listenerSnapshot = [...listeners.listeners];
@@ -148,15 +180,18 @@ export class ObservableSource {
                         if (specificationListener) {
                             try {
                                 const notifyStart = Date.now();
+                                Trace.info(`[ObservableSource] Calling listener ${i+1}/${listenerSnapshot.length} - Nested: ${hasNestedSpecs}`);
                                 await specificationListener.onResult(results);
                                 const notifyDuration = Date.now() - notifyStart;
                                 totalNotifications++;
                                 
                                 if (notifyDuration > 100) {
-                                    Trace.warn(`[ObservableSource] SLOW notification - Listener ${i+1}/${listenerSnapshot.length}, Duration: ${notifyDuration}ms`);
+                                    Trace.warn(`[ObservableSource] SLOW notification - Listener ${i+1}/${listenerSnapshot.length}, Duration: ${notifyDuration}ms, Nested: ${hasNestedSpecs}`);
+                                } else {
+                                    Trace.info(`[ObservableSource] Listener completed - ${i+1}/${listenerSnapshot.length}, Duration: ${notifyDuration}ms`);
                                 }
                             } catch (error) {
-                                Trace.error(`[ObservableSource] ERROR in listener notification - Listener ${i+1}/${listenerSnapshot.length}, Error: ${error}`);
+                                Trace.error(`[ObservableSource] ERROR in listener notification - Listener ${i+1}/${listenerSnapshot.length}, Nested: ${hasNestedSpecs}, Error: ${error}`);
                             }
                         } else {
                             Trace.warn(`[ObservableSource] NULL listener encountered at index ${i}`);
@@ -168,9 +203,9 @@ export class ObservableSource {
             }
             
             const totalDuration = Date.now() - startTime;
-            Trace.info(`[ObservableSource] NOTIFY COMPLETE - Fact: ${fact.hash.substring(0, 8)}..., Specs processed: ${specCount}, Total notifications: ${totalNotifications}, Duration: ${totalDuration}ms`);
+            Trace.info(`[ObservableSource] NOTIFY COMPLETE - Fact: ${fact.hash.substring(0, 8)}..., Type: ${fact.type}, Specs processed: ${specCount} (${nestedSpecCount} nested), Total notifications: ${totalNotifications}, Duration: ${totalDuration}ms`);
         } else {
-            Trace.info(`[ObservableSource] No listeners for fact type: ${fact.type}`);
+            Trace.info(`[ObservableSource] No listeners for fact type: ${fact.type} - Available types: [${Array.from(this.listenersByTypeAndSpecification.keys()).join(', ')}]`);
         }
     }
 }

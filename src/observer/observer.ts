@@ -6,6 +6,7 @@ import { SpecificationInverse, invertSpecification } from "../specification/inve
 import { Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
 import { computeStringHash } from "../util/encoding";
+import { Trace } from "../util/trace";
 
 export type ResultAddedFunc<U> = (value: U) =>
     Promise<() => Promise<void>> |  // Asynchronous with removal function
@@ -70,11 +71,15 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     public start(keepAlive: boolean) {
+        const givenTypes = this.given.map(g => g.type).join(', ');
+        Trace.info(`[Observer] START - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Given types: [${givenTypes}], KeepAlive: ${keepAlive}`);
+        
         this.cachedPromise = new Promise((cacheResolve, _) => {
             this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
                 try {
                     const mruDate: Date | null = await this.factManager.getMruDate(this.specificationHash);
                     if (mruDate === null) {
+                        Trace.info(`[Observer] Not cached - Spec hash: ${this.specificationHash.substring(0, 8)}..., will fetch then read`);
                         // The data is not yet cached.
                         cacheResolve(false);
                         // Fetch from the server and then read from local storage.
@@ -83,6 +88,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         loadResolve();
                     }
                     else {
+                        Trace.info(`[Observer] Cached (MRU: ${mruDate.toISOString()}) - Spec hash: ${this.specificationHash.substring(0, 8)}..., will read then fetch`);
                         // Read from local storage into the cache.
                         await this.read();
                         cacheResolve(true);
@@ -91,8 +97,10 @@ export class ObserverImpl<T> implements Observer<T> {
                         loadResolve();
                     }
                     await this.factManager.setMruDate(this.specificationHash, new Date());
+                    Trace.info(`[Observer] COMPLETE - Spec hash: ${this.specificationHash.substring(0, 8)}...`);
                 }
                 catch (e) {
+                    Trace.error(`[Observer] ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`);
                     cacheResolve(false);
                     loadReject(e);
                 }
@@ -101,12 +109,30 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private addSpecificationListeners() {
+        Trace.info(`[Observer] ADDING LISTENERS - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}...`);
+        
         const inverses = invertSpecification(this.specification);
-        const listeners = inverses.map(inverse => this.factManager.addSpecificationListener(
-            inverse.inverseSpecification,
-            (results) => this.onResult(inverse, results)
-        ));
+        Trace.info(`[Observer] Generated ${inverses.length} inverse specifications`);
+        
+        inverses.forEach((inverse, index) => {
+            const givenType = inverse.inverseSpecification.given[0].label.type;
+            const path = inverse.path || "(root)";
+            const operation = inverse.operation;
+            Trace.info(`[Observer] Inverse ${index + 1}/${inverses.length} - Path: ${path}, Operation: ${operation}, Given type: ${givenType}, Given subset: [${inverse.givenSubset.join(', ')}], Parent subset: [${inverse.parentSubset.join(', ')}]`);
+        });
+        
+        const listeners = inverses.map((inverse, index) => {
+            const listener = this.factManager.addSpecificationListener(
+                inverse.inverseSpecification,
+                (results) => this.onResult(inverse, results)
+            );
+            const path = inverse.path || "(root)";
+            Trace.info(`[Observer] Registered listener ${index + 1}/${inverses.length} for path: ${path}`);
+            return listener;
+        });
+        
         this.listeners = listeners;
+        Trace.info(`[Observer] LISTENERS REGISTERED - Total: ${this.listeners.length}, Spec hash: ${this.specificationHash.substring(0, 8)}...`);
     }
 
     public cached(): Promise<boolean> {
@@ -155,12 +181,19 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
+        const path = inverse.path || "(root)";
+        Trace.info(`[Observer] ON_RESULT - Path: ${path}, Operation: ${inverse.operation}, Results count: ${results.length}, Given hash: ${this.givenHash.substring(0, 8)}...`);
+        
         // Filter out results that do not match the given.
         const matchingResults = results.filter(pr =>
             this.givenHash === computeTupleSubsetHash(pr.tuple, inverse.givenSubset));
+        
         if (matchingResults.length === 0) {
+            Trace.info(`[Observer] No matching results after filtering - Path: ${path}, Given subset: [${inverse.givenSubset.join(', ')}]`);
             return;
         }
+        
+        Trace.info(`[Observer] Matching results: ${matchingResults.length} - Path: ${path}, Operation: ${inverse.operation}`);
 
         if (inverse.operation === "add") {
             return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset);
@@ -175,14 +208,33 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[]) {
+        const displayPath = path || "(root)";
+        Trace.info(`[Observer] NOTIFY_ADDED - Path: ${displayPath}, Results: ${projectedResults.length}, Parent subset: [${parentSubset.join(', ')}]`);
+        
         for (const pr of projectedResults) {
             const result: any = this.injectObservers(pr, projection, path);
             const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
+            const tupleHash = computeObjectHash(pr.tuple);
+            
+            Trace.info(`[Observer] Processing result - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
+            
             const addedHandler = this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path);
             const resultAdded = addedHandler?.handler;
-            const tupleHash = computeObjectHash(pr.tuple);
+            
+            if (!addedHandler) {
+                Trace.warn(`[Observer] NO HANDLER FOUND - Path: ${displayPath}, Parent tuple hash: ${parentTupleHash.substring(0, 8)}..., Available handlers: ${this.addedHandlers.length}`);
+                this.addedHandlers.forEach((h, index) => {
+                    Trace.warn(`[Observer]   Handler ${index + 1}: Path="${h.path}", Tuple hash: ${h.tupleHash.substring(0, 8)}...`);
+                });
+            } else if (!resultAdded) {
+                Trace.warn(`[Observer] Handler found but no callback - Path: ${displayPath}`);
+            } else {
+                Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
+            }
+            
             // Don't call result added if we have already called it for this tuple.
             if (resultAdded && this.notifiedTuples.has(tupleHash) === false) {
+                Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
                 const promiseMaybe = resultAdded(result);
                 this.notifiedTuples.add(tupleHash);
                 if (promiseMaybe instanceof Promise) {
@@ -200,6 +252,8 @@ export class ObserverImpl<T> implements Observer<T> {
                         };
                     }
                 }
+            } else if (resultAdded && this.notifiedTuples.has(tupleHash)) {
+                Trace.info(`[Observer] Skipping already notified tuple - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
             }
 
             // Recursively notify added for specification results.
@@ -207,7 +261,9 @@ export class ObserverImpl<T> implements Observer<T> {
                 for (const component of projection.components) {
                     if (component.type === "specification") {
                         const childPath = path + "." + component.name;
-                        await this.notifyAdded(pr.result[component.name], component.projection, childPath, Object.keys(pr.tuple));
+                        const childResults = pr.result[component.name];
+                        Trace.info(`[Observer] Processing nested spec - Parent path: ${displayPath}, Child path: ${childPath}, Child results: ${childResults?.length || 0}`);
+                        await this.notifyAdded(childResults, component.projection, childPath, Object.keys(pr.tuple));
                     }
                 }
             }
@@ -229,18 +285,25 @@ export class ObserverImpl<T> implements Observer<T> {
     }
     
     private injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): any {
+        const displayPath = parentPath || "(root)";
+        
         if (projection.type === "composite") {
             const composite: any = {};
+            const tupleHash = computeObjectHash(pr.tuple);
+            
             for (const component of projection.components) {
                 if (component.type === "specification") {
                     const path = parentPath + "." + component.name;
+                    Trace.info(`[Observer] INJECT_OBSERVER - Parent path: ${displayPath}, Component: ${component.name}, Full path: ${path}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
+                    
                     const observable: ObservableCollection<any> = {
                         onAdded: (handler: ResultAddedFunc<any>) => {
                             this.addedHandlers.push({
-                                tupleHash: computeObjectHash(pr.tuple),
+                                tupleHash: tupleHash,
                                 path: path,
                                 handler: handler
                             });
+                            Trace.info(`[Observer] HANDLER REGISTERED - Path: ${path}, Tuple hash: ${tupleHash.substring(0, 8)}..., Total handlers: ${this.addedHandlers.length}`);
                         }
                     }
                     composite[component.name] = observable;
