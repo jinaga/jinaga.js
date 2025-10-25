@@ -2232,4 +2232,492 @@ describe("Nested Specification Subscription", () => {
         });
     });
 
+    describe("Given Fact Not in Storage Hypothesis", () => {
+        // ROOT CAUSE: When a subscription starts with a given fact that is NOT in storage,
+        // the observer performs an initial read() which finds nothing. When the given fact
+        // arrives later, there is no mechanism to trigger a re-read of the specification.
+        // The notification system only propagates changes for facts that match active inverse
+        // queries, but if the given fact wasn't present initially, those inverse queries
+        // were never established.
+        //
+        // EXPECTED BEHAVIOR: When the given fact arrives, the system should:
+        // 1. Detect that this is a given fact for an active observer
+        // 2. Re-run read() to establish inverse queries
+        // 3. Fire appropriate callbacks for any results found
+        //
+        // ACTUAL BEHAVIOR: The given fact arrival is not detected as significant,
+        // no re-read occurs, and the observer never receives the expected data.
+
+        it.skip("should fire callback when given fact arrives after subscription (flat spec)", async () => {
+            // HYPOTHESIS: When watching with a factReference that doesn't exist in storage,
+            // the callback should fire when that fact is added later.
+            //
+            // ROOT CAUSE: Observer.read() finds no results initially because Company doesn't exist.
+            // When Company is added, there's no mechanism to trigger re-read and notify the observer.
+            //
+            // EXPECTED: callback fires when Company arrives
+            // ACTUAL: callback never fires (no re-read mechanism)
+            
+            console.log("\n=== TEST: Given fact not in storage (flat spec) ===");
+            
+            j = JinagaTest.create({
+                initialState: [creator] // NOTE: Company NOT in initialState
+            });
+
+            // Create a flat specification (no nested collections)
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => office.identifier)
+            );
+
+            const officeCallbacks: string[] = [];
+            
+            // Create factReference for a Company that doesn't exist yet
+            const companyRef = j.factReference(Company, Jinaga.hash(company));
+            console.log("TEST: Created factReference for non-existent Company");
+
+            console.log("TEST: Starting watch with non-existent given fact...");
+            const observer = j.watch(specification, companyRef, identifier => {
+                console.log(`TEST: ✓ Office callback fired: ${identifier}`);
+                officeCallbacks.push(identifier);
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer.loaded() complete - no results expected yet");
+            expect(officeCallbacks).toEqual([]);
+
+            // Now add the given fact (Company) to storage
+            console.log("TEST: Adding Company (the given fact) to storage...");
+            await j.fact(company);
+            console.log("TEST: Company added to storage");
+
+            // Also add an Office so there's something to find
+            console.log("TEST: Adding Office to storage...");
+            await j.fact(office);
+            console.log("TEST: Office added to storage");
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("\nRESULTS:");
+            console.log(`  - Office callbacks fired: ${officeCallbacks.length}`);
+            console.log(`  - Expected: 1 (when Company arrives, should re-read and find Office)`);
+            console.log(`  - Actual callbacks: ${JSON.stringify(officeCallbacks)}`);
+            
+            // EXPECTED: Callback should fire when Company arrives because system should re-read
+            // ACTUAL: Callback does NOT fire - no re-read mechanism exists
+            expect(officeCallbacks).toContain("TestOffice");
+
+            observer.stop();
+        });
+
+        it.skip("should handle nested specification when given fact arrives late", async () => {
+            // HYPOTHESIS: The problem is worse with nested specifications because inverse queries
+            // have more dependencies. When the given fact arrives, not only must we re-read the
+            // top level, but we must also establish all nested inverse queries.
+            //
+            // ROOT CAUSE: Same as flat spec test, but compounded by nested collections.
+            // When Company doesn't exist initially:
+            // 1. read() finds no Offices (because Company doesn't exist)
+            // 2. No inverse queries are established for Manager → Office
+            // 3. When Company arrives, no re-read occurs
+            // 4. When Office arrives, it's not connected to the observer
+            // 5. When Manager arrives, it has no inverse query to follow
+            //
+            // EXPECTED: When Company arrives, system should:
+            //   - Re-run read() to find Office
+            //   - Establish inverse query for Manager → Office
+            //   - Fire callbacks for Office and any existing Managers
+            //
+            // ACTUAL: No callbacks fire because no re-read occurs
+            
+            console.log("\n=== TEST: Given fact not in storage (nested spec) ===");
+            
+            j = JinagaTest.create({
+                initialState: [creator] // NOTE: Company NOT in initialState
+            });
+
+            // Nested specification: Office → Manager
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const officeCallbacks: string[] = [];
+            const managerCallbacks: number[] = [];
+            
+            const companyRef = j.factReference(Company, Jinaga.hash(company));
+            console.log("TEST: Created factReference for non-existent Company");
+
+            console.log("TEST: Starting watch with nested specification...");
+            const observer = j.watch(specification, companyRef, projection => {
+                console.log(`TEST: ✓ Office callback fired: ${projection.identifier}`);
+                officeCallbacks.push(projection.identifier);
+
+                projection.managers.onAdded(employeeNumber => {
+                    console.log(`TEST: ✓ Manager callback fired: ${employeeNumber}`);
+                    managerCallbacks.push(employeeNumber);
+                });
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer.loaded() complete - no results expected yet");
+            expect(officeCallbacks).toEqual([]);
+
+            // Add facts in order: Company, Office, Manager
+            console.log("\nTEST: Adding facts in order...");
+            console.log("TEST: 1. Adding Company (given fact)...");
+            await j.fact(company);
+            
+            console.log("TEST: 2. Adding Office...");
+            await j.fact(office);
+            
+            console.log("TEST: 3. Adding Manager...");
+            const manager = new Manager(office, 4001);
+            await j.fact(manager);
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("\nRESULTS:");
+            console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 1)`);
+            console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 1)`);
+            console.log(`  - Offices: ${JSON.stringify(officeCallbacks)}`);
+            console.log(`  - Managers: ${JSON.stringify(managerCallbacks)}`);
+            
+            console.log("\nROOT CAUSE:");
+            console.log("  - Company arrives after subscription → no re-read triggered");
+            console.log("  - Office has no inverse query because Company wasn't present initially");
+            console.log("  - Manager has no inverse query because Office wasn't connected");
+            console.log("  - Result: Complete notification chain failure");
+            
+            // EXPECTED: Both callbacks should fire
+            // ACTUAL: No callbacks fire
+            expect(officeCallbacks).toContain("TestOffice");
+            expect(managerCallbacks).toContain(4001);
+
+            observer.stop();
+        });
+
+        it.skip("should demonstrate inverse query failure when intermediate fact missing", async () => {
+            // HYPOTHESIS: Even when the given fact (Company) exists, if an intermediate fact
+            // (Office) is missing, adding a leaf fact (Manager) won't trigger notifications
+            // because the inverse query from Manager → Office can't resolve.
+            //
+            // ROOT CAUSE: Inverse queries are established during read() based on the
+            // specification structure. When Office doesn't exist:
+            // 1. The Office → Company inverse query works (Company exists)
+            // 2. But Manager → Office inverse query fails (Office doesn't exist)
+            // 3. When Manager arrives, it has no Office to connect to
+            // 4. The inverse query lookup fails, and no notification propagates
+            //
+            // SCENARIO:
+            // - Company EXISTS in storage (given fact present)
+            // - Office does NOT exist in storage (intermediate fact missing)
+            // - Manager is added (leaf fact arrives)
+            // - Expected: No callback (Office missing breaks the chain)
+            // - Demonstrates: Inverse queries fail when intermediate facts missing
+            
+            console.log("\n=== TEST: Inverse query fails when intermediate fact missing ===");
+            
+            j = JinagaTest.create({
+                initialState: [creator, company] // Company EXISTS, Office does NOT
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const officeCallbacks: string[] = [];
+            const managerCallbacks: number[] = [];
+            
+            console.log("TEST: Company EXISTS in storage (given fact present)");
+            console.log("TEST: Office does NOT exist (intermediate missing)");
+            console.log("TEST: Starting watch...");
+            
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: ✓ Office callback: ${projection.identifier}`);
+                officeCallbacks.push(projection.identifier);
+
+                projection.managers.onAdded(employeeNumber => {
+                    console.log(`TEST: ✓ Manager callback: ${employeeNumber}`);
+                    managerCallbacks.push(employeeNumber);
+                });
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer.loaded() - no results (Office doesn't exist)");
+            expect(officeCallbacks).toEqual([]);
+
+            // Add Manager WITHOUT adding Office first
+            console.log("\nTEST: Adding Manager (leaf fact) WITHOUT Office (intermediate)...");
+            const manager = new Manager(office, 4101);
+            await j.fact(manager);
+            console.log("TEST: Manager added to storage");
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("\nRESULTS:");
+            console.log(`  - Manager added: ${j.hash(manager)}`);
+            console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 0)`);
+            console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 0)`);
+            
+            console.log("\nANALYSIS:");
+            console.log("  - Manager → Office inverse query cannot resolve (Office missing)");
+            console.log("  - No notification propagates to observer");
+            console.log("  - This is correct behavior (Office truly doesn't exist)");
+            console.log("  - But demonstrates dependency chain: given → intermediate → leaf");
+            
+            // Now add Office - SHOULD trigger notifications for both Office and Manager
+            console.log("\nTEST: Now adding Office (intermediate fact)...");
+            await j.fact(office);
+            console.log("TEST: Office added to storage");
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("\nRESULTS AFTER ADDING OFFICE:");
+            console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 1)`);
+            console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 1)`);
+            console.log(`  - Offices: ${JSON.stringify(officeCallbacks)}`);
+            console.log(`  - Managers: ${JSON.stringify(managerCallbacks)}`);
+            
+            console.log("\nEXPECTED BEHAVIOR:");
+            console.log("  - When Office arrives, should trigger re-read of nested Manager spec");
+            console.log("  - Should find existing Manager and fire callback");
+            console.log("  - Demonstrates need for re-read when intermediate facts arrive");
+            
+            // After Office arrives, both callbacks SHOULD fire
+            expect(officeCallbacks).toContain("TestOffice");
+            expect(managerCallbacks).toContain(4101);
+
+            observer.stop();
+        });
+
+        it.skip("should track out-of-order fact arrival (Manager → Office → Company)", async () => {
+            // HYPOTHESIS: Adding facts in reverse order (leaf → intermediate → given)
+            // should eventually result in all callbacks firing, but likely won't due to
+            // lack of re-read mechanism at each level.
+            //
+            // ROOT CAUSE: Each fact arrival should trigger re-evaluation of dependent
+            // specifications, but currently only the initial read() establishes queries.
+            //
+            // SCENARIO: Start with empty storage, add facts in reverse order:
+            // 1. Add Manager (leaf) - nothing happens (Office doesn't exist)
+            // 2. Add Office (intermediate) - should trigger Manager notification, but won't
+            // 3. Add Company (given) - should trigger Office notification (and transitively Manager), but won't
+            //
+            // EXPECTED: Company arrival should cascade through entire specification
+            // ACTUAL: Each level fails to trigger re-read of dependent levels
+            
+            console.log("\n=== TEST: Out-of-order fact arrival ===");
+            console.log("SCENARIO: Add facts in reverse order (Manager → Office → Company)");
+            
+            j = JinagaTest.create({
+                initialState: [creator] // Empty: no Company, Office, or Manager
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const callbackSequence: string[] = [];
+            const officeCallbacks: string[] = [];
+            const managerCallbacks: number[] = [];
+            
+            const companyRef = j.factReference(Company, Jinaga.hash(company));
+            console.log("TEST: Created factReference for non-existent Company");
+
+            console.log("TEST: Starting watch with empty storage...");
+            const observer = j.watch(specification, companyRef, projection => {
+                const timestamp = Date.now();
+                callbackSequence.push(`office:${projection.identifier}@${timestamp}`);
+                console.log(`TEST: ✓ Office callback: ${projection.identifier}`);
+                officeCallbacks.push(projection.identifier);
+
+                projection.managers.onAdded(employeeNumber => {
+                    const timestamp = Date.now();
+                    callbackSequence.push(`manager:${employeeNumber}@${timestamp}`);
+                    console.log(`TEST: ✓ Manager callback: ${employeeNumber}`);
+                    managerCallbacks.push(employeeNumber);
+                });
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer.loaded() - empty results expected");
+
+            // Add facts in REVERSE order
+            console.log("\nTEST: Step 1 - Adding MANAGER (leaf fact, nothing to connect to)...");
+            const manager = new Manager(office, 4201);
+            await j.fact(manager);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 0 - Office doesn't exist)`);
+
+            console.log("\nTEST: Step 2 - Adding OFFICE (intermediate fact)...");
+            await j.fact(office);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 0 - Company doesn't exist)`);
+            console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 0 - Office wasn't connected)`);
+            console.log(`  - ISSUE: Office arrival should trigger re-read of Manager spec, but doesn't`);
+
+            console.log("\nTEST: Step 3 - Adding COMPANY (given fact)...");
+            await j.fact(company);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            console.log("\nFINAL RESULTS:");
+            console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 1)`);
+            console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 1)`);
+            console.log(`  - Callback sequence: ${JSON.stringify(callbackSequence)}`);
+            
+            console.log("\nANALYSIS:");
+            console.log("  - Manager added first: No inverse query (Office missing)");
+            console.log("  - Office added second: No inverse query (Company missing)");
+            console.log("  - Company added last: Should trigger cascade, but no re-read mechanism");
+            console.log("  - Result: All notifications lost despite all facts present");
+            
+            console.log("\nREQUIRED FIX:");
+            console.log("  - When Company arrives: Re-run read() → find Office → establish Manager inverse query");
+            console.log("  - When Office arrives: Re-run nested spec → find Manager");
+            console.log("  - Each level arrival should trigger re-read of dependent levels");
+            
+            // All callbacks SHOULD eventually fire when Company arrives
+            expect(officeCallbacks).toContain("TestOffice");
+            expect(managerCallbacks).toContain(4201);
+
+            observer.stop();
+        });
+
+        it.skip("should document desired behavior: given fact arrival triggers re-read", async () => {
+            // DESIRED BEHAVIOR TEST: This test documents what SHOULD happen when a given
+            // fact arrives after subscription starts. This is the behavior we want to implement.
+            //
+            // SOLUTION APPROACH:
+            // 1. Track which observers are waiting for which given facts (factReference → observers map)
+            // 2. When a fact arrives that matches a tracked factReference, trigger observer re-read
+            // 3. Observer.read() should be callable after initialization to re-establish queries
+            // 4. After re-read, any new results should fire appropriate callbacks
+            //
+            // IMPLEMENTATION NEEDS:
+            // - Observer needs a re-read() method that can be called when given arrives
+            // - FactManager or Observer needs to track given→observer relationships
+            // - notifyFactSaved() needs to check if fact matches any pending given facts
+            // - Re-read should establish inverse queries for nested specifications
+            //
+            // EXPECTED BEHAVIOR: When Company arrives after subscription:
+            // 1. System detects Company is the given fact for an active observer
+            // 2. Calls observer.reRead() or similar method
+            // 3. reRead() runs the specification query with the now-available given fact
+            // 4. Establishes inverse queries for Office → Company and Manager → Office
+            // 5. Fires callback for Office with nested Manager observable
+            // 6. Future Manager additions trigger nested callbacks normally
+            
+            console.log("\n=== TEST: Desired behavior - given fact arrival triggers re-read ===");
+            console.log("NOTE: This test documents the DESIRED behavior that needs to be implemented\n");
+            
+            j = JinagaTest.create({
+                initialState: [creator] // Company NOT in initialState
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const officeCallbacks: string[] = [];
+            const managerCallbacks: number[] = [];
+            
+            const companyRef = j.factReference(Company, Jinaga.hash(company));
+            console.log("STEP 1: Create factReference for non-existent Company");
+
+            console.log("STEP 2: Start watch - system should track this observer is waiting for Company");
+            const observer = j.watch(specification, companyRef, projection => {
+                console.log(`✓ Office callback FIRED: ${projection.identifier}`);
+                officeCallbacks.push(projection.identifier);
+
+                projection.managers.onAdded(employeeNumber => {
+                    console.log(`✓ Manager callback FIRED: ${employeeNumber}`);
+                    managerCallbacks.push(employeeNumber);
+                });
+            });
+
+            await observer.loaded();
+            console.log("STEP 3: Observer.loaded() complete - empty results");
+            expect(officeCallbacks).toEqual([]);
+
+            // Add Office first (before Company exists)
+            console.log("\nSTEP 4: Add Office (before Company) - stored but not connected");
+            await j.fact(office);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            console.log(`  - Office callbacks so far: ${officeCallbacks.length} (expected: 0)`);
+
+            // Add Company (the given fact)
+            console.log("\nSTEP 5: Add Company (given fact) - THIS SHOULD TRIGGER RE-READ");
+            console.log("  DESIRED BEHAVIOR:");
+            console.log("    a) System detects Company matches factReference for active observer");
+            console.log("    b) Calls observer.reRead() or triggers re-evaluation");
+            console.log("    c) Re-read finds Office (already in storage)");
+            console.log("    d) Establishes inverse queries: Office→Company, Manager→Office");
+            console.log("    e) Fires Office callback with nested manager observable");
+            
+            await j.fact(company);
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("\nSTEP 6: Check if re-read occurred");
+            console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 1)`);
+            console.log(`  - Offices found: ${JSON.stringify(officeCallbacks)}`);
+
+            // Add Manager to verify nested inverse queries work
+            console.log("\nSTEP 7: Add Manager to verify nested inverse queries established");
+            const manager = new Manager(office, 4301);
+            await j.fact(manager);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 1)`);
+            console.log(`  - Managers found: ${JSON.stringify(managerCallbacks)}`);
+
+            console.log("\nIMPLEMENTATION CHECKLIST:");
+            console.log("  ☐ Track factReference → observer mappings");
+            console.log("  ☐ Detect when fact matches a tracked factReference");
+            console.log("  ☐ Implement observer.reRead() or equivalent trigger");
+            console.log("  ☐ Ensure re-read establishes all inverse queries");
+            console.log("  ☐ Fire appropriate callbacks for results found during re-read");
+            console.log("  ☐ Handle nested specifications during re-read");
+            
+            console.log("\nKEY FILES TO MODIFY:");
+            console.log("  - src/observer/observer.ts (add reRead capability)");
+            console.log("  - src/specification/specification-runner.ts (track given facts)");
+            console.log("  - Notification system (detect given fact arrival)");
+            
+            // This should work after implementation
+            expect(officeCallbacks).toContain("TestOffice");
+            expect(managerCallbacks).toContain(4301);
+
+            observer.stop();
+        });
+    });
+
 });
