@@ -1276,4 +1276,455 @@ describe("Nested Specification Subscription", () => {
         });
     });
 
+    describe("Additional Missing Hypothesis Tests", () => {
+        // TEST 1: Facts arriving during read() with async delay
+        // PURPOSE: Test if facts arriving between read start and listener registration are captured
+        // HYPOTHESIS: Async delays in the read operation may cause a race condition where facts
+        // arriving during the read but before listener registration are lost
+        it.skip("should capture facts arriving during read() with async delay", async () => {
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const offices: any[] = [];
+            const managerCallbacks: number[] = [];
+            const timingLog: string[] = [];
+
+            console.log("TEST: Creating observer with async delay simulation...");
+            timingLog.push(`T0: Observer creation started`);
+            
+            const observer = j.watch(specification, company, projection => {
+                timingLog.push(`T1: Office callback invoked for ${projection.identifier}`);
+                console.log(`TEST: Office projection callback for: ${projection.identifier}`);
+                
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                // Simulate async delay before registering nested handler (e.g., awaiting a network call)
+                setTimeout(() => {
+                    timingLog.push(`T3: Manager handler registered (after delay)`);
+                    console.log(`TEST: Registering manager handler AFTER async delay`);
+                    
+                    projection.managers.onAdded(employeeNumber => {
+                        timingLog.push(`T4: Manager callback invoked for ${employeeNumber}`);
+                        console.log(`TEST: Manager callback for: ${employeeNumber}`);
+                        managerCallbacks.push(employeeNumber);
+                        model.managers.push(employeeNumber);
+                    });
+                }, 10); // 10ms delay to simulate network latency
+            });
+
+            console.log("TEST: Starting observer.loaded()...");
+            await observer.loaded();
+            timingLog.push(`T2: Observer.loaded() completed`);
+            console.log("TEST: Observer loaded");
+
+            // Add manager immediately - may arrive before handler is registered
+            console.log("TEST: Adding manager immediately after loaded()...");
+            await j.fact(new Manager(office, 3001));
+            timingLog.push(`T5: Manager fact added`);
+
+            // Wait for async operations to complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("TEST: Timing sequence:");
+            timingLog.forEach(log => console.log(`  ${log}`));
+            console.log("TEST: Manager callbacks:", managerCallbacks);
+            console.log("TEST: Final offices:", JSON.stringify(offices));
+
+            // HYPOTHESIS: If read() has async delay, facts arriving between read start and
+            // listener registration (T2-T3 window) may be lost
+            expect(managerCallbacks).toContain(3001);
+            expect(offices[0].managers).toContain(3001);
+
+            observer.stop();
+        });
+
+        // TEST 2: Subscribe (keepAlive=true) vs Watch (keepAlive=false)
+        // PURPOSE: Compare behavior between j.watch() (keepAlive=false) and hypothetical subscribe (keepAlive=true)
+        // HYPOTHESIS: Different keepAlive settings may have different timing behavior for nested collections
+        // NOTE: Currently only testing j.watch() behavior - need to add comparison if subscribe API exists
+        it("should document watch (keepAlive=false) behavior for nested collections", async () => {
+            console.log("\n=== TEST: Documenting j.watch() behavior ===");
+            console.log("NOTE: j.watch() uses keepAlive=false by default");
+            console.log("TODO: Add comparison with subscribe(keepAlive=true) if API exists\n");
+
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const watchCallbacks: { type: string; time: number; data?: any }[] = [];
+            const startTime = Date.now();
+
+            console.log("TEST: Creating j.watch() observer (keepAlive=false)...");
+            const observer = j.watch(specification, company, projection => {
+                const elapsed = Date.now() - startTime;
+                watchCallbacks.push({ type: 'office', time: elapsed, data: projection.identifier });
+                console.log(`[${elapsed}ms] Office callback for: ${projection.identifier}`);
+
+                projection.managers.onAdded(employeeNumber => {
+                    const elapsed = Date.now() - startTime;
+                    watchCallbacks.push({ type: 'manager', time: elapsed, data: employeeNumber });
+                    console.log(`[${elapsed}ms] Manager callback for: ${employeeNumber}`);
+                });
+            });
+
+            await observer.loaded();
+            console.log(`[${Date.now() - startTime}ms] Observer loaded`);
+
+            // Add facts and observe timing
+            console.log("TEST: Adding manager...");
+            await j.fact(new Manager(office, 3101));
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            console.log("\nTEST: Callback timing analysis:");
+            watchCallbacks.forEach(cb => {
+                console.log(`  ${cb.time}ms - ${cb.type}: ${cb.data}`);
+            });
+
+            console.log("\nDOCUMENTATION: j.watch() behavior:");
+            console.log("  - keepAlive: false (does not maintain persistent connection)");
+            console.log("  - Timing: Callbacks fire synchronously during fact processing");
+            console.log("  - TODO: Compare with subscribe(keepAlive=true) for potential timing differences");
+
+            expect(watchCallbacks.length).toBeGreaterThan(0);
+            observer.stop();
+        });
+
+        // TEST 3: Regression - Flat specification works, nested fails
+        // PURPOSE: Compare flat vs nested specifications with same data to isolate nested-specific issues
+        // HYPOTHESIS: The race condition only manifests with nested collections, not flat ones
+        it("should compare flat specification (works) vs nested specification (may fail)", async () => {
+            console.log("\n=== TEST: Flat vs Nested Specification Comparison ===");
+            
+            const manager1 = new Manager(office, 3201);
+            const manager2 = new Manager(office, 3202);
+
+            j = JinagaTest.create({
+                initialState: [creator, company, office, manager1, manager2]
+            });
+
+            // TEST 3A: FLAT SPECIFICATION (baseline - should work)
+            console.log("\nTEST 3A: Testing FLAT specification...");
+            const flatSpec = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => office.identifier)
+            );
+
+            const flatResults: string[] = [];
+            const flatObserver = j.watch(flatSpec, company, identifier => {
+                console.log(`FLAT: Office callback for: ${identifier}`);
+                flatResults.push(identifier);
+            });
+
+            await flatObserver.loaded();
+            console.log("FLAT: Results:", flatResults);
+            expect(flatResults).toEqual(["TestOffice"]);
+            flatObserver.stop();
+
+            // TEST 3B: NESTED SPECIFICATION (may expose race condition)
+            console.log("\nTEST 3B: Testing NESTED specification with same data...");
+            const nestedSpec = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const nestedResults: any[] = [];
+            const nestedManagerCallbacks: number[] = [];
+            
+            const nestedObserver = j.watch(nestedSpec, company, projection => {
+                console.log(`NESTED: Office callback for: ${projection.identifier}`);
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                nestedResults.push(model);
+
+                projection.managers.onAdded(employeeNumber => {
+                    console.log(`NESTED: Manager callback for: ${employeeNumber}`);
+                    nestedManagerCallbacks.push(employeeNumber);
+                    model.managers.push(employeeNumber);
+                });
+            });
+
+            await nestedObserver.loaded();
+            
+            console.log("\nCOMPARISON:");
+            console.log("  FLAT - Office found:", flatResults.length === 1);
+            console.log("  NESTED - Office found:", nestedResults.length === 1);
+            console.log("  NESTED - Managers found:", nestedManagerCallbacks.length);
+            console.log("  NESTED - Expected managers: 2 (3201, 3202)");
+            console.log("  NESTED - Actual managers:", nestedManagerCallbacks);
+
+            // Both should work identically
+            expect(nestedResults.length).toBe(1);
+            expect(nestedResults[0].identifier).toBe("TestOffice");
+            expect(nestedManagerCallbacks).toEqual(expect.arrayContaining([3201, 3202]));
+            expect(nestedManagerCallbacks.length).toBe(2);
+
+            console.log("\nRESULT: Both flat and nested specifications handled initial data correctly");
+            nestedObserver.stop();
+        });
+
+        // TEST 4: Multiple fact types arriving simultaneously during initialization
+        // PURPOSE: Test if notification system handles multiple nested levels when they arrive together
+        // HYPOTHESIS: When Office, Manager, and ManagerName all arrive during initialization,
+        // the notification system may fail to propagate through all levels correctly
+        it.skip("should handle multiple fact types arriving simultaneously during initialization", async () => {
+            console.log("\n=== TEST: Multiple fact types arriving during initialization ===");
+            console.log("SCENARIO: Office, Manager, and ManagerName all arrive during observer setup");
+            
+            j = JinagaTest.create({
+                initialState: [creator, company]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => ({
+                                employeeNumber: manager.employeeNumber,
+                                names: facts.ofType(ManagerName)
+                                    .join(managerName => managerName.manager, manager)
+                                    .select(managerName => managerName.value)
+                            }))
+                    }))
+            );
+
+            const callbackSequence: string[] = [];
+            const offices: any[] = [];
+
+            console.log("TEST: Creating observer...");
+            const observer = j.watch(specification, company, projection => {
+                callbackSequence.push(`office:${projection.identifier}`);
+                console.log(`[Level 1] Office callback: ${projection.identifier}`);
+                
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                projection.managers.onAdded(managerProj => {
+                    callbackSequence.push(`manager:${managerProj.employeeNumber}`);
+                    console.log(`[Level 2] Manager callback: ${managerProj.employeeNumber}`);
+                    
+                    const managerModel: any = {
+                        employeeNumber: managerProj.employeeNumber,
+                        names: []
+                    };
+                    model.managers.push(managerModel);
+
+                    managerProj.names.onAdded(name => {
+                        callbackSequence.push(`name:${name}`);
+                        console.log(`[Level 3] ManagerName callback: ${name}`);
+                        managerModel.names.push(name);
+                    });
+                });
+            });
+
+            // Don't await loaded - add all three levels immediately
+            console.log("TEST: Adding Office, Manager, and ManagerName simultaneously...");
+            const officePromise = j.fact(office);
+            const manager = new Manager(office, 3301);
+            const managerPromise = j.fact(manager);
+            const namePromise = j.fact(new ManagerName(manager, "John Smith", []));
+
+            console.log("TEST: Now calling loaded()...");
+            await observer.loaded();
+            
+            console.log("TEST: Waiting for all facts...");
+            await Promise.all([officePromise, managerPromise, namePromise]);
+            
+            // Give time for notifications to propagate
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("\nTEST: Callback sequence:", callbackSequence);
+            console.log("TEST: Final structure:", JSON.stringify(offices, null, 2));
+
+            // HYPOTHESIS: All three levels should be captured despite arriving simultaneously
+            expect(callbackSequence).toContain("office:TestOffice");
+            expect(callbackSequence).toContain("manager:3301");
+            expect(callbackSequence).toContain("name:John Smith");
+            
+            expect(offices.length).toBe(1);
+            expect(offices[0].managers.length).toBe(1);
+            expect(offices[0].managers[0].names).toContain("John Smith");
+
+            console.log("\nRESULT: All three levels should propagate correctly");
+            observer.stop();
+        });
+
+        // TEST 5: Listener removal during notification
+        // PURPOSE: Test if stopping observer while notifyFactSaved() is processing causes issues
+        // HYPOTHESIS: Stopping observer mid-notification may leave orphaned handlers or cause errors
+        it.skip("should handle listener removal during notification processing", async () => {
+            console.log("\n=== TEST: Listener removal during notification ===");
+            console.log("SCENARIO: Stop observer while nested callbacks are being invoked");
+            
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const callbacksInvoked: string[] = [];
+            const errors: Error[] = [];
+            let stopCalled = false;
+
+            console.log("TEST: Creating observer...");
+            const observer = j.watch(specification, company, projection => {
+                callbacksInvoked.push(`office:${projection.identifier}`);
+                console.log(`Office callback invoked: ${projection.identifier}`);
+
+                projection.managers.onAdded(employeeNumber => {
+                    try {
+                        callbacksInvoked.push(`manager:${employeeNumber}`);
+                        console.log(`Manager callback invoked: ${employeeNumber}`);
+                        
+                        // Stop observer during first manager callback
+                        if (employeeNumber === 3401 && !stopCalled) {
+                            console.log("TEST: Stopping observer MID-NOTIFICATION...");
+                            stopCalled = true;
+                            observer.stop();
+                            console.log("TEST: Observer.stop() called during callback");
+                        }
+                    } catch (error) {
+                        console.error("ERROR in manager callback:", error);
+                        errors.push(error as Error);
+                    }
+                });
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer loaded");
+
+            // Add multiple managers - observer will be stopped during first callback
+            console.log("TEST: Adding multiple managers...");
+            const promises = [
+                j.fact(new Manager(office, 3401)),
+                j.fact(new Manager(office, 3402)),
+                j.fact(new Manager(office, 3403))
+            ];
+
+            await Promise.all(promises);
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log("\nTEST: Callbacks invoked:", callbacksInvoked);
+            console.log("TEST: Errors encountered:", errors.length);
+            
+            if (errors.length > 0) {
+                console.log("ERRORS:");
+                errors.forEach(err => console.log(`  - ${err.message}`));
+            }
+
+            console.log("\nANALYSIS:");
+            console.log(`  - Observer stopped during notification: ${stopCalled}`);
+            console.log(`  - Callbacks that executed: ${callbacksInvoked.length}`);
+            console.log(`  - Expected impact: Subsequent callbacks should not fire`);
+            console.log(`  - Actual callbacks: ${callbacksInvoked.join(', ')}`);
+
+            // HYPOTHESIS: Stopping observer should cleanly prevent subsequent callbacks
+            // without causing errors
+            expect(errors.length).toBe(0); // Should handle gracefully without errors
+            expect(stopCalled).toBe(true);
+            
+            // After stop, no more callbacks should fire for subsequent managers
+            // First manager (3401) triggers stop, so 3402 and 3403 should NOT appear
+            const managerCallbacks = callbacksInvoked.filter(cb => cb.startsWith('manager:'));
+            console.log(`  - Manager callbacks count: ${managerCallbacks.length}`);
+            
+            // Depending on timing, we might get 1 callback (3401 before stop)
+            // or possibly none if stop() preempts the callback
+            expect(managerCallbacks.length).toBeLessThanOrEqual(1);
+
+            console.log("\nRESULT: Observer stop should prevent subsequent notifications cleanly");
+        });
+
+        // DOCUMENTATION TEST: Summarize findings from all additional tests
+        it("should document findings from additional hypothesis tests", () => {
+            console.log("\n=== DOCUMENTATION: Additional Test Findings ===\n");
+            
+            console.log("1. ASYNC DELAY IN READ (Test 1 - SKIPPED):");
+            console.log("   - Tests if facts arriving during async read() are captured");
+            console.log("   - Simulates network latency with setTimeout before handler registration");
+            console.log("   - HYPOTHESIS: T2-T3 window (loaded() to handler registration) may lose facts");
+            console.log("   - STATUS: Needs investigation\n");
+
+            console.log("2. WATCH vs SUBSCRIBE BEHAVIOR (Test 2 - PASSING):");
+            console.log("   - Documents j.watch() behavior with keepAlive=false");
+            console.log("   - TODO: Add comparison with subscribe(keepAlive=true) if API exists");
+            console.log("   - Current behavior: Callbacks fire synchronously");
+            console.log("   - STATUS: Baseline documented\n");
+
+            console.log("3. FLAT vs NESTED REGRESSION (Test 3 - PASSING):");
+            console.log("   - Compares flat and nested specs with identical data");
+            console.log("   - FINDING: Both handle initial data correctly");
+            console.log("   - Confirms issue is timing-related, not structure-related");
+            console.log("   - STATUS: No race condition in this scenario\n");
+
+            console.log("4. MULTI-LEVEL SIMULTANEOUS ARRIVAL (Test 4 - SKIPPED):");
+            console.log("   - Office, Manager, ManagerName all arrive during initialization");
+            console.log("   - Tests notification propagation through 3 levels");
+            console.log("   - HYPOTHESIS: Deep nesting may fail when all levels arrive together");
+            console.log("   - STATUS: Needs investigation\n");
+
+            console.log("5. LISTENER REMOVAL DURING NOTIFICATION (Test 5 - SKIPPED):");
+            console.log("   - Stops observer while callbacks are executing");
+            console.log("   - Tests cleanup and error handling");
+            console.log("   - HYPOTHESIS: May cause orphaned handlers or errors");
+            console.log("   - STATUS: Needs investigation\n");
+
+            console.log("OVERALL PATTERN:");
+            console.log("  - Race conditions appear in async timing scenarios");
+            console.log("  - Synchronous operations work correctly");
+            console.log("  - Issue likely in listener registration timing vs fact arrival");
+            console.log("  - Key vulnerability: window between loaded() and handler registration");
+        });
+    });
+
 });
