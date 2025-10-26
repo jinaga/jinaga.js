@@ -43,6 +43,21 @@ export class ObserverImpl<T> implements Observer<T> {
     private feeds: string[] = [];
     private stopped: boolean = false;
     private listenersAdded: boolean = false;
+    /**
+     * Buffers results that are pending delivery to result handlers.
+     * 
+     * The key is a string in the format `path|tupleHash`, where:
+     *   - `path` is a string representing the traversal path in the specification.
+     *   - `tupleHash` is the hash of the tuple of fact references for the current context.
+     * 
+     * The value is an object containing:
+     *   - `projection`: The projection associated with the results.
+     *   - `parentSubset`: The parent subset of fact references.
+     *   - `results`: The buffered results (of type `ProjectedResult[]`) to be replayed to handlers when they are registered.
+     * 
+     * This map is used to buffer results that are produced before any handlers are registered,
+     * enabling replay of results to late-registered handlers.
+     */
     private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; results: ProjectedResult[] }>
         = new Map();
 
@@ -236,27 +251,13 @@ export class ObserverImpl<T> implements Observer<T> {
                     Trace.warn(`[Observer]   Handler ${index + 1}: Path="${h.path}", Tuple hash: ${h.tupleHash.substring(0, 8)}...`);
                 });
                 // Buffer for replay when the handler registers later.
-                const key = `${path}|${parentTupleHash}`;
-                const existing = this.pendingAddsByKey.get(key);
-                if (existing) {
-                    existing.results.push(pr);
-                }
-                else {
-                    this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr] });
-                }
+                this.bufferPendingNotification(path, pr, projection, parentSubset);
                 // Skip deeper recursion until handler is registered.
                 continue;
             } else if (!resultAdded) {
                 Trace.warn(`[Observer] Handler found but no callback - Path: ${displayPath}`);
                 // Buffer for replay when the callback is attached.
-                const key = `${path}|${parentTupleHash}`;
-                const existing = this.pendingAddsByKey.get(key);
-                if (existing) {
-                    existing.results.push(pr);
-                }
-                else {
-                    this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr] });
-                }
+                this.bufferPendingNotification(path, pr, projection, parentSubset);
                 continue;
             } else {
                 Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
@@ -311,6 +312,26 @@ export class ObserverImpl<T> implements Observer<T> {
                 // After the tuple is removed, it can be re-added.
                 this.notifiedTuples.delete(resultTupleHash);
             }
+        }
+    }
+
+    /**
+     * Buffers a pending notification for replay when a handler is registered later.
+     * 
+     * @param path - The path in the specification
+     * @param pr - The projected result to buffer
+     * @param projection - The projection associated with the result
+     * @param parentSubset - The parent subset of fact references
+     */
+    private bufferPendingNotification(path: string, pr: ProjectedResult, projection: Projection, parentSubset: string[]): void {
+        const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
+        const key = `${path}|${parentTupleHash}`;
+        const existing = this.pendingAddsByKey.get(key);
+        if (existing) {
+            existing.results.push(pr);
+        }
+        else {
+            this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr] });
         }
     }
     
