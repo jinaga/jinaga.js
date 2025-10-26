@@ -429,10 +429,10 @@ function createSelfInverse(specification: Specification, context: InverterContex
     const selfInverse: SpecificationInverse = {
         inverseSpecification: specification,
         operation: "add",
-        givenSubset: [givenName],
-        parentSubset: [givenName],
-        path: "",
-        resultSubset: []
+        givenSubset: context.givenSubset,
+        parentSubset: context.parentSubset,
+        path: context.path,
+        resultSubset: context.resultSubset
     };
     
     Trace.info(`[SelfInverse] Created for given: ${givenType} (${givenName})`);
