@@ -1,6 +1,8 @@
 import { Condition, ExistentialCondition, isExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
 import { detectDisconnectedSpecification } from "./UnionFind";
 import { Trace } from "../util/trace";
+import { describeSpecification } from "./description";
+import { computeStringHash } from "../util/encoding";
 
 type InverseOperation = "add" | "remove";
 
@@ -68,7 +70,48 @@ export function invertSpecification(specification: Specification): Specification
     const totalInverses = inverses.length + projectionInverses.length + selfInverseCount;
     Trace.info(`[InvertSpec] COMPLETE - Total inverses: ${totalInverses} (${inverses.length} match + ${projectionInverses.length} projection + ${selfInverseCount} self-inverse)`);
     
-    return selfInverse ? [ ...inverses, ...projectionInverses, selfInverse ] : [ ...inverses, ...projectionInverses ];
+    // Deduplicate inverses based on specification structure
+    const allInverses = selfInverse 
+        ? [...inverses, ...projectionInverses, selfInverse] 
+        : [...inverses, ...projectionInverses];
+
+    const deduplicatedInverses = deduplicateInverses(allInverses);
+
+    Trace.info(`[InvertSpec] Deduplication - Before: ${allInverses.length}, After: ${deduplicatedInverses.length}`);
+
+    return deduplicatedInverses;
+}
+
+/**
+ * Removes duplicate inverse specifications based on their structure.
+ * Two inverses are considered duplicates if they have:
+ * - Identical inverse specification structure
+ * - Same operation (add/remove)
+ * - Same metadata (givenSubset, parentSubset, path, resultSubset)
+ */
+function deduplicateInverses(inverses: SpecificationInverse[]): SpecificationInverse[] {
+    const seen = new Map<string, SpecificationInverse>();
+    
+    for (const inverse of inverses) {
+        // Create a unique key from the inverse specification and metadata
+        const specKey = computeStringHash(describeSpecification(inverse.inverseSpecification, 0));
+        const metadataKey = JSON.stringify({
+            operation: inverse.operation,
+            givenSubset: inverse.givenSubset,
+            parentSubset: inverse.parentSubset,
+            path: inverse.path,
+            resultSubset: inverse.resultSubset
+        });
+        const key = `${specKey}|${metadataKey}`;
+        
+        if (!seen.has(key)) {
+            seen.set(key, inverse);
+        } else {
+            Trace.info(`[InvertSpec] Skipping duplicate inverse - Spec key: ${specKey.substring(0, 8)}..., Operation: ${inverse.operation}`);
+        }
+    }
+    
+    return Array.from(seen.values());
 }
 
 function invertMatches(matches: Match[], labels: Label[], context: InverterContext): SpecificationInverse[] {

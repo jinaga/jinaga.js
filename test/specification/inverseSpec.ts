@@ -32,13 +32,29 @@ describe("specification inverse", () => {
 
         const inverses = fromSpecification(specification);
 
-        // With self-inverse, specifications get an additional inverse for the given type
+        // With deduplication, only one inverse is generated
         expect(inverses).toEqual([`
             (p1: Office) {
                 u1: Company [
                     u1 = p1->company: Company
                 ]
-            } => u1`,`
+            } => u1`
+        ]);
+    });
+
+    it("should not create duplicate inverses for predecessor", () => {
+        const specification = model.given(Office).match((office, facts) =>
+            facts.ofType(Company)
+                .join(company => company, office.company)
+        );
+
+        const inverses = fromSpecification(specification);
+
+        // Should have only ONE inverse, not duplicates
+        expect(inverses.length).toBe(1);
+        
+        // Verify the single inverse is correct
+        expect(inverses).toEqual([`
             (p1: Office) {
                 u1: Company [
                     u1 = p1->company: Company
@@ -331,6 +347,7 @@ describe("specification inverse", () => {
 
         const inverses = fromSpecification(specification);
 
+        // With deduplication, the duplicate inverse is removed
         expect(inverses).toEqual([`
             (p1: Office) {
                 u1: President [
@@ -340,11 +357,6 @@ describe("specification inverse", () => {
             (u1: President) {
                 p1: Office [
                     p1->company: Company = u1->office: Office->company: Company
-                ]
-            } => u1`,`
-            (p1: Office) {
-                u1: President [
-                    u1->office: Office->company: Company = p1->company: Company
                 ]
             } => u1`
         ]);
