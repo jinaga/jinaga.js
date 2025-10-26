@@ -1043,8 +1043,12 @@ describe("Nested Specification Subscription", () => {
             console.log("TEST: Adding manager IMMEDIATELY...");
             await j.fact(new Manager(office, 2101));
 
-            // Wait for event loop to process
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // Wait for all notifications to be processed
+            await observer.processed();
+            
+            // This test uses setTimeout(0) to delay handler registration
+            // Wait for that setTimeout to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
 
             console.log("TEST: Handler registrations:", handlerRegistrations);
             console.log("TEST: Manager notifications:", managerNotifications);
@@ -1113,8 +1117,8 @@ describe("Nested Specification Subscription", () => {
 
             await Promise.all([officePromise, manager1Promise, manager2Promise]);
             
-            // Give event loop time to process
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // Wait for all notifications to be processed
+            await observer.processed();
 
             console.log("TEST: Office callbacks:", officeCallbacks);
             console.log("TEST: Manager callbacks:", managerCallbacks);
@@ -1254,8 +1258,8 @@ describe("Nested Specification Subscription", () => {
             console.log("TEST: Waiting for all promises...");
             await Promise.all(promises);
 
-            // Give event loop time to settle
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // Wait for all notifications to be processed
+            await observer.processed();
 
             console.log("TEST: Manager callbacks received:", managerCallbacks);
             console.log("TEST: Final office state:", JSON.stringify(offices));
@@ -1338,8 +1342,12 @@ describe("Nested Specification Subscription", () => {
             await j.fact(new Manager(office, 3001));
             timingLog.push(`T5: Manager fact added`);
 
-            // Wait for async operations to complete
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // Wait for all notifications to be processed
+            await observer.processed();
+            
+            // This test uses setTimeout to delay handler registration
+            // Wait for that setTimeout to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
 
             console.log("TEST: Timing sequence:");
             timingLog.forEach(log => console.log(`  ${log}`));
@@ -1400,7 +1408,7 @@ describe("Nested Specification Subscription", () => {
             // Add facts and observe timing
             console.log("TEST: Adding manager...");
             await j.fact(new Manager(office, 3101));
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await observer.processed();
 
             console.log("\nTEST: Callback timing analysis:");
             watchCallbacks.forEach(cb => {
@@ -1571,8 +1579,8 @@ describe("Nested Specification Subscription", () => {
             console.log("TEST: Waiting for all facts...");
             await Promise.all([officePromise, managerPromise, namePromise]);
             
-            // Give time for notifications to propagate
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // Wait for all notifications to be processed
+            await observer.processed();
 
             console.log("\nTEST: Callback sequence:", callbackSequence);
             console.log("TEST: Final structure:", JSON.stringify(offices, null, 2));
@@ -1652,7 +1660,7 @@ describe("Nested Specification Subscription", () => {
             ];
 
             await Promise.all(promises);
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await observer.processed();
 
             console.log("\nTEST: Callbacks invoked:", callbacksInvoked);
             console.log("TEST: Errors encountered:", errors.length);
@@ -1789,9 +1797,13 @@ describe("Nested Specification Subscription", () => {
             console.log("TEST: Adding manager immediately (should trigger buffering)...");
             const manager = await j.fact(new Manager(office, 9999));
 
-            // Wait for the delayed handler registration
-            console.log("TEST: Waiting for delayed handler registration...");
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // Wait for all notifications to be processed
+            console.log("TEST: Waiting for notifications to complete...");
+            await observer.processed();
+            
+            // This test uses setTimeout to delay handler registration
+            // Wait for that setTimeout to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
 
             console.log("TEST: Final state:");
             console.log(`  - Offices: ${JSON.stringify(offices)}`);
@@ -1937,9 +1949,13 @@ describe("Nested Specification Subscription", () => {
             console.log("TEST: Adding manager with complex tuple (should trigger key mismatch)...");
             const manager = await j.fact(new Manager(office, 7777));
 
-            // Wait for delayed handler registration
-            console.log("TEST: Waiting for delayed handler registration...");
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // Wait for all notifications to be processed
+            console.log("TEST: Waiting for notifications to complete...");
+            await observer.processed();
+            
+            // This test uses setTimeout to delay handler registration
+            // Wait for that setTimeout to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
 
             console.log("TEST: Final state:");
             console.log(`  - Offices: ${JSON.stringify(offices)}`);
@@ -1998,8 +2014,11 @@ describe("Nested Specification Subscription", () => {
                 });
             });
 
-            // Wait for the buffered notification to be replayed
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // Wait for all notifications to be processed
+            await observer.processed();
+            
+            // Wait a bit more for buffered replay to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
             
             // The handler should be called even though the fact was added before registration
             expect(nestedHandlerCalled).toBe(true);
@@ -2044,8 +2063,11 @@ describe("Nested Specification Subscription", () => {
                 });
             });
 
-            // Wait for all buffered notifications to be replayed
-            await new Promise(resolve => setTimeout(resolve, 200));
+            // Wait for all notifications to be processed
+            await observer.processed();
+            
+            // Wait a bit more for buffered replay to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
             
             // All handlers should be called
             expect(handlerCallOrder.length).toBe(3);
@@ -2096,7 +2118,10 @@ describe("Nested Specification Subscription", () => {
                 });
             });
 
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await observer.processed();
+            
+            // Wait a bit more for buffered replay to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
             
             // The test passes, but documents the potential issue
             expect(handlerInvoked).toBe(true);
@@ -2153,8 +2178,11 @@ describe("Nested Specification Subscription", () => {
                     });
                 });
 
-                // Wait for the buffered notification to be replayed
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // Wait for all notifications to be processed
+                await observer.processed();
+                
+                // Wait a bit more for buffered replay to complete
+                await new Promise(resolve => setTimeout(resolve, 10));
                 
                 // The handler should have been called
                 expect(handlerCalled).toBe(true);
@@ -2215,8 +2243,11 @@ describe("Nested Specification Subscription", () => {
                 });
             });
 
-            // Wait for the buffered notification to be replayed
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // Wait for all notifications to be processed
+            await observer.processed();
+            
+            // Wait a bit more for buffered replay to complete
+            await new Promise(resolve => setTimeout(resolve, 10));
             
             // The handler should have been called
             expect(handlerCalled).toBe(true);
@@ -2297,7 +2328,7 @@ describe("Nested Specification Subscription", () => {
             await j.fact(office);
             console.log("TEST: Office added to storage");
 
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await observer.processed();
 
             console.log("\nRESULTS:");
             console.log(`  - Office callbacks fired: ${officeCallbacks.length}`);
@@ -2382,7 +2413,7 @@ describe("Nested Specification Subscription", () => {
             const manager = new Manager(office, 4001);
             await j.fact(manager);
 
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await observer.processed();
 
             console.log("\nRESULTS:");
             console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 1)`);
@@ -2467,7 +2498,7 @@ describe("Nested Specification Subscription", () => {
             await j.fact(manager);
             console.log("TEST: Manager added to storage");
 
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await observer.processed();
 
             console.log("\nRESULTS:");
             console.log(`  - Manager added: ${j.hash(manager)}`);
@@ -2485,7 +2516,7 @@ describe("Nested Specification Subscription", () => {
             await j.fact(office);
             console.log("TEST: Office added to storage");
 
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await observer.processed();
 
             console.log("\nRESULTS AFTER ADDING OFFICE:");
             console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 1)`);
@@ -2568,19 +2599,19 @@ describe("Nested Specification Subscription", () => {
             console.log("\nTEST: Step 1 - Adding MANAGER (leaf fact, nothing to connect to)...");
             const manager = new Manager(office, 4201);
             await j.fact(manager);
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await observer.processed();
             console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 0 - Office doesn't exist)`);
 
             console.log("\nTEST: Step 2 - Adding OFFICE (intermediate fact)...");
             await j.fact(office);
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await observer.processed();
             console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 0 - Company doesn't exist)`);
             console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 0 - Office wasn't connected)`);
             console.log(`  - ISSUE: Office arrival should trigger re-read of Manager spec, but doesn't`);
 
             console.log("\nTEST: Step 3 - Adding COMPANY (given fact)...");
             await j.fact(company);
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await observer.processed();
             
             console.log("\nFINAL RESULTS:");
             console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 1)`);
@@ -2671,7 +2702,7 @@ describe("Nested Specification Subscription", () => {
             // Add Office first (before Company exists)
             console.log("\nSTEP 4: Add Office (before Company) - stored but not connected");
             await j.fact(office);
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await observer.processed();
             console.log(`  - Office callbacks so far: ${officeCallbacks.length} (expected: 0)`);
 
             // Add Company (the given fact)
@@ -2684,7 +2715,7 @@ describe("Nested Specification Subscription", () => {
             console.log("    e) Fires Office callback with nested manager observable");
             
             await j.fact(company);
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await observer.processed();
 
             console.log("\nSTEP 6: Check if re-read occurred");
             console.log(`  - Office callbacks: ${officeCallbacks.length} (expected: 1)`);
@@ -2694,7 +2725,7 @@ describe("Nested Specification Subscription", () => {
             console.log("\nSTEP 7: Add Manager to verify nested inverse queries established");
             const manager = new Manager(office, 4301);
             await j.fact(manager);
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await observer.processed();
             
             console.log(`  - Manager callbacks: ${managerCallbacks.length} (expected: 1)`);
             console.log(`  - Managers found: ${JSON.stringify(managerCallbacks)}`);

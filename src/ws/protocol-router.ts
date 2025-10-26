@@ -1,7 +1,7 @@
 import { ControlKeyword, ControlFrame, ProtocolMessageRouterCallbacks, AuthorizationContext } from "./types";
 import { ControlFrameHandler } from "./control-frame-handler";
 
-const CONTROL_KEYWORDS: ReadonlySet<string> = new Set(["BOOK", "ERR", "SUB", "UNSUB"]);
+const CONTROL_KEYWORDS: ReadonlySet<string> = new Set(["BOOK", "ERR", "SUB", "UNSUB", "ACK"]);
 
 export class WebSocketMessageRouter {
   private buffer: string = "";

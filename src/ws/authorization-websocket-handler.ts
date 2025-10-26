@@ -182,6 +182,9 @@ export class AuthorizationWebSocketHandler {
         listenerTokens.push(token);
       }
       this.subscriptions.set(feed, { feed, listeners: listenerTokens });
+      
+      // Send ACK to confirm subscription is active
+      socket.send(`ACK\n${JSON.stringify(feed)}\n\n`);
     } catch (e: any) {
       const message = e && e.message ? e.message : String(e);
       socket.send(`ERR\n${JSON.stringify(feed)}\n${JSON.stringify(message)}\n\n`);

@@ -26,6 +26,11 @@ export class ControlFrameHandler {
       this.onErrorMessage(feed, message);
       return;
     }
+    if (keyword === "ACK") {
+      // ACK confirms subscription is active, payload contains feed
+      // Currently no action needed, but could be used for tracking
+      return;
+    }
     // Ignore SUB/UNSUB sent from server (defensive)
   }
 }
