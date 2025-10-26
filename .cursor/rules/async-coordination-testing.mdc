@@ -1,0 +1,162 @@
+---
+description: Use when writing or modifying tests to ensure proper async coordination and avoid flaky timeouts
+globs: test/**/*.ts,test/**/*.js
+---
+# Async Coordination and Testing Best Practices
+
+## Overview
+Jinaga.js has infrastructure for deterministic async coordination in tests. Always use these patterns instead of arbitrary timeouts.
+
+## Core Infrastructure
+
+### Observer.processed()
+The `Observer` interface (defined in [src/observer/observer.ts](mdc:src/observer/observer.ts)) provides a `processed()` method that returns a promise resolving when all pending notifications complete.
+
+```typescript
+const observer = j.watch(specification, given, projection => {
+    // Your callback logic
+});
+
+await j.fact(someFact);
+await observer.processed(); // Wait for all notifications to complete
+```
+
+### How It Works
+- `ObservableSource.notify()` in [src/observable/observable.ts](mdc:src/observable/observable.ts) tracks all notification promises
+- `ObserverImpl` in [src/observer/observer.ts](mdc:src/observer/observer.ts) tracks pending notifications including:
+  - Observer callbacks triggered by facts
+  - Nested observer callbacks from composite specifications
+  - Buffered notifications replayed when handlers register late
+- `processed()` waits recursively until no new notifications are created
+
+## Testing Patterns
+
+### ❌ AVOID: Arbitrary Timeouts
+```typescript
+// BAD: Flaky and slow
+await j.fact(someFact);
+await new Promise(resolve => setTimeout(resolve, 50));
+expect(callbacks.length).toBe(1);
+```
+
+### ✅ USE: observer.processed()
+```typescript
+// GOOD: Deterministic and fast
+await j.fact(someFact);
+await observer.processed();
+expect(callbacks.length).toBe(1);
+```
+
+### Test Utilities
+Use utilities from [test/utils/async-test-utils.ts](mdc:test/utils/async-test-utils.ts):
+
+```typescript
+import { waitForObserver, waitForCondition, waitForCallbackCount } from '../utils/async-test-utils';
+
+// Wait for observer to complete
+await waitForObserver(observer);
+
+// Wait for a specific condition
+await waitForCondition(() => callbacks.length > 0);
+
+// Wait for a specific number of callbacks
+await waitForCallbackCount(() => callbacks.length, 5);
+```
+
+## When Timeouts ARE Acceptable
+
+Timeouts are acceptable ONLY in these specific cases:
+
+1. **Testing race conditions**: When deliberately testing timing-sensitive behavior
+   ```typescript
+   // This test specifically tests buffering when handlers register late
+   setTimeout(() => {
+       projection.managers.onAdded(handler);
+   }, 0);
+   ```
+
+2. **Polling external systems**: When waiting for external state without event notifications
+   ```typescript
+   // Polling for bookmark changes
+   const check = () => {
+       if (bookmark === expected) return resolve();
+       if (Date.now() - start > timeout) return reject();
+       setTimeout(check, 20);
+   };
+   ```
+
+3. **Simulating user delays**: When testing buffering mechanisms that handle delayed registration
+
+**ALWAYS document why the timeout is necessary** when using one.
+
+## WebSocket Testing
+
+For WebSocket tests in [test/ws/](mdc:test/ws/), use the ACK protocol:
+
+```typescript
+// Send subscription
+client.send(`SUB\n${JSON.stringify('feed')}\n${JSON.stringify('')}\n\n`);
+
+// Wait for ACK to confirm subscription is active
+await waitFor(() => received.some(m => m.startsWith('ACK\n') && m.includes('"feed"')));
+
+// Now safe to send facts and expect notifications
+```
+
+The WebSocket protocol sends `ACK` messages after successful subscription processing (see [src/ws/authorization-websocket-handler.ts](mdc:src/ws/authorization-websocket-handler.ts)).
+
+## Examples
+
+### Nested Subscription Tests
+See [test/specification/nestedSubscriptionSpec.ts](mdc:test/specification/nestedSubscriptionSpec.ts) for comprehensive examples of using `observer.processed()` with nested specifications.
+
+### Self-Inverse Tests
+See [test/specification/selfInverseSpec.ts](mdc:test/specification/selfInverseSpec.ts) for examples with self-inverse specifications.
+
+### WebSocket Tests
+See [test/ws/authorizationWebSocketHandlerSpec.ts](mdc:test/ws/authorizationWebSocketHandlerSpec.ts) for examples using the ACK protocol.
+
+## Common Patterns
+
+### Multiple Facts
+```typescript
+await j.fact(fact1);
+await j.fact(fact2);
+await j.fact(fact3);
+await observer.processed(); // Wait once at the end
+```
+
+### Concurrent Facts
+```typescript
+await Promise.all([
+    j.fact(fact1),
+    j.fact(fact2),
+    j.fact(fact3)
+]);
+await observer.processed(); // Wait for all notifications
+```
+
+### Testing Buffered Replay
+```typescript
+// Add fact before observer starts
+await j.fact(manager);
+
+// Start observer (will buffer the notification)
+const observer = j.watch(specification, given, projection => {
+    projection.managers.onAdded(handler);
+});
+
+// Wait for buffered replay to complete
+await observer.processed();
+
+// Now safe to assert
+expect(handlerCalled).toBe(true);
+```
+
+## Benefits
+
+1. **Deterministic**: Tests wait for actual completion, not arbitrary delays
+2. **Fast**: Tests complete as soon as conditions are met
+3. **Reliable**: Eliminates race conditions and timing-dependent failures
+4. **Maintainable**: Changes to async behavior don't require timeout adjustments
+5. **Production-ready**: Infrastructure benefits both tests and production code

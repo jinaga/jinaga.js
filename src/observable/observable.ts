@@ -18,10 +18,16 @@ export class ObservableSource {
     }
 
     async notify(saved: FactEnvelope[]): Promise<void> {
+        // Collect all notification promises to ensure all callbacks complete
+        const notificationPromises: Promise<void>[] = [];
+        
         for (let index = 0; index < saved.length; index++) {
             const envelope = saved[index];
-            await this.notifyFactSaved(envelope.fact);
+            notificationPromises.push(this.notifyFactSaved(envelope.fact));
         }
+        
+        // Wait for all notifications to complete before resolving
+        await Promise.all(notificationPromises);
     }
 
     public addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {

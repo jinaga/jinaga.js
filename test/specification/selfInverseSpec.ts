@@ -127,8 +127,8 @@ describe("Self-Inverse Restoration", () => {
             await j.fact(new Vote(votingRound, voter1, 5));
             await j.fact(new Vote(votingRound, voter1, 7));
 
-            // Give the system a moment to process notifications
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // Wait for all notifications to be processed
+            await observer.processed();
             
             // WITH self-inverse: Callback should fire when given arrives, then again for new votes
             // WITHOUT self-inverse: Only new votes trigger callbacks (via normal inverse)

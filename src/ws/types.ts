@@ -1,4 +1,4 @@
-export type ControlKeyword = "BOOK" | "ERR" | "SUB" | "UNSUB";
+export type ControlKeyword = "BOOK" | "ERR" | "SUB" | "UNSUB" | "ACK";
 
 export interface ControlFrame {
   keyword: ControlKeyword;

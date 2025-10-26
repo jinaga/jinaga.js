@@ -22,6 +22,12 @@ export interface ObservableCollection<T> {
 export interface Observer<T> {
     cached(): Promise<boolean>;
     loaded(): Promise<void>;
+    /**
+     * Returns a promise that resolves when all pending notifications have been processed.
+     * This includes all observer callbacks triggered by facts that have been added.
+     * Useful in tests to wait for async operations to complete.
+     */
+    processed(): Promise<void>;
     stop(): void;
 }
 
@@ -43,6 +49,10 @@ export class ObserverImpl<T> implements Observer<T> {
     private feeds: string[] = [];
     private stopped: boolean = false;
     private listenersAdded: boolean = false;
+    /**
+     * Tracks all pending notification promises to enable waiting for processing completion.
+     */
+    private pendingNotifications: Set<Promise<void>> = new Set();
     /**
      * Buffers results that are pending delivery to result handlers.
      * 
@@ -175,6 +185,19 @@ export class ObserverImpl<T> implements Observer<T> {
         return this.loadedPromise;
     }
 
+    public async processed(): Promise<void> {
+        // Keep waiting until no new notifications are created
+        // This handles nested observers that register handlers which trigger more notifications
+        while (this.pendingNotifications.size > 0) {
+            // Create a snapshot of current pending notifications
+            const currentNotifications = Array.from(this.pendingNotifications);
+            await Promise.all(currentNotifications);
+            
+            // Check if new notifications were added while we were waiting
+            // If so, loop again to wait for those too
+        }
+    }
+
     public stop() {
         this.stopped = true;
         for (const listener of this.listeners) {
@@ -208,27 +231,38 @@ export class ObserverImpl<T> implements Observer<T> {
         const path = inverse.path || "(root)";
         Trace.info(`[Observer] ON_RESULT - Path: ${path}, Operation: ${inverse.operation}, Results count: ${results.length}, Given hash: ${this.givenHash.substring(0, 8)}...`);
         
-        // Filter out results that do not match the given.
-        const matchingResults = results.filter(pr =>
-            this.givenHash === computeTupleSubsetHash(pr.tuple, inverse.givenSubset));
-        
-        if (matchingResults.length === 0) {
-            Trace.info(`[Observer] No matching results after filtering - Path: ${path}, Given subset: [${inverse.givenSubset.join(', ')}]`);
-            return;
-        }
-        
-        Trace.info(`[Observer] Matching results: ${matchingResults.length} - Path: ${path}, Operation: ${inverse.operation}`);
+        // Track this notification for processing completion
+        const processNotification = async () => {
+            // Filter out results that do not match the given.
+            const matchingResults = results.filter(pr =>
+                this.givenHash === computeTupleSubsetHash(pr.tuple, inverse.givenSubset));
+            
+            if (matchingResults.length === 0) {
+                Trace.info(`[Observer] No matching results after filtering - Path: ${path}, Given subset: [${inverse.givenSubset.join(', ')}]`);
+                return;
+            }
+            
+            Trace.info(`[Observer] Matching results: ${matchingResults.length} - Path: ${path}, Operation: ${inverse.operation}`);
 
-        if (inverse.operation === "add") {
-            return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset);
-        }
-        else if (inverse.operation === "remove") {
-            return await this.notifyRemoved(inverse.resultSubset, matchingResults);
-        }
-        else {
-            const _exhaustiveCheck: never = inverse.operation;
-            throw new Error(`Inverse operation ${_exhaustiveCheck} not implemented.`);
-        }
+            if (inverse.operation === "add") {
+                return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset);
+            }
+            else if (inverse.operation === "remove") {
+                return await this.notifyRemoved(inverse.resultSubset, matchingResults);
+            }
+            else {
+                const _exhaustiveCheck: never = inverse.operation;
+                throw new Error(`Inverse operation ${_exhaustiveCheck} not implemented.`);
+            }
+        };
+        
+        const notificationPromise = processNotification().finally(() => {
+            // Remove from pending notifications when complete
+            this.pendingNotifications.delete(notificationPromise);
+        });
+        
+        this.pendingNotifications.add(notificationPromise);
+        await notificationPromise;
     }
 
     private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[]) {
@@ -366,11 +400,22 @@ export class ObserverImpl<T> implements Observer<T> {
                             const pending = this.pendingAddsByKey.get(key);
                             if (pending) {
                                 this.pendingAddsByKey.delete(key);
-                                try {
-                                    await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
-                                } catch (error) {
-                                    Trace.error(`[Observer] ERROR in buffered replay - Path: ${path}, Error: ${error}`);
-                                }
+                                
+                                // Track this replay as a pending notification
+                                const replayWork = async () => {
+                                    try {
+                                        await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
+                                    } catch (error) {
+                                        Trace.error(`[Observer] ERROR in buffered replay - Path: ${path}, Error: ${error}`);
+                                    }
+                                };
+                                
+                                const replayPromise = replayWork().finally(() => {
+                                    this.pendingNotifications.delete(replayPromise);
+                                });
+                                
+                                this.pendingNotifications.add(replayPromise);
+                                await replayPromise;
                             }
                         }
                     }
