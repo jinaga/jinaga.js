@@ -1,5 +1,8 @@
 import { Condition, ExistentialCondition, isExistentialCondition, Label, Match, PathCondition, Projection, Specification } from "./specification";
 import { detectDisconnectedSpecification } from "./UnionFind";
+import { Trace } from "../util/trace";
+import { describeSpecification } from "./description";
+import { computeStringHash } from "../util/encoding";
 
 type InverseOperation = "add" | "remove";
 
@@ -21,6 +24,12 @@ interface InverterContext {
 }
 
 export function invertSpecification(specification: Specification): SpecificationInverse[] {
+    const givenTypes = specification.given.map(g => g.label.type).join(', ');
+    const givenNames = specification.given.map(g => g.label.name).join(', ');
+    const matchCount = specification.matches.length;
+    
+    Trace.info(`[InvertSpec] START - Given types: [${givenTypes}], Given names: [${givenNames}], Matches: ${matchCount}`);
+    
     // Detect disconnected specifications before inversion
     detectDisconnectedSpecification(specification);
     
@@ -42,10 +51,67 @@ export function invertSpecification(specification: Specification): Specification
         resultSubset,
         projection: specification.projection
     };
-    const inverses: SpecificationInverse[] = invertMatches(matches, labels, context);
-    const projectionInverses: SpecificationInverse[] = invertProjection(matches, context);
     
-    return [ ...inverses, ...projectionInverses ];
+    Trace.info(`[InvertSpec] Inverting matches - Labels: ${labels.length}, Context path: "${context.path}"`);
+    const inverses: SpecificationInverse[] = invertMatches(matches, labels, context);
+    Trace.info(`[InvertSpec] Match inverses generated: ${inverses.length}`);
+    
+    Trace.info(`[InvertSpec] Inverting projection - Projection type: ${specification.projection.type}`);
+    const projectionInverses: SpecificationInverse[] = invertProjection(matches, context);
+    Trace.info(`[InvertSpec] Projection inverses generated: ${projectionInverses.length}`);
+    
+    // Check if self-inverse is needed and create it
+    const selfInverse = createSelfInverse(specification, context);
+    const selfInverseCount = selfInverse ? 1 : 0;
+    if (selfInverse) {
+        Trace.info(`[InvertSpec] Self-inverse created for given type: ${specification.given[0].label.type}`);
+    }
+    
+    const totalInverses = inverses.length + projectionInverses.length + selfInverseCount;
+    Trace.info(`[InvertSpec] COMPLETE - Total inverses: ${totalInverses} (${inverses.length} match + ${projectionInverses.length} projection + ${selfInverseCount} self-inverse)`);
+    
+    // Deduplicate inverses based on specification structure
+    const allInverses = selfInverse 
+        ? [...inverses, ...projectionInverses, selfInverse] 
+        : [...inverses, ...projectionInverses];
+
+    const deduplicatedInverses = deduplicateInverses(allInverses);
+
+    Trace.info(`[InvertSpec] Deduplication - Before: ${allInverses.length}, After: ${deduplicatedInverses.length}`);
+
+    return deduplicatedInverses;
+}
+
+/**
+ * Removes duplicate inverse specifications based on their structure.
+ * Two inverses are considered duplicates if they have:
+ * - Identical inverse specification structure
+ * - Same operation (add/remove)
+ * - Same metadata (givenSubset, parentSubset, path, resultSubset)
+ */
+function deduplicateInverses(inverses: SpecificationInverse[]): SpecificationInverse[] {
+    const seen = new Map<string, SpecificationInverse>();
+    
+    for (const inverse of inverses) {
+        // Create a unique key from the inverse specification and metadata
+        const specKey = computeStringHash(describeSpecification(inverse.inverseSpecification, 0));
+        const metadataKey = JSON.stringify({
+            operation: inverse.operation,
+            givenSubset: inverse.givenSubset,
+            parentSubset: inverse.parentSubset,
+            path: inverse.path,
+            resultSubset: inverse.resultSubset
+        });
+        const key = `${specKey}|${metadataKey}`;
+        
+        if (!seen.has(key)) {
+            seen.set(key, inverse);
+        } else {
+            Trace.info(`[InvertSpec] Skipping duplicate inverse - Spec key: ${specKey.substring(0, 8)}..., Operation: ${inverse.operation}`);
+        }
+    }
+    
+    return Array.from(seen.values());
 }
 
 function invertMatches(matches: Match[], labels: Label[], context: InverterContext): SpecificationInverse[] {
@@ -242,22 +308,38 @@ function invertProjection(matches: Match[], context: InverterContext): Specifica
 
     // Produce inverses for all collections in the projection.
     if (context.projection.type === "composite") {
+        const specComponents = context.projection.components.filter(c => c.type === "specification");
+        Trace.info(`[InvertProjection] Processing composite projection - Path: "${context.path}", Spec components: ${specComponents.length}/${context.projection.components.length}`);
+        
         for (const component of context.projection.components) {
             if (component.type === "specification") {
                 const componentMatches = [ ...matches, ...component.matches ];
                 const componentLabels = component.matches.map(m => m.unknown);
+                const childPath = context.path + "." + component.name;
+                
+                Trace.info(`[InvertProjection] NESTED SPEC - Component: ${component.name}, Path: "${childPath}", Component matches: ${component.matches.length}, Component labels: ${componentLabels.length}`);
+                
                 const childContext: InverterContext = {
                     ...context,
-                    path: context.path + "." + component.name,
+                    path: childPath,
                     parentSubset: context.resultSubset,
                     resultSubset: [ ...context.resultSubset, ...componentLabels.map(l => l.name) ],
                     projection: component.projection
                 };
+                
+                Trace.info(`[InvertProjection] Child context - Path: "${childPath}", Parent subset: [${childContext.parentSubset.join(', ')}], Result subset: [${childContext.resultSubset.join(', ')}]`);
+                
                 const matchInverses = invertMatches(componentMatches, componentLabels, childContext);
+                Trace.info(`[InvertProjection] Generated ${matchInverses.length} match inverses for nested spec "${component.name}"`);
+                
                 const projectionInverses = invertProjection(componentMatches, childContext);
+                Trace.info(`[InvertProjection] Generated ${projectionInverses.length} projection inverses for nested spec "${component.name}"`);
+                
                 inverses.push(...matchInverses, ...projectionInverses);
             }
         }
+    } else {
+        Trace.info(`[InvertProjection] Non-composite projection - Path: "${context.path}", Type: ${context.projection.type}`);
     }
 
     return inverses;
@@ -346,3 +428,56 @@ function expectsSuccessor(condition: Condition, given: string) {
 
 
 
+
+/**
+ * Creates a self-inverse for the specification if needed.
+ * 
+ * Self-inverse allows the specification to react when its own given fact arrives.
+ * This is critical for scenarios where:
+ * 1. A subscription is started with an unpersisted given fact
+ * 2. The given fact is later persisted
+ * 3. The system needs to re-read the specification with the now-available given
+ * 
+ * Safety constraints (to avoid infinite loops):
+ * - ONLY for specifications with a single given fact
+ * - No complex conditions on the given
+ * - Uses the original specification as-is (no actual inversion)
+ * 
+ * @param specification The original specification
+ * @param context The inverter context
+ * @returns A self-inverse SpecificationInverse or null if not needed
+ */
+function createSelfInverse(specification: Specification, context: InverterContext): SpecificationInverse | null {
+    // Safety check: Only support single given fact
+    // Multiple givens are too complex and risk infinite loops
+    if (specification.given.length !== 1) {
+        Trace.info(`[SelfInverse] Skipping - Multiple givens (${specification.given.length})`);
+        return null;
+    }
+    
+    const given = specification.given[0];
+    const givenType = given.label.type;
+    const givenName = given.label.name;
+    
+    // Safety check: No complex conditions on given
+    // Complex conditions could cause unexpected behavior
+    if (given.conditions.length > 0) {
+        Trace.info(`[SelfInverse] Skipping - Given has conditions (${given.conditions.length})`);
+        return null;
+    }
+    
+    // Create self-inverse: When the given fact type arrives, re-read the entire specification
+    // The inverseSpecification is the ORIGINAL specification (not inverted)
+    // This triggers a complete re-evaluation when the given becomes available
+    const selfInverse: SpecificationInverse = {
+        inverseSpecification: specification,
+        operation: "add",
+        givenSubset: context.givenSubset,
+        parentSubset: context.parentSubset,
+        path: context.path,
+        resultSubset: context.resultSubset
+    };
+    
+    Trace.info(`[SelfInverse] Created for given: ${givenType} (${givenName})`);
+    return selfInverse;
+}

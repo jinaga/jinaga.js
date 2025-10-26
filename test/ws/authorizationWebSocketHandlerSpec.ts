@@ -98,8 +98,8 @@ describe('AuthorizationWebSocketHandler', () => {
     // Subscribe (single framed message) where given type matches our fact
     client.send(`SUB\n${JSON.stringify('feed2')}\n${JSON.stringify('')}\n\n`);
 
-    // Allow time for inverse listeners to register
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Wait for ACK to confirm subscription is active
+    await waitFor(() => received.some(m => m.startsWith('ACK\n') && m.includes('"feed2"')));
 
     // Simulate a new fact saved that matches the inverse given
     await store.save([envelope]);
@@ -201,8 +201,10 @@ describe('AuthorizationWebSocketHandler', () => {
 
     client.send(`SUB\n${JSON.stringify('feedY')}\n${JSON.stringify('')}\n\n`);
 
-    // Expect no ERR
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Wait for ACK (which means no ERR was sent)
+    await waitFor(() => received.some(m => m.startsWith('ACK\n') && m.includes('"feedY"')));
+    
+    // Verify no ERR was received
     const hasErr = received.some(m => m.startsWith('ERR\n'));
     expect(hasErr).toBe(false);
 
