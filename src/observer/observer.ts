@@ -236,7 +236,7 @@ export class ObserverImpl<T> implements Observer<T> {
         Trace.info(`[Observer] NOTIFY_ADDED - Path: ${displayPath}, Results: ${projectedResults.length}, Parent subset: [${parentSubset.join(', ')}]`);
         
         for (const pr of projectedResults) {
-            const result: any = this.injectObservers(pr, projection, path);
+            const result: any = await this.injectObservers(pr, projection, path);
             const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
             const tupleHash = computeObjectHash(pr.tuple);
             
@@ -265,6 +265,11 @@ export class ObserverImpl<T> implements Observer<T> {
             
             // Don't call result added if we have already called it for this tuple.
             if (this.notifiedTuples.has(tupleHash) === false) {
+                // Check if observer was stopped before calling the handler
+                if (this.stopped) {
+                    Trace.info(`[Observer] SKIPPING HANDLER - Observer stopped, Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
+                    continue;
+                }
                 Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
                 const promiseMaybe = resultAdded(result);
                 this.notifiedTuples.add(tupleHash);
@@ -335,7 +340,7 @@ export class ObserverImpl<T> implements Observer<T> {
         }
     }
     
-    private injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): any {
+    private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): Promise<any> {
         const displayPath = parentPath || "(root)";
         
         if (projection.type === "composite") {
@@ -348,7 +353,7 @@ export class ObserverImpl<T> implements Observer<T> {
                     Trace.info(`[Observer] INJECT_OBSERVER - Parent path: ${displayPath}, Component: ${component.name}, Full path: ${path}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
                     
                     const observable: ObservableCollection<any> = {
-                        onAdded: (handler: ResultAddedFunc<any>) => {
+                        onAdded: async (handler: ResultAddedFunc<any>) => {
                             this.addedHandlers.push({
                                 tupleHash: tupleHash,
                                 path: path,
@@ -361,7 +366,11 @@ export class ObserverImpl<T> implements Observer<T> {
                             const pending = this.pendingAddsByKey.get(key);
                             if (pending) {
                                 this.pendingAddsByKey.delete(key);
-                                void this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
+                                try {
+                                    await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
+                                } catch (error) {
+                                    Trace.error(`[Observer] ERROR in buffered replay - Path: ${path}, Error: ${error}`);
+                                }
                             }
                         }
                     }
