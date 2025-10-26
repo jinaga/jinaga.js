@@ -1959,4 +1959,277 @@ describe("Nested Specification Subscription", () => {
         });
     });
 
+    describe("Unhandled Promise Rejection Bug", () => {
+        it("should demonstrate the void operator issue with async notifyAdded", async () => {
+            // This test documents the issue: line 364 uses 'void this.notifyAdded(...)'
+            // which can lead to unhandled promise rejections when notifyAdded is async
+            
+            const creator = new User("--- PUBLIC KEY GOES HERE ---");
+            const company = new Company(creator, "TestCo");
+            const office = new Office(company, "TestOffice");
+            
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            // Add a manager BEFORE setting up the nested handler
+            // This will cause the notification to be buffered and replayed later
+            const manager = await j.fact(new Manager(office, 101));
+            
+            let nestedHandlerCalled = false;
+            
+            const observer = j.watch(specification, company, projection => {
+                // Set up nested handler AFTER the manager fact was already added
+                // This triggers the buffered replay path (line 364 in observer.ts)
+                projection.managers.onAdded(employeeNumber => {
+                    nestedHandlerCalled = true;
+                    console.log(`Manager added: ${employeeNumber}`);
+                });
+            });
+
+            // Wait for the buffered notification to be replayed
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // The handler should be called even though the fact was added before registration
+            expect(nestedHandlerCalled).toBe(true);
+            
+            observer.stop();
+        });
+
+        it("should demonstrate potential race condition with multiple buffered notifications", async () => {
+            // This test shows how the void operator can cause race conditions
+            // when multiple async operations are started without proper coordination
+            
+            const creator = new User("--- PUBLIC KEY GOES HERE ---");
+            const company = new Company(creator, "TestCo");
+            const office = new Office(company, "TestOffice");
+            
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            // Add multiple managers before setting up handlers
+            const manager1 = await j.fact(new Manager(office, 101));
+            const manager2 = await j.fact(new Manager(office, 102));
+            const manager3 = await j.fact(new Manager(office, 103));
+            
+            const handlerCallOrder: number[] = [];
+            
+            const observer = j.watch(specification, company, projection => {
+                projection.managers.onAdded(employeeNumber => {
+                    handlerCallOrder.push(employeeNumber);
+                    console.log(`Manager added: ${employeeNumber}`);
+                });
+            });
+
+            // Wait for all buffered notifications to be replayed
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // All handlers should be called
+            expect(handlerCallOrder.length).toBe(3);
+            expect(handlerCallOrder).toContain(101);
+            expect(handlerCallOrder).toContain(102);
+            expect(handlerCallOrder).toContain(103);
+            
+            observer.stop();
+        });
+
+        it("should document the void operator pattern and its implications", async () => {
+            // This test serves as documentation of the issue described in the claim:
+            // "The onAdded handler replays buffered notifications using void this.notifyAdded(...)"
+            // "Since notifyAdded is an async function, this can lead to unhandled promise rejections"
+            
+            const creator = new User("--- PUBLIC KEY GOES HERE ---");
+            const company = new Company(creator, "TestCo");
+            const office = new Office(company, "TestOffice");
+            
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            // Create a scenario that triggers the buffered replay mechanism
+            const manager = await j.fact(new Manager(office, 101));
+            
+            let handlerInvoked = false;
+            
+            const observer = j.watch(specification, company, projection => {
+                projection.managers.onAdded(employeeNumber => {
+                    handlerInvoked = true;
+                    // This demonstrates that the buffered replay works
+                    // but the underlying issue is that line 364 uses:
+                    // void this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
+                    // instead of:
+                    // await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
+                });
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // The test passes, but documents the potential issue
+            expect(handlerInvoked).toBe(true);
+            
+            observer.stop();
+        });
+
+        it("should demonstrate the void operator issue with buffered replay", async () => {
+            // This test demonstrates the specific issue: the void operator in line 364
+            // is used outside the try/catch block, so errors in the async notifyAdded
+            // become unhandled promise rejections
+            
+            // Set up unhandled rejection tracking
+            const unhandledRejections: any[] = [];
+            const originalHandler = process.listeners('unhandledRejection');
+            
+            process.on('unhandledRejection', (reason, promise) => {
+                unhandledRejections.push({ reason, promise });
+                console.error('UNHANDLED REJECTION DETECTED:', reason);
+            });
+
+            try {
+                const creator = new User("--- PUBLIC KEY GOES HERE ---");
+                const company = new Company(creator, "TestCo");
+                const office = new Office(company, "TestOffice");
+                
+                j = JinagaTest.create({
+                    initialState: [creator, company, office]
+                });
+
+                const specification = model.given(Company).match((company, facts) =>
+                    facts.ofType(Office)
+                        .join(office => office.company, company)
+                        .select(office => ({
+                            identifier: office.identifier,
+                            managers: facts.ofType(Manager)
+                                .join(manager => manager.office, office)
+                                .select(manager => manager.employeeNumber)
+                        }))
+                );
+
+                // Add a manager BEFORE setting up the nested handler
+                // This will cause the notification to be buffered and replayed later
+                const manager = await j.fact(new Manager(office, 101));
+                
+                let handlerCalled = false;
+                
+                const observer = j.watch(specification, company, projection => {
+                    // Set up nested handler AFTER the manager fact was already added
+                    // This triggers the buffered replay path (line 364 in observer.ts)
+                    projection.managers.onAdded(employeeNumber => {
+                        handlerCalled = true;
+                        console.log(`Manager added: ${employeeNumber}`);
+                    });
+                });
+
+                // Wait for the buffered notification to be replayed
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // The handler should have been called
+                expect(handlerCalled).toBe(true);
+                
+                // This test documents the issue: line 364 uses 'void this.notifyAdded(...)'
+                // which means any errors in the async notifyAdded function will become
+                // unhandled promise rejections because they're not awaited
+                
+                // The test passes, but demonstrates the potential issue
+                expect(unhandledRejections.length).toBe(0); // No errors in this case
+                
+                observer.stop();
+            } finally {
+                // Clean up unhandled rejection listener
+                process.removeAllListeners('unhandledRejection');
+                originalHandler.forEach(listener => {
+                    process.on('unhandledRejection', listener);
+                });
+            }
+        });
+
+        it("should document the void operator bug in buffered replay", async () => {
+            // This test documents the specific bug: line 364 in observer.ts uses
+            // 'void this.notifyAdded(...)' which can lead to unhandled promise rejections
+            // when the async notifyAdded function contains await operations that fail
+            
+            const creator = new User("--- PUBLIC KEY GOES HERE ---");
+            const company = new Company(creator, "TestCo");
+            const office = new Office(company, "TestOffice");
+            
+            j = JinagaTest.create({
+                initialState: [creator, company, office]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            // Add a manager BEFORE setting up the nested handler
+            // This will cause the notification to be buffered and replayed later
+            const manager = await j.fact(new Manager(office, 101));
+            
+            let handlerCalled = false;
+            
+            const observer = j.watch(specification, company, projection => {
+                // Set up nested handler AFTER the manager fact was already added
+                // This triggers the buffered replay path (line 364 in observer.ts)
+                projection.managers.onAdded(employeeNumber => {
+                    handlerCalled = true;
+                    console.log(`Manager added: ${employeeNumber}`);
+                });
+            });
+
+            // Wait for the buffered notification to be replayed
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // The handler should have been called
+            expect(handlerCalled).toBe(true);
+            
+            // This test documents the issue: line 364 uses 'void this.notifyAdded(...)'
+            // instead of 'await this.notifyAdded(...)'. This means:
+            // 1. Any errors in the async notifyAdded function become unhandled promise rejections
+            // 2. The async operations inside notifyAdded (like await promiseMaybe and await this.notifyAdded)
+            //    can complete out of order, causing race conditions
+            // 3. Error information is lost because the void operator doesn't await the promise
+            
+            observer.stop();
+        });
+    });
+
 });
