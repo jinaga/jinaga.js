@@ -217,7 +217,7 @@ By restricting to $|G| = 1$:
 
 ### Safety Constraint 2: No Conditions
 
-By requiring `given.conditions.length === 0$:
+By requiring `given.conditions.length === 0`:
 - Given has no path conditions to invert
 - No complex predecessor navigation
 - No risk of disconnected graph detection failure
