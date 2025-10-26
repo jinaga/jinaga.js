@@ -2248,7 +2248,7 @@ describe("Nested Specification Subscription", () => {
         // ACTUAL BEHAVIOR: The given fact arrival is not detected as significant,
         // no re-read occurs, and the observer never receives the expected data.
 
-        it.skip("should fire callback when given fact arrives after subscription (flat spec)", async () => {
+        it("should fire callback when given fact arrives after subscription (flat spec)", async () => {
             // HYPOTHESIS: When watching with a factReference that doesn't exist in storage,
             // the callback should fire when that fact is added later.
             //
@@ -2311,7 +2311,7 @@ describe("Nested Specification Subscription", () => {
             observer.stop();
         });
 
-        it.skip("should handle nested specification when given fact arrives late", async () => {
+        it("should handle nested specification when given fact arrives late", async () => {
             // HYPOTHESIS: The problem is worse with nested specifications because inverse queries
             // have more dependencies. When the given fact arrives, not only must we re-read the
             // top level, but we must also establish all nested inverse queries.
@@ -2404,7 +2404,7 @@ describe("Nested Specification Subscription", () => {
             observer.stop();
         });
 
-        it.skip("should demonstrate inverse query failure when intermediate fact missing", async () => {
+        it("should demonstrate inverse query failure when intermediate fact missing", async () => {
             // HYPOTHESIS: Even when the given fact (Company) exists, if an intermediate fact
             // (Office) is missing, adding a leaf fact (Manager) won't trigger notifications
             // because the inverse query from Manager → Office can't resolve.
@@ -2505,7 +2505,7 @@ describe("Nested Specification Subscription", () => {
             observer.stop();
         });
 
-        it.skip("should track out-of-order fact arrival (Manager → Office → Company)", async () => {
+        it("should track out-of-order fact arrival (Manager → Office → Company)", async () => {
             // HYPOTHESIS: Adding facts in reverse order (leaf → intermediate → given)
             // should eventually result in all callbacks firing, but likely won't due to
             // lack of re-read mechanism at each level.
@@ -2605,7 +2605,7 @@ describe("Nested Specification Subscription", () => {
             observer.stop();
         });
 
-        it.skip("should document desired behavior: given fact arrival triggers re-read", async () => {
+        it("should document desired behavior: given fact arrival triggers re-read", async () => {
             // DESIRED BEHAVIOR TEST: This test documents what SHOULD happen when a given
             // fact arrives after subscription starts. This is the behavior we want to implement.
             //
