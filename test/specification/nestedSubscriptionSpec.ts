@@ -1727,4 +1727,236 @@ describe("Nested Specification Subscription", () => {
         });
     });
 
+    describe("Hash Key Mismatch Bug", () => {
+        it("should demonstrate buffering vs replay key mismatch", async () => {
+            console.log("\n=== TEST: Hash Key Mismatch Bug Demonstration ===");
+            
+            // Start with minimal state - just company, no office or managers
+            j = JinagaTest.create({
+                initialState: [creator, company]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => ({
+                                employeeNumber: manager.employeeNumber
+                            }))
+                    }))
+            );
+
+            const offices: any[] = [];
+            const managerNotifications: number[] = [];
+            const bufferedKeys: string[] = [];
+            const replayKeys: string[] = [];
+
+            console.log("TEST: Starting subscription with delayed handler registration...");
+            
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: Office projection callback for: ${projection.identifier}`);
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                // Simulate user code that delays handler registration
+                // This creates the race condition window
+                setTimeout(() => {
+                    console.log(`TEST: Registering delayed handler for office ${projection.identifier}`);
+                    
+                    projection.managers.onAdded(manager => {
+                        console.log(`TEST: Manager handler called for employee ${manager.employeeNumber}`);
+                        model.managers.push(manager);
+                        managerNotifications.push(manager.employeeNumber);
+                    });
+                }, 10); // Small delay to ensure race condition
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer loaded, adding facts...");
+
+            // Add office first
+            console.log("TEST: Adding office...");
+            await j.fact(office);
+
+            // Add manager IMMEDIATELY after office (before handler is registered)
+            // This should trigger the buffering mechanism
+            console.log("TEST: Adding manager immediately (should trigger buffering)...");
+            const manager = await j.fact(new Manager(office, 9999));
+
+            // Wait for the delayed handler registration
+            console.log("TEST: Waiting for delayed handler registration...");
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            console.log("TEST: Final state:");
+            console.log(`  - Offices: ${JSON.stringify(offices)}`);
+            console.log(`  - Manager notifications: ${JSON.stringify(managerNotifications)}`);
+            console.log(`  - Expected: Manager 9999 should be in notifications`);
+            console.log(`  - Actual: ${managerNotifications.length} notifications received`);
+
+            // This test should FAIL if the key mismatch bug exists
+            // The manager should be buffered and then replayed when the handler registers
+            // But due to the key mismatch, it won't be found and replayed
+            expect(managerNotifications).toContain(9999);
+            expect(offices[0].managers).toEqual(expect.arrayContaining([
+                { employeeNumber: 9999 }
+            ]));
+
+            observer.stop();
+        });
+
+        it("should demonstrate the exact key computation mismatch", async () => {
+            console.log("\n=== TEST: Key Computation Analysis ===");
+            
+            // This test documents the specific hash computation difference
+            // that causes the buffering/replay mismatch
+            
+            j = JinagaTest.create({
+                initialState: [creator, company]
+            });
+
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => manager.employeeNumber)
+                    }))
+            );
+
+            const offices: any[] = [];
+            const managerNotifications: number[] = [];
+
+            console.log("TEST: Creating observer with immediate handler registration...");
+            
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: Office callback for: ${projection.identifier}`);
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                // Register handler IMMEDIATELY (no delay)
+                // This should work correctly
+                projection.managers.onAdded(employeeNumber => {
+                    console.log(`TEST: Manager handler called for: ${employeeNumber}`);
+                    model.managers.push(employeeNumber);
+                    managerNotifications.push(employeeNumber);
+                });
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer loaded");
+
+            // Add office
+            console.log("TEST: Adding office...");
+            await j.fact(office);
+
+            // Add manager - this should work because handler is already registered
+            console.log("TEST: Adding manager (handler already registered)...");
+            await j.fact(new Manager(office, 8888));
+
+            console.log("TEST: Final state:");
+            console.log(`  - Manager notifications: ${JSON.stringify(managerNotifications)}`);
+            console.log(`  - Expected: Manager 8888 should be notified`);
+            console.log(`  - This test should PASS (no race condition)`);
+
+            // This should work because there's no race condition
+            expect(managerNotifications).toContain(8888);
+            expect(offices[0].managers).toContain(8888);
+
+            observer.stop();
+        });
+
+        it("should fail due to key mismatch with complex tuple structure", async () => {
+            console.log("\n=== TEST: Complex Tuple Key Mismatch ===");
+            
+            // This test creates a scenario where the tuple has multiple properties
+            // that would cause computeTupleSubsetHash vs computeObjectHash to differ
+            
+            j = JinagaTest.create({
+                initialState: [creator, company]
+            });
+
+            // Create a more complex specification that includes multiple tuple properties
+            const specification = model.given(Company).match((company, facts) =>
+                facts.ofType(Office)
+                    .join(office => office.company, company)
+                    .select(office => ({
+                        identifier: office.identifier,
+                        managers: facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                            .select(manager => ({
+                                employeeNumber: manager.employeeNumber,
+                                office: office  // Include office reference in the result
+                            }))
+                    }))
+            );
+
+            const offices: any[] = [];
+            const managerNotifications: any[] = [];
+
+            console.log("TEST: Starting subscription with delayed handler registration...");
+            
+            const observer = j.watch(specification, company, projection => {
+                console.log(`TEST: Office projection callback for: ${projection.identifier}`);
+                const model: any = {
+                    identifier: projection.identifier,
+                    managers: []
+                };
+                offices.push(model);
+
+                // Delay handler registration to create race condition
+                setTimeout(() => {
+                    console.log(`TEST: Registering delayed handler for office ${projection.identifier}`);
+                    
+                    projection.managers.onAdded(manager => {
+                        console.log(`TEST: Manager handler called for employee ${manager.employeeNumber}`);
+                        model.managers.push(manager);
+                        managerNotifications.push(manager);
+                    });
+                }, 10);
+            });
+
+            await observer.loaded();
+            console.log("TEST: Observer loaded, adding facts...");
+
+            // Add office first
+            console.log("TEST: Adding office...");
+            await j.fact(office);
+
+            // Add manager with complex tuple structure
+            console.log("TEST: Adding manager with complex tuple (should trigger key mismatch)...");
+            const manager = await j.fact(new Manager(office, 7777));
+
+            // Wait for delayed handler registration
+            console.log("TEST: Waiting for delayed handler registration...");
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            console.log("TEST: Final state:");
+            console.log(`  - Offices: ${JSON.stringify(offices)}`);
+            console.log(`  - Manager notifications: ${JSON.stringify(managerNotifications)}`);
+            console.log(`  - Expected: Manager 7777 should be in notifications`);
+            console.log(`  - Actual: ${managerNotifications.length} notifications received`);
+
+            // This test should PASS - the buffering/replay mechanism should work
+            expect(managerNotifications).toContainEqual(expect.objectContaining({
+                employeeNumber: 7777
+            }));
+            expect(offices[0].managers).toEqual(expect.arrayContaining([
+                expect.objectContaining({ employeeNumber: 7777 })
+            ]));
+
+            observer.stop();
+        });
+    });
+
 });

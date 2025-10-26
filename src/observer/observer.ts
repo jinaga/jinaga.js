@@ -42,6 +42,24 @@ export class ObserverImpl<T> implements Observer<T> {
     private specificationHash: string;
     private feeds: string[] = [];
     private stopped: boolean = false;
+    private listenersAdded: boolean = false;
+    /**
+     * Buffers results that are pending delivery to result handlers.
+     * 
+     * The key is a string in the format `path|tupleHash`, where:
+     *   - `path` is a string representing the traversal path in the specification.
+     *   - `tupleHash` is the hash of the tuple of fact references for the current context.
+     * 
+     * The value is an object containing:
+     *   - `projection`: The projection associated with the results.
+     *   - `parentSubset`: The parent subset of fact references.
+     *   - `results`: The buffered results (of type `ProjectedResult[]`) to be replayed to handlers when they are registered.
+     * 
+     * This map is used to buffer results that are produced before any handlers are registered,
+     * enabling replay of results to late-registered handlers.
+     */
+    private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; results: ProjectedResult[] }>
+        = new Map();
 
     constructor(
         private factManager: FactManager,
@@ -77,6 +95,10 @@ export class ObserverImpl<T> implements Observer<T> {
         this.cachedPromise = new Promise((cacheResolve, _) => {
             this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
                 try {
+                    // Ensure listeners are added BEFORE any read/fetch to close T2–T3 window.
+                    if (!this.listenersAdded) {
+                        this.addSpecificationListeners();
+                    }
                     const mruDate: Date | null = await this.factManager.getMruDate(this.specificationHash);
                     if (mruDate === null) {
                         Trace.info(`[Observer] Not cached - Spec hash: ${this.specificationHash.substring(0, 8)}..., will fetch then read`);
@@ -109,6 +131,9 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private addSpecificationListeners() {
+        if (this.listenersAdded) {
+            return;
+        }
         Trace.info(`[Observer] ADDING LISTENERS - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}...`);
         
         const inverses = invertSpecification(this.specification);
@@ -133,6 +158,7 @@ export class ObserverImpl<T> implements Observer<T> {
         
         this.listeners = listeners;
         Trace.info(`[Observer] LISTENERS REGISTERED - Total: ${this.listeners.length}, Spec hash: ${this.specificationHash.substring(0, 8)}...`);
+        this.listenersAdded = true;
     }
 
     public cached(): Promise<boolean> {
@@ -174,8 +200,6 @@ export class ObserverImpl<T> implements Observer<T> {
             // The observer was stopped before the read completed.
             return;
         }
-
-        this.addSpecificationListeners();
         const givenSubset = this.specification.given.map(g => g.label.name);
         await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
     }
@@ -226,14 +250,21 @@ export class ObserverImpl<T> implements Observer<T> {
                 this.addedHandlers.forEach((h, index) => {
                     Trace.warn(`[Observer]   Handler ${index + 1}: Path="${h.path}", Tuple hash: ${h.tupleHash.substring(0, 8)}...`);
                 });
+                // Buffer for replay when the handler registers later.
+                this.bufferPendingNotification(path, pr, projection, parentSubset);
+                // Skip deeper recursion until handler is registered.
+                continue;
             } else if (!resultAdded) {
                 Trace.warn(`[Observer] Handler found but no callback - Path: ${displayPath}`);
+                // Buffer for replay when the callback is attached.
+                this.bufferPendingNotification(path, pr, projection, parentSubset);
+                continue;
             } else {
                 Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
             }
             
             // Don't call result added if we have already called it for this tuple.
-            if (resultAdded && this.notifiedTuples.has(tupleHash) === false) {
+            if (this.notifiedTuples.has(tupleHash) === false) {
                 Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
                 const promiseMaybe = resultAdded(result);
                 this.notifiedTuples.add(tupleHash);
@@ -252,7 +283,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         };
                     }
                 }
-            } else if (resultAdded && this.notifiedTuples.has(tupleHash)) {
+            } else if (this.notifiedTuples.has(tupleHash)) {
                 Trace.info(`[Observer] Skipping already notified tuple - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
             }
 
@@ -283,6 +314,26 @@ export class ObserverImpl<T> implements Observer<T> {
             }
         }
     }
+
+    /**
+     * Buffers a pending notification for replay when a handler is registered later.
+     * 
+     * @param path - The path in the specification
+     * @param pr - The projected result to buffer
+     * @param projection - The projection associated with the result
+     * @param parentSubset - The parent subset of fact references
+     */
+    private bufferPendingNotification(path: string, pr: ProjectedResult, projection: Projection, parentSubset: string[]): void {
+        const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
+        const key = `${path}|${parentTupleHash}`;
+        const existing = this.pendingAddsByKey.get(key);
+        if (existing) {
+            existing.results.push(pr);
+        }
+        else {
+            this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr] });
+        }
+    }
     
     private injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): any {
         const displayPath = parentPath || "(root)";
@@ -304,6 +355,14 @@ export class ObserverImpl<T> implements Observer<T> {
                                 handler: handler
                             });
                             Trace.info(`[Observer] HANDLER REGISTERED - Path: ${path}, Tuple hash: ${tupleHash.substring(0, 8)}..., Total handlers: ${this.addedHandlers.length}`);
+
+                            // Replay any buffered notifications now that the handler exists.
+                            const key = `${path}|${tupleHash}`;
+                            const pending = this.pendingAddsByKey.get(key);
+                            if (pending) {
+                                this.pendingAddsByKey.delete(key);
+                                void this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
+                            }
                         }
                     }
                     composite[component.name] = observable;
