@@ -68,6 +68,14 @@ describe("specification inverse", () => {
                 u2: Jinaga.User [
                     u2 = u1->user: Jinaga.User
                 ]
+            } => u2`,`
+            (p1: Office) {
+                u1: President [
+                    u1->office: Office = p1
+                ]
+                u2: Jinaga.User [
+                    u2 = u1->user: Jinaga.User
+                ]
             } => u2`
         ]);
     });
@@ -98,10 +106,21 @@ describe("specification inverse", () => {
                 p1: Company [
                     p1 = u1->company: Company
                 ]
+            } => u1`,`
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                    !E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1
+                        ]
+                    }
+                ]
             } => u1`
         ]);
         expect(inverses[0].operation).toEqual("add");
         expect(inverses[1].operation).toEqual("remove");
+        expect(inverses[2].operation).toEqual("add");
     });
 
     it("should invert positive existential condition", () => {
@@ -127,9 +146,20 @@ describe("specification inverse", () => {
                 p1: Company [
                     p1 = u1->company: Company
                 ]
+            } => u1`,`
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                    E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1
+                        ]
+                    }
+                ]
             } => u1`
         ]);
         expect(inverses[0].operation).toEqual("add");
+        expect(inverses[1].operation).toEqual("add");
     });
 
     it("should invert restore pattern", () => {
@@ -183,24 +213,43 @@ describe("specification inverse", () => {
                 p1: Company [
                     p1 = u1->company: Company
                 ]
+            } => u1`,`
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                    !E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1
+                            !E {
+                                u3: Office.Reopened [
+                                    u3->officeClosed: Office.Closed = u2
+                                ]
+                            }
+                        ]
+                    }
+                ]
             } => u1`
         ]);
 
         expect(inverses[0].operation).toEqual("add");
         expect(inverses[1].operation).toEqual("remove");
         expect(inverses[2].operation).toEqual("add");
+        expect(inverses[3].operation).toEqual("add");
 
         expect(inverses[0].parentSubset).toEqual(["p1"]);
         expect(inverses[1].parentSubset).toEqual(["p1"]);
         expect(inverses[2].parentSubset).toEqual(["p1"]);
+        expect(inverses[3].parentSubset).toEqual(["p1"]);
 
         expect(inverses[0].path).toEqual("");
         expect(inverses[1].path).toEqual("");
         expect(inverses[2].path).toEqual("");
+        expect(inverses[3].path).toEqual("");
 
         expect(inverses[0].resultSubset).toEqual(["p1", "u1"]);
         expect(inverses[1].resultSubset).toEqual(["p1", "u1"]);
         expect(inverses[2].resultSubset).toEqual(["p1", "u1"]);
+        expect(inverses[3].resultSubset).toEqual(["p1", "u1"]);
     });
 
     it("should invert child properties", () => {
@@ -236,7 +285,19 @@ describe("specification inverse", () => {
                 p1: Company [
                     p1 = u1->company: Company
                 ]
-            } => u2`
+            } => u2`,`
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
+            } => {
+                identifier = u1.identifier
+                president = {
+                    u2: President [
+                        u2->office: Office = u1
+                    ]
+                } => u2
+            }`
         ]);
     });
 
@@ -252,6 +313,11 @@ describe("specification inverse", () => {
             (u1: President) {
                 p1: Company [
                     p1 = u1->office: Office->company: Company
+                ]
+            } => u1`,`
+            (p1: Company) {
+                u1: President [
+                    u1->office: Office->company: Company = p1
                 ]
             } => u1`
         ]);
@@ -274,6 +340,11 @@ describe("specification inverse", () => {
             (u1: President) {
                 p1: Office [
                     p1->company: Company = u1->office: Office->company: Company
+                ]
+            } => u1`,`
+            (p1: Office) {
+                u1: President [
+                    u1->office: Office->company: Company = p1->company: Company
                 ]
             } => u1`
         ]);
@@ -350,6 +421,21 @@ describe("specification inverse", () => {
                 ]
                 p1: Company [
                     p1 = u1->office: Office->company: Company
+                ]
+            } => u1`,`
+            (p1: Company) {
+                u1: President [
+                    u1->office: Office->company: Company = p1
+                    E {
+                        u2: Office.Closed [
+                            u2->office: Office = u1->office: Office
+                            !E {
+                                u3: Office.Reopened [
+                                    u3->officeClosed: Office.Closed = u2
+                                ]
+                            }
+                        ]
+                    }
                 ]
             } => u1`
         ]);
