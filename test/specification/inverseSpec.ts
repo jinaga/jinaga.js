@@ -15,6 +15,11 @@ describe("specification inverse", () => {
                 p1: Company [
                     p1 = u1->company: Company
                 ]
+            } => u1`,`
+            (p1: Company) {
+                u1: Office [
+                    u1->company: Company = p1
+                ]
             } => u1`
         ]);
     });
@@ -27,8 +32,13 @@ describe("specification inverse", () => {
 
         const inverses = fromSpecification(specification);
 
-        // With broader self-inverse coverage, specifications that reference givens get self-inverses
+        // With self-inverse, specifications get an additional inverse for the given type
         expect(inverses).toEqual([`
+            (p1: Office) {
+                u1: Company [
+                    u1 = p1->company: Company
+                ]
+            } => u1`,`
             (p1: Office) {
                 u1: Company [
                     u1 = p1->company: Company

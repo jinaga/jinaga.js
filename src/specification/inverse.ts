@@ -58,10 +58,17 @@ export function invertSpecification(specification: Specification): Specification
     const projectionInverses: SpecificationInverse[] = invertProjection(matches, context);
     Trace.info(`[InvertSpec] Projection inverses generated: ${projectionInverses.length}`);
     
-    const totalInverses = inverses.length + projectionInverses.length;
-    Trace.info(`[InvertSpec] COMPLETE - Total inverses: ${totalInverses} (${inverses.length} match + ${projectionInverses.length} projection)`);
+    // Check if self-inverse is needed and create it
+    const selfInverse = createSelfInverse(specification, context);
+    const selfInverseCount = selfInverse ? 1 : 0;
+    if (selfInverse) {
+        Trace.info(`[InvertSpec] Self-inverse created for given type: ${specification.given[0].label.type}`);
+    }
     
-    return [ ...inverses, ...projectionInverses ];
+    const totalInverses = inverses.length + projectionInverses.length + selfInverseCount;
+    Trace.info(`[InvertSpec] COMPLETE - Total inverses: ${totalInverses} (${inverses.length} match + ${projectionInverses.length} projection + ${selfInverseCount} self-inverse)`);
+    
+    return selfInverse ? [ ...inverses, ...projectionInverses, selfInverse ] : [ ...inverses, ...projectionInverses ];
 }
 
 function invertMatches(matches: Match[], labels: Label[], context: InverterContext): SpecificationInverse[] {
@@ -378,3 +385,56 @@ function expectsSuccessor(condition: Condition, given: string) {
 
 
 
+
+/**
+ * Creates a self-inverse for the specification if needed.
+ * 
+ * Self-inverse allows the specification to react when its own given fact arrives.
+ * This is critical for scenarios where:
+ * 1. A subscription is started with an unpersisted given fact
+ * 2. The given fact is later persisted
+ * 3. The system needs to re-read the specification with the now-available given
+ * 
+ * Safety constraints (to avoid infinite loops):
+ * - ONLY for specifications with a single given fact
+ * - No complex conditions on the given
+ * - Uses the original specification as-is (no actual inversion)
+ * 
+ * @param specification The original specification
+ * @param context The inverter context
+ * @returns A self-inverse SpecificationInverse or null if not needed
+ */
+function createSelfInverse(specification: Specification, context: InverterContext): SpecificationInverse | null {
+    // Safety check: Only support single given fact
+    // Multiple givens are too complex and risk infinite loops
+    if (specification.given.length !== 1) {
+        Trace.info(`[SelfInverse] Skipping - Multiple givens (${specification.given.length})`);
+        return null;
+    }
+    
+    const given = specification.given[0];
+    const givenType = given.label.type;
+    const givenName = given.label.name;
+    
+    // Safety check: No complex conditions on given
+    // Complex conditions could cause unexpected behavior
+    if (given.conditions.length > 0) {
+        Trace.info(`[SelfInverse] Skipping - Given has conditions (${given.conditions.length})`);
+        return null;
+    }
+    
+    // Create self-inverse: When the given fact type arrives, re-read the entire specification
+    // The inverseSpecification is the ORIGINAL specification (not inverted)
+    // This triggers a complete re-evaluation when the given becomes available
+    const selfInverse: SpecificationInverse = {
+        inverseSpecification: specification,
+        operation: "add",
+        givenSubset: [givenName],
+        parentSubset: [givenName],
+        path: "",
+        resultSubset: []
+    };
+    
+    Trace.info(`[SelfInverse] Created for given: ${givenType} (${givenName})`);
+    return selfInverse;
+}
