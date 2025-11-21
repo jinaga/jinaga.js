@@ -85,7 +85,6 @@ class MockWebSocket implements MinimalWebSocket {
 }
 
 describe('ResilientWebSocketTransport', () => {
-  let mockWs: MockWebSocket;
   let callbacks: WebSocketTransportCallbacks;
   let stateChanges: Array<{ previous: ConnectionState; current: ConnectionState }>;
   let receivedMessages: Array<string | ArrayBuffer | Blob>;
@@ -183,11 +182,19 @@ describe('ResilientWebSocketTransport', () => {
 
   describe('Message Transmission', () => {
     it('should send messages when connected', async () => {
-      mockWs = new MockWebSocket('ws://test');
+      const sentMessages: Array<string | ArrayBuffer | Blob> = [];
+      
+      const TrackingMockWebSocket = class extends MockWebSocket {
+        send(data: string | ArrayBuffer | Blob): void {
+          sentMessages.push(data);
+          super.send(data);
+        }
+      };
+
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        MockWebSocket as any
+        TrackingMockWebSocket as any
       );
 
       await transport.connect();
@@ -195,7 +202,7 @@ describe('ResilientWebSocketTransport', () => {
 
       await transport.send('Hello, World!');
 
-      expect(mockWs.getSentMessages()).toContain('Hello, World!');
+      expect(sentMessages).toContain('Hello, World!');
     });
 
     it('should buffer messages when disconnected', async () => {
@@ -230,7 +237,6 @@ describe('ResilientWebSocketTransport', () => {
 
   describe('Reconnection', () => {
     it('should reconnect automatically on disconnect', async () => {
-      mockWs = new MockWebSocket('ws://test');
       let connectionCount = 0;
       const wsFactory = class extends MockWebSocket {
         constructor(url: string) {
@@ -251,21 +257,33 @@ describe('ResilientWebSocketTransport', () => {
       );
 
       await transport.connect();
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 100));
 
-      mockWs.simulateClose();
+      const initialCount = connectionCount;
+      
+      // Disconnect to trigger reconnection
+      await transport.disconnect();
+      
+      // Wait for reconnection attempts
+      await new Promise(resolve => setTimeout(resolve, 300));
 
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      expect(connectionCount).toBeGreaterThan(1);
+      expect(connectionCount).toBeGreaterThan(initialCount);
       expect(callbacks.onReconnect).toHaveBeenCalled();
     });
 
     it('should respect max reconnection attempts', async () => {
+      let connectionCount = 0;
+      const CountingMockWebSocket = class extends MockWebSocket {
+        constructor(url: string) {
+          super(url);
+          connectionCount++;
+        }
+      };
+
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        MockWebSocket as any,
+        CountingMockWebSocket as any,
         {
           maxReconnectAttempts: 2,
           reconnectInitialDelayMs: 50
@@ -273,10 +291,12 @@ describe('ResilientWebSocketTransport', () => {
       );
 
       await transport.connect();
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 100));
 
-      mockWs.simulateClose();
-
+      // Disconnect to trigger reconnection
+      await transport.disconnect();
+      
+      // Wait for reconnection attempts
       await new Promise(resolve => setTimeout(resolve, 500));
 
       expect(callbacks.onReconnect).toHaveBeenCalledTimes(2);
@@ -319,41 +339,57 @@ describe('ResilientWebSocketTransport', () => {
 
   describe('Heartbeat', () => {
     it('should send heartbeat messages', async () => {
-      mockWs = new MockWebSocket('ws://test');
+      const sentMessages: Array<string | ArrayBuffer | Blob> = [];
+      
+      const TrackingMockWebSocket = class extends MockWebSocket {
+        send(data: string | ArrayBuffer | Blob): void {
+          sentMessages.push(data);
+          super.send(data);
+        }
+      };
+
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        MockWebSocket as any,
+        TrackingMockWebSocket as any,
         { heartbeatIntervalMs: 100 }
       );
 
       await transport.connect();
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const initialMessageCount = mockWs.getSentMessages().length;
+      const initialMessageCount = sentMessages.length;
 
       await new Promise(resolve => setTimeout(resolve, 150));
 
-      expect(mockWs.getSentMessages().length).toBeGreaterThan(initialMessageCount);
+      expect(sentMessages.length).toBeGreaterThan(initialMessageCount);
     });
 
     it('should not send heartbeat when disabled', async () => {
-      mockWs = new MockWebSocket('ws://test');
+      const sentMessages: Array<string | ArrayBuffer | Blob> = [];
+      
+      const TrackingMockWebSocket = class extends MockWebSocket {
+        send(data: string | ArrayBuffer | Blob): void {
+          sentMessages.push(data);
+          super.send(data);
+        }
+      };
+
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        MockWebSocket as any,
+        TrackingMockWebSocket as any,
         { heartbeatIntervalMs: 0 }
       );
 
       await transport.connect();
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const initialMessageCount = mockWs.getSentMessages().length;
+      const initialMessageCount = sentMessages.length;
 
       await new Promise(resolve => setTimeout(resolve, 150));
 
-      expect(mockWs.getSentMessages().length).toBe(initialMessageCount);
+      expect(sentMessages.length).toBe(initialMessageCount);
     });
   });
 
