@@ -31,6 +31,9 @@ export {
 } from './message-queue';
 
 import type { WebSocketTransportCallbacks } from './resilient-transport';
+import { ConnectionState } from './resilient-transport';
+import { WebSocketConnectionHandler } from './connection-handler';
+import type { ConnectionHandlerOptions } from './connection-handler';
 
 /**
  * High-level API for creating resilient WebSocket connections

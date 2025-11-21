@@ -117,7 +117,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test')
+        MockWebSocket as any
       );
 
       expect(transport.getState()).toBe(ConnectionState.Disconnected);
@@ -128,7 +128,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test')
+        MockWebSocket as any
       );
 
       await transport.connect();
@@ -152,7 +152,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new slowMockWs('ws://test'),
+        slowMockWs as any,
         { connectionTimeoutMs: 100 }
       );
 
@@ -167,7 +167,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test')
+        MockWebSocket as any
       );
 
       await transport.connect();
@@ -187,7 +187,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => mockWs
+        MockWebSocket as any
       );
 
       await transport.connect();
@@ -202,7 +202,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test'),
+        MockWebSocket as any,
         { enableMessageBuffering: true }
       );
 
@@ -220,7 +220,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test'),
+        MockWebSocket as any,
         { enableMessageBuffering: false }
       );
 
@@ -263,7 +263,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test'),
+        MockWebSocket as any,
         {
           maxReconnectAttempts: 2,
           reconnectInitialDelayMs: 50
@@ -292,7 +292,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test'),
+        MockWebSocket as any,
         {
           reconnectInitialDelayMs: 100,
           reconnectMaxDelayMs: 1000,
@@ -360,7 +360,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test')
+        MockWebSocket as any
       );
 
       expect(stateChanges).toHaveLength(0);
@@ -426,7 +426,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new MockWebSocket('ws://test'),
+        MockWebSocket as any,
         {
           enableMessageBuffering: true,
           maxBufferedMessages: 5
