@@ -110,6 +110,9 @@ describe('ResilientWebSocket E2E', () => {
 
   function getWsUrl(): string {
     const address = wss.address();
+    if (!address) {
+      throw new Error('WebSocket server address is null');
+    }
     if (typeof address === 'string') {
       return `ws://${address}`;
     }
@@ -118,6 +121,9 @@ describe('ResilientWebSocket E2E', () => {
 
   function getHttpUrl(): string {
     const address = httpServer.address();
+    if (!address) {
+      throw new Error('HTTP server address is null');
+    }
     if (typeof address === 'string') {
       return `http://${address}`;
     }

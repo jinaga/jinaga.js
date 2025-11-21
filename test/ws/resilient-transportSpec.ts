@@ -232,15 +232,17 @@ describe('ResilientWebSocketTransport', () => {
     it('should reconnect automatically on disconnect', async () => {
       mockWs = new MockWebSocket('ws://test');
       let connectionCount = 0;
-      const wsFactory = () => {
-        connectionCount++;
-        return new MockWebSocket('ws://test');
+      const wsFactory = class extends MockWebSocket {
+        constructor(url: string) {
+          super(url);
+          connectionCount++;
+        }
       };
 
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        wsFactory,
+        wsFactory as any,
         {
           reconnectMode: ReconnectMode.Stateless,
           reconnectInitialDelayMs: 50,
@@ -321,7 +323,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => mockWs,
+        MockWebSocket as any,
         { heartbeatIntervalMs: 100 }
       );
 
@@ -340,7 +342,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => mockWs,
+        MockWebSocket as any,
         { heartbeatIntervalMs: 0 }
       );
 
@@ -385,7 +387,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new errorWs('ws://test')
+        errorWs as any
       );
 
       await transport.connect();
@@ -411,7 +413,7 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        () => new errorWs('ws://test')
+        errorWs as any
       );
 
       await transport.connect();
