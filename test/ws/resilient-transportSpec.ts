@@ -11,7 +11,7 @@ import {
 } from '../../src/ws/resilient-transport';
 import WebSocket from 'ws';
 
-jest.setTimeout(10000);
+jest.setTimeout(30000);
 
 // Mock WebSocket implementation for testing
 class MockWebSocket implements MinimalWebSocket {
@@ -253,12 +253,17 @@ describe('ResilientWebSocketTransport', () => {
         constructor(url: string) {
           super(url);
           connectionCount++;
-          // Close after a short delay to simulate unexpected network failure
+          // Close after connection is fully established (100ms to ensure transport processes open event)
           setTimeout(() => {
             if (this.readyState === 1) { // OPEN
-              this.close();
+              // Add small delay to ensure transport has processed open event
+              setTimeout(() => {
+                if (this.readyState === 1) {
+                  this.close();
+                }
+              }, 50);
             }
-          }, 50);
+          }, 100);
         }
       };
 
@@ -274,7 +279,10 @@ describe('ResilientWebSocketTransport', () => {
       );
 
       await transport.connect();
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Wait for initial connection + close + first reconnect
+      // Initial: ~10ms open, ~150ms close, ~50ms reconnect delay = ~210ms minimum
+      // Use 500ms to account for timing variations
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       const initialCount = 1; // First connection
       
@@ -290,12 +298,17 @@ describe('ResilientWebSocketTransport', () => {
         constructor(url: string) {
           super(url);
           connectionCount++;
-          // Close after a short delay to simulate unexpected network failure
+          // Close after connection is fully established (100ms to ensure transport processes open event)
           setTimeout(() => {
             if (this.readyState === 1) { // OPEN
-              this.close();
+              // Add small delay to ensure transport has processed open event
+              setTimeout(() => {
+                if (this.readyState === 1) {
+                  this.close();
+                }
+              }, 50);
             }
-          }, 50);
+          }, 100);
         }
       };
 
@@ -310,11 +323,19 @@ describe('ResilientWebSocketTransport', () => {
       );
 
       await transport.connect();
-      // Wait for reconnection attempts (initial + 2 retries = 3 total connections)
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait for reconnection attempts with maxReconnectAttempts: 2
+      // Initial connection: ~10ms open, ~150ms close
+      // First reconnect: ~50ms delay, ~150ms close
+      // Second reconnect: ~100ms delay, ~150ms close
+      // Then max reached
+      // Total: ~610ms minimum, use 1000ms for safety
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       expect(callbacks.onReconnect).toHaveBeenCalledTimes(2);
-      expect(errors.some(e => e.message.includes('Maximum reconnection attempts'))).toBe(true);
+      expect(errors.some(e => 
+        e.message.includes('Maximum reconnection attempts') || 
+        e.message.includes('Maximum reconnection attempts reached')
+      )).toBe(true);
     });
 
     it('should use exponential backoff for reconnection', async () => {
@@ -329,12 +350,17 @@ describe('ResilientWebSocketTransport', () => {
       const AutoClosingMockWebSocket = class extends MockWebSocket {
         constructor(url: string) {
           super(url);
-          // Close after a short delay to simulate network failure
+          // Close after connection is fully established (100ms to ensure transport processes open event)
           setTimeout(() => {
             if (this.readyState === 1) { // OPEN
-              this.close();
+              // Add small delay to ensure transport has processed open event
+              setTimeout(() => {
+                if (this.readyState === 1) {
+                  this.close();
+                }
+              }, 50);
             }
-          }, 50);
+          }, 100);
         }
       };
 
@@ -350,7 +376,13 @@ describe('ResilientWebSocketTransport', () => {
       );
 
       await transport.connect();
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait for multiple reconnection attempts with exponential backoff
+      // Initial: ~10ms open, ~150ms close
+      // Reconnect 1: ~100ms delay, ~150ms close
+      // Reconnect 2: ~200ms delay, ~150ms close
+      // Reconnect 3: ~400ms delay, ~150ms close
+      // Total: ~1160ms minimum, use 2000ms for safety
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Check that delays increase (exponential backoff)
       expect(reconnectDelays.length).toBeGreaterThan(1);

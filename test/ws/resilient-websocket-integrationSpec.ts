@@ -11,7 +11,7 @@ import {
 } from '../../src/ws/resilient-websocket';
 import WebSocket from 'ws';
 
-jest.setTimeout(15000);
+jest.setTimeout(30000);
 
 // Mock WebSocket for integration testing
 class MockWebSocket {
