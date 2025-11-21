@@ -28,7 +28,12 @@
     "prepack": "npm run clean && npm run build && npm run test",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "test": "npx tsc --noEmit --project tsconfig.test.json && jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:ws": "jest test/ws/",
+    "test:ws:unit": "jest test/ws/resilient-transportSpec.ts test/ws/message-queueSpec.ts test/ws/connection-handlerSpec.ts",
+    "test:ws:integration": "jest test/ws/resilient-websocket-integrationSpec.ts",
+    "test:ws:e2e": "jest test/ws/resilient-websocket-e2eSpec.ts",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@stablelib/base64": "^1.0.1",
