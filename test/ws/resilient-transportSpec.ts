@@ -248,17 +248,24 @@ describe('ResilientWebSocketTransport', () => {
   describe('Reconnection', () => {
     it('should reconnect automatically on disconnect', async () => {
       let connectionCount = 0;
-      const wsFactory = class extends MockWebSocket {
+      // Create a mock that closes itself after connection to simulate network failure
+      const AutoClosingMockWebSocket = class extends MockWebSocket {
         constructor(url: string) {
           super(url);
           connectionCount++;
+          // Close after a short delay to simulate unexpected network failure
+          setTimeout(() => {
+            if (this.readyState === 1) { // OPEN
+              this.close();
+            }
+          }, 50);
         }
       };
 
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        wsFactory as any,
+        AutoClosingMockWebSocket as any,
         {
           reconnectMode: ReconnectMode.Stateless,
           reconnectInitialDelayMs: 50,
@@ -267,33 +274,35 @@ describe('ResilientWebSocketTransport', () => {
       );
 
       await transport.connect();
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const initialCount = connectionCount;
-      
-      // Disconnect to trigger reconnection
-      await transport.disconnect();
-      
-      // Wait for reconnection attempts
       await new Promise(resolve => setTimeout(resolve, 300));
 
+      const initialCount = 1; // First connection
+      
+      // Should have reconnected after unexpected close
       expect(connectionCount).toBeGreaterThan(initialCount);
       expect(callbacks.onReconnect).toHaveBeenCalled();
     });
 
     it('should respect max reconnection attempts', async () => {
       let connectionCount = 0;
-      const CountingMockWebSocket = class extends MockWebSocket {
+      // Create a mock that closes itself after connection to simulate network failure
+      const AutoClosingMockWebSocket = class extends MockWebSocket {
         constructor(url: string) {
           super(url);
           connectionCount++;
+          // Close after a short delay to simulate unexpected network failure
+          setTimeout(() => {
+            if (this.readyState === 1) { // OPEN
+              this.close();
+            }
+          }, 50);
         }
       };
 
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        CountingMockWebSocket as any,
+        AutoClosingMockWebSocket as any,
         {
           maxReconnectAttempts: 2,
           reconnectInitialDelayMs: 50
@@ -301,12 +310,7 @@ describe('ResilientWebSocketTransport', () => {
       );
 
       await transport.connect();
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Disconnect to trigger reconnection
-      await transport.disconnect();
-      
-      // Wait for reconnection attempts
+      // Wait for reconnection attempts (initial + 2 retries = 3 total connections)
       await new Promise(resolve => setTimeout(resolve, 500));
 
       expect(callbacks.onReconnect).toHaveBeenCalledTimes(2);
