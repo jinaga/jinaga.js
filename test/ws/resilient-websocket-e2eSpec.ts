@@ -13,7 +13,7 @@ import { createServer, Server } from 'http';
 import WebSocket from 'ws';
 import { WebSocketServer } from 'ws';
 
-jest.setTimeout(30000);
+jest.setTimeout(20000);
 
 // Provide WebSocket global for client under test
 (globalThis as any).WebSocket = WebSocket;

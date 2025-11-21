@@ -10,7 +10,7 @@ import {
 import { ConnectionState } from '../../src/ws/resilient-transport';
 import WebSocket from 'ws';
 
-jest.setTimeout(30000);
+jest.setTimeout(20000);
 
 // Mock WebSocket for testing
 class MockWebSocket {
