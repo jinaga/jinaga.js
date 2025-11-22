@@ -145,8 +145,8 @@ describe('MessageQueue', () => {
 
       queue.markFailed(id);
 
-      // Message should be re-queued after delay
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Message should be re-queued after delay (200ms delay + 50ms buffer)
+      await new Promise(resolve => setTimeout(resolve, 250));
 
       expect(queue.size()).toBeGreaterThan(0);
     });

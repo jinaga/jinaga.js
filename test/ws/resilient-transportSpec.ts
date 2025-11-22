@@ -373,7 +373,7 @@ describe('ResilientWebSocketTransport', () => {
       // - Initial connection → closes → reconnect attempt 1 (onReconnect called)
       // - Reconnect 1 → closes → reconnect attempt 2 (onReconnect called)
       // - Reconnect 2 → closes → max reached (error thrown)
-      await waitForCallbackCount(() => callbacks.onReconnect!.mock.calls.length, 2, 1000);
+      await waitForCallbackCount(() => jest.mocked(callbacks.onReconnect!).mock.calls.length, 2, 1000);
       
       // Wait a bit more for the error to be set
       await waitForCondition(

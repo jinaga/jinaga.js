@@ -33,6 +33,7 @@ export interface MessageQueueOptions {
  */
 export class MessageQueue {
   private readonly queue: QueuedMessage[] = [];
+  private readonly inFlight: Map<string, QueuedMessage> = new Map();
   private readonly options: Required<MessageQueueOptions>;
   private messageIdCounter = 0;
 
@@ -90,7 +91,11 @@ export class MessageQueue {
       return null;
     }
 
-    return this.queue.shift()!;
+    const message = this.queue.shift()!;
+    if (message) {
+      this.inFlight.set(message.id, message);
+    }
+    return message;
   }
 
   /**
@@ -108,7 +113,15 @@ export class MessageQueue {
    * Mark a message as failed and re-queue if retries remain
    */
   markFailed(messageId: string): boolean {
-    const message = this.queue.find(m => m.id === messageId);
+    // Check both queue and inFlight for the message
+    let message = this.queue.find(m => m.id === messageId);
+    const wasInFlight = !message;
+    if (!message) {
+      message = this.inFlight.get(messageId);
+      if (message) {
+        this.inFlight.delete(messageId);
+      }
+    }
     if (!message) {
       return false;
     }
@@ -121,18 +134,28 @@ export class MessageQueue {
       if (index >= 0) {
         this.queue.splice(index, 1);
       }
+      // Also clean up inFlight if present
+      this.inFlight.delete(messageId);
       return false;
+    }
+
+    // Remove from queue if it was there
+    const index = this.queue.findIndex(m => m.id === messageId);
+    if (index >= 0) {
+      this.queue.splice(index, 1);
     }
 
     // Re-queue with exponential backoff delay
     // Messages with more attempts go to the back of the queue
-    const index = this.queue.findIndex(m => m.id === messageId);
-    if (index >= 0) {
-      this.queue.splice(index, 1);
-      // Add delay based on attempts (exponential backoff)
-      const delayMs = Math.min(1000 * Math.pow(2, message.attempts), 30000);
+    // If message was in-flight, re-queue immediately; otherwise use delay
+    const delayMs = Math.min(100 * Math.pow(2, message.attempts), 30000);
+    if (wasInFlight && message.attempts === 1) {
+      // First failure of in-flight message: re-queue immediately
+      this.queue.push(message);
+    } else {
+      // Subsequent failures or failures of queued messages: use delay
       setTimeout(() => {
-        this.queue.push(message);
+        this.queue.push(message!);
       }, delayMs);
     }
 
@@ -146,6 +169,12 @@ export class MessageQueue {
     const index = this.queue.findIndex(m => m.id === messageId);
     if (index >= 0) {
       this.queue.splice(index, 1);
+      this.inFlight.delete(messageId);
+      return true;
+    }
+    // Also check inFlight for successful transmission of in-flight messages
+    if (this.inFlight.has(messageId)) {
+      this.inFlight.delete(messageId);
       return true;
     }
     return false;

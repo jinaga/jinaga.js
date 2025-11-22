@@ -1,214 +1,268 @@
-# Test Failure Analysis and Recommendations
+# Test Failure Analysis
 
 ## Summary
+9 tests are failing, grouped into 4 main categories:
+1. **Async cleanup issues** (4 failures) - Operations continuing after tests complete
+2. **Reconnection logic failures** (3 failures) - Reconnection not triggering or completing
+3. **MessageQueue implementation issues** (2 failures) - Missing properties and incorrect delay handling
+4. **Error handling issues** (2 failures) - Negotiation errors and state transitions not handled correctly
 
-The CI tests are failing with exit code 1, indicating test execution failures. Based on code analysis, here are the identified issues and recommended fixes.
+---
 
-## Identified Issues
+## Group 1: Async Cleanup Issues (4 failures)
 
-### 1. **Mock WebSocket Instance Mismatch** (Critical)
+### Symptoms
+- Multiple "Cannot log after tests are done" errors
+- Logging attempts from `ObservableSource.removeSpecificationListener` after test completion
+- Worker process failing to exit gracefully
 
-**Problem**: Several tests create a `mockWs` instance but then pass `MockWebSocket` class to the transport, causing the transport to create a different instance. Tests then check `mockWs.getSentMessages()` which is always empty.
+### Root Cause
+WebSocket close handlers (`onclose` events) are firing asynchronously after tests complete. The `authorization-websocket-handler.ts` removes specification listeners in the close handler, which triggers logging in `ObservableSource` after Jest has finished.
 
-**Affected Tests**:
-- `resilient-transportSpec.ts` line 322-337: Heartbeat test
-- `resilient-transportSpec.ts` line 232-260: Reconnection test  
-- `resilient-transportSpec.ts` line 186-196: Message transmission test
+### Affected Tests
+- All tests that create WebSocket connections (indirect failures)
 
-**Example**:
+### Solution
+**1. Ensure proper cleanup in test teardown:**
 ```typescript
-mockWs = new MockWebSocket('ws://test');
-const transport = new ResilientWebSocketTransport(
-  () => Promise.resolve('ws://test'),
-  callbacks,
-  MockWebSocket as any,  // Creates NEW instance, not mockWs!
-  { heartbeatIntervalMs: 100 }
-);
-// Later checks mockWs.getSentMessages() - always empty!
-```
-
-**Fix**: Either:
-- Remove `mockWs` variable and check messages through callbacks, OR
-- Create a factory function that returns the same instance, OR  
-- Access the socket instance from the transport (if exposed)
-
-### 2. **Reconnection Test Logic Error**
-
-**Problem**: Test creates `mockWs` but uses `wsFactory` class, so `mockWs.simulateClose()` doesn't affect the actual connection created by transport.
-
-**Location**: `resilient-transportSpec.ts` line 232-260
-
-**Fix**: Need to track the actual socket instance created by transport or use a different approach to trigger reconnection.
-
-### 3. **E2E Test Server Cleanup**
-
-**Problem**: E2E tests might have race conditions or incomplete cleanup causing tests to hang or fail.
-
-**Location**: `resilient-websocket-e2eSpec.ts`
-
-**Potential Issues**:
-- Server might not be fully ready before tests run
-- Connections might not be properly closed
-- Timeout issues in CI environment
-
-**Fix**: Add proper wait conditions and ensure all resources are cleaned up.
-
-### 4. **Test Timeout Issues**
-
-**Problem**: CI environment may be slower, causing tests to timeout.
-
-**Current Timeouts**: 
-- `jest.setTimeout(10000)` in unit tests
-- `jest.setTimeout(20000)` in E2E tests
-
-**Fix**: Increase timeouts or optimize test execution.
-
-### 5. **Async Race Conditions**
-
-**Problem**: Tests use `setTimeout` with fixed delays which may not be sufficient in CI.
-
-**Example**:
-```typescript
-await transport.connect();
-await new Promise(resolve => setTimeout(resolve, 50)); // May be too short
-```
-
-**Fix**: Use proper wait conditions or increase delays.
-
-## Recommended Fixes
-
-### Fix 1: Correct Mock WebSocket Usage
-
-**Option A - Use Callbacks** (Recommended):
-```typescript
-it('should send heartbeat messages', async () => {
-  const sentMessages: Array<string | ArrayBuffer | Blob> = [];
-  
-  // Track messages through a custom mock
-  const TrackingMockWebSocket = class extends MockWebSocket {
-    send(data: string | ArrayBuffer | Blob): void {
-      sentMessages.push(data);
-      super.send(data);
-    }
-  };
-
-  const transport = new ResilientWebSocketTransport(
-    () => Promise.resolve('ws://test'),
-    callbacks,
-    TrackingMockWebSocket as any,
-    { heartbeatIntervalMs: 100 }
-  );
-
-  await transport.connect();
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  expect(sentMessages.length).toBeGreaterThan(0);
-});
-```
-
-**Option B - Store Socket Reference**:
-Modify transport to expose socket instance (not recommended for production code).
-
-### Fix 2: Fix Reconnection Test
-
-```typescript
-it('should reconnect automatically on disconnect', async () => {
-  let connectionCount = 0;
-  const wsFactory = class extends MockWebSocket {
-    constructor(url: string) {
-      super(url);
-      connectionCount++;
-    }
-  };
-
-  const transport = new ResilientWebSocketTransport(
-    () => Promise.resolve('ws://test'),
-    callbacks,
-    wsFactory as any,
-    {
-      reconnectMode: ReconnectMode.Stateless,
-      reconnectInitialDelayMs: 50,
-      maxReconnectAttempts: 3
-    }
-  );
-
-  await transport.connect();
+afterEach(async () => {
+  // Wait for all async operations to complete
   await new Promise(resolve => setTimeout(resolve, 100));
   
-  const initialCount = connectionCount;
-  
-  // Force disconnect by closing the transport
-  await transport.disconnect();
-  
-  // Wait for reconnection attempt
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  expect(connectionCount).toBeGreaterThan(initialCount);
-  expect(callbacks.onReconnect).toHaveBeenCalled();
-});
-```
-
-### Fix 3: Improve E2E Test Reliability
-
-```typescript
-beforeAll(async () => {
-  // ... server setup ...
-  
-  await Promise.all([
-    new Promise<void>(resolve => {
-      httpServer.listen(0, () => {
-        const addr = httpServer.address();
-        if (!addr) throw new Error('HTTP server failed to start');
-        resolve();
-      });
-    }),
-    new Promise<void>(resolve => {
-      wss.once('listening', () => {
-        const addr = wss.address();
-        if (!addr) throw new Error('WS server failed to start');
-        resolve();
-      });
-    })
-  ]);
-  
-  // Additional wait to ensure servers are ready
-  await new Promise(resolve => setTimeout(resolve, 100));
-});
-```
-
-### Fix 4: Increase Test Timeouts
-
-```typescript
-jest.setTimeout(30000); // Increase from 10000/20000
-```
-
-### Fix 5: Use Wait Helpers
-
-Create helper functions to wait for conditions:
-
-```typescript
-async function waitForConnection(transport: ResilientWebSocketTransport, timeout = 5000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    if (transport.isConnected()) return;
-    await new Promise(resolve => setTimeout(resolve, 50));
+  // Clean up any remaining WebSocket connections
+  if (transport) {
+    await transport.disconnect();
   }
-  throw new Error('Connection timeout');
+});
+```
+
+**2. Make logging conditional in ObservableSource:**
+- Check if test environment is still active before logging
+- Or use a test-safe logger that suppresses logs after test completion
+
+**3. Add cleanup to authorization-websocket-handler:**
+- Remove event listeners synchronously during disconnect
+- Use AbortController to cancel pending async operations
+
+---
+
+## Group 2: Reconnection Logic Failures (3 failures)
+
+### Failure 1: "should reconnect automatically on disconnect"
+**Expected:** `connectionCount > 1`  
+**Actual:** `connectionCount === 1`
+
+**Root Cause:** The mock WebSocket closes itself, but `scheduleReconnect()` may not be creating a new connection because:
+- The `reconnectTimer` check prevents multiple schedules
+- The connection count is incremented in the constructor, but a new instance may not be created
+- The reconnection delay may be longer than the test timeout
+
+**Solution:**
+```typescript
+// In resilient-transportSpec.ts test
+// Ensure the mock creates a NEW instance for each reconnection
+const AutoClosingMockWebSocket = class extends MockWebSocket {
+  constructor(url: string) {
+    super(url);
+    connectionCount++; // This only runs once per instance
+  }
+};
+
+// The issue: scheduleReconnect() calls establishConnection() which 
+// creates a NEW socket, but the test needs to track this.
+// Fix: Make connectionCount a shared counter outside the class
+```
+
+**Fix:** Track connection attempts at the transport level, not just in the mock constructor.
+
+### Failure 2: "should respect max reconnection attempts"
+**Expected:** Wait for 2 reconnection callbacks  
+**Actual:** Timeout waiting for condition
+
+**Root Cause:** The test waits for `onReconnect` to be called 2 times, but:
+- `onReconnect` is called BEFORE the delay, not after successful reconnection
+- The reconnection may fail before reaching max attempts
+- The condition check may be too strict
+
+**Solution:**
+```typescript
+// The test expects onReconnect to be called 2 times with maxReconnectAttempts: 2
+// But onReconnect is called when SCHEDULING reconnection, not when it succeeds
+// Need to wait for actual reconnection attempts, not just scheduling
+```
+
+**Fix:** Adjust test to wait for actual reconnection state changes or connection attempts, not just callback invocations.
+
+### Failure 3: "should recover from connection errors" (integration test)
+**Expected:** `connectionAttempts > 1`  
+**Actual:** `connectionAttempts === 1`
+
+**Root Cause:** Similar to failure 1 - reconnection not creating new connection instances that increment the counter.
+
+**Solution:** Same as Failure 1 - track connections at transport level.
+
+---
+
+## Group 3: MessageQueue Implementation Issues (2 failures)
+
+### Failure 1: "should track retry attempts"
+**Expected:** `retried?.attempts === 1`  
+**Actual:** `retried?.attempts === undefined`
+
+**Root Cause:** In `markFailed()`:
+1. Message is dequeued (removed from queue)
+2. `markFailed()` is called with the message ID
+3. `markFailed()` finds the message, increments attempts
+4. Message is removed from queue and re-added with setTimeout delay
+5. When `dequeue()` is called again, the message may not be re-queued yet (delay hasn't elapsed)
+6. OR the message object doesn't preserve the `attempts` property correctly
+
+**Looking at the code:**
+```typescript
+markFailed(messageId: string): boolean {
+  const message = this.queue.find(m => m.id === messageId);
+  if (!message) {
+    return false; // Message not found - this is the issue!
+  }
+  message.attempts++;
+  // ... re-queue logic
 }
 ```
 
-## Priority Order
+**The Problem:** The test dequeues the message FIRST, then calls `markFailed()`. But `markFailed()` looks for the message in `this.queue`, which is now empty because it was dequeued!
 
-1. **Fix Mock WebSocket instance mismatch** (Critical - causes test failures)
-2. **Fix reconnection test logic** (High - test is broken)
-3. **Improve E2E test reliability** (Medium - may cause intermittent failures)
-4. **Increase timeouts** (Low - may help in CI)
-5. **Add wait helpers** (Low - improves test reliability)
+**Solution:**
+```typescript
+// Option 1: Track failed messages separately
+private failedMessages: Map<string, QueuedMessage> = new Map();
 
-## Testing Strategy
+markFailed(messageId: string): boolean {
+  // Check both queue and failed messages
+  let message = this.queue.find(m => m.id === messageId);
+  if (!message) {
+    message = this.failedMessages.get(messageId);
+  }
+  if (!message) {
+    return false;
+  }
+  // ... rest of logic
+}
 
-After applying fixes:
-1. Run tests locally: `npm test`
-2. Run specific test file: `npm test -- test/ws/resilient-transportSpec.ts`
-3. Run with verbose output: `npm test -- --verbose`
-4. Check for timing issues by running tests multiple times
+// Option 2: Don't remove from queue until markFailed is called
+// Change test to: enqueue -> markFailed (before dequeue) -> dequeue
+```
+
+**Fix:** The test logic is incorrect - it should call `markFailed()` BEFORE dequeuing, OR the implementation should track messages that are "in flight" (dequeued but not yet confirmed).
+
+### Failure 2: "should re-queue failed messages with delay"
+**Expected:** `queue.size() > 0` after 100ms  
+**Actual:** `queue.size() === 0`
+
+**Root Cause:** The delay calculation in `markFailed()`:
+```typescript
+const delayMs = Math.min(1000 * Math.pow(2, message.attempts), 30000);
+```
+
+For `attempts === 1` (after first failure): `delayMs = 1000 * 2^1 = 2000ms`
+
+But the test only waits 100ms! The message won't be re-queued until 2000ms have passed.
+
+**Solution:**
+```typescript
+// Option 1: Fix the test to wait longer
+await new Promise(resolve => setTimeout(resolve, 2100)); // Wait for 2s delay
+
+// Option 2: Fix the delay calculation to be more reasonable
+const delayMs = Math.min(100 * Math.pow(2, message.attempts), 30000); // Start at 100ms
+```
+
+**Fix:** Either adjust test timeout or reduce initial delay in implementation.
+
+---
+
+## Group 4: Error Handling Issues (2 failures)
+
+### Failure 1: "should handle negotiation errors gracefully"
+**Expected:** `handler.connect()` resolves without throwing  
+**Actual:** Promise rejects with "Negotiation failed"
+
+**Root Cause:** In `connection-handler.ts`, the `connect()` method calls `negotiateConnection()` which throws, and the error is not caught:
+
+```typescript
+async connect(): Promise<void> {
+  // ...
+  const negotiation = await this.negotiateConnection(); // Throws if negotiation fails
+  // ...
+}
+```
+
+**Solution:**
+```typescript
+async connect(): Promise<void> {
+  // ...
+  let negotiation: NegotiationResponse;
+  try {
+    negotiation = await this.negotiateConnection();
+  } catch (error) {
+    // If negotiation fails, use default URL
+    negotiation = { url: this.baseUrl };
+  }
+  // ...
+}
+```
+
+**Fix:** Catch negotiation errors and fall back to default connection behavior.
+
+### Failure 2: "should handle server errors gracefully" (e2e test)
+**Expected:** `ws.getState() === ConnectionState.Reconnecting`  
+**Actual:** `ws.getState() === ConnectionState.Connected`
+
+**Root Cause:** After server closes connection with error code 1011, the reconnection may not be triggered immediately, or the state transition happens too quickly for the test to catch.
+
+**Solution:**
+```typescript
+// Wait longer for state transition
+await new Promise(resolve => setTimeout(resolve, 1000)); // Increased from 500ms
+
+// Or wait for state change explicitly
+await waitForConnectionState(
+  () => ws.getState(),
+  ConnectionState.Reconnecting,
+  2000
+);
+```
+
+**Fix:** Increase wait time or use explicit state waiting helper.
+
+---
+
+## Recommended Fix Priority
+
+1. **High Priority:** Group 3 (MessageQueue) - These are clear bugs in the implementation
+2. **High Priority:** Group 4 (Error Handling) - Negotiation error handling is a critical feature
+3. **Medium Priority:** Group 2 (Reconnection) - Core functionality but tests may need adjustment
+4. **Low Priority:** Group 1 (Async Cleanup) - Test infrastructure issue, doesn't affect functionality
+
+---
+
+## Implementation Checklist
+
+### MessageQueue Fixes
+- [ ] Fix `markFailed()` to handle messages that are dequeued but not yet confirmed
+- [ ] Adjust delay calculation or test expectations for re-queue timing
+- [ ] Add tests for "in-flight" message tracking
+
+### Error Handling Fixes
+- [ ] Add try-catch in `connection-handler.connect()` for negotiation errors
+- [ ] Ensure graceful fallback when negotiation fails
+- [ ] Update e2e test to wait appropriately for state transitions
+
+### Reconnection Fixes
+- [ ] Add connection attempt tracking at transport level
+- [ ] Fix test expectations to match actual reconnection behavior
+- [ ] Ensure mock WebSocket creates new instances for each reconnection
+
+### Async Cleanup Fixes
+- [ ] Add proper teardown in test files
+- [ ] Make ObservableSource logging test-safe
+- [ ] Ensure WebSocket handlers are cleaned up synchronously
