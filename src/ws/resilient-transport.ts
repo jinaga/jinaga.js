@@ -404,6 +404,11 @@ export class ResilientWebSocketTransport {
       return;
     }
 
+    if (this.options.reconnectMode === ReconnectMode.None) {
+      this.setState(ConnectionState.Disconnected);
+      return;
+    }
+
     if (this.options.maxReconnectAttempts > 0 && 
         this.reconnectAttempt >= this.options.maxReconnectAttempts) {
       this.setState(ConnectionState.Disconnected);

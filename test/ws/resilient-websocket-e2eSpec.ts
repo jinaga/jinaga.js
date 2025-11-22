@@ -194,7 +194,12 @@ describe('ResilientWebSocket E2E', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ protocol: 'websocket', version: 1 })
           });
-          return response.json();
+          const negotiation = await response.json();
+          // Include the WebSocket server URL in the negotiation response
+          return {
+            ...negotiation,
+            url: getWsUrl()
+          };
         }
       });
 

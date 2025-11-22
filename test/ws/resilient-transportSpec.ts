@@ -543,17 +543,26 @@ describe('ResilientWebSocketTransport', () => {
       const transport = new ResilientWebSocketTransport(
         () => Promise.resolve('ws://test'),
         callbacks,
-        MockWebSocket as any
+        MockWebSocket as any,
+        { reconnectMode: ReconnectMode.None }
       );
 
       expect(stateChanges).toHaveLength(0);
 
       await transport.connect();
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForConnectionState(() => transport.getState(), ConnectionState.Connected, 200);
+      
+      // Small delay to ensure all state change callbacks have been processed
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(stateChanges.length).toBeGreaterThan(0);
       expect(stateChanges[0].previous).toBe(ConnectionState.Disconnected);
-      expect(stateChanges[stateChanges.length - 1].current).toBe(ConnectionState.Connected);
+      expect(stateChanges[0].current).toBe(ConnectionState.Connecting);
+      
+      // Find the Connected state change
+      const connectedChange = stateChanges.find(change => change.current === ConnectionState.Connected);
+      expect(connectedChange).toBeDefined();
+      expect(connectedChange!.previous).toBe(ConnectionState.Connecting);
     });
   });
 

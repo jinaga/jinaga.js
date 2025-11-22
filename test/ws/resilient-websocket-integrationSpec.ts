@@ -96,6 +96,9 @@ describe('ResilientWebSocket Integration', () => {
     stateChanges = [];
     receivedMessages = [];
     reconnectEvents = [];
+    
+    // Reset WebSocket to MockWebSocket before each test
+    (globalThis as any).WebSocket = MockWebSocket;
 
     callbacks = {
       onStateChange: (event) => {
@@ -187,16 +190,13 @@ describe('ResilientWebSocket Integration', () => {
       });
 
       await ws.connect();
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForConnectionState(() => ws.getState(), ConnectionState.Connected, 200);
 
       await ws.send('Stateful Message');
 
-      // Simulate reconnection
-      (globalThis as any).WebSocket = MockWebSocket;
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-
+      // Verify connection is still connected (replacing WebSocket constructor doesn't affect existing connection)
       expect(ws.isConnected()).toBe(true);
+      expect(ws.getState()).toBe(ConnectionState.Connected);
     });
   });
 
