@@ -12,6 +12,7 @@ import {
 import { createServer, Server } from 'http';
 import WebSocket from 'ws';
 import { WebSocketServer } from 'ws';
+import { waitForConnectionState } from './test-helpers';
 
 jest.setTimeout(20000);
 
@@ -347,7 +348,12 @@ describe('ResilientWebSocket E2E', () => {
         }
       });
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait for state transition to Reconnecting
+      await waitForConnectionState(
+        () => ws.getState(),
+        ConnectionState.Reconnecting,
+        2000
+      );
 
       // Should attempt reconnection
       expect(ws.getState()).toBe(ConnectionState.Reconnecting);

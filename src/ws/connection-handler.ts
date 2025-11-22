@@ -138,7 +138,13 @@ export class WebSocketConnectionHandler {
    */
   private async negotiateConnection(): Promise<NegotiationResponse> {
     if (this.options.negotiate) {
-      return await this.options.negotiate();
+      try {
+        return await this.options.negotiate();
+      } catch (error) {
+        // If custom negotiation fails, proceed with direct WebSocket connection
+        // This allows for servers that don't require negotiation
+        return {};
+      }
     }
 
     // Default negotiation: try to negotiate via HTTP endpoint
