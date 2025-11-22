@@ -57,6 +57,89 @@ export class ConsoleTracer implements Tracer {
     }
 }
 
+export class TestTracer implements Tracer {
+    private readonly consoleTracer: ConsoleTracer = new ConsoleTracer();
+    private static testFinished: boolean = false;
+
+    private static isTestLoggingError(error: any): boolean {
+        // Jest's BufferedConsole throws errors that may not be Error instances
+        // Check multiple ways to detect "Cannot log after tests are done" errors
+        if (!error) return false;
+        const errorString = error instanceof Error 
+            ? error.message 
+            : String(error);
+        return errorString.includes('Cannot log after tests are done');
+    }
+
+    private safeLog(operation: () => void): void {
+        if (TestTracer.testFinished) {
+            return;
+        }
+        try {
+            operation();
+        } catch (error: any) {
+            if (TestTracer.isTestLoggingError(error)) {
+                // Set flag to suppress all future logging attempts
+                TestTracer.testFinished = true;
+                return;
+            }
+            throw error;
+        }
+    }
+
+    info(message: string): void {
+        this.safeLog(() => this.consoleTracer.info(message));
+    }
+
+    warn(message: string): void {
+        this.safeLog(() => this.consoleTracer.warn(message));
+    }
+
+    error(error: any): void {
+        this.safeLog(() => this.consoleTracer.error(error));
+    }
+
+    async dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
+        if (TestTracer.testFinished) {
+            // Skip logging but still execute the operation
+            return await operation();
+        }
+        try {
+            return await this.consoleTracer.dependency(name, data, operation);
+        } catch (error) {
+            if (TestTracer.isTestLoggingError(error)) {
+                TestTracer.testFinished = true;
+                // Still execute the operation, just skip logging
+                return await operation();
+            }
+            throw error;
+        }
+    }
+
+    metric(message: string, measurements: { [key: string]: number }): void {
+        this.safeLog(() => this.consoleTracer.metric(message, measurements));
+    }
+
+    counter(name: string, value: number): void {
+        this.safeLog(() => this.consoleTracer.counter(name, value));
+    }
+
+    /**
+     * Mark tests as finished to suppress logging during async cleanup.
+     * Called automatically by test setup, but can be called manually if needed.
+     */
+    static markTestsFinished(): void {
+        TestTracer.testFinished = true;
+    }
+
+    /**
+     * Reset the test finished flag (useful for test isolation).
+     */
+    static reset(): void {
+        TestTracer.testFinished = false;
+    }
+}
+
 export class Trace {
     private static tracer: Tracer = new ConsoleTracer();
 

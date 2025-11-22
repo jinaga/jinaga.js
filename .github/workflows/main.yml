@@ -35,3 +35,11 @@ jobs:
           npm ci
           npm run build
           npm test
+      
+      - name: Run WebSocket Tests
+        run: |
+          npm test -- test/ws/
+      
+      - name: Run E2E WebSocket Tests
+        run: |
+          npm test -- test/ws/resilient-websocket-e2eSpec.ts

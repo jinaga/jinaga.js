@@ -61,7 +61,7 @@ export { detectDisconnectedSpecification, DisconnectedSpecificationError } from 
 export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, uniqueFactReferences, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
 export { delay } from './util/promise';
-export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
+export { ConsoleTracer, NoOpTracer, TestTracer, Trace, Tracer } from './util/trace';
 
 // Optional WebSocket graph client and network
 export { WsGraphNetwork } from './ws/wsGraphNetwork';

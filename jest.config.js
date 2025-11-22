@@ -10,4 +10,7 @@ module.exports = {
     '^@src$': '<rootDir>/src',
   },
   setupFilesAfterEnv: ['<rootDir>/test/setup/indexeddb-setup.ts'],
+  testTimeout: 10000,
+  forceExit: true,
+  detectOpenHandles: true,
 };

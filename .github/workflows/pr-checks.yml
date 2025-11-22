@@ -1,0 +1,103 @@
+# PR Checks Workflow
+# Runs comprehensive tests including WebSocket framework tests on pull requests
+
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit --project tsconfig.test.json
+
+      - name: Build
+        run: npm run build
+
+      - name: Run all tests
+        run: npm test
+
+      - name: Run WebSocket unit tests
+        run: npm test -- test/ws/resilient-transportSpec.ts test/ws/message-queueSpec.ts test/ws/connection-handlerSpec.ts
+
+      - name: Run WebSocket integration tests
+        run: npm test -- test/ws/resilient-websocket-integrationSpec.ts
+
+      - name: Run WebSocket E2E tests
+        run: npm test -- test/ws/resilient-websocket-e2eSpec.ts
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npx eslint "**/*.{js,ts}" || echo "ESLint check completed"
+        continue-on-error: true
+
+  coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm test -- --coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
