@@ -310,13 +310,14 @@ describe('ResilientWebSocketTransport', () => {
       await transport.connect();
       await waitForConnectionState(() => transport.getState(), ConnectionState.Connected, 200);
       
-      // Wait for close and first reconnect
+      // Wait for close and reconnection to be scheduled
       await waitForConnectionState(() => transport.getState(), ConnectionState.Reconnecting, 500);
       
-      const initialCount = 1; // First connection
+      // Wait for reconnection to complete (reconnectInitialDelayMs: 50 + connection time ~10ms)
+      await waitForConnectionState(() => transport.getState(), ConnectionState.Connected, 200);
       
-      // Should have reconnected after unexpected close
-      expect(connectionCount).toBeGreaterThan(initialCount);
+      // Should have reconnected after unexpected close - connectionCount should be 2
+      expect(connectionCount).toBeGreaterThan(1);
       expect(callbacks.onReconnect).toHaveBeenCalled();
     });
 
@@ -324,7 +325,7 @@ describe('ResilientWebSocketTransport', () => {
       let connectionCount = 0;
       let transportRef: ResilientWebSocketTransport | null = null;
       
-      // Create a mock that closes itself after connection is established
+      // Create a mock that closes itself after each successful connection
       const AutoClosingMockWebSocket = class extends MockWebSocket {
         constructor(url: string) {
           super(url);
@@ -367,22 +368,47 @@ describe('ResilientWebSocketTransport', () => {
       transportRef = transport;
 
       await transport.connect();
+      await waitForConnectionState(() => transport.getState(), ConnectionState.Connected, 200);
       
       // Wait for max reconnection attempts to be reached
       // With maxReconnectAttempts: 2, we expect:
-      // - Initial connection → closes → reconnect attempt 1 (onReconnect called)
-      // - Reconnect 1 → closes → reconnect attempt 2 (onReconnect called)
-      // - Reconnect 2 → closes → max reached (error thrown)
-      await waitForCallbackCount(() => jest.mocked(callbacks.onReconnect!).mock.calls.length, 2, 1000);
+      // - Initial connection → closes → reconnect attempt 1 (onReconnect called when scheduling)
+      // - Reconnect 1 → closes → reconnect attempt 2 (onReconnect called when scheduling)
+      // - Reconnect 2 → closes → max reached (error thrown when scheduling 3rd attempt)
+      // Wait for first reconnection to be scheduled
+      await waitForCallbackCount(() => jest.mocked(callbacks.onReconnect!).mock.calls.length, 1, 200);
       
-      // Wait a bit more for the error to be set
+      // Wait for first reconnection to complete
+      await waitForConnectionState(() => transport.getState(), ConnectionState.Connected, 200);
+      
+      // Wait for second reconnection to be scheduled
+      await waitForCallbackCount(() => jest.mocked(callbacks.onReconnect!).mock.calls.length, 2, 200);
+      
+      // Wait for second reconnection to complete
+      await waitForConnectionState(() => transport.getState(), ConnectionState.Connected, 200);
+      
+      // Wait for second reconnection to close (mock closes itself after 50ms initial delay + 
+      // waiting for Connected state up to 200ms + 20ms buffer = up to 270ms)
+      // Give it enough time for the mock to close itself
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Wait for max attempts error to be thrown
+      // When the second reconnection closes, scheduleReconnect() is called
+      // reconnectAttempt is 2, which equals maxReconnectAttempts (2)
+      // So error is thrown immediately and state becomes Disconnected
       await waitForCondition(
-        () => errors.some(e => 
-          e.message.includes('Maximum reconnection attempts') || 
-          e.message.includes('Maximum reconnection attempts reached')
-        ),
-        500
+        () => {
+          const hasError = errors.some(e => 
+            e.message.includes('Maximum reconnection attempts') || 
+            e.message.includes('Maximum reconnection attempts reached')
+          );
+          return hasError;
+        },
+        1000
       );
+      
+      // Verify state is Disconnected after max attempts reached
+      expect(transport.getState()).toBe(ConnectionState.Disconnected);
 
       expect(callbacks.onReconnect).toHaveBeenCalledTimes(2);
       expect(errors.some(e => 

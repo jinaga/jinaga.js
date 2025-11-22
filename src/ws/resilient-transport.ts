@@ -299,7 +299,8 @@ export class ResilientWebSocketTransport {
       this.connectionTimeoutTimer = null;
     }
 
-    this.reconnectAttempt = 0;
+    // Don't reset reconnectAttempt here - it should accumulate to respect maxReconnectAttempts
+    // The counter tracks total reconnection attempts, not just failed ones
     this.setState(ConnectionState.Connected);
 
     // Start heartbeat if enabled

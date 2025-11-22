@@ -10,6 +10,7 @@ import {
   type WebSocketTransportCallbacks
 } from '../../src/ws/resilient-websocket';
 import WebSocket from 'ws';
+import { waitForConnectionState } from './test-helpers';
 
 jest.setTimeout(20000);
 
@@ -30,6 +31,9 @@ class MockWebSocket {
         this.triggerEvent('open', {});
       } else {
         this.triggerEvent('error', { error: new Error('Connection failed') });
+        // Close the socket after error to trigger reconnection
+        this.readyState = 3;
+        this.triggerEvent('close', { code: 1006, reason: 'Connection failed' });
       }
     }, 10);
   }
@@ -234,9 +238,12 @@ describe('ResilientWebSocket Integration', () => {
       });
 
       await ws.connect();
-      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Wait for reconnection to complete after first failure
+      // reconnectInitialDelayMs: 50 + connection time ~10ms
+      await waitForConnectionState(() => ws.getState(), ConnectionState.Connected, 200);
 
-      // Should eventually connect after retry
+      // Should eventually connect after retry - connectionAttempts should be 2
       expect(connectionAttempts).toBeGreaterThan(1);
     });
   });
