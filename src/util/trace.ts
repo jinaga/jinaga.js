@@ -57,6 +57,83 @@ export class ConsoleTracer implements Tracer {
     }
 }
 
+export class TestTracer implements Tracer {
+    private readonly consoleTracer: ConsoleTracer = new ConsoleTracer();
+
+    info(message: string): void {
+        try {
+            this.consoleTracer.info(message);
+        } catch (error) {
+            // Ignore "Cannot log after tests are done" errors
+            if (error instanceof Error && error.message.includes('Cannot log after tests are done')) {
+                return;
+            }
+            throw error;
+        }
+    }
+
+    warn(message: string): void {
+        try {
+            this.consoleTracer.warn(message);
+        } catch (error) {
+            // Ignore "Cannot log after tests are done" errors
+            if (error instanceof Error && error.message.includes('Cannot log after tests are done')) {
+                return;
+            }
+            throw error;
+        }
+    }
+
+    error(error: any): void {
+        try {
+            this.consoleTracer.error(error);
+        } catch (err) {
+            // Ignore "Cannot log after tests are done" errors
+            if (err instanceof Error && err.message.includes('Cannot log after tests are done')) {
+                return;
+            }
+            throw err;
+        }
+    }
+
+    async dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
+        try {
+            return await this.consoleTracer.dependency(name, data, operation);
+        } catch (error) {
+            // Ignore "Cannot log after tests are done" errors
+            if (error instanceof Error && error.message.includes('Cannot log after tests are done')) {
+                // Still execute the operation, just skip logging
+                return await operation();
+            }
+            throw error;
+        }
+    }
+
+    metric(message: string, measurements: { [key: string]: number }): void {
+        try {
+            this.consoleTracer.metric(message, measurements);
+        } catch (error) {
+            // Ignore "Cannot log after tests are done" errors
+            if (error instanceof Error && error.message.includes('Cannot log after tests are done')) {
+                return;
+            }
+            throw error;
+        }
+    }
+
+    counter(name: string, value: number): void {
+        try {
+            this.consoleTracer.counter(name, value);
+        } catch (error) {
+            // Ignore "Cannot log after tests are done" errors
+            if (error instanceof Error && error.message.includes('Cannot log after tests are done')) {
+                return;
+            }
+            throw error;
+        }
+    }
+}
+
 export class Trace {
     private static tracer: Tracer = new ConsoleTracer();
 
