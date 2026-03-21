@@ -43,17 +43,14 @@ You evaluate Dependabot pull requests in `${{ github.repository }}` using GitHub
 
 ## Which mode is this run?
 
-The workflow is triggered by **`${{ github.event_name }}`**.
+Infer mode from the **GitHub context** block in the system prompt above:
 
-### Single-PR mode (`pull_request`)
+- **Single-PR mode:** The context includes a **pull-request-number** (a specific PR). Apply the evaluation below to **that PR only**.
+- **Batch mode:** The context does **not** include a pull-request-number (for example after a push to **`main`** or a manual **`workflow_dispatch`**). Someone may have merged into **`main`**, so mergeability and CI for open Dependabot PRs **can change even without new commits on those PRs**.
 
-There is one **triggering** pull request (number from the event). Apply the evaluation below to **that PR only**.
+### Batch mode steps
 
-### Batch mode (`push` to `main`, or `workflow_dispatch`)
-
-Someone may have merged into **`main`**, so mergeability and CI for open Dependabot PRs **can change even without new commits on those PRs**.
-
-1. List **open** pull requests in this repository where the author is **`dependabot[bot]`** and the PR **targets** the same default branch that was pushed (for `push` events, treat **`main`** as the branch that advanced—use the repository’s default branch from API if you need to confirm).
+1. List **open** pull requests in this repository where the author is **`dependabot[bot]`** and the PR **targets** the repository default branch (for runs right after **`main`** advanced, treat **`main`** as that branch unless the API shows otherwise).
 2. Apply the **same evaluation** (below) to **each** such PR, in ascending PR number order, until you exhaust the list or hit the safe-output limits in the frontmatter.
 3. If there are **no** matching open Dependabot PRs, call **`noop`** once with a short explanation (for example “No open Dependabot PRs to re-check after main changed.”).
 
@@ -63,7 +60,7 @@ Before posting a new “ready to merge” comment or **pushing** another fix, ch
 
 ## Scope (single-PR mode only)
 
-If the run was triggered by **`pull_request`**: fetch the PR’s author. If `user.login` is not **`dependabot[bot]`**, call **`noop`** and explain that this automation only runs for Dependabot pull requests.
+If you are in **single-PR mode** (context includes **pull-request-number**): fetch that PR’s author. If `user.login` is not **`dependabot[bot]`**, call **`noop`** and explain that this automation only runs for Dependabot pull requests.
 
 ## Workspace and git (paths B and C)
 
