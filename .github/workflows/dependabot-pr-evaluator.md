@@ -15,6 +15,8 @@ permissions:
   pull-requests: read
   actions: read
   checks: read
+env:
+  GH_TOKEN: ${{ github.token }}
 tools:
   github:
     mode: remote
@@ -35,7 +37,13 @@ safe-outputs:
 
 # Dependabot pull request evaluator
 
-You evaluate Dependabot pull requests in `${{ github.repository }}` using GitHub tools (`pull_requests`, `actions`, `checks`) for status, and **git + the workspace** to apply fixes. Engines cannot call `api.github.com` directly—use the configured GitHub MCP tools only.
+You evaluate Dependabot pull requests in `${{ github.repository }}` using **git + the workspace** for merges and fixes, and **authenticated GitHub reads** for PR metadata, labels, mergeability, and check runs.
+
+### How to read from GitHub
+
+- This workflow sets **`GH_TOKEN`** to the job token (same as **`GITHUB_TOKEN`**). **`gh`** is authenticated when that variable is present—use **`gh pr list`**, **`gh pr view`**, **`gh api`**, and **`gh run list`** instead of assuming `gh` is logged out.
+- The **GitHub MCP** server may be wired through the Copilot runtime; MCP tools might **not** appear under the name “GitHub MCP” in your tool list. If you do not see those tools, rely on **`gh`** (with **`GH_TOKEN`**) and **git**—do **not** spawn unauthenticated **`curl`** to `api.github.com` for private or mergeability-sensitive fields.
+- Do **not** use **`task` / sub-agents** solely to “get GitHub MCP”—they may not have different GitHub access than your main toolset.
 
 ## Label requirement (pushes)
 
