@@ -81,7 +81,21 @@ The workflow sets **`protected-files: allowed`** on `push-to-pull-request-branch
 ## Evaluation (each PR)
 
 1. **Merge / conflict signal**  
-   Read `mergeable`, `mergeable_state`, and related fields from the pull request payload. Treat **`mergeable: false` with `mergeable_state` indicating conflicts** (for example `dirty`) as **merge conflicts with the base branch**. If the API reports `mergeable: null`, re-fetch until GitHub finishes computing mergeability; if it stays unknown after a reasonable attempt, use **`noop`** for that PR and explain that mergeability is still pending.
+   Prefer **authenticated** GitHub data when available: in Actions, `GITHUB_TOKEN` is usually in the environment—use **`gh api repos/.../pulls/N`** (or `gh pr view N --json mergeable,mergeableState,mergeStateStatus`) instead of **unauthenticated** `curl` to `api.github.com`, which often leaves **`mergeable` / `mergeable_state` stuck at `null`** even when GitHub would return real values for an authenticated client.
+
+   From the PR payload (or `gh`), treat **`mergeable: false`** with **`mergeable_state`** such as **`dirty`** as **merge conflicts**.
+
+   **`mergeable: null` (API still “computing” or unauthenticated):** Re-fetch **two or three** times with a short pause (a few seconds). If it is **still** `null`, do **not** stop there: with both **`origin/<base>`** and **`origin/<head>`** available in the clone, run a **local** mergeability check, for example:
+
+   - `git merge-tree "$(git merge-base origin/<base> origin/<head>)" origin/<base> origin/<head>` and ensure there are **no** conflict markers (`<<<<<<<`), **or**
+   - a dry-run merge (`git merge --no-commit --no-ff` then `git merge --abort`) and confirm it completes without conflicts.
+
+   **Decision:**
+
+   - If the API says **conflicted** (`dirty` / `mergeable: false` with conflict), use **path C**.
+   - If the API says **clean** (`mergeable: true`, `mergeable_state: clean`), use **path A** when checks pass.
+   - If the API is still **`null`** but **local** verification shows **no** conflicts, treat **conflicts as none** and proceed to path **A** or **B** based on CI (same as a clean API)—**do not** use **`noop`** solely because the API was `null`.
+   - Use **`noop`** for that PR **only** when merge conflict status is **still ambiguous** after API retries **and** you **cannot** verify locally (missing refs, shallow clone without the branches, etc.).
 
 2. **CI / check signal**  
    For the PR **head SHA**, list **check runs** and/or **commit statuses** as appropriate. Consider checks **passing** only when every required check you can observe has completed successfully and none have `failure`, `cancelled`, or `timed_out`. If any check is **queued** or `in_progress`, use **`noop`** for that PR: briefly state that CI is still running (this workflow will run again on the next `synchronize` or after **`main`** changes again).
