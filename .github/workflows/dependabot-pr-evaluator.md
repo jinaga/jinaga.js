@@ -15,8 +15,6 @@ permissions:
   pull-requests: read
   actions: read
   checks: read
-env:
-  GH_TOKEN: ${{ github.token }}
 tools:
   github:
     mode: remote
@@ -37,13 +35,14 @@ safe-outputs:
 
 # Dependabot pull request evaluator
 
-You evaluate Dependabot pull requests in `${{ github.repository }}` using **git + the workspace** for merges and fixes, and **authenticated GitHub reads** for PR metadata, labels, mergeability, and check runs.
+You evaluate Dependabot pull requests in `${{ github.repository }}` using **git + the workspace** for merges and fixes, and **GitHub API data** (when available) for PR metadata, labels, mergeability, and check runs.
 
-### How to read from GitHub
+### How to read from GitHub (important: sandbox vs token)
 
-- This workflow sets **`GH_TOKEN`** to the job token (same as **`GITHUB_TOKEN`**). **`gh`** is authenticated when that variable is present—use **`gh pr list`**, **`gh pr view`**, **`gh api`**, and **`gh run list`** instead of assuming `gh` is logged out.
-- The **GitHub MCP** server may be wired through the Copilot runtime; MCP tools might **not** appear under the name “GitHub MCP” in your tool list. If you do not see those tools, rely on **`gh`** (with **`GH_TOKEN`**) and **git**—do **not** spawn unauthenticated **`curl`** to `api.github.com` for private or mergeability-sensitive fields.
-- Do **not** use **`task` / sub-agents** solely to “get GitHub MCP”—they may not have different GitHub access than your main toolset.
+- **Why `gh` and `env` show no token:** The agent runs inside the **Agent Workflow Firewall (AWF) sandbox** (`awf` + Copilot). That environment **intentionally does not pass `GITHUB_TOKEN`, `GH_TOKEN`, or other secrets into shell commands**, so **`gh` cannot authenticate** and `echo $GH_TOKEN` is empty. **This is expected security behavior**, not a misconfiguration. Adding workflow `env:` in the YAML does **not** change what the sandbox exposes to bash.
+- **Intended API path:** **GitHub MCP** is wired for reads using a token on the **MCP gateway** (outside your shell). Use whatever GitHub/MCP-related tools the runtime exposes; names may **not** include the string “GitHub MCP.”
+- **When MCP tools are not visible:** Use **`web_fetch`** against `https://api.github.com/...` for **this public repository** (list PRs, check runs, comments). Accept that **`mergeable` may stay `null`** without an authenticated client—then use **local git** (`merge-tree`, dry-run merge) per the evaluation rules. Do **not** waste turns on **`task` / sub-agents** expecting a different token.
+- **Private repos** would need MCP or another supported path; unauthenticated `web_fetch` would not be sufficient.
 
 ## Label requirement (pushes)
 
@@ -89,7 +88,7 @@ The workflow sets **`protected-files: allowed`** on `push-to-pull-request-branch
 ## Evaluation (each PR)
 
 1. **Merge / conflict signal**  
-   Prefer **authenticated** GitHub data when available: in Actions, `GITHUB_TOKEN` is usually in the environment—use **`gh api repos/.../pulls/N`** (or `gh pr view N --json mergeable,mergeableState,mergeStateStatus`) instead of **unauthenticated** `curl` to `api.github.com`, which often leaves **`mergeable` / `mergeable_state` stuck at `null`** even when GitHub would return real values for an authenticated client.
+   Prefer **GitHub MCP** tools when available for PR metadata and merge fields. **Do not rely on `gh auth`** in the sandbox (no token there). For public **`web_fetch`** responses, **`mergeable` may stay `null`**—use **local git** checks below when that happens.
 
    From the PR payload (or `gh`), treat **`mergeable: false`** with **`mergeable_state`** such as **`dirty`** as **merge conflicts**.
 

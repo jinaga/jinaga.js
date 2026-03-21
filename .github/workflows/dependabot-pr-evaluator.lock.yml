@@ -22,7 +22,7 @@
 #
 # Evaluates Dependabot pull requests for CI health and merge conflicts; notifies the maintainer when ready to merge, or fixes failures and conflicts by committing directly on the Dependabot branch via push-to-pull-request-branch. Re-runs when main moves so mergeability and CI can be re-checked.
 #
-# gh-aw-metadata: {"schema_version":"v3","frontmatter_hash":"83bd61898af6671f225e6b2f880a4968ad6ca361322878c88fd8a9638f8ce142","compiler_version":"v0.62.5","strict":true,"agent_id":"copilot"}
+# gh-aw-metadata: {"schema_version":"v3","frontmatter_hash":"7df2994a6761acdc3e348e58fc95dd68b95dbe8762fe7c095b69825fa923b66c","compiler_version":"v0.62.5","strict":true,"agent_id":"copilot"}
 
 name: "Dependabot pull request evaluator"
 "on":
@@ -43,9 +43,6 @@ concurrency:
   cancel-in-progress: true
 
 run-name: "Dependabot pull request evaluator"
-
-env:
-  GH_TOKEN: ${{ github.token }}
 
 jobs:
   activation:
