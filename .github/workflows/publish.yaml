@@ -15,5 +15,10 @@ jobs:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
       - run: npm install
-      - run: npm config delete //registry.npmjs.org/:_authToken
+      - run: echo "registry=https://registry.npmjs.org/" > "$NPM_CONFIG_USERCONFIG"
+      - name: Show npm config
+        run: npm config list
       - run: npm publish --provenance
+      - name: Show npm debug log on failure
+        if: failure()
+        run: cat /home/runner/.npm/_logs/*.log 2>/dev/null || echo "No debug log found"
