@@ -49,6 +49,7 @@ export class ObserverImpl<T> implements Observer<T> {
     private feeds: string[] = [];
     private stopped: boolean = false;
     private listenersAdded: boolean = false;
+    private loadResolve: (() => void) | undefined;
     /**
      * Tracks all pending notification promises to enable waiting for processing completion.
      */
@@ -104,6 +105,7 @@ export class ObserverImpl<T> implements Observer<T> {
         
         this.cachedPromise = new Promise((cacheResolve, _) => {
             this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
+                this.loadResolve = loadResolve;
                 try {
                     // Ensure listeners are added BEFORE any read/fetch to close T2–T3 window.
                     if (!this.listenersAdded) {
@@ -130,9 +132,11 @@ export class ObserverImpl<T> implements Observer<T> {
                     }
                     await this.factManager.setMruDate(this.specificationHash, new Date());
                     Trace.info(`[Observer] COMPLETE - Spec hash: ${this.specificationHash.substring(0, 8)}...`);
+                    this.loadResolve = undefined;
                 }
                 catch (e) {
                     Trace.error(`[Observer] ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`);
+                    this.loadResolve = undefined;
                     cacheResolve(false);
                     loadReject(e);
                 }
@@ -206,11 +210,23 @@ export class ObserverImpl<T> implements Observer<T> {
         if (this.feeds.length > 0) {
             this.factManager.unsubscribe(this.feeds);
         }
+        // Settle loadedPromise if it is still pending, so callers that await
+        // loaded() are not permanently suspended after stop().
+        if (this.loadResolve) {
+            this.loadResolve();
+            this.loadResolve = undefined;
+        }
     }
 
     private async fetch(keepAlive: boolean) {
         if (keepAlive) {
             this.feeds = await this.factManager.subscribe(this.given, this.specification);
+            // If stop() was called while we were awaiting subscribe(), clean up the
+            // feeds that were just registered so the subscriber is not leaked.
+            if (this.stopped && this.feeds.length > 0) {
+                this.factManager.unsubscribe(this.feeds);
+                this.feeds = [];
+            }
         }
         else {
             await this.factManager.fetch(this.given, this.specification);
