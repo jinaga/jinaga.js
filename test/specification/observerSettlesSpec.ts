@@ -37,8 +37,14 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** A Network whose streamFeed never calls onResponse or onError — simulates a
- *  connection that hangs indefinitely (no data, no error). */
+/** A Network whose streamFeed appears to hang briefly, then delivers an empty
+ *  response after a short delay. This simulates a slow connection while still
+ *  allowing the subscriber's internal timers to be cleaned up, avoiding open
+ *  handles in tests.
+ *
+ *  The cleanup function returned by streamFeed cancels the pending response if
+ *  stop() is called before the delay fires (e.g. via subscriber.stop()).
+ */
 class HangingNetwork implements Network {
     feeds(_start: FactReference[], _spec: Specification): Promise<string[]> {
         // Return one synthetic feed so subscribe() actually creates a Subscriber.
@@ -51,13 +57,23 @@ class HangingNetwork implements Network {
 
     streamFeed(
         _feed: string,
-        _bookmark: string,
-        _onResponse: (refs: FactReference[], next: string) => Promise<void>,
+        bookmark: string,
+        onResponse: (refs: FactReference[], next: string) => Promise<void>,
         _onError: (err: Error) => void,
         _interval: number
     ): () => void {
-        // Never call onResponse or onError — the promise from start() hangs.
-        return () => {};
+        // Deliver an empty response after a short delay so the subscriber's
+        // start() promise eventually resolves and its setInterval is cleaned up.
+        let cancelled = false;
+        const timeoutId = setTimeout(() => {
+            if (!cancelled) {
+                onResponse([], bookmark);
+            }
+        }, 100);
+        return () => {
+            cancelled = true;
+            clearTimeout(timeoutId);
+        };
     }
 
     load(_refs: FactReference[]): Promise<FactEnvelope[]> {
@@ -73,16 +89,30 @@ function makeFactManager(store: MemoryStore, network: Network): FactManager {
 }
 
 /**
- * Race loaded() against a short timeout. Returns 'settled' or 'timed-out'.
+ * Race a promise against a short timeout, cancelling the timer when done.
+ * Returns the promise's value, or `fallback` if the timeout fires first.
  */
-async function raceLoaded(
+function raceWithTimeout<T>(promise: Promise<T>, fallback: T, ms: number): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    return Promise.race([
+        promise,
+        new Promise<T>(res => { timeoutId = setTimeout(() => res(fallback), ms); })
+    ]).finally(() => clearTimeout(timeoutId));
+}
+
+/**
+ * Race loaded() against a short timeout. Returns 'settled' or 'timed-out'.
+ * The timeout is always cancelled after the race resolves to avoid open handles.
+ */
+function raceLoaded(
     loadedPromise: Promise<void>,
     ms = 500
 ): Promise<"settled" | "timed-out"> {
-    return Promise.race([
+    return raceWithTimeout(
         loadedPromise.then(() => "settled" as const, () => "settled" as const),
-        new Promise<"timed-out">(res => setTimeout(() => res("timed-out"), ms))
-    ]);
+        "timed-out" as const,
+        ms
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -215,10 +245,7 @@ describe("H1 — ObserverImpl.stop() settles loaded() in the warm-cache path", (
         );
 
         // cached() should resolve to true — MRU date was set in phase 1
-        const cacheResult = await Promise.race([
-            observer2.cached(),
-            new Promise<boolean>(res => setTimeout(() => res(false), 1000))
-        ]);
+        const cacheResult = await raceWithTimeout(observer2.cached(), false, 1000);
         expect(cacheResult).toBe(true); // confirms warm-cache path is active
 
         // loaded() is still pending (fetch is hanging)

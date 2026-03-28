@@ -118,6 +118,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         cacheResolve(false);
                         // Fetch from the server and then read from local storage.
                         await this.fetch(keepAlive);
+                        if (this.stopped) return;
                         await this.read();
                         loadResolve();
                     }
@@ -128,6 +129,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         cacheResolve(true);
                         // Then fetch from the server to update the cache.
                         await this.fetch(keepAlive);
+                        if (this.stopped) return;
                         loadResolve();
                     }
                     await this.factManager.setMruDate(this.specificationHash, new Date());
