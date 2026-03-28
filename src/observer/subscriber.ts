@@ -8,6 +8,7 @@ export class Subscriber {
   private resolved: boolean = false;
   private disconnect: (() => void) | undefined;
   private timer: NodeJS.Timer | undefined;
+  private reject: ((reason?: any) => void) | undefined;
 
   constructor(
     private readonly feed: string,
@@ -29,17 +30,23 @@ export class Subscriber {
 
   async start(): Promise<void> {
     this.bookmark = await this.store.loadBookmark(this.feed);
-    await new Promise<void>((resolve, reject) => {
-      this.resolved = false;
-      // Refresh the connection at the configured interval.
-      this.disconnect = this.connectToFeed(resolve, reject);
-      this.timer = setInterval(() => {
-        if (this.disconnect) {
-          this.disconnect();
-        }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.resolved = false;
+        this.reject = reject;
+        // Refresh the connection at the configured interval.
         this.disconnect = this.connectToFeed(resolve, reject);
-      }, this.refreshIntervalSeconds * 1000);
-    });
+        this.timer = setInterval(() => {
+          if (this.disconnect) {
+            this.disconnect();
+          }
+          this.disconnect = this.connectToFeed(resolve, reject);
+        }, this.refreshIntervalSeconds * 1000);
+      });
+    } finally {
+      // Clear the reject reference so we don't hold a closure after start() settles.
+      this.reject = undefined;
+    }
   }
 
   stop() {
@@ -50,6 +57,12 @@ export class Subscriber {
     if (this.disconnect) {
       this.disconnect();
       this.disconnect = undefined;
+    }
+    // If the start() promise is still pending (no successful response yet),
+    // reject it so the awaiting caller is not permanently suspended.
+    if (!this.resolved && this.reject) {
+      this.reject(new Error('Subscriber stopped before first successful connection'));
+      this.reject = undefined;
     }
   }
 
