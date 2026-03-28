@@ -58,10 +58,14 @@ export class ConsoleTracer implements Tracer {
 }
 
 export class Trace {
-    private static tracer: Tracer = new ConsoleTracer();
+    private static tracer: Tracer = new NoOpTracer();
 
     static configure(tracer: Tracer) {
         Trace.tracer = tracer;
+    }
+
+    static on() {
+        Trace.tracer = new ConsoleTracer();
     }
 
     static off() {
