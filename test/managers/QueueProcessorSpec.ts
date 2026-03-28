@@ -1,4 +1,4 @@
-import { delay, QueueProcessor, Saver } from "@src";
+import { delay, QueueProcessor, Saver, Trace, Tracer } from "@src";
 
 describe("QueueProcessor", () => {
     // Mock implementation of the Saver interface
@@ -145,24 +145,29 @@ describe("QueueProcessor", () => {
         // Arrange
         queueProcessor = new QueueProcessor(saver, 0);
         saver.savePromise = Promise.reject(new Error("Test error"));
-        
-        // Spy on Trace.error
-        const originalTraceError = global.console.error;
-        const mockTraceError = jest.fn();
-        global.console.error = mockTraceError;
-        
+
+        const mockTracer: Tracer = {
+            info: jest.fn(),
+            warn: jest.fn(),
+            error: jest.fn(),
+            dependency: (_name, _data, operation) => operation(),
+            metric: jest.fn(),
+            counter: jest.fn()
+        };
+        const originalTracer = Trace.getTracer();
+        Trace.configure(mockTracer);
+
         try {
             // Act
             queueProcessor.scheduleProcessing();
-            
+
             // Wait a bit to ensure processing completes
             await delay(50);
-            
+
             // Assert
-            expect(mockTraceError).toHaveBeenCalled();
+            expect(mockTracer.error).toHaveBeenCalled();
         } finally {
-            // Restore original Trace.error
-            global.console.error = originalTraceError;
+            Trace.configure(originalTracer);
         }
     }, 1000);
 
