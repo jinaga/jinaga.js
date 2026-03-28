@@ -15,4 +15,5 @@ jobs:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
       - run: npm install
+      - run: npm config delete //registry.npmjs.org/:_authToken
       - run: npm publish --provenance
