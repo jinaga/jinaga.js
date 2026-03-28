@@ -30,18 +30,23 @@ export class Subscriber {
 
   async start(): Promise<void> {
     this.bookmark = await this.store.loadBookmark(this.feed);
-    await new Promise<void>((resolve, reject) => {
-      this.resolved = false;
-      this.reject = reject;
-      // Refresh the connection at the configured interval.
-      this.disconnect = this.connectToFeed(resolve, reject);
-      this.timer = setInterval(() => {
-        if (this.disconnect) {
-          this.disconnect();
-        }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.resolved = false;
+        this.reject = reject;
+        // Refresh the connection at the configured interval.
         this.disconnect = this.connectToFeed(resolve, reject);
-      }, this.refreshIntervalSeconds * 1000);
-    });
+        this.timer = setInterval(() => {
+          if (this.disconnect) {
+            this.disconnect();
+          }
+          this.disconnect = this.connectToFeed(resolve, reject);
+        }, this.refreshIntervalSeconds * 1000);
+      });
+    } finally {
+      // Clear the reject reference so we don't hold a closure after start() settles.
+      this.reject = undefined;
+    }
   }
 
   stop() {
