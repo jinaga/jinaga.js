@@ -137,48 +137,23 @@ In this environment the event was deleted and restored twice, making it the only
 
 ## The Fix
 
-### Option A — Support Nested NOT EXISTS in Feed SQL (Correct but Complex)
-
-Extend `buildExistentialCondition` to recursively include negative inner existential conditions:
-
-```js
-// feed-builder.js — buildExistentialCondition()
-for (const innerExistentialCondition of match.conditions.filter(isExistentialCondition)) {
-    if (innerExistentialCondition.exists) {
-        // existing logic — keep positive existentials
-        const { existentialCondition: newEC, ... } = buildExistentialCondition(...);
-        existentialCondition = newEC;
-    } else {
-        // NEW: also recurse into negative existentials
-        const { existentialCondition: newEC, ... } = buildExistentialCondition(
-            innerExistentialCondition, innerExistentialCondition.matches, ...
-        );
-        existentialCondition = { ...existentialCondition, innerConditions: [..., newEC] };
-    }
-}
-```
-
-This also requires:
-1. Adding a `innerConditions` (or `notExistsConditions`) field to `ExistentialConditionDescription`
-2. Updating `generateNotExistsWhereClause` in `specification-sql.ts` to recurse into nested conditions
-3. Updating `notExistsConditionsEqual` in `distribution-engine.ts` if nested conditions need to be compared
-
-### Option B — Omit Outer Not-Exists from Projection Feeds (Simpler)
-
-When `addProjections` builds projection feeds (FeedD, FeedE), start from a version of the specification that **drops all not-exists conditions on the base matches**. Projection feeds would then return facts for all events (active or not), and the full specification read handles the correct filtering.
-
-```js
-// feed-builder.js — buildFeeds()
-const baseFeed = stripNotExistsConditions(finalFeed); // new helper
-const feedsWithProjections = addProjections(baseFeed, unusedGivens, specification.projection.components);
-```
-
-This is safe because:
-- FeedA and FeedB already handle re-evaluation when delete/restore facts arrive
-- The actual filtering is done by `factManager.read()` using the full specification
-- Feeds are designed to be a **superset** of relevant facts; over-delivery is intentional
-
-Option B is simpler, has no SQL changes, and aligns with the documented design principle that "feeds are not executed with nested existential conditions."
+In addMatches, when a negative existential condition is encountered, the negating feeds are produced by recursing into addMatches and pushed directly to specifications. The final feed in that set is a positive-parity (restoring) feed, but it is never extended with the parent specification’s projection components. addProjections is only called at the top level in buildFeeds, so any restoring feed produced inside the recursion exits without its projections attached.
+Result: any fact type that is a projection on a restored entity — EventName, EventDate, etc. — is never delivered to clients for entities that have ever been deleted and restored.
+Solution
+Pass the projection components (and their unusedGivens) down into addMatches as parameters. At the point where negating specifications are produced, identify the final (positive-parity) feed and call addProjections on it before pushing to specifications. This mirrors exactly what buildFeeds does at the top level, but applied recursively at each level of negative existential nesting.
+Recommended Tests
+1. Basic delete/restore delivers projection facts
+An entity deleted once and restored once should have its projection facts (e.g. EventName) delivered via feeds. Verify the feed set includes a tuple containing (tenant, event, delete, restore, name).
+2. Double delete/restore delivers projection facts
+The specific production scenario — deleted twice, restored twice. Same assertion: name facts must appear in a feed.
+3. Unrestored delete suppresses projection facts
+An entity deleted but not restored should not have projection facts delivered. Verify no feed contains the name in a tuple alongside the deleted event.
+4. Never-deleted entity still delivers projection facts
+Regression guard: the fix must not break the ordinary feed path. An entity with no deletes should still receive its projection facts via the ordinary feed.
+5. Multiple projection components on a restored entity
+Where the specification projects both EventName and EventDate, both should appear in restoring feeds. Guards against the fix working for only the first component.
+6. Deeply nested restore (three levels)
+A restore of a restore scenario, verifying that parity tracking remains correct and projections are appended only to positive-parity feeds, not excluding feeds.​​​​​​​​​​​​​​​​
 
 ---
 
