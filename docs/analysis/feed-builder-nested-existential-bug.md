@@ -1,22 +1,22 @@
 # Bug Analysis: Feed Builder Strips Inner Negative Existential Conditions
 
 **Date:** 2026-03-30
-**Area:** `jinaga` package — `feed-builder.js` / `specification-sql.ts`
+**Area:** This repo: `src/specification/feed-builder.ts`; external/downstream server: `jinaga-server` — `feed-builder.js` / `specification-sql.ts`
 **Symptom:** EventName facts not delivered to clients for events that have been deleted and restored
 
 ---
 
 ## Observed Symptom
 
-The LaunchKings admin portal Events dropdown shows the raw fact hash prefix (e.g. `65bc55e`) instead of the event's human-readable name ("LATAM test"). The `CodeLaunch.Event.Name` fact exists in the database and the distribution rules authorize it, but it is never delivered to the client via feeds.
+An admin portal Events dropdown shows the raw fact hash prefix (e.g. `65bc55e`) instead of the event's human-readable name. The `App.Event.Name` fact exists in the database and the distribution rules authorize it, but it is never delivered to the client via feeds.
 
 ## Database State That Triggers the Bug
 
 ```
-CodeLaunch.Event         1 fact   — id: 65bc55e9-495a-4418-9744-3dea6f8c8f2a
-CodeLaunch.Event.Name    1 fact   — value: "LATAM test"  (EXISTS — not missing)
-CodeLaunch.Event.Delete  2 facts  — deleted twice
-CodeLaunch.Event.Restore 2 facts  — restored twice → event is currently active
+App.Event         N facts  — id: 00000000-0000-0000-0000-000000000001
+App.Event.Name    N facts  — value: "Example event"  (EXISTS — not missing)
+App.Event.Delete  2 facts  — deleted twice
+App.Event.Restore 2 facts  — restored twice → event is currently active
 ```
 
 The event is logically active (every delete has a matching restore), but its presence of any `EventDelete` facts triggers the bug.
@@ -27,7 +27,7 @@ The event is logically active (every delete has a matching restore), but its pre
 
 ### The Specification
 
-The `eventsListInTenant` specification uses `Event.in(tenant)`:
+A representative specification uses `Event.in(tenant)`:
 
 ```typescript
 static in(tenant: LabelOf<Tenant>) {
@@ -52,7 +52,7 @@ Meaning: *no un-restored EventDelete exists for this event*.
 `buildFeeds` calls `buildExistentialCondition` to create a simplified version of negative existential conditions for use in feed specifications. The relevant code:
 
 ```js
-// feed-builder.js — buildExistentialCondition()
+// feed-builder.ts — buildExistentialCondition()
 for (const match of matches) {
     existentialCondition = {
         ...existentialCondition,
@@ -78,7 +78,7 @@ The inner `!E{EventRestore}` condition has `exists=false` and is therefore **dro
 ```
 Meaning: *no EventDelete at all*.
 
-### The Five Feeds for `eventsListInTenant`
+### The Five Feeds for the Specification
 
 `buildFeeds` produces these feeds:
 
@@ -115,7 +115,7 @@ AND sort(array[f_name.fact_id], 'desc') > $bookmark
 ORDER BY bookmark ASC LIMIT 100
 ```
 
-Because the "LATAM test" event has `EventDelete` facts (regardless of `EventRestore`), the `NOT EXISTS (EventDelete)` clause is false, the event is excluded, and **the query returns zero rows**.
+Because the event has `EventDelete` facts (regardless of `EventRestore`), the `NOT EXISTS (EventDelete)` clause is false, the event is excluded, and **the query returns zero rows**.
 
 ### Why the Listener Doesn't Rescue It
 
@@ -127,11 +127,11 @@ The observer also registers inverse specification listeners. When FeedA delivers
 
 Any event that has ever been deleted (even if subsequently restored) will have its name and other projection facts permanently withheld from all projection feeds. The event itself still appears (via FeedC — though FeedC has the same bug, so events with any EventDelete also don't appear there). This affects:
 
-- `CodeLaunch.Event.Name` — event name not shown in nav dropdown
-- `CodeLaunch.Event.Date` — event dates not shown
-- Any other projected facts on events from `eventsListInTenant` or similar specs
+- `App.Event.Name` — event name not shown in nav dropdown
+- `App.Event.Date` — event dates not shown
+- Any other projected facts on events from similar specs
 
-In this environment the event was deleted and restored twice, making it the only event and confirming 100% reproduction.
+In the reproduction case the event was deleted and restored twice, confirming 100% reproduction.
 
 ---
 
@@ -161,6 +161,6 @@ A restore of a restore scenario, verifying that parity tracking remains correct 
 
 | File | Role |
 |---|---|
-| `jinaga/src/specification/feed-builder.ts` | `buildExistentialCondition` — drops inner `!E` conditions |
-| `jinaga-server/src/postgres/specification-sql.ts` | `generateNotExistsWhereClause` — only handles flat conditions |
-| `jinaga-server/src/distribution/distribution-engine.ts` | `notExistsConditionsEqual` — explicitly skips nested comparison |
+| `src/specification/feed-builder.ts` (this repo) | `buildExistentialCondition` — drops inner `!E` conditions; `addMatches` — fix applied here |
+| `jinaga-server/src/postgres/specification-sql.ts` (external) | `generateNotExistsWhereClause` — only handles flat conditions |
+| `jinaga-server/src/distribution/distribution-engine.ts` (external) | `notExistsConditionsEqual` — explicitly skips nested comparison |

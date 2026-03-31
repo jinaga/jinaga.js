@@ -423,6 +423,59 @@ describe("feed generator", () => {
 
         expect(feeds).toEqual(expectedFeeds);
     });
+
+    it("should deliver projection facts at even parity for deeply nested restore (three levels)", () => {
+        // !E{ Delete [ !E{ Restore [ !E{ UnRestore } ] } ] }
+        // Parity 1 (Delete) = odd  → hiding  → no projection extension
+        // Parity 2 (Restore) = even → restoring → projection extended here
+        // Parity 3 (UnRestore) = odd → hiding again → no projection extension
+        const feeds = getFeeds(`
+            (tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                    !E {
+                        del: EventDelete [
+                            del->event: Event = event
+                            !E {
+                                rest: EventRestore [
+                                    rest->eventDelete: EventDelete = del
+                                    !E {
+                                        unrest: EventUnRestore [
+                                            unrest->eventRestore: EventRestore = rest
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            } => {
+                names = {
+                    name: EventName [
+                        name->event: Event = event
+                    ]
+                }
+            }`);
+
+        // FeedZ must exist: the parity-2 restoring delivery feed contains del, rest, and name.
+        // (rest carries a simplified !E{unrest} condition, so "unrest" still appears in its
+        // description — but only nested inside !E, not as a top-level match.)
+        const hasRestoringNameFeed = feeds.some(f =>
+            f.includes("del: EventDelete") &&
+            f.includes("rest: EventRestore") &&
+            f.includes("name: EventName")
+        );
+        expect(hasRestoringNameFeed).toBe(true);
+
+        // No feed should have unrest as a top-level match alongside name.
+        // In describeSpecification(feed, 3).trim(), top-level matches begin with 16 spaces.
+        // A wrong-parity (3, odd) extension would produce a feed where both appear at that depth.
+        const hasWrongParityFeed = feeds.some(f =>
+            /^ {16}unrest: EventUnRestore/m.test(f) &&
+            /^ {16}name: EventName/m.test(f)
+        );
+        expect(hasWrongParityFeed).toBe(false);
+    });
 });
 
 function getSpecification(input: string) {
