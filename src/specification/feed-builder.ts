@@ -52,7 +52,7 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
                 // facts are delivered when the entity is restored.
                 if (innerParity % 2 === 0 && projectionComponents.length > 0) {
                     const lastNegating = negatingSpecifications[negatingSpecifications.length - 1];
-                    const projectionFeeds = addProjections(lastNegating, [], projectionComponents);
+                    const projectionFeeds = addProjections(lastNegating, unusedGivens, projectionComponents);
                     specifications.push(...projectionFeeds);
                 }
 
