@@ -1,7 +1,10 @@
 import { ComponentProjection, ExistentialCondition, Label, Match, Specification, SpecificationGiven, emptySpecification, isExistentialCondition, isPathCondition, specificationIsNotDeterministic } from "./specification";
 
 export function buildFeeds(specification: Specification): Specification[] {
-    const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given.map(g => g.label), specification.matches);
+    const projectionComponents = specification.projection.type === "composite"
+        ? specification.projection.components
+        : [];
+    const { specifications, unusedGivens } = addMatches(emptySpecification, specification.given.map(g => g.label), specification.matches, projectionComponents, 0);
 
     // The final feed represents the complete tuple.
     // Build projections onto that one.
@@ -15,7 +18,7 @@ export function buildFeeds(specification: Specification): Specification[] {
     }
 }
 
-function addMatches(specification: Specification, unusedGivens: Label[], matches: Match[]): { specifications: Specification[]; unusedGivens: Label[]; } {
+function addMatches(specification: Specification, unusedGivens: Label[], matches: Match[], projectionComponents: ComponentProjection[] = [], parity: number = 0): { specifications: Specification[]; unusedGivens: Label[]; } {
     const specifications: Specification[] = [];
     for (const match of matches) {
         specification = withMatch(specification, match);
@@ -30,7 +33,7 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
         for (const existentialCondition of match.conditions.filter(isExistentialCondition)) {
             if (existentialCondition.exists) {
                 // Include the matches of the existential condition into the current feed.
-                const { specifications: newSpecifications, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches);
+                const { specifications: newSpecifications, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, parity);
                 const last = newSpecifications.length - 1;
                 specifications.push(...newSpecifications.slice(0, last));
                 specification = newSpecifications[last];
@@ -39,8 +42,21 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
             else {
                 // Branch from the current feed and follow the matches of the existential condition.
                 // This will produce tuples that prove the condition false.
-                const { specifications: negatingSpecifications } = addMatches(specification, unusedGivens, existentialCondition.matches);
+                const innerParity = parity + 1;
+                const { specifications: negatingSpecifications, unusedGivens: negatingUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity);
                 specifications.push(...negatingSpecifications);
+
+                // At even inner parity, the negating specs represent "restoring" feeds —
+                // facts whose presence indicates the entity has been restored to visibility.
+                // Extend the last such feed with projection components so that projection
+                // facts are delivered when the entity is restored.
+                // Use negatingUnusedGivens (not the outer unusedGivens) so that givens already
+                // consumed inside the negating branch are not re-added to the projection feeds.
+                if (innerParity % 2 === 0 && projectionComponents.length > 0) {
+                    const lastNegating = negatingSpecifications[negatingSpecifications.length - 1];
+                    const projectionFeeds = addProjections(lastNegating, negatingUnusedGivens, projectionComponents);
+                    specifications.push(...projectionFeeds);
+                }
 
                 // Then apply the existential condition and continue with the tuple.
                 const { existentialCondition: newExistentialCondition, givens: newGivens, unusedGivens: newUnusedGivens } = buildExistentialCondition({
@@ -91,8 +107,12 @@ function addProjections(specification: Specification, unusedGivens: Label[], com
     const specifications: Specification[] = [];
     components.forEach(component => {
         if (component.type === "specification") {
+            // Pass child projection components so that any nested ∄ within this component's
+            // matches can attach projections to restoring feeds.
+            const childComponents = component.projection.type === "composite" ? component.projection.components : [];
+
             // Produce more facts in the tuple.
-            const { specifications: feedsWithMatches, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, component.matches);
+            const { specifications: feedsWithMatches, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, component.matches, childComponents);
             specifications.push(...feedsWithMatches);
 
             // Recursively build child projections.

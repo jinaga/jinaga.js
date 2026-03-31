@@ -226,6 +226,299 @@ describe("feed generator", () => {
 
         expect(feeds).toEqual(expectedFeeds);
     });
+
+    it("should deliver projection facts for a restored entity (basic delete/restore)", () => {
+        // An entity deleted once and restored once should have its projection facts
+        // delivered via feeds. The feed set must include a tuple (tenant, event, d, r, name).
+        const feeds = getFeeds(`
+            (tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                    !E {
+                        d: EventDelete [
+                            d->event: Event = event
+                            !E {
+                                r: EventRestore [
+                                    r->eventDelete: EventDelete = d
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            } => {
+                names = {
+                    name: EventName [
+                        name->event: Event = event
+                    ]
+                }
+            }`);
+
+        const expectedFeeds: string[] = [
+            // Restore detector — bare join (parity 2, even: restoring feed)
+            `(tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                ]
+                d: EventDelete [
+                    d->event: Event = event
+                ]
+                r: EventRestore [
+                    r->eventDelete: EventDelete = d
+                ]
+            }`,
+            // Restoring delivery feed — EventName for events with a delete+restore pair
+            `(tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                ]
+                d: EventDelete [
+                    d->event: Event = event
+                ]
+                r: EventRestore [
+                    r->eventDelete: EventDelete = d
+                ]
+                name: EventName [
+                    name->event: Event = event
+                ]
+            }`,
+            // Un-restored delete detector (parity 1, odd: hiding feed)
+            `(tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                ]
+                d: EventDelete [
+                    d->event: Event = event
+                    !E {
+                        r: EventRestore [
+                            r->eventDelete: EventDelete = d
+                        ]
+                    }
+                ]
+            }`,
+            // Main event feed with simplified condition
+            `(tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                    !E {
+                        d: EventDelete [
+                            d->event: Event = event
+                        ]
+                    }
+                ]
+            }`,
+            // EventName feed with simplified condition
+            `(tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                    !E {
+                        d: EventDelete [
+                            d->event: Event = event
+                        ]
+                    }
+                ]
+                name: EventName [
+                    name->event: Event = event
+                ]
+            }`
+        ];
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
+
+    it("should deliver multiple projection components for a restored entity", () => {
+        // Both EventName and EventDate must appear in restoring feeds.
+        const feeds = getFeeds(`
+            (tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                    !E {
+                        d: EventDelete [
+                            d->event: Event = event
+                            !E {
+                                r: EventRestore [
+                                    r->eventDelete: EventDelete = d
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            } => {
+                dates = {
+                    date: EventDate [
+                        date->event: Event = event
+                    ]
+                }
+                names = {
+                    name: EventName [
+                        name->event: Event = event
+                    ]
+                }
+            }`);
+
+        // Both date and name must appear in restoring feeds
+        const restoringFeeds = feeds.filter(f =>
+            f.includes("r: EventRestore") &&
+            !f.includes("!E {\n                        r: EventRestore")
+        );
+        expect(restoringFeeds.some(f => f.includes("date: EventDate"))).toBe(true);
+        expect(restoringFeeds.some(f => f.includes("name: EventName"))).toBe(true);
+    });
+
+    it("should not regress projection delivery for a never-deleted entity", () => {
+        // An entity with no deletes should still receive projection facts via feeds.
+        const feeds = getFeeds(`
+            (root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                    !E {
+                        deleted: MyApplication.Project.Deleted [
+                            deleted->project: MyApplication.Project = project
+                        ]
+                    }
+                ]
+            } => {
+                names = {
+                    name: MyApplication.Project.Name [
+                        name->project: MyApplication.Project = project
+                    ]
+                }
+            }`);
+
+        const expectedFeeds: string[] = [
+            // Delete detector — bare join
+            `(root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                ]
+                deleted: MyApplication.Project.Deleted [
+                    deleted->project: MyApplication.Project = project
+                ]
+            }`,
+            // Main project feed with condition
+            `(root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                    !E {
+                        deleted: MyApplication.Project.Deleted [
+                            deleted->project: MyApplication.Project = project
+                        ]
+                    }
+                ]
+            }`,
+            // Name feed with same condition
+            `(root: Root) {
+                project: MyApplication.Project [
+                    project->root: Root = root
+                    !E {
+                        deleted: MyApplication.Project.Deleted [
+                            deleted->project: MyApplication.Project = project
+                        ]
+                    }
+                ]
+                name: MyApplication.Project.Name [
+                    name->project: MyApplication.Project = project
+                ]
+            }`
+        ];
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
+
+    it("should deliver projection facts at even parity for deeply nested restore (three levels)", () => {
+        // !E{ Delete [ !E{ Restore [ !E{ UnRestore } ] } ] }
+        // Parity 1 (Delete) = odd  → hiding  → no projection extension
+        // Parity 2 (Restore) = even → restoring → projection extended here
+        // Parity 3 (UnRestore) = odd → hiding again → no projection extension
+        const feeds = getFeeds(`
+            (tenant: Tenant) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                    !E {
+                        del: EventDelete [
+                            del->event: Event = event
+                            !E {
+                                rest: EventRestore [
+                                    rest->eventDelete: EventDelete = del
+                                    !E {
+                                        unrest: EventUnRestore [
+                                            unrest->eventRestore: EventRestore = rest
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            } => {
+                names = {
+                    name: EventName [
+                        name->event: Event = event
+                    ]
+                }
+            }`);
+
+        // FeedZ must exist: the parity-2 restoring delivery feed contains del, rest, and name.
+        // (rest carries a simplified !E{unrest} condition, so "unrest" still appears in its
+        // description — but only nested inside !E, not as a top-level match.)
+        const hasRestoringNameFeed = feeds.some(f =>
+            f.includes("del: EventDelete") &&
+            f.includes("rest: EventRestore") &&
+            f.includes("name: EventName")
+        );
+        expect(hasRestoringNameFeed).toBe(true);
+
+        // No feed should have unrest as a top-level match alongside name.
+        // In describeSpecification(feed, 3).trim(), top-level matches begin with 16 spaces.
+        // A wrong-parity (3, odd) extension would produce a feed where both appear at that depth.
+        const hasWrongParityFeed = feeds.some(f =>
+            /^ {16}unrest: EventUnRestore/m.test(f) &&
+            /^ {16}name: EventName/m.test(f)
+        );
+        expect(hasWrongParityFeed).toBe(false);
+    });
+
+    it("should not duplicate givens when a given is consumed inside the restore branch", () => {
+        // approver is referenced only inside the restore branch and also in the projection.
+        // Without the fix, the outer unusedGivens (which still contains approver) would be
+        // passed to addProjections, causing approver to be added again to the already-complete
+        // lastNegating specification and producing a duplicate given.
+        const feeds = getFeeds(`
+            (tenant: Tenant, approver: Approver) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                    !E {
+                        del: EventDelete [
+                            del->event: Event = event
+                            !E {
+                                rest: EventRestore [
+                                    rest->eventDelete: EventDelete = del
+                                    rest->approver: Approver = approver
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            } => {
+                names = {
+                    name: EventName [
+                        name->event: Event = event
+                        name->approver: Approver = approver
+                    ]
+                }
+            }`);
+
+        // The restoring projection feed (contains rest and name at top level) must exist.
+        const restoringProjectionFeed = feeds.find(f =>
+            f.includes("rest: EventRestore") &&
+            !f.includes("!E {\n                        rest: EventRestore") &&
+            f.includes("name: EventName")
+        );
+        expect(restoringProjectionFeed).toBeDefined();
+
+        // approver must appear as a given exactly once — no duplicates.
+        // Duplicate givens would produce "(tenant: Tenant, approver: Approver, approver: Approver)".
+        expect(restoringProjectionFeed).toContain("(tenant: Tenant, approver: Approver) {");
+    });
 });
 
 function getSpecification(input: string) {
