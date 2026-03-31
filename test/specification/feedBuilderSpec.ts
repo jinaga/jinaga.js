@@ -476,6 +476,49 @@ describe("feed generator", () => {
         );
         expect(hasWrongParityFeed).toBe(false);
     });
+
+    it("should not duplicate givens when a given is consumed inside the restore branch", () => {
+        // approver is referenced only inside the restore branch and also in the projection.
+        // Without the fix, the outer unusedGivens (which still contains approver) would be
+        // passed to addProjections, causing approver to be added again to the already-complete
+        // lastNegating specification and producing a duplicate given.
+        const feeds = getFeeds(`
+            (tenant: Tenant, approver: Approver) {
+                event: Event [
+                    event->tenant: Tenant = tenant
+                    !E {
+                        del: EventDelete [
+                            del->event: Event = event
+                            !E {
+                                rest: EventRestore [
+                                    rest->eventDelete: EventDelete = del
+                                    rest->approver: Approver = approver
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            } => {
+                names = {
+                    name: EventName [
+                        name->event: Event = event
+                        name->approver: Approver = approver
+                    ]
+                }
+            }`);
+
+        // The restoring projection feed (contains rest and name at top level) must exist.
+        const restoringProjectionFeed = feeds.find(f =>
+            f.includes("rest: EventRestore") &&
+            !f.includes("!E {\n                        rest: EventRestore") &&
+            f.includes("name: EventName")
+        );
+        expect(restoringProjectionFeed).toBeDefined();
+
+        // approver must appear as a given exactly once — no duplicates.
+        // Duplicate givens would produce "(tenant: Tenant, approver: Approver, approver: Approver)".
+        expect(restoringProjectionFeed).toContain("(tenant: Tenant, approver: Approver) {");
+    });
 });
 
 function getSpecification(input: string) {

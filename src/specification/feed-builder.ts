@@ -43,16 +43,18 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
                 // Branch from the current feed and follow the matches of the existential condition.
                 // This will produce tuples that prove the condition false.
                 const innerParity = parity + 1;
-                const { specifications: negatingSpecifications } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity);
+                const { specifications: negatingSpecifications, unusedGivens: negatingUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity);
                 specifications.push(...negatingSpecifications);
 
                 // At even inner parity, the negating specs represent "restoring" feeds —
                 // facts whose presence indicates the entity has been restored to visibility.
                 // Extend the last such feed with projection components so that projection
                 // facts are delivered when the entity is restored.
+                // Use negatingUnusedGivens (not the outer unusedGivens) so that givens already
+                // consumed inside the negating branch are not re-added to the projection feeds.
                 if (innerParity % 2 === 0 && projectionComponents.length > 0) {
                     const lastNegating = negatingSpecifications[negatingSpecifications.length - 1];
-                    const projectionFeeds = addProjections(lastNegating, unusedGivens, projectionComponents);
+                    const projectionFeeds = addProjections(lastNegating, negatingUnusedGivens, projectionComponents);
                     specifications.push(...projectionFeeds);
                 }
 
