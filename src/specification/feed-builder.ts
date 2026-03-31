@@ -107,8 +107,12 @@ function addProjections(specification: Specification, unusedGivens: Label[], com
     const specifications: Specification[] = [];
     components.forEach(component => {
         if (component.type === "specification") {
+            // Pass child projection components so that any nested ∄ within this component's
+            // matches can attach projections to restoring feeds.
+            const childComponents = component.projection.type === "composite" ? component.projection.components : [];
+
             // Produce more facts in the tuple.
-            const { specifications: feedsWithMatches, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, component.matches);
+            const { specifications: feedsWithMatches, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, component.matches, childComponents);
             specifications.push(...feedsWithMatches);
 
             // Recursively build child projections.
