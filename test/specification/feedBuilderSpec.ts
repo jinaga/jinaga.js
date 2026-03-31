@@ -356,7 +356,10 @@ describe("feed generator", () => {
             }`);
 
         // Both date and name must appear in restoring feeds
-        const restoringFeeds = feeds.filter(f => f.includes("r: EventRestore"));
+        const restoringFeeds = feeds.filter(f =>
+            f.includes("r: EventRestore") &&
+            !f.includes("!E {\n                        r: EventRestore")
+        );
         expect(restoringFeeds.some(f => f.includes("date: EventDate"))).toBe(true);
         expect(restoringFeeds.some(f => f.includes("name: EventName"))).toBe(true);
     });
