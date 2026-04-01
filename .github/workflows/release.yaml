@@ -19,7 +19,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '16' # Ensure this matches the Node.js version required for the project
+        node-version: '20'
 
     # Step 3: Install dependencies
     - name: Install Dependencies
@@ -33,16 +33,16 @@ jobs:
     - name: Bump Version
       id: bump-version
       run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
         npm version patch
         echo "VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
-    
+
     # Step 6: Push changes and tags
     - name: Push Changes
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
         git push origin HEAD --follow-tags
 
     # Step 7: Create a GitHub release
