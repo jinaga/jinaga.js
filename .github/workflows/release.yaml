@@ -36,7 +36,8 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         npm version patch
-        echo "VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
+        VERSION=$(node -p "require('./package.json').version")
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
 
     # Step 6: Push changes and tags
     - name: Push Changes
