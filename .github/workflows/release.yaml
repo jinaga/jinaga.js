@@ -1,0 +1,53 @@
+name: Automated Release
+
+on:
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions interface
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # Restricts workflow to users who have write access
+
+    steps:
+    # Step 1: Checkout the repository
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    # Step 2: Set up Node.js environment
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16' # Ensure this matches the Node.js version required for the project
+
+    # Step 3: Install dependencies
+    - name: Install Dependencies
+      run: npm ci
+
+    # Step 4: Run tests (optional)
+    - name: Run Tests
+      run: npm test
+
+    # Step 5: Bump the version
+    - name: Bump Version
+      id: bump-version
+      run: |
+        npm version patch
+        echo "VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
+    
+    # Step 6: Push changes and tags
+    - name: Push Changes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git push origin HEAD --follow-tags
+
+    # Step 7: Create a GitHub release
+    - name: Create Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create v${{ env.VERSION }} --generate-notes --verify-tag
