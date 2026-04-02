@@ -1,4 +1,4 @@
-import { AuthorizationRules, FactRecord, FactReference, FactRepository, KeyPair, LabelOf, MemoryStore, Trace, User, buildModel, dehydrateFact, factReferenceEquals, generateKeyPair, signFacts } from "@src";
+import { AuthorizationRules, FactEnvelope, FactRecord, FactReference, FactRepository, KeyPair, LabelOf, MemoryStore, Trace, User, buildModel, dehydrateFact, factReferenceEquals, generateKeyPair, signFacts } from "@src";
 
 
 function givenUserFact(identity = 'authorized-user') {
