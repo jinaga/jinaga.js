@@ -18,7 +18,7 @@ export class Subscriber {
     private readonly network: Network,
     private readonly store: Storage,
     private readonly notifyFactsAdded: (envelopes: FactEnvelope[]) => Promise<void>,
-    private readonly refreshIntervalSeconds: number
+    private readonly refreshIntervalSeconds: number = 90
   ) {}
 
   addRef() {
@@ -31,14 +31,16 @@ export class Subscriber {
     return this.refCount === 0;
   }
 
-  async start(): Promise<void> {
-    this.bookmark = await this.store.loadBookmark(this.feed);
-    try {
-      await new Promise<void>((resolve, reject) => {
-        this.resolved = false;
-        this.reject = reject;
-        this.retryCount = 0;
-        this.isConnecting = false;
+  start(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      // Set reject immediately so stop() can cancel before the bookmark loads.
+      this.resolved = false;
+      this.reject = reject;
+      this.retryCount = 0;
+      this.isConnecting = false;
+
+      this.store.loadBookmark(this.feed).then(bookmark => {
+        this.bookmark = bookmark;
 
         const attemptConnection = () => {
           Trace.info(`[Subscriber] attemptConnection called - feed: ${this.feed}, retryCount: ${this.retryCount}, isConnecting: ${this.isConnecting}`);
@@ -81,11 +83,8 @@ export class Subscriber {
         }, this.refreshIntervalSeconds * 1000);
 
         attemptConnection();
-      });
-    } finally {
-      // Clear the reject reference so we don't hold a closure after start() settles.
-      this.reject = undefined;
-    }
+      }).catch(reject);
+    });
   }
 
   stop() {
@@ -129,6 +128,7 @@ export class Subscriber {
         this.resolved = true;
         this.isConnecting = false; // Clear flag on successful connection
         this.retryCount = 0;
+        this.reject = undefined;
         resolve();
       }
     }, err => {

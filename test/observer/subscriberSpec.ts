@@ -598,11 +598,14 @@ describe("Subscriber", () => {
                     // Then: Verify streamFeed was still only called once
                     // (the guard flag prevented the concurrent attempt)
                     expect(mockNetwork.streamFeed).toHaveBeenCalledTimes(1);
-                    
+
+                    // Stop the subscriber before awaiting rejection (stop() causes the rejection)
+                    subscriber.stop();
+
                     // Verify start promise is rejected when stopped
                     await expect(startPromise).rejects.toThrow();
                 } finally {
-                    subscriber.stop();
+                    // subscriber.stop() already called above
                     jest.runAllTimers(); // Clear any remaining timers
                     global.setInterval = originalSetInterval;
                 }
@@ -717,7 +720,10 @@ describe("Subscriber", () => {
                 try {
                     // When: Start the subscriber and await successful connection
                     const startPromise = subscriber.start();
-                    
+
+                    // Allow loadBookmark.then() setup to complete before advancing timers
+                    await Promise.resolve();
+
                     // Advance time to complete the connection (10ms delay in streamFeed)
                     jest.advanceTimersByTime(10);
                     await startPromise;
