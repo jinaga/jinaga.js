@@ -16,4 +16,9 @@ jobs:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
+      # Force NODE_AUTH_TOKEN empty so .npmrc has no static token and npm
+      # falls through to OIDC trusted publishing. setup-node defaults this
+      # to GITHUB_TOKEN, which the npm registry rejects (masked as 404).
       - run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ''
