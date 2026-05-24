@@ -16,13 +16,10 @@ describe("Distribution rules from description", () => {
 
   it("should accumulate rules across multiple distribution blocks", () => {
     const single = describeDistributionRules(distribution);
+    const singleLoaded = DistributionRules.loadFromDescription(single);
     const doubled = single + single;
-    const loaded = DistributionRules.loadFromDescription(doubled);
-    const roundTrip = describeDistributionRules(_ => loaded);
-    // Merging the same rules with themselves yields the same set
-    // (DistributionRules.merge concatenates rule entries).
-    expect(roundTrip.startsWith("distribution {")).toBeTruthy();
-    expect(roundTrip.endsWith("}\n")).toBeTruthy();
+    const doubledLoaded = DistributionRules.loadFromDescription(doubled);
+    expect(doubledLoaded.rules.length).toEqual(singleLoaded.rules.length * 2);
   });
 
   it("should reject trailing content of a different block type", () => {
