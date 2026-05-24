@@ -148,6 +148,41 @@ describe("Authorization rules description", () => {
     const loaded = AuthorizationRules.loadFromDescription(description);
     expect(loaded.hasRule(Content.Type)).toBeTruthy();
   });
+
+  it("should accumulate rules across multiple authorization blocks", () => {
+    const description = `
+authorization {
+  any Jinaga.User
+}
+authorization {
+  any Feedback.Site
+}
+`;
+    const loaded = AuthorizationRules.loadFromDescription(description);
+    expect(loaded.hasRule("Jinaga.User")).toBeTruthy();
+    expect(loaded.hasRule("Feedback.Site")).toBeTruthy();
+  });
+
+  it("should reject trailing content of a different block type", () => {
+    const description = `
+authorization {
+  any Jinaga.User
+}
+distribution {
+}
+`;
+    expect(() => AuthorizationRules.loadFromDescription(description)).toThrow();
+  });
+
+  it("should reject trailing garbage", () => {
+    const description = `
+authorization {
+  any Jinaga.User
+}
+not a valid block
+`;
+    expect(() => AuthorizationRules.loadFromDescription(description)).toThrow();
+  });
 });
 
 class User {
