@@ -502,7 +502,15 @@ export class AuthorizationRules {
     static loadFromDescription(description: string): AuthorizationRules {
         const parser = new SpecificationParser(description);
         parser.skipWhitespace();
-        const authorizationRules = parser.parseAuthorizationRules();
+        let authorizationRules = AuthorizationRules.empty;
+        while (!parser.atEnd()) {
+            if (parser.continues("authorization")) {
+                authorizationRules = authorizationRules.merge(parser.parseAuthorizationRules());
+            }
+            else {
+                parser.expectEnd();
+            }
+        }
         return authorizationRules;
     }
 }
