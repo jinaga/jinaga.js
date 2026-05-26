@@ -2,6 +2,7 @@ import { describeSpecification } from "../specification/description";
 import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
 import { Specification, isPathCondition, specificationIsIdentity } from "../specification/specification";
 import { FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
+import { canAuthorizeByComposition } from "./distribution-composition";
 import { DistributionRules } from "./distribution-rules";
 
 export interface DistributionSuccess {
@@ -122,6 +123,14 @@ export class DistributionEngine {
           }
         }
       }
+    }
+
+    // No single rule matched the target feed (or the user did not satisfy
+    // the matching rules). Try compositional authorization: if the target
+    // can be covered by a sequence of rules that each authorize the user,
+    // then the target is authorized.
+    if (await canAuthorizeByComposition(targetFeed, namedStart, user, this.distributionRules, this.store)) {
+      return { type: 'success' };
     }
 
     if (reasons.length === 0) {
