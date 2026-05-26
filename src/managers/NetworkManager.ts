@@ -15,6 +15,14 @@ export interface Network {
     streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds: number): () => void;
     load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
 
+    /**
+     * Phase 3 hook for j.subscribe authorization-as-spec. Returns a possibly
+     * rewritten (start, specification) pair so that subscribing to an
+     * initially-forbidden feed succeeds and pushes results when the
+     * authorizing fact later arrives. Implementations without distribution
+     * rules should return the inputs unchanged.
+     */
+    intersectForSubscribe?(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }>;
 }
 
 export class NetworkNoOp implements Network {
@@ -33,6 +41,10 @@ export class NetworkNoOp implements Network {
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
         return Promise.resolve([]);
+    }
+
+    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }> {
+        return { start, specification };
     }
 }
 
@@ -98,6 +110,11 @@ export class NetworkDistribution implements Network {
 
     load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
         return Promise.resolve([]);
+    }
+
+    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }> {
+        const result = await this.distributionEngine.intersectForSubscribe(start, specification, this.user);
+        return { start: result.start, specification: result.specification };
     }
 }
 
@@ -199,6 +216,13 @@ export class NetworkManager {
             this.removeFeedsFromCache(start, reducedSpecification);
             throw e;
         }
+    }
+
+    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }> {
+        if (this.network.intersectForSubscribe) {
+            return await this.network.intersectForSubscribe(start, specification);
+        }
+        return { start, specification };
     }
 
     async subscribe(start: FactReference[], specification: Specification): Promise<string[]> {

@@ -102,11 +102,20 @@ export class ObserverImpl<T> implements Observer<T> {
     public start(keepAlive: boolean) {
         const givenTypes = this.given.map(g => g.type).join(', ');
         Trace.info(`[Observer] START - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Given types: [${givenTypes}], KeepAlive: ${keepAlive}`);
-        
+
         this.cachedPromise = new Promise((cacheResolve, _) => {
             this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
                 this.loadResolve = loadResolve;
                 try {
+                    // Phase 3 of j.subscribe trust release: intersect with any
+                    // applicable distribution rule before installing listeners
+                    // and reading. This way the spec returns empty until the
+                    // authorizing fact arrives, at which point the existing
+                    // inverse engine surfaces results via the auth-fact
+                    // inverses that intersection added.
+                    if (keepAlive) {
+                        await this.applySubscribeIntersection();
+                    }
                     // Ensure listeners are added BEFORE any read/fetch to close T2–T3 window.
                     if (!this.listenersAdded) {
                         this.addSpecificationListeners();
@@ -218,6 +227,34 @@ export class ObserverImpl<T> implements Observer<T> {
             this.loadResolve();
             this.loadResolve = undefined;
         }
+    }
+
+    private async applySubscribeIntersection() {
+        const result = await this.factManager.intersectForSubscribe(this.given, this.specification);
+        if (result.specification === this.specification && result.start === this.given) {
+            return;
+        }
+        const previousGivenHash = this.givenHash;
+        this.given = result.start;
+        this.specification = result.specification;
+        // Recompute identifying hashes against the augmented (start, spec).
+        const tuple = this.specification.given.reduce((tuple, label, index) => ({
+            ...tuple,
+            [label.label.name]: this.given[index]
+        }), {} as ReferencesByName);
+        this.givenHash = computeObjectHash(tuple);
+        const declarationString = describeDeclaration(this.given, this.specification.given.map(g => g.label));
+        const specificationString = describeSpecification(this.specification, 0);
+        this.specificationHash = computeStringHash(`${declarationString}\n${specificationString}`);
+        // Re-key any handlers that were registered with the pre-intersection
+        // givenHash. Notification routing matches handlers by tupleHash, so a
+        // stale value here would silently drop every result.
+        for (const handler of this.addedHandlers) {
+            if (handler.tupleHash === previousGivenHash) {
+                handler.tupleHash = this.givenHash;
+            }
+        }
+        Trace.info(`[Observer] INTERSECTED - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}...`);
     }
 
     private async fetch(keepAlive: boolean) {

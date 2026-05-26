@@ -124,6 +124,10 @@ export class FactManager {
         return await this.networkManager.subscribe(start, specification);
     }
 
+    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }> {
+        return await this.networkManager.intersectForSubscribe(start, specification);
+    }
+
     unsubscribe(feeds: string[]) {
         this.networkManager.unsubscribe(feeds);
     }
