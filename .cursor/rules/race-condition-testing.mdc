@@ -1,0 +1,349 @@
+---
+description: Use when testing timing-related issues, race conditions, or distributed system behavior in Jinaga.js applications. Apply when writing tests for scenarios where facts arrive in unexpected order, subscriptions start before given facts are known, or when testing cache-related timing issues.
+alwaysApply: false
+---
+# Race Condition Testing Guide
+
+## Overview
+This guide covers testing patterns for race conditions in distributed systems, particularly focusing on timing-related issues in Jinaga.js applications.
+
+## Understanding Race Conditions
+
+### Definition
+A race condition occurs when the behavior of a system depends on the relative timing of events, such as when facts arrive in different orders or at different times.
+
+### Common Race Condition Types
+
+#### 1. Client-Side Race Conditions
+- Given fact arrives after subscription starts
+- Facts are created before their predecessors are known
+- Local state vs. server state timing issues
+
+#### 2. Network Race Conditions
+- Facts arrive from server in unexpected order
+- Network delays cause timing issues
+- Server-side fact processing timing
+
+#### 3. Cache-Related Race Conditions
+- App starts from cached data
+- Missing facts in cache cause issues
+- Cache invalidation timing
+
+## Testing Race Conditions
+
+### 1. Identify the Race Condition
+```typescript
+// Example: Subscription starts before given fact is known
+const observer = j.watch(specification, company, callback);
+// company fact hasn't been passed to j.fact() yet
+await j.fact(company); // Arrives after subscription
+```
+
+### 2. Create Reproducible Test
+```typescript
+it("should handle given fact arriving after subscription", async () => {
+  // Setup: Create facts that will be "given" later
+  const company = new Company(creator, "TestCo");
+  const manager = new Manager(office, 123);
+  
+  // Action: Start watching before given is known
+  const managers: string[] = [];
+  const observer = j.watch(specification, company, manager => {
+    managers.push(j.hash(manager));
+  });
+  
+  await observer.loaded();
+  
+  // Trigger: Introduce facts after subscription
+  await j.fact(company);
+  await j.fact(manager);
+  
+  // Verify: Should include manager despite timing
+  expect(managers).toContain(j.hash(manager));
+});
+```
+
+### 3. Test Different Timing Scenarios
+```typescript
+describe("timing scenarios", () => {
+  it("should handle facts arriving in any order", async () => {
+    // Test with different arrival orders
+    await j.fact(manager); // First
+    await j.fact(company); // Second
+    await j.fact(office);  // Third
+  });
+  
+  it("should handle rapid fact introduction", async () => {
+    // Test with rapid, concurrent fact creation
+    const promises = facts.map(fact => j.fact(fact));
+    await Promise.all(promises);
+  });
+});
+```
+
+## Race Condition Test Patterns
+
+### 1. Before/After Pattern
+```typescript
+it("should work when given arrives before subscription", async () => {
+  // Given fact exists before subscription
+  await j.fact(company);
+  
+  const observer = j.watch(specification, company, callback);
+  // Should work correctly
+});
+
+it("should work when given arrives after subscription", async () => {
+  // Given fact arrives after subscription
+  const observer = j.watch(specification, company, callback);
+  await j.fact(company);
+  // Should also work correctly
+});
+```
+
+### 2. Concurrent Access Pattern
+```typescript
+it("should handle multiple concurrent subscriptions", async () => {
+  const observers = [];
+  for (let i = 0; i < 5; i++) {
+    const observer = j.watch(specification, company, callback);
+    observers.push(observer);
+  }
+  
+  // Introduce facts while multiple observers are active
+  await j.fact(company);
+});
+```
+
+### 3. Recovery Pattern
+```typescript
+it("should recover from race condition", async () => {
+  // Start in problematic state
+  const observer = j.watch(specification, company, callback);
+  
+  // Introduce facts that should trigger recovery
+  await j.fact(company);
+  
+  // Verify recovery occurred
+  expect(results).toContain(expectedFact);
+});
+```
+
+## Best Practices
+
+### 1. Clear Test Intent
+- Document what race condition is being tested
+- Explain the timing scenario
+- Describe expected vs. actual behavior
+
+### 2. Reproducible Tests
+- Use deterministic timing when possible
+- Avoid random delays
+- Focus on the specific timing issue
+
+### 3. Comprehensive Coverage
+- Test multiple timing scenarios
+- Test edge cases and boundary conditions
+- Test recovery mechanisms
+
+### 4. Documentation
+```typescript
+/**
+ * Tests the race condition where the given fact arrives after
+ * the subscription starts. This is a common issue when:
+ * 1. App starts from cached data
+ * 2. Network delays cause timing issues
+ * 3. Facts are created before their predecessors are known
+ */
+it("should handle given fact arriving after subscription", async () => {
+  // Test implementation
+});
+```
+
+## Common Race Condition Scenarios
+
+### 1. Subscription Timing
+- Subscription starts before given fact is known
+- Facts arrive in unexpected order
+- Multiple subscriptions with different timing
+
+### 2. Fact Creation Timing
+- Facts created before predecessors
+- Rapid fact introduction
+- Concurrent fact creation
+
+### 3. Cache-Related Timing
+- App starts from incomplete cache
+- Cache invalidation timing
+- Server vs. client state synchronization
+
+### 4. Network Timing
+- Network delays and timeouts
+- Server-side processing timing
+- Connection lifecycle issues
+
+## Debugging Race Conditions
+
+### 1. Add Timing Logs
+```typescript
+console.log('Subscription started at:', Date.now());
+const observer = j.watch(specification, company, result => {
+  console.log('Result received at:', Date.now());
+  results.push(j.hash(result));
+});
+console.log('Fact introduced at:', Date.now());
+await j.fact(company);
+```
+
+### 2. Use Framework Tracing
+```typescript
+// Enable trace logging to see internal timing
+const j = JinagaTest.create({ trace: true });
+```
+
+### 3. Test with Different Delays
+```typescript
+// Test with artificial delays to expose timing issues
+await new Promise(resolve => setTimeout(resolve, 100));
+await j.fact(company);
+```
+
+## Validation Checklist
+
+- [ ] Test covers the specific race condition
+- [ ] Test is reproducible and deterministic
+- [ ] Test includes proper setup and teardown
+- [ ] Test validates both success and failure scenarios
+- [ ] Test documents the timing scenario
+- [ ] Test includes proper error handling
+- [ ] Test follows framework constraints
+- [ ] Test provides clear failure messages
+
+## Example Race Condition Tests
+
+### Client-Side Race Condition
+```typescript
+describe("client-side race condition", () => {
+  it("should miss inverse results when given fact arrives after subscription", async () => {
+    // Create facts that will be the "given" later
+    const company = new Company(creator, "TestCo");
+    const office = new Office(company, "TestOffice");
+    const manager = new Manager(office, 123);
+    
+    // Start watching BEFORE the given fact is known to the client
+    const managers: string[] = [];
+    const managerObserver = j.watch(
+      model.given(Company).match((company, facts) =>
+        facts.ofType(Office)
+          .join(office => office.company, company)
+          .selectMany(office => facts.ofType(Manager)
+            .join(manager => manager.office, office)
+          )
+      ),
+      company, // This company fact hasn't been passed to j.fact() yet
+      manager => {
+        managers.push(j.hash(manager));
+      }
+    );
+
+    await managerObserver.loaded();
+    
+    // Now introduce the facts to the client
+    await j.fact(company);
+    await j.fact(office);
+    await j.fact(manager);
+    
+    managerObserver.stop();
+
+    // EXPECTATION: This should include the manager, but currently fails
+    // because the inverse subscription doesn't account for the given fact
+    // that arrived after the subscription started
+    expect(managers).toContain(j.hash(manager));
+  });
+});
+```
+
+### Network Race Condition
+```typescript
+describe("network race condition", () => {
+  it("should miss inverse results when given fact arrives from server after subscription", async () => {
+    // Create facts that will be the "given" later
+    const company = new Company(creator, "TestCo");
+    const office = new Office(company, "TestOffice");
+    const manager = new Manager(office, 123);
+    
+    // Simulate server-side facts that haven't been received yet
+    const serverFacts = [company, office, manager];
+    
+    // Start watching with a given that hasn't arrived from server
+    const managers: string[] = [];
+    const managerObserver = j.watch(
+      model.given(Company).match((company, facts) =>
+        facts.ofType(Office)
+          .join(office => office.company, company)
+          .selectMany(office => facts.ofType(Manager)
+            .join(manager => manager.office, office)
+          )
+      ),
+      company, // This company hasn't arrived from server yet
+      manager => {
+        managers.push(j.hash(manager));
+      }
+    );
+
+    await managerObserver.loaded();
+    
+    // Simulate facts arriving from server
+    for (const fact of serverFacts) {
+      await j.fact(fact);
+    }
+    
+    managerObserver.stop();
+
+    // EXPECTATION: Should include all managers once facts arrive from server
+    expect(managers).toContain(j.hash(manager));
+  });
+});
+```
+
+### Cache-Related Race Condition
+```typescript
+describe("cached data scenarios", () => {
+  it("should recover from cached data when given fact becomes known", async () => {
+    // Test scenario where app starts from cached data
+    // and the given fact becomes known after subscription
+    
+    const company = new Company(creator, "TestCo");
+    const office = new Office(company, "TestOffice");
+    const manager = new Manager(office, 123);
+    
+    // Simulate cached data scenario
+    const cachedFacts = [office, manager]; // Company not in cache
+    
+    const managers: string[] = [];
+    const managerObserver = j.watch(
+      model.given(Company).match((company, facts) =>
+        facts.ofType(Office)
+          .join(office => office.company, company)
+          .selectMany(office => facts.ofType(Manager)
+            .join(manager => manager.office, office)
+          )
+      ),
+      company, // Given fact not in cache, arrives later
+      manager => {
+        managers.push(j.hash(manager));
+      }
+    );
+
+    await managerObserver.loaded();
+    
+    // Simulate company fact arriving from server
+    await j.fact(company);
+    
+    managerObserver.stop();
+
+    // EXPECTATION: Should recover and include manager once company is known
+    expect(managers).toContain(j.hash(manager));
+  });
+});
+```
