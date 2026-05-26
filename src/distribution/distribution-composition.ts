@@ -4,6 +4,7 @@ import {
   Skeleton,
   skeletonOfSpecification
 } from "../specification/skeleton";
+import { describeSpecification } from "../specification/description";
 import { Specification, isPathCondition, specificationIsIdentity } from "../specification/specification";
 import { FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { DistributionRules } from "./distribution-rules";
@@ -53,7 +54,18 @@ export async function canAuthorizeByComposition(
     return false;
   }
 
-  const ruleAuthCache = await computeRuleAuthorizations(rules, namedStart, user, store);
+  // Pre-compute skeletons for every rule feed once. The recursive search runs
+  // many iterations over these and skeletonOfSpecification is non-trivial.
+  const ruleFeedSkeletons = new Map<Specification, Skeleton>();
+  for (const rule of rules.rules) {
+    for (const ruleFeed of rule.feeds) {
+      if (!ruleFeedSkeletons.has(ruleFeed)) {
+        ruleFeedSkeletons.set(ruleFeed, skeletonOfSpecification(ruleFeed));
+      }
+    }
+  }
+
+  const ruleAuthCache = await computeRuleAuthorizations(rules, targetFeed, namedStart, user, store);
   const verifiedUserKeys = new Set<string | null>();
   for (const auth of ruleAuthCache.values()) {
     if (auth.verifiedForUser && auth.userKey !== null) {
@@ -68,6 +80,7 @@ export async function canAuthorizeByComposition(
     new Set(targetSkeleton.edges.map(e => e.edgeIndex)),
     new Set(targetSkeleton.notExistsConditions.map((_, i) => i)),
     rules,
+    ruleFeedSkeletons,
     ruleAuthCache,
     verifiedUserKeys,
     new Set()
@@ -76,6 +89,7 @@ export async function canAuthorizeByComposition(
 
 async function computeRuleAuthorizations(
   rules: DistributionRules,
+  targetFeed: Specification,
   namedStart: ReferencesByName,
   user: FactReference | null,
   store: Storage
@@ -86,9 +100,12 @@ async function computeRuleAuthorizations(
       map.set(rule, { isEveryone: true, userKey: null, verifiedForUser: true });
       continue;
     }
-    const userKey = JSON.stringify(rule.user);
+    // Use describeSpecification for a canonical key. JSON.stringify would
+    // depend on accidental property ordering and is sensitive to label
+    // renames that don't change meaning.
+    const userKey = describeSpecification(rule.user, 0);
 
-    const start = ruleStartFromNamedStart(rule.specification, namedStart);
+    const start = ruleStartFromTarget(rule.specification, targetFeed, namedStart);
     if (start === null || user === null) {
       map.set(rule, { isEveryone: false, userKey, verifiedForUser: false });
       continue;
@@ -100,15 +117,35 @@ async function computeRuleAuthorizations(
   return map;
 }
 
-function ruleStartFromNamedStart(
+/**
+ * Resolve concrete fact references for a rule's givens using the target
+ * feed's namedStart. Match by type (positionally among same-typed givens),
+ * not by label name, because rules loaded from description may use labels
+ * unrelated to the target's. Returns null when the rule's givens can't be
+ * uniquely satisfied by the target's namedStart.
+ */
+function ruleStartFromTarget(
   ruleSpec: Specification,
+  targetFeed: Specification,
   namedStart: ReferencesByName
 ): FactReference[] | null {
+  const targetByType = new Map<string, FactReference[]>();
+  for (const given of targetFeed.given) {
+    const ref = namedStart[given.label.name];
+    if (!ref) return null;
+    const list = targetByType.get(given.label.type) ?? [];
+    list.push(ref);
+    targetByType.set(given.label.type, list);
+  }
+  const cursorByType = new Map<string, number>();
   const start: FactReference[] = [];
   for (const given of ruleSpec.given) {
-    const ref = namedStart[given.label.name];
-    if (!ref || ref.type !== given.label.type) return null;
-    start.push(ref);
+    const candidates = targetByType.get(given.label.type);
+    if (!candidates) return null;
+    const cursor = cursorByType.get(given.label.type) ?? 0;
+    if (cursor >= candidates.length) return null;
+    start.push(candidates[cursor]);
+    cursorByType.set(given.label.type, cursor + 1);
   }
   return start;
 }
@@ -168,6 +205,7 @@ function tryCover(
   uncoveredEdges: Set<number>,
   uncoveredNotExists: Set<number>,
   rules: DistributionRules,
+  ruleFeedSkeletons: Map<Specification, Skeleton>,
   ruleAuthCache: Map<DistributionRuleEntry, RuleAuth>,
   verifiedUserKeys: Set<string | null>,
   visitedStates: Set<string>
@@ -186,12 +224,12 @@ function tryCover(
     const ne = targetSkeleton.notExistsConditions[neIdx];
     const anchorFact = findNotExistsAnchor(ne, liveFacts);
     if (anchorFact === null) continue;
-    if (!canCoverNotExists(ne, anchorFact, targetSkeleton, rules, ruleAuthCache, verifiedUserKeys)) {
+    if (!canCoverNotExists(ne, anchorFact, targetSkeleton, rules, ruleFeedSkeletons, ruleAuthCache, verifiedUserKeys)) {
       continue;
     }
     const nextUncoveredNE = new Set(uncoveredNotExists);
     nextUncoveredNE.delete(neIdx);
-    if (tryCover(targetSkeleton, liveFacts, uncoveredEdges, nextUncoveredNE, rules, ruleAuthCache, verifiedUserKeys, visitedStates)) {
+    if (tryCover(targetSkeleton, liveFacts, uncoveredEdges, nextUncoveredNE, rules, ruleFeedSkeletons, ruleAuthCache, verifiedUserKeys, visitedStates)) {
       return true;
     }
   }
@@ -200,7 +238,8 @@ function tryCover(
     if (!isRuleAuthorized(rule, ruleAuthCache, verifiedUserKeys)) continue;
 
     for (const ruleFeed of rule.feeds) {
-      const ruleSkeleton = skeletonOfSpecification(ruleFeed);
+      const ruleSkeleton = ruleFeedSkeletons.get(ruleFeed);
+      if (!ruleSkeleton) continue;
       // Phase 1 supports only rules whose feeds carry no notExists. Rules with
       // their own notExists feeds compose differently and are deferred.
       if (ruleSkeleton.notExistsConditions.length > 0) continue;
@@ -219,7 +258,7 @@ function tryCover(
           if (targetEdgeIndex !== null) nextUncoveredEdges.delete(targetEdgeIndex);
         }
         if (nextUncoveredEdges.size === uncoveredEdges.size) continue;
-        if (tryCover(targetSkeleton, nextLive, nextUncoveredEdges, uncoveredNotExists, rules, ruleAuthCache, verifiedUserKeys, visitedStates)) {
+        if (tryCover(targetSkeleton, nextLive, nextUncoveredEdges, uncoveredNotExists, rules, ruleFeedSkeletons, ruleAuthCache, verifiedUserKeys, visitedStates)) {
           return true;
         }
       }
@@ -234,6 +273,7 @@ function canCoverNotExists(
   anchorFactIndex: number,
   targetSkeleton: Skeleton,
   rules: DistributionRules,
+  ruleFeedSkeletons: Map<Specification, Skeleton>,
   ruleAuthCache: Map<DistributionRuleEntry, RuleAuth>,
   verifiedUserKeys: Set<string | null>
 ): boolean {
@@ -254,6 +294,7 @@ function canCoverNotExists(
     new Set(innerSkeleton.edges.map(e => e.edgeIndex)),
     new Set(innerSkeleton.notExistsConditions.map((_, i) => i)),
     rules,
+    ruleFeedSkeletons,
     ruleAuthCache,
     verifiedUserKeys,
     new Set()
