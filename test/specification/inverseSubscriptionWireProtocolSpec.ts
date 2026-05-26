@@ -1,7 +1,53 @@
-import { Jinaga, JinagaTest, User } from "../../src";
+import { Jinaga, JinagaTest, User } from "@src";
+import { AuthenticationNoOp } from "../../src/authentication/authentication-noop";
+import { Dehydration } from "../../src/fact/hydrate";
+import { PassThroughFork } from "../../src/fork/pass-through-fork";
+import { SyncStatusNotifier } from "../../src/http/web-client";
+import { Jinaga as JinagaImpl } from "../../src/jinaga";
+import { FactManager } from "../../src/managers/factManager";
+import { NetworkNoOp } from "../../src/managers/NetworkManager";
+import { MemoryStore } from "../../src/memory/memory-store";
+import { ObservableSource } from "../../src/observable/observable";
+import { FactEnvelope } from "../../src/storage";
 import { Company, Office, Manager, President, model } from "../companyModel";
 
-describe("inverse subscription wire protocol and server-side behavior", () => {
+// Seed a Jinaga instance's memory store with raw fact records, bypassing the
+// predecessor recursion that JinagaTest.initialState (and j.fact) perform. This
+// lets a test stage genuine "given arrives after descendants" scenarios — with
+// j.fact, dehydrating an Office would also persist its Company predecessor, so
+// the anchor would already be present before the test "introduces" it.
+async function createJinagaWithRawStore(rawEnvelopes: FactEnvelope[]): Promise<Jinaga> {
+    const store = new MemoryStore();
+    await store.save(rawEnvelopes);
+    const observableSource = new ObservableSource(store);
+    const syncStatusNotifier = new SyncStatusNotifier();
+    const fork = new PassThroughFork(store);
+    const authentication = new AuthenticationNoOp();
+    const network = new NetworkNoOp();
+    const factManager = new FactManager(fork, observableSource, store, network, []);
+    return new JinagaImpl(authentication, factManager, syncStatusNotifier);
+}
+
+function envelopesExcludingType(
+    rootObjects: object[],
+    excludedType: string
+): FactEnvelope[] {
+    const dehydrate = new Dehydration();
+    for (const obj of rootObjects) {
+        dehydrate.dehydrate(obj);
+    }
+    return dehydrate.factRecords()
+        .filter(r => r.type !== excludedType)
+        .map(r => ({ fact: r, signatures: [] }));
+}
+
+// These tests validate the client-side contract that issue #129 requires from
+// any conforming wire protocol: subscriptions track their givens, and matches
+// surface whether the given arrives before or after the subscription starts.
+// They use the in-memory transport from JinagaTest rather than asserting on
+// actual subscription-message bytes — server interop is exercised by the HTTP
+// and WS suites against a real authorization handler.
+describe("inverse subscription wire-protocol contract (client side)", () => {
     let creator: User;
     let j: Jinaga;
 
@@ -43,11 +89,13 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
             await j.fact(company);
             await j.fact(office);
             await j.fact(manager);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: The subscription message should have included the company in givens
-            // and the server should have used it to match incoming facts
+            // Subscription message should have carried the company anchor;
+            // here we observe the client-side effect of that contract — the
+            // inverse subscription fires for the matching manager.
             expect(managers).toContain(j.hash(manager));
         });
 
@@ -92,56 +140,19 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
 
     describe("server-side givens handling", () => {
         it("should store and use givens to re-evaluate inverses as new facts arrive", async () => {
-            // This test simulates the server-side behavior where givens are stored
-            // and used to re-evaluate inverse queries as new facts arrive
-            
+            // Genuine out-of-order: descendants are seeded directly into the
+            // store (no Company predecessor), then the Company given arrives
+            // via fact() after subscription. The self-inverse must re-read and
+            // surface the already-cached manager.
             const company = new Company(creator, "TestCo");
             const office = new Office(company, "TestOffice");
             const manager = new Manager(office, 123);
-            
-            // Simulate server-side fact arrival order
-            const serverFacts = [office, manager]; // Company arrives later
-            
+
+            const seeded = envelopesExcludingType([creator, company, office, manager], Company.Type);
+            const jSeeded = await createJinagaWithRawStore(seeded);
+
             const managers: string[] = [];
-            const managerObserver = j.watch(
-                model.given(Company).match((company, facts) =>
-                    facts.ofType(Office)
-                        .join(office => office.company, company)
-                        .selectMany(office => facts.ofType(Manager)
-                            .join(manager => manager.office, office)
-                        )
-                ),
-                company, // Given fact that server should store and use
-                manager => {
-                    managers.push(j.hash(manager));
-                }
-            );
-
-            await managerObserver.loaded();
-            
-            // Simulate server receiving facts in order (company arrives last)
-            for (const fact of serverFacts) {
-                await j.fact(fact);
-            }
-            
-            // Now the company arrives (the given fact)
-            await j.fact(company);
-            
-            managerObserver.stop();
-
-            // EXPECTATION: Server should have stored the company given and
-            // re-evaluated the inverse query when company arrived
-            expect(managers).toContain(j.hash(manager));
-        });
-
-        it("should handle server-side fact arrival in any order", async () => {
-            // Test that server handles facts arriving in any order
-            const company = new Company(creator, "TestCo");
-            const office = new Office(company, "TestOffice");
-            const manager = new Manager(office, 123);
-            
-            const managers: string[] = [];
-            const managerObserver = j.watch(
+            const managerObserver = jSeeded.watch(
                 model.given(Company).match((company, facts) =>
                     facts.ofType(Office)
                         .join(office => office.company, company)
@@ -150,22 +161,60 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
                         )
                 ),
                 company,
-                manager => {
-                    managers.push(j.hash(manager));
+                m => {
+                    managers.push(jSeeded.hash(m));
                 }
             );
 
             await managerObserver.loaded();
-            
-            // Simulate facts arriving in random order
-            await j.fact(manager); // Manager arrives first
-            await j.fact(company); // Company arrives second
-            await j.fact(office);  // Office arrives last
-            
+
+            // Initial read finds nothing without the anchor.
+            expect(managers).toEqual([]);
+
+            // Anchor arrives → self-inverse re-reads → manager surfaces.
+            await jSeeded.fact(company);
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should work regardless of arrival order
-            expect(managers).toContain(j.hash(manager));
+            expect(managers).toContain(jSeeded.hash(manager));
+        });
+
+        it("should handle server-side fact arrival in any order", async () => {
+            // True any-order: descendants seeded first (no Company), then
+            // anchor arrives. Using j.fact alone cannot stage "manager first"
+            // because dehydration would persist its Office and Company
+            // predecessors as a single graph.
+            const company = new Company(creator, "TestCo");
+            const office = new Office(company, "TestOffice");
+            const manager = new Manager(office, 123);
+
+            const seeded = envelopesExcludingType([creator, company, office, manager], Company.Type);
+            const jSeeded = await createJinagaWithRawStore(seeded);
+
+            const managers: string[] = [];
+            const managerObserver = jSeeded.watch(
+                model.given(Company).match((company, facts) =>
+                    facts.ofType(Office)
+                        .join(office => office.company, company)
+                        .selectMany(office => facts.ofType(Manager)
+                            .join(manager => manager.office, office)
+                        )
+                ),
+                company,
+                m => {
+                    managers.push(jSeeded.hash(m));
+                }
+            );
+
+            await managerObserver.loaded();
+
+            await jSeeded.fact(company);
+            await managerObserver.processed();
+
+            managerObserver.stop();
+
+            expect(managers).toContain(jSeeded.hash(manager));
         });
     });
 
@@ -203,7 +252,8 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
             await j.fact(office2);
             await j.fact(manager1);
             await j.fact(manager2);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
             // EXPECTATION: Both managers should be matched using the company anchor
@@ -212,15 +262,18 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
         });
 
         it("should handle anchor arrival after related facts", async () => {
-            // Test scenario where the anchor (given fact) arrives after
-            // the facts that should be matched to it
-            
+            // Office and Manager are seeded into the store without the
+            // Company anchor, mirroring what would happen if descendants had
+            // streamed in via a feed before the anchor itself was distributed.
             const company = new Company(creator, "TestCo");
             const office = new Office(company, "TestOffice");
             const manager = new Manager(office, 123);
-            
+
+            const seeded = envelopesExcludingType([creator, company, office, manager], Company.Type);
+            const jSeeded = await createJinagaWithRawStore(seeded);
+
             const managers: string[] = [];
-            const managerObserver = j.watch(
+            const managerObserver = jSeeded.watch(
                 model.given(Company).match((company, facts) =>
                     facts.ofType(Office)
                         .join(office => office.company, company)
@@ -228,26 +281,21 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
                             .join(manager => manager.office, office)
                         )
                 ),
-                company, // Anchor arrives after related facts
-                manager => {
-                    managers.push(j.hash(manager));
+                company,
+                m => {
+                    managers.push(jSeeded.hash(m));
                 }
             );
 
             await managerObserver.loaded();
-            
-            // Introduce facts before the anchor
-            await j.fact(office);
-            await j.fact(manager);
-            
-            // Now introduce the anchor
-            await j.fact(company);
-            
+            expect(managers).toEqual([]);
+
+            await jSeeded.fact(company);
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should match the manager to the company anchor
-            // even though the anchor arrived after the manager
-            expect(managers).toContain(j.hash(manager));
+            expect(managers).toContain(jSeeded.hash(manager));
         });
     });
 
@@ -277,14 +325,14 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
             
             // Given becomes known locally
             await j.fact(company);
-            
+
             // Related facts are already known
             await j.fact(office);
             await j.fact(manager);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should recover seamlessly once given is known locally
             expect(managers).toContain(j.hash(manager));
         });
 
@@ -314,24 +362,28 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
             // Related facts are known locally
             await j.fact(office);
             await j.fact(manager);
-            
+
             // Given arrives from server
             await j.fact(company);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should recover seamlessly once given arrives from server
             expect(managers).toContain(j.hash(manager));
         });
     });
 
-    describe("transport mechanism compatibility", () => {
-        it("should work with HTTP polling transport", async () => {
-            // Test that the race condition fix works with HTTP polling
+    describe("transport-agnostic recovery", () => {
+        // These tests use the in-memory transport from JinagaTest. The
+        // inverse-recovery contract is enforced at the client (fact manager +
+        // observable source) layer, below the transport boundary, so the same
+        // code path serves both HTTP polling and WebSocket feeds. Transport-
+        // specific behavior is exercised by the HTTP and WS test suites.
+        it("should fire the inverse subscription regardless of transport", async () => {
             const company = new Company(creator, "TestCo");
             const office = new Office(company, "TestOffice");
             const manager = new Manager(office, 123);
-            
+
             const managers: string[] = [];
             const managerObserver = j.watch(
                 model.given(Company).match((company, facts) =>
@@ -341,56 +393,21 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
                             .join(manager => manager.office, office)
                         )
                 ),
-                company, // Given fact arrives after subscription
-                manager => {
-                    managers.push(j.hash(manager));
+                company,
+                m => {
+                    managers.push(j.hash(m));
                 }
             );
 
             await managerObserver.loaded();
-            
-            // Simulate HTTP polling behavior
+
             await j.fact(company);
             await j.fact(office);
             await j.fact(manager);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should work with HTTP polling transport
-            expect(managers).toContain(j.hash(manager));
-        });
-
-        it("should work with WebSocket feeds transport", async () => {
-            // Test that the race condition fix works with WebSocket feeds
-            const company = new Company(creator, "TestCo");
-            const office = new Office(company, "TestOffice");
-            const manager = new Manager(office, 123);
-            
-            const managers: string[] = [];
-            const managerObserver = j.watch(
-                model.given(Company).match((company, facts) =>
-                    facts.ofType(Office)
-                        .join(office => office.company, company)
-                        .selectMany(office => facts.ofType(Manager)
-                            .join(manager => manager.office, office)
-                        )
-                ),
-                company, // Given fact arrives after subscription
-                manager => {
-                    managers.push(j.hash(manager));
-                }
-            );
-
-            await managerObserver.loaded();
-            
-            // Simulate WebSocket feed behavior
-            await j.fact(company);
-            await j.fact(office);
-            await j.fact(manager);
-            
-            managerObserver.stop();
-
-            // EXPECTATION: Should work with WebSocket feeds transport
             expect(managers).toContain(j.hash(manager));
         });
     });
@@ -429,10 +446,10 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
             await j.fact(company);
             await j.fact(office);
             await j.fact(manager);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should work with single watch call
             expect(managers).toContain(j.hash(manager));
             expect(watchCallCount).toBeGreaterThan(0);
         });
@@ -466,10 +483,10 @@ describe("inverse subscription wire protocol and server-side behavior", () => {
             await j.fact(company);
             await j.fact(office);
             await j.fact(manager);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should automatically track and re-evaluate
             expect(managers).toContain(j.hash(manager));
         });
     });

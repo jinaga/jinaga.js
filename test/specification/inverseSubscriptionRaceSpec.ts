@@ -1,3 +1,4 @@
+import { Jinaga, JinagaTest, User } from "@src";
 import { AuthenticationNoOp } from "../../src/authentication/authentication-noop";
 import { Dehydration } from "../../src/fact/hydrate";
 import { PassThroughFork } from "../../src/fork/pass-through-fork";
@@ -8,7 +9,6 @@ import { NetworkNoOp } from "../../src/managers/NetworkManager";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { ObservableSource } from "../../src/observable/observable";
 import { FactEnvelope } from "../../src/storage";
-import { Jinaga, JinagaTest, User } from "../../src";
 import { Company, Office, Manager, President, model } from "../companyModel";
 
 // Construct a Jinaga instance with a memory store pre-populated from raw fact
@@ -16,9 +16,9 @@ import { Company, Office, Manager, President, model } from "../companyModel";
 // graphs and pulls in every predecessor), this lets the caller decide exactly
 // which records to seed — required for cached-data scenarios where descendant
 // facts must exist without their predecessor given fact.
-function createJinagaWithRawStore(rawEnvelopes: FactEnvelope[]): Jinaga {
+async function createJinagaWithRawStore(rawEnvelopes: FactEnvelope[]): Promise<Jinaga> {
     const store = new MemoryStore();
-    store.save(rawEnvelopes);
+    await store.save(rawEnvelopes);
     const observableSource = new ObservableSource(store);
     const syncStatusNotifier = new SyncStatusNotifier();
     const fork = new PassThroughFork(store);
@@ -40,7 +40,7 @@ describe("inverse subscription race condition", () => {
     });
 
     describe("client-side race condition", () => {
-        it("should miss inverse results when given fact arrives after subscription", async () => {
+        it("should include inverse results when given fact arrives after subscription", async () => {
             // This test demonstrates the client-side race condition
             // where the given fact hasn't been passed to jinagaClient.fact yet
             
@@ -71,16 +71,16 @@ describe("inverse subscription race condition", () => {
             await j.fact(company);
             await j.fact(office);
             await j.fact(manager);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: This should include the manager, but currently fails
-            // because the inverse subscription doesn't account for the given fact
-            // that arrived after the subscription started
+            // The inverse subscription should account for the given fact even
+            // when it arrives after the subscription started.
             expect(managers).toContain(j.hash(manager));
         });
 
-        it("should miss nested inverse results when parent given arrives late", async () => {
+        it("should include nested inverse results when parent given arrives late", async () => {
             // Test nested inverse relationships
             const company = new Company(creator, "TestCo");
             const office = new Office(company, "TestOffice");
@@ -107,7 +107,8 @@ describe("inverse subscription race condition", () => {
             await j.fact(company);
             await j.fact(office);
             await j.fact(president);
-            
+            await presidentObserver.processed();
+
             presidentObserver.stop();
 
             // EXPECTATION: Should include the president
@@ -116,7 +117,7 @@ describe("inverse subscription race condition", () => {
     });
 
     describe("network race condition", () => {
-        it("should miss inverse results when given fact arrives from server after subscription", async () => {
+        it("should include inverse results when given fact arrives from server after subscription", async () => {
             // This test simulates the network race condition
             // where the given fact hasn't arrived from the server yet
             
@@ -150,7 +151,8 @@ describe("inverse subscription race condition", () => {
             for (const fact of serverFacts) {
                 await j.fact(fact);
             }
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
             // EXPECTATION: Should include all managers once facts arrive from server
@@ -210,7 +212,9 @@ describe("inverse subscription race condition", () => {
             await j.fact(company2);
             await j.fact(office2);
             await j.fact(manager2);
-            
+            await managerObserver.processed();
+            await managerObserver2.processed();
+
             managerObserver.stop();
             managerObserver2.stop();
 
@@ -241,7 +245,7 @@ describe("inverse subscription race condition", () => {
                 .filter(r => r.type !== Company.Type)
                 .map(r => ({ fact: r, signatures: [] }));
 
-            const jCached = createJinagaWithRawStore(cachedEnvelopes);
+            const jCached = await createJinagaWithRawStore(cachedEnvelopes);
 
             const managers: string[] = [];
             const managerObserver = jCached.watch(
@@ -306,7 +310,8 @@ describe("inverse subscription race condition", () => {
             // Later, more facts arrive
             await j.fact(office2);
             await j.fact(manager2);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
             // EXPECTATION: Should include both managers as they arrive
@@ -349,10 +354,11 @@ describe("inverse subscription race condition", () => {
             await j.fact(company);
             await j.fact(office);
             await j.fact(manager);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should recover automatically without additional watch() calls
+            // Should recover automatically without additional watch() calls.
             expect(managers).toContain(j.hash(manager));
             expect(watchCallCount).toBeGreaterThan(0);
         });
@@ -381,14 +387,17 @@ describe("inverse subscription race condition", () => {
 
             await managerObserver.loaded();
             
-            // Simulate facts arriving via any transport
+            // The recovery path is transport-agnostic at this layer (the test
+            // uses the in-memory transport from JinagaTest); the HTTP polling
+            // and WebSocket cases are exercised by the higher-level transport
+            // tests, not here.
             await j.fact(company);
             await j.fact(office);
             await j.fact(manager);
-            
+            await managerObserver.processed();
+
             managerObserver.stop();
 
-            // EXPECTATION: Should work regardless of transport mechanism
             expect(managers).toContain(j.hash(manager));
         });
     });

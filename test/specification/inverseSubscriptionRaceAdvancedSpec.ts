@@ -1,4 +1,4 @@
-import { Jinaga, JinagaTest, User } from "../../src";
+import { Jinaga, JinagaTest, User } from "@src";
 import { Company, Office, Manager, President, ManagerName, model } from "../companyModel";
 
 describe("advanced inverse subscription race condition scenarios", () => {
@@ -45,7 +45,8 @@ describe("advanced inverse subscription race condition scenarios", () => {
             await j.fact(office);
             await j.fact(manager);
             await j.fact(managerName);
-            
+            await nameObserver.processed();
+
             nameObserver.stop();
 
             // EXPECTATION: Should include the manager name
@@ -101,7 +102,9 @@ describe("advanced inverse subscription race condition scenarios", () => {
             await j.fact(office2);
             await j.fact(manager);
             await j.fact(president);
-            
+            await managerObserver.processed();
+            await presidentObserver.processed();
+
             managerObserver.stop();
             presidentObserver.stop();
 
@@ -163,7 +166,9 @@ describe("advanced inverse subscription race condition scenarios", () => {
             await j.fact(office2);
             await j.fact(manager1);
             await j.fact(manager2);
-            
+            await observer1.processed();
+            await observer2.processed();
+
             observer1.stop();
             observer2.stop();
 
@@ -224,6 +229,7 @@ describe("advanced inverse subscription race condition scenarios", () => {
             );
 
             await observer2.loaded();
+            await observer2.processed();
             observer2.stop();
 
             // EXPECTATION: First observer should see nothing (cancelled)
@@ -346,10 +352,10 @@ describe("advanced inverse subscription race condition scenarios", () => {
             for (const manager of managers) {
                 await j.fact(manager);
             }
-            
+            await observer.processed();
+
             observer.stop();
 
-            // EXPECTATION: Should include all managers efficiently
             expect(allManagers).toHaveLength(50); // 10 offices * 5 managers each
             for (const manager of managers) {
                 expect(allManagers).toContain(j.hash(manager));
@@ -388,10 +394,10 @@ describe("advanced inverse subscription race condition scenarios", () => {
             // Introduce all managers rapidly
             const promises = managers.map(manager => j.fact(manager));
             await Promise.all(promises);
-            
+            await observer.processed();
+
             observer.stop();
 
-            // EXPECTATION: Should handle rapid introduction without issues
             expect(allManagers).toHaveLength(20);
             for (const manager of managers) {
                 expect(allManagers).toContain(j.hash(manager));
@@ -423,10 +429,10 @@ describe("advanced inverse subscription race condition scenarios", () => {
             
             // Only introduce company, no offices or managers
             await j.fact(company);
-            
+            await observer.processed();
+
             observer.stop();
 
-            // EXPECTATION: Should handle empty results gracefully
             expect(managers).toEqual([]);
         });
 
@@ -457,10 +463,10 @@ describe("advanced inverse subscription race condition scenarios", () => {
             await j.fact(company);
             await j.fact(office);
             await j.fact(manager);
-            
+            await observer.processed();
+
             observer.stop();
 
-            // EXPECTATION: Should handle without infinite loops
             expect(managers).toContain(j.hash(manager));
         });
     });
