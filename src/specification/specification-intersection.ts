@@ -355,10 +355,16 @@ export function intersectSpecificationWithDistributionRule(
 }
 
 /**
- * True if `specification` already carries the synthetic `distributionUser`
- * given — i.e., it has already been intersected. Used by the distribution
- * engine to skip authorization re-checks on intersected feeds, since the
- * spec itself now encodes the auth pattern.
+ * True if `specification` carries the synthetic `distributionUser` given —
+ * i.e., it has the surface shape an intersected spec would have.
+ *
+ * **Not a security boundary.** The shape is trivially forgeable by a caller
+ * (anyone can author a spec with a given named `distributionUser` of type
+ * `Jinaga.User`), so this MUST NOT be used to bypass authorization checks.
+ * The bypass for intersected feeds lives in `NetworkDistribution` as
+ * runtime state populated only by the engine's own intersection — that
+ * marker is unforgeable and is the one to trust. Keep this helper for
+ * diagnostic/serialization purposes only.
  */
 export function specificationHasIntersection(specification: Specification): boolean {
     return specification.given.some(g =>

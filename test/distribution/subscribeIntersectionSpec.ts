@@ -171,6 +171,45 @@ describe("subscribe with distribution-rule intersection (Phase 3, #130)", () => 
         });
     });
 
+    describe("authorization bypass via forged intersection marker", () => {
+        // Distribution checks must not be skippable by a caller who crafts
+        // a spec carrying a `distributionUser: Jinaga.User` given. The
+        // bypass for genuine intersected specs is keyed off feed hashes the
+        // engine itself produced, not off spec structure.
+        const distribution = (r: DistributionRules) => r
+            .share(model.given(Company).match((c, facts) =>
+                facts.ofType(Office).join(o => o.company, c)
+            ))
+            .with(model.given(Company).match((c, facts) =>
+                facts.ofType(Administrator)
+                    .join(a => a.company, c)
+                    .selectMany(a => facts.ofType(User).join(u => u, a.user))
+            ));
+
+        it("rejects a query whose spec was hand-crafted to look intersected", async () => {
+            const office = new Office(company, "Office1");
+            const j = JinagaTest.create({
+                model,
+                user: subscriber,
+                initialState: [creator, subscriber, company, office],
+                distribution
+            });
+
+            // A query that should be Forbidden (no Administrator yet) but
+            // whose spec has been authored with the synthetic given. If the
+            // engine treated the spec-structure marker as a bypass, this
+            // would silently leak offices. It must instead reject — either
+            // by failing authorization or by failing the connectedness
+            // check (the forged given has no link to the rest of the spec).
+            const forgedSpec = model.given(Company, User).match((c, distributionUser, facts) =>
+                facts.ofType(Office).join(o => o.company, c)
+            );
+            await expect(() =>
+                j.query(forgedSpec, company, subscriber)
+            ).rejects.toThrow(/Not authorized|Disconnected specification/);
+        });
+    });
+
     describe("intersection composes with multi-given share/with rules (#161 shape)", () => {
         // Both share and with specs have two givens (Company, User). The
         // share-spec joins Employee to *both* givens (its match references

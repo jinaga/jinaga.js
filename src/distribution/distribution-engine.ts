@@ -3,10 +3,7 @@ import { describeSpecification } from "../specification/description";
 import { buildFeeds } from "../specification/feed-builder";
 import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
 import { Specification, isPathCondition, specificationIsIdentity } from "../specification/specification";
-import {
-  intersectSpecificationWithDistributionRule,
-  specificationHasIntersection
-} from "../specification/specification-intersection";
+import { intersectSpecificationWithDistributionRule } from "../specification/specification-intersection";
 import { FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { canAuthorizeByComposition } from "./distribution-composition";
 import { DistributionRules } from "./distribution-rules";
@@ -54,12 +51,6 @@ export class DistributionEngine {
     // TODO: Minimize the number hits to the database.
     const reasons: string[] = [];
     for (const targetFeed of targetFeeds) {
-      // Intersected feeds carry the authorization condition inside the spec
-      // itself (the synthetic `distributionUser` given), so no separate rule
-      // check is needed — the spec returns empty until the auth fact arrives.
-      if (specificationHasIntersection(targetFeed)) {
-        continue;
-      }
       const feedResult = await this.canDistributeTo(targetFeed, namedStart, user);
       if (feedResult.type === 'failure') {
         reasons.push(feedResult.reason);
@@ -278,10 +269,20 @@ export class DistributionEngine {
 }
 
 /**
- * Pick the first applicable rule for intersection. "Applicable" means: the
- * rule's share-specification has the same skeleton as the user's target spec
- * (so the rule is meaningful for this query) and the rule has a non-null
- * user-spec (so there's something to intersect).
+ * Pick a rule whose share-specification matches the target spec by skeleton
+ * and whose user-spec has compatible given types. Returns null when no rule
+ * is applicable, or when more than one rule matches (ambiguity — see below).
+ *
+ * Ambiguity bail-out: if two rules both share the target shape but to
+ * different user sets (e.g. share with administrators OR share with
+ * creators), picking the first rule arbitrarily would make subscription
+ * activation depend on rule ordering. A user authorized only by the
+ * *other* rule would see the subscription stay empty forever, even though
+ * a valid authorization path exists. The right semantics is the union (OR)
+ * of all applicable user-specs, but the spec language has no OR primitive;
+ * until it does, we refuse to intersect in the ambiguous case so the
+ * subscribe call falls back to the existing "Not authorized" failure
+ * rather than to a silently-inactivatable subscription.
  */
 function findRuleForIntersection(
   specification: Specification,
@@ -289,24 +290,27 @@ function findRuleForIntersection(
   targetFeeds: Specification[]
 ): Specification | null {
   const targetSkeletons = targetFeeds.map(f => skeletonOfSpecification(f));
+  const matches: Specification[] = [];
   for (const rule of distributionRules.rules) {
     if (rule.user === null) continue;
     for (const ruleFeed of rule.feeds) {
       const ruleSkeleton = skeletonOfSpecification(ruleFeed);
-      if (targetSkeletons.some(ts => skeletonsEqual(ruleSkeleton, ts))) {
-        // Ensure the rule's user-spec and the target spec have compatible
-        // given types — the intersection algorithm requires this. If they
-        // don't match, skip the rule rather than fail intersection.
-        if (rule.user.given.length !== specification.given.length) continue;
-        const typesAlign = rule.user.given.every((g, i) =>
-          g.label.type === specification.given[i].label.type
-        );
-        if (!typesAlign) continue;
-        return rule.user;
-      }
+      if (!targetSkeletons.some(ts => skeletonsEqual(ruleSkeleton, ts))) continue;
+      // The intersection algorithm requires the rule's user-spec and the
+      // target spec to share given counts and types.
+      if (rule.user.given.length !== specification.given.length) continue;
+      const typesAlign = rule.user.given.every((g, i) =>
+        g.label.type === specification.given[i].label.type
+      );
+      if (!typesAlign) continue;
+      matches.push(rule.user);
+      break; // One match per rule is enough.
     }
   }
-  return null;
+  if (matches.length !== 1) {
+    return null;
+  }
+  return matches[0];
 }
 
 function skeletonsEqual(ruleSkeleton: Skeleton, targetSkeleton: Skeleton): boolean {

@@ -50,6 +50,15 @@ export class NetworkNoOp implements Network {
 
 export class NetworkDistribution implements Network {
     private feedCache = new FeedCache();
+    // Feed hashes this instance produced via Phase 3 intersection. Used as
+    // an unforgeable bypass token for the authorization check on those
+    // feeds: an intersected spec already encodes the auth pattern, and its
+    // augmented skeleton doesn't match any distribution rule, so a normal
+    // `canDistributeToAll` would reject it. The hashes are recorded only
+    // by `intersectForSubscribe` (computed from feeds the engine itself
+    // produced), so a caller can't spoof the bypass by crafting a spec
+    // with a `distributionUser` given.
+    private readonly intersectedFeeds = new Set<string>();
 
     constructor(
         private readonly distributionEngine: DistributionEngine,
@@ -62,11 +71,21 @@ export class NetworkDistribution implements Network {
             ...map,
             [given.label.name]: start[index]
         }), {} as ReferencesByName);
-        const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
-        if (canDistribute.type === 'failure') {
-            throw new Error(`Not authorized: ${canDistribute.reason}`);
+        // Compute feed hashes upfront so we can recognize feeds the engine
+        // produced earlier via intersection (whose hashes we've cached) and
+        // skip the auth check just for those. A caller-supplied spec that
+        // happens to look intersected won't produce matching hashes unless
+        // its content equals one we actually generated.
+        const feedHashes = this.feedCache.addFeeds(feeds, namedStart);
+        const allFromIntersection = feedHashes.length > 0
+            && feedHashes.every(h => this.intersectedFeeds.has(h));
+        if (!allFromIntersection) {
+            const canDistribute = await this.distributionEngine.canDistributeToAll(feeds, namedStart, this.user);
+            if (canDistribute.type === 'failure') {
+                throw new Error(`Not authorized: ${canDistribute.reason}`);
+            }
         }
-        return this.feedCache.addFeeds(feeds, namedStart);
+        return feedHashes;
     }
 
     async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
@@ -74,10 +93,11 @@ export class NetworkDistribution implements Network {
         if (!feedObject) {
             throw new Error(`Feed ${feed} not found`);
         }
-        const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user);
-
-        if (canDistribute.type === 'failure') {
-            throw new Error(`Not authorized: ${canDistribute.reason}`);
+        if (!this.intersectedFeeds.has(feed)) {
+            const canDistribute = await this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user);
+            if (canDistribute.type === 'failure') {
+                throw new Error(`Not authorized: ${canDistribute.reason}`);
+            }
         }
 
         // Pretend that we are at the end of the feed.
@@ -91,6 +111,10 @@ export class NetworkDistribution implements Network {
         const feedObject = this.feedCache.getFeed(feed);
         if (!feedObject) {
             onError(new Error(`Feed ${feed} not found`));
+            return () => { };
+        }
+        if (this.intersectedFeeds.has(feed)) {
+            onResponse([], bookmark);
             return () => { };
         }
         this.distributionEngine.canDistributeToAll([feedObject.feed], feedObject.namedStart, this.user)
@@ -114,6 +138,21 @@ export class NetworkDistribution implements Network {
 
     async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }> {
         const result = await this.distributionEngine.intersectForSubscribe(start, specification, this.user);
+        if (result.intersected) {
+            // Pre-compute feed hashes from the intersected spec and remember
+            // them. When the observer later calls `feeds` (after
+            // `reduceSpecification` reshapes the spec into a fresh object),
+            // we recognize the produced hashes and skip auth — without
+            // trusting the spec's structure as a marker.
+            const reducedIntersected = reduceSpecification(result.specification);
+            const namedStart = reducedIntersected.given.reduce((map, given, index) => ({
+                ...map,
+                [given.label.name]: result.start[index]
+            }), {} as ReferencesByName);
+            const producedFeeds = buildFeeds(reducedIntersected);
+            const producedHashes = this.feedCache.addFeeds(producedFeeds, namedStart);
+            for (const h of producedHashes) this.intersectedFeeds.add(h);
+        }
         return { start: result.start, specification: result.specification };
     }
 }
