@@ -249,13 +249,26 @@ export function intersectSpecificationWithDistributionRule(
 
     // Rename every rule unknown to a non-colliding dist_-prefixed name. The
     // shared given names stay the same so the rule's path conditions still
-    // reference the original givens.
+    // reference the original givens. Walk nested existentials too: an
+    // unknown introduced inside `match.conditions.matches` (e.g. a
+    // `notExists(...)` revocation) is also a label the rule binds, and
+    // skipping it leaves the original name in place, which can collide
+    // with a caller-spec label.
+    const ruleGivenNames = new Set(ruleSpecification.given.map(g => g.label.name));
     const ruleUnknowns = new Set<string>();
-    ruleSpecification.matches.forEach(m => {
-        if (!ruleSpecification.given.some(g => g.label.name === m.unknown.name)) {
-            ruleUnknowns.add(m.unknown.name);
+    function collectRuleUnknowns(matches: Match[]) {
+        for (const m of matches) {
+            if (!ruleGivenNames.has(m.unknown.name)) {
+                ruleUnknowns.add(m.unknown.name);
+            }
+            for (const condition of m.conditions) {
+                if (condition.type === "existential") {
+                    collectRuleUnknowns(condition.matches);
+                }
+            }
         }
-    });
+    }
+    collectRuleUnknowns(ruleSpecification.matches);
     const mapping: Record<string, string> = {};
     for (const unknown of ruleUnknowns) {
         let newName = "dist_" + unknown;

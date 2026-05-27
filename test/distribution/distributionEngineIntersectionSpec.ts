@@ -1,5 +1,5 @@
 import { describeSpecification, DistributionEngine, DistributionRules, FactProjection, MemoryStore, Specification, User } from "@src";
-import { Blog, Comment, model, Post, Publish } from "../blogModel";
+import { Blog, Comment, CommentApproved, model, Post, Publish } from "../blogModel";
 
 describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => {
     let engine: DistributionEngine;
@@ -191,6 +191,56 @@ describe("DistributionEngine.intersectSpecificationWithDistributionRule", () => 
                         }
                     ]
                 } => u1`);
+        });
+    });
+
+    describe("Label collision tests", () => {
+        it("renames unknowns inside nested existential conditions of the rule", () => {
+            // The rule's user-spec embeds a CommentApproved match inside a
+            // `notExists`. The intersection algorithm lifts the rule's
+            // matches into the caller's spec; if it only renames top-level
+            // rule unknowns it leaves the nested `comment`/`commentApproved`
+            // names alone, which can collide with the caller's labels and
+            // silently change semantics. After the fix every rule-bound
+            // unknown — including those inside existentials — must carry
+            // the `dist_` prefix in the merged spec.
+            const specification = model.given(Blog).match((blog, facts) =>
+                facts.ofType(Post)
+                    .join(post => post.blog, blog)
+            ).specification;
+
+            // Rule: shared with the blog creator, but only if some
+            // CommentApproved exists for some Comment on the blog — the
+            // inner Comment and CommentApproved matches live inside an
+            // existential on the User match.
+            const ruleSpecification = model.given(Blog).match((blog, facts) =>
+                facts.ofType(User)
+                    .join(u => u, blog.creator)
+                    .exists(u => facts.ofType(Comment)
+                        .join(comment => comment.post.blog, blog)
+                        .exists(comment => facts.ofType(CommentApproved)
+                            .join(approved => approved.comment, comment)
+                        )
+                    )
+            ).specification;
+
+            const result = engine.intersectSpecificationWithDistributionRule(specification, ruleSpecification);
+            const description = describeSpecification(result, 0);
+
+            // The model builder auto-numbers rule unknowns as u1/u2/u3.
+            // After alpha-renaming, every rule-bound unknown — at any depth
+            // — must carry the `dist_` prefix. If the bug were still present
+            // the nested Comment and CommentApproved matches would remain
+            // bare `u2`/`u3` and collide with the caller's `u1: Post`.
+            expect(description).toContain("dist_u1: Jinaga.User"); // top-level (worked pre-fix)
+            expect(description).toContain("dist_u2: Comment");     // inside outer existential
+            expect(description).toContain("dist_u3: CommentApproved"); // inside nested existential
+
+            // No bare rule-bound names should leak through inside the
+            // lifted existential (the caller's `u1: Post` is the only
+            // un-prefixed `u1` allowed).
+            expect(description).not.toMatch(/\bu2: Comment\b/);
+            expect(description).not.toMatch(/\bu3: CommentApproved\b/);
         });
     });
 
