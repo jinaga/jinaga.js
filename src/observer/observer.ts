@@ -35,12 +35,44 @@ interface ObserverBranch {
     specification: Specification;
     feeds: string[];
     listeners: SpecificationListener[];
+    /**
+     * Labels of this branch's spec (givens + match unknowns). Used to
+     * compute a stable "vote id" for per-row ref counting: the same
+     * (row, auth path) tuple from this branch's ADD inverse and its
+     * REMOVE inverse hash to the same id because both bind the same set
+     * of labels (the inverse's "from" fact differs but the resolved
+     * spec labels match in shape and value).
+     */
+    voteLabels: string[];
 }
 
 export class ObserverImpl<T> implements Observer<T> {
     private givenHash: string;
     private cachedPromise: Promise<boolean> | undefined;
     private loadedPromise: Promise<void> | undefined;
+    /**
+     * Root-level per-row ref counting for OR semantics across branches.
+     * Keyed by the row identity hash (subset over `rowIdentityLabels`).
+     * The value set holds one entry per branch+auth-path combination
+     * that currently authorizes the row — a "vote." A row is delivered
+     * to the handler on the *first* vote and its removal callback fires
+     * on the *last* withdrawn vote, so revoking one of two overlapping
+     * authorizations leaves the row in place and revoking the last one
+     * removes it. Only applied at `path === ""` (the user-visible root
+     * subscription) — nested child projections live within a single
+     * branch's auth path and use the standard full-tuple dedup below.
+     */
+    private branchVotesByRow = new Map<string, Set<string>>();
+    /**
+     * Root-level removal callbacks, keyed by the same row identity hash
+     * as `branchVotesByRow`.
+     */
+    private removalsByRow = new Map<string, () => Promise<void>>();
+    /**
+     * Child-path dedup and removal registry. The full-tuple hash is a
+     * stable identifier for nested rows because each nested row carries a
+     * distinct combination of parent + child labels.
+     */
     private removalsByTuple: {
         [tupleHash: string]: () => Promise<void>;
     } = {};
@@ -82,7 +114,7 @@ export class ObserverImpl<T> implements Observer<T> {
      * This map is used to buffer results that are produced before any handlers are registered,
      * enabling replay of results to late-registered handlers.
      */
-    private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; results: ProjectedResult[] }>
+    private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; results: ProjectedResult[]; branch: ObserverBranch }>
         = new Map();
     /**
      * Labels (givens + match unknowns) drawn from the pre-intersection
@@ -90,7 +122,7 @@ export class ObserverImpl<T> implements Observer<T> {
      * different alpha-renamed auth-path unknowns to the tuple, so a hash
      * over the full tuple would differ across branches for the same row.
      * Hashing only over these labels yields a stable row identity that
-     * collapses identical rows across branches for `notifiedTuples`.
+     * collapses identical rows across branches for `branchVotesByRow`.
      */
     private rowIdentityLabels: string[];
 
@@ -100,20 +132,24 @@ export class ObserverImpl<T> implements Observer<T> {
         specification: Specification,
         resultAdded: ResultAddedFunc<T>
     ) {
-        // Start with a single passthrough branch. `applySubscribeIntersection`
-        // may replace this with one branch per matching distribution rule.
-        this.branches = [{
-            specification,
-            feeds: [],
-            listeners: []
-        }];
-
         // Capture the original spec's labels. These are stable across any
         // future branch fan-out from `applySubscribeIntersection`.
         this.rowIdentityLabels = [
             ...specification.given.map(g => g.label.name),
             ...specification.matches.map(m => m.unknown.name)
         ];
+
+        // Start with a single passthrough branch. `applySubscribeIntersection`
+        // may replace this with one branch per matching distribution rule.
+        // For an unintersected branch the vote labels equal the row identity
+        // labels, so each row carries exactly one vote and ref counting
+        // reduces to the pre-fix behavior.
+        this.branches = [{
+            specification,
+            feeds: [],
+            listeners: [],
+            voteLabels: [...this.rowIdentityLabels]
+        }];
 
         // Map the given facts to a tuple.
         const tuple = specification.given.reduce((tuple, label, index) => ({
@@ -213,7 +249,7 @@ export class ObserverImpl<T> implements Observer<T> {
             branch.listeners = inverses.map((inverse, index) => {
                 const listener = this.factManager.addSpecificationListener(
                     inverse.inverseSpecification,
-                    (results) => this.onResult(inverse, results)
+                    (results) => this.onResult(inverse, results, branch)
                 );
                 const path = inverse.path || "(root)";
                 Trace.info(`[Observer] Branch ${branchIndex} registered listener ${index + 1}/${inverses.length} for path: ${path}`);
@@ -303,7 +339,17 @@ export class ObserverImpl<T> implements Observer<T> {
         this.branches = branches.map(b => ({
             specification: b.specification,
             feeds: [],
-            listeners: []
+            listeners: [],
+            // Vote labels are the branch's spec labels — broader than the
+            // shared row-identity labels because each branch's auth path
+            // contributes alpha-renamed unknowns (dist_admin, dist_user,
+            // distributionUser, ...). Two distinct auth paths through the
+            // same branch produce different vote ids; identical paths
+            // collide and ref-count as one.
+            voteLabels: [
+                ...b.specification.given.map(g => g.label.name),
+                ...b.specification.matches.map(m => m.unknown.name)
+            ]
         }));
         // Re-key any handlers that were registered with the pre-intersection
         // givenHash. Notification routing matches handlers by tupleHash, so a
@@ -352,11 +398,11 @@ export class ObserverImpl<T> implements Observer<T> {
         }
         for (const { branch, projected } of branchResults) {
             const givenSubset = branch.specification.given.map(g => g.label.name);
-            await this.notifyAdded(projected, branch.specification.projection, "", givenSubset);
+            await this.notifyAdded(projected, branch.specification.projection, "", givenSubset, branch);
         }
     }
 
-    private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
+    private async onResult(inverse: SpecificationInverse, results: ProjectedResult[], branch: ObserverBranch): Promise<void> {
         const path = inverse.path || "(root)";
         Trace.info(`[Observer] ON_RESULT - Path: ${path}, Operation: ${inverse.operation}, Results count: ${results.length}, Given hash: ${this.givenHash.substring(0, 8)}...`);
         
@@ -374,10 +420,10 @@ export class ObserverImpl<T> implements Observer<T> {
             Trace.info(`[Observer] Matching results: ${matchingResults.length} - Path: ${path}, Operation: ${inverse.operation}`);
 
             if (inverse.operation === "add") {
-                return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset);
+                return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset, branch);
             }
             else if (inverse.operation === "remove") {
-                return await this.notifyRemoved(inverse.resultSubset, matchingResults);
+                return await this.notifyRemoved(inverse, matchingResults, branch);
             }
             else {
                 const _exhaustiveCheck: never = inverse.operation;
@@ -394,75 +440,97 @@ export class ObserverImpl<T> implements Observer<T> {
         await notificationPromise;
     }
 
-    private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[]) {
+    private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[], branch: ObserverBranch) {
         const displayPath = path || "(root)";
         Trace.info(`[Observer] NOTIFY_ADDED - Path: ${displayPath}, Results: ${projectedResults.length}, Parent subset: [${parentSubset.join(', ')}]`);
-        
+
+        // OR ref counting applies at the root path only. Nested children
+        // live within the same auth path as their parent — branching is a
+        // root-level concern — so they continue to dedup by full-tuple
+        // hash and store removals in `removalsByTuple`.
+        const isRoot = path === "";
+
         for (const pr of projectedResults) {
             const result: any = await this.injectObservers(pr, projection, path);
             const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
-            // Identify the row for dedup. In single-branch mode (no
-            // intersection, or single-rule intersection) the full tuple
-            // is the row identity. In multi-branch OR intersection each
-            // branch carries different alpha-renamed auth-path unknowns,
-            // so the full tuple would differ across branches for the
-            // same row; fall back to a subset hash over the pre-
-            // intersection spec's labels, which is stable across
-            // branches.
-            const tupleHash = this.branches.length > 1
+            // For root rows, `rowHash` collapses the same row across
+            // branches (subset over `rowIdentityLabels`). For nested
+            // rows, the full-tuple hash is the right identity.
+            const rowHash = isRoot
                 ? this.computeRowIdentityHash(pr.tuple)
                 : computeObjectHash(pr.tuple);
-            
-            Trace.info(`[Observer] Processing result - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
-            
+            // At the root, the vote id additionally tracks *which* auth
+            // path is currently authorizing the row, so revoking one path
+            // can leave another in place. Not needed for child rows.
+            const voteId = isRoot
+                ? computeTupleSubsetHash(pr.tuple, branch.voteLabels)
+                : rowHash;
+
+            Trace.info(`[Observer] Processing result - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., Vote id: ${voteId.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
+
             const addedHandler = this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path);
             const resultAdded = addedHandler?.handler;
-            
+
             if (!addedHandler) {
                 Trace.warn(`[Observer] NO HANDLER FOUND - Path: ${displayPath}, Parent tuple hash: ${parentTupleHash.substring(0, 8)}..., Available handlers: ${this.addedHandlers.length}`);
                 this.addedHandlers.forEach((h, index) => {
                     Trace.warn(`[Observer]   Handler ${index + 1}: Path="${h.path}", Tuple hash: ${h.tupleHash.substring(0, 8)}...`);
                 });
                 // Buffer for replay when the handler registers later.
-                this.bufferPendingNotification(path, pr, projection, parentSubset);
+                this.bufferPendingNotification(path, pr, projection, parentSubset, branch);
                 // Skip deeper recursion until handler is registered.
                 continue;
             } else if (!resultAdded) {
                 Trace.warn(`[Observer] Handler found but no callback - Path: ${displayPath}`);
                 // Buffer for replay when the callback is attached.
-                this.bufferPendingNotification(path, pr, projection, parentSubset);
+                this.bufferPendingNotification(path, pr, projection, parentSubset, branch);
                 continue;
             } else {
                 Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
             }
-            
-            // Don't call result added if we have already called it for this tuple.
-            if (this.notifiedTuples.has(tupleHash) === false) {
-                // Check if observer was stopped before calling the handler
+
+            let isFirstDelivery: boolean;
+            if (isRoot) {
+                let supportingVotes = this.branchVotesByRow.get(rowHash);
+                isFirstDelivery = !supportingVotes;
+                if (!supportingVotes) {
+                    supportingVotes = new Set();
+                    this.branchVotesByRow.set(rowHash, supportingVotes);
+                }
+                supportingVotes.add(voteId);
+            } else {
+                isFirstDelivery = !this.notifiedTuples.has(rowHash);
+                if (isFirstDelivery) this.notifiedTuples.add(rowHash);
+            }
+
+            if (isFirstDelivery) {
                 if (this.stopped) {
-                    Trace.info(`[Observer] SKIPPING HANDLER - Observer stopped, Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
+                    Trace.info(`[Observer] SKIPPING HANDLER - Observer stopped, Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
                     continue;
                 }
-                Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
+                Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
                 const promiseMaybe = resultAdded(result);
-                this.notifiedTuples.add(tupleHash);
+                const storeRemoval = (fn: () => Promise<void>) => {
+                    if (isRoot) this.removalsByRow.set(rowHash, fn);
+                    else this.removalsByTuple[rowHash] = fn;
+                };
                 if (promiseMaybe instanceof Promise) {
                     const functionMaybe = await promiseMaybe;
                     if (functionMaybe instanceof Function) {
-                        this.removalsByTuple[tupleHash] = functionMaybe;
+                        storeRemoval(functionMaybe);
                     }
                 }
                 else {
                     const functionMaybe = promiseMaybe;
                     if (functionMaybe instanceof Function) {
-                        this.removalsByTuple[tupleHash] = async () => {
+                        storeRemoval(async () => {
                             functionMaybe();
                             return Promise.resolve();
-                        };
+                        });
                     }
                 }
-            } else if (this.notifiedTuples.has(tupleHash)) {
-                Trace.info(`[Observer] Skipping already notified tuple - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
+            } else {
+                Trace.info(`[Observer] Skipping already notified row - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
             }
 
             // Recursively notify added for specification results.
@@ -472,23 +540,48 @@ export class ObserverImpl<T> implements Observer<T> {
                         const childPath = path + "." + component.name;
                         const childResults = pr.result[component.name];
                         Trace.info(`[Observer] Processing nested spec - Parent path: ${displayPath}, Child path: ${childPath}, Child results: ${childResults?.length || 0}`);
-                        await this.notifyAdded(childResults, component.projection, childPath, Object.keys(pr.tuple));
+                        await this.notifyAdded(childResults, component.projection, childPath, Object.keys(pr.tuple), branch);
                     }
                 }
             }
         }
     }
 
-    async notifyRemoved(resultSubset: string[], projectedResult: ProjectedResult[]): Promise<void> {
+    async notifyRemoved(inverse: SpecificationInverse, projectedResult: ProjectedResult[], branch: ObserverBranch): Promise<void> {
+        const isRoot = inverse.path === "";
         for (const pr of projectedResult) {
-            const resultTupleHash = computeTupleSubsetHash(pr.tuple, resultSubset);
-            const removal = this.removalsByTuple[resultTupleHash];
-            if (removal !== undefined) {
-                await removal();
-                delete this.removalsByTuple[resultTupleHash];
-
-                // After the tuple is removed, it can be re-added.
-                this.notifiedTuples.delete(resultTupleHash);
+            if (isRoot) {
+                const rowHash = this.computeRowIdentityHash(pr.tuple);
+                const voteId = computeTupleSubsetHash(pr.tuple, branch.voteLabels);
+                const supportingVotes = this.branchVotesByRow.get(rowHash);
+                if (!supportingVotes) continue;
+                // `delete` returns false if this vote wasn't recorded, in
+                // which case the remove is for a (row, auth path) the
+                // observer never delivered — nothing to do.
+                if (!supportingVotes.delete(voteId)) continue;
+                if (supportingVotes.size > 0) {
+                    Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Remaining votes: ${supportingVotes.size} (row retained)`);
+                    continue;
+                }
+                // Last vote withdrawn — fire the row's removal callback and
+                // forget the row entirely so a future add can re-deliver it.
+                const removal = this.removalsByRow.get(rowHash);
+                this.branchVotesByRow.delete(rowHash);
+                this.removalsByRow.delete(rowHash);
+                if (removal !== undefined) {
+                    Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, firing removal`);
+                    await removal();
+                }
+            } else {
+                // Nested removals: look up the registered removal by the
+                // inverse's resultSubset, the way it always did.
+                const resultTupleHash = computeTupleSubsetHash(pr.tuple, inverse.resultSubset);
+                const removal = this.removalsByTuple[resultTupleHash];
+                if (removal !== undefined) {
+                    await removal();
+                    delete this.removalsByTuple[resultTupleHash];
+                    this.notifiedTuples.delete(resultTupleHash);
+                }
             }
         }
     }
@@ -501,7 +594,7 @@ export class ObserverImpl<T> implements Observer<T> {
      * @param projection - The projection associated with the result
      * @param parentSubset - The parent subset of fact references
      */
-    private bufferPendingNotification(path: string, pr: ProjectedResult, projection: Projection, parentSubset: string[]): void {
+    private bufferPendingNotification(path: string, pr: ProjectedResult, projection: Projection, parentSubset: string[], branch: ObserverBranch): void {
         const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
         const key = `${path}|${parentTupleHash}`;
         const existing = this.pendingAddsByKey.get(key);
@@ -509,14 +602,14 @@ export class ObserverImpl<T> implements Observer<T> {
             existing.results.push(pr);
         }
         else {
-            this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr] });
+            this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr], branch });
         }
     }
 
     /**
      * Hash that identifies a row by the pre-intersection spec's labels,
      * skipping any branch-specific auth-path unknowns. Used for cross-branch
-     * dedup in `notifiedTuples`.
+     * dedup and ref counting in `branchVotesByRow`.
      */
     private computeRowIdentityHash(tuple: ReferencesByName): string {
         return computeTupleSubsetHash(tuple, this.rowIdentityLabels);
@@ -552,7 +645,7 @@ export class ObserverImpl<T> implements Observer<T> {
                                 // Track this replay as a pending notification
                                 const replayWork = async () => {
                                     try {
-                                        await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
+                                        await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset, pending.branch);
                                     } catch (error) {
                                         Trace.error(`[Observer] ERROR in buffered replay - Path: ${path}, Error: ${error}`);
                                     }
