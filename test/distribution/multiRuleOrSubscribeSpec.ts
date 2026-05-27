@@ -4,6 +4,7 @@ import {
     AdministratorRevoked,
     Company,
     Office,
+    OfficeClosed,
     President,
     model
 } from "../companyModel";
@@ -209,6 +210,90 @@ describe("subscribe with multi-rule OR authorization", () => {
         expect(offices).toEqual([j.hash(office)]);
 
         await j.fact(new AdministratorRevoked(administrator));
+        await observer.processed();
+        observer.stop();
+
+        expect(offices).toEqual([]);
+    });
+
+    // Companion to "keeps the row when one of two authorizations is
+    // revoked." If every branch's authorization drops, no rule is left to
+    // authorize the row, so the OR result must collapse to empty.
+    //
+    // SKIPPED: documents a known gap in the OR-remove path. The observer
+    // dedupes ADDS across branches via a row-identity hash over the pre-
+    // intersection labels (so the same row surfaced by two branches calls
+    // the handler once), but `notifyRemoved` still keys by
+    // `inverse.resultSubset` — which on an intersected spec includes
+    // branch-specific alpha-renamed auth-path unknowns. The remove-side
+    // hash therefore won't match the add-side hash in multi-branch mode,
+    // so the registered removal callback isn't invoked when a branch's
+    // authorization is revoked — and the row is left in place even after
+    // every branch is revoked. Proper OR-remove accounting would need
+    // per-branch ref-counting against the same row identity, with the
+    // handler's removal firing only when the count drops to zero. Un-skip
+    // once that lands; the test asserts the desired behavior.
+    it.skip("removes the row when every branch's authorization is revoked", async () => {
+        // Both rules use a revocation pattern so they can each be
+        // independently turned off at runtime. Administrator is revoked
+        // via AdministratorRevoked; President is revoked by closing the
+        // office it presides over.
+        const distributionWithBothRevocable = (r: DistributionRules) => r
+            .share(model.given(Company).match((c, facts) =>
+                facts.ofType(Office).join(o => o.company, c)
+            ))
+            .with(model.given(Company).match((c, facts) =>
+                facts.ofType(Administrator)
+                    .join(a => a.company, c)
+                    .notExists(a => facts.ofType(AdministratorRevoked).join(r => r.administrator, a))
+                    .selectMany(a => facts.ofType(User).join(u => u, a.user))
+            ))
+            .share(model.given(Company).match((c, facts) =>
+                facts.ofType(Office).join(o => o.company, c)
+            ))
+            .with(model.given(Company).match((c, facts) =>
+                facts.ofType(President)
+                    .join(p => p.office.company, c)
+                    .notExists(p => facts.ofType(OfficeClosed).join(oc => oc.office, p.office))
+                    .selectMany(p => facts.ofType(User).join(u => u, p.user))
+            ));
+
+        const office = new Office(company, "Office1");
+        const j = JinagaTest.create({
+            model,
+            user: subscriber,
+            initialState: [creator, subscriber, company, office],
+            distribution: distributionWithBothRevocable
+        });
+
+        const offices: string[] = [];
+        const observer = j.subscribe(
+            targetSpec,
+            company,
+            o => {
+                const hash = j.hash(o);
+                offices.push(hash);
+                return () => {
+                    const i = offices.indexOf(hash);
+                    if (i >= 0) offices.splice(i, 1);
+                };
+            }
+        );
+
+        await observer.loaded();
+
+        const administrator = new Administrator(company, subscriber, new Date("2026-05-26"));
+        const president = new President(office, subscriber);
+        await j.fact(administrator);
+        await j.fact(president);
+        await observer.processed();
+        expect(offices).toEqual([j.hash(office)]);
+
+        // Revoke both auths in turn. After the second revocation the row
+        // has no surviving authorization on any branch — every removal
+        // callback registered at add-time should have fired by now.
+        await j.fact(new AdministratorRevoked(administrator));
+        await j.fact(new OfficeClosed(office, new Date("2026-05-26")));
         await observer.processed();
         observer.stop();
 
