@@ -31,22 +31,61 @@ export interface Observer<T> {
     stop(): void;
 }
 
+interface ObserverBranch {
+    specification: Specification;
+    feeds: string[];
+    listeners: SpecificationListener[];
+    /**
+     * Labels of this branch's spec (givens + match unknowns). Used to
+     * compute a stable "vote id" for per-row ref counting: the same
+     * (row, auth path) tuple from this branch's ADD inverse and its
+     * REMOVE inverse hash to the same id because both bind the same set
+     * of labels (the inverse's "from" fact differs but the resolved
+     * spec labels match in shape and value).
+     */
+    voteLabels: string[];
+}
+
 export class ObserverImpl<T> implements Observer<T> {
     private givenHash: string;
     private cachedPromise: Promise<boolean> | undefined;
     private loadedPromise: Promise<void> | undefined;
-    private listeners: SpecificationListener[] = [];
-    private removalsByTuple: {
-        [tupleHash: string]: () => Promise<void>;
-    } = {};
-    private notifiedTuples = new Set<string>();
+    /**
+     * Per-row ref counting. At every path each row carries a set of
+     * "votes" — distinct authorizing paths that currently support it.
+     * The row is delivered to the handler on the *first* vote in and
+     * its removal callback fires on the *last* vote out.
+     *
+     * At the root path, the OR over distribution rules makes multi-vote
+     * rows possible: branch A authorizes via Administrator while branch B
+     * authorizes via President, both producing the same user-visible row.
+     * At nested paths each row has exactly one possible authorizing
+     * path (its parent's branch), so `voteId === rowHash` and the set
+     * degenerates to a single element — add → deliver, remove → tear
+     * down, identical to the pre-OR behavior. One mechanism with a
+     * degenerate case, not two parallel mechanisms.
+     */
+    private votesByRow = new Map<string, Set<string>>();
+    /**
+     * Removal callbacks registered when each row was first delivered,
+     * keyed by the same row identity hash as `votesByRow`.
+     */
+    private removalsByRow = new Map<string, () => Promise<void>>();
     private addedHandlers: {
         tupleHash: string;
         path: string;
         handler: ResultAddedFunc<any>;
     }[] = [];
     private specificationHash: string;
-    private feeds: string[] = [];
+    /**
+     * One branch per distribution-rule intersection that authorizes the
+     * subscription. Length 1 when no intersection occurred (no rule, or the
+     * user is already authorized). Length >=1 with multiple entries when
+     * two or more rules independently authorize the same target shape;
+     * each branch is subscribed and its results deduplicated at the
+     * observer for OR semantics.
+     */
+    private branches: ObserverBranch[];
     private stopped: boolean = false;
     private listenersAdded: boolean = false;
     private loadResolve: (() => void) | undefined;
@@ -69,15 +108,43 @@ export class ObserverImpl<T> implements Observer<T> {
      * This map is used to buffer results that are produced before any handlers are registered,
      * enabling replay of results to late-registered handlers.
      */
-    private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; results: ProjectedResult[] }>
+    private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; results: ProjectedResult[]; branch: ObserverBranch }>
         = new Map();
+    /**
+     * Labels (givens + match unknowns) drawn from the pre-intersection
+     * specification. With multi-branch OR intersection each branch adds
+     * different alpha-renamed auth-path unknowns to the tuple, so a hash
+     * over the full tuple would differ across branches for the same row.
+     * Hashing only over these labels yields a stable row identity that
+     * collapses identical rows across branches for `votesByRow`.
+     */
+    private rowIdentityLabels: string[];
 
     constructor(
         private factManager: FactManager,
         private given: FactReference[],
-        private specification: Specification,
+        specification: Specification,
         resultAdded: ResultAddedFunc<T>
     ) {
+        // Capture the original spec's labels. These are stable across any
+        // future branch fan-out from `applySubscribeIntersection`.
+        this.rowIdentityLabels = [
+            ...specification.given.map(g => g.label.name),
+            ...specification.matches.map(m => m.unknown.name)
+        ];
+
+        // Start with a single passthrough branch. `applySubscribeIntersection`
+        // may replace this with one branch per matching distribution rule.
+        // For an unintersected branch the vote labels equal the row identity
+        // labels, so each row carries exactly one vote and ref counting
+        // reduces to the pre-fix behavior.
+        this.branches = [{
+            specification,
+            feeds: [],
+            listeners: [],
+            voteLabels: [...this.rowIdentityLabels]
+        }];
+
         // Map the given facts to a tuple.
         const tuple = specification.given.reduce((tuple, label, index) => ({
             ...tuple,
@@ -102,11 +169,20 @@ export class ObserverImpl<T> implements Observer<T> {
     public start(keepAlive: boolean) {
         const givenTypes = this.given.map(g => g.type).join(', ');
         Trace.info(`[Observer] START - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Given types: [${givenTypes}], KeepAlive: ${keepAlive}`);
-        
+
         this.cachedPromise = new Promise((cacheResolve, _) => {
             this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
                 this.loadResolve = loadResolve;
                 try {
+                    // Phase 3 of j.subscribe trust release: intersect with any
+                    // applicable distribution rule before installing listeners
+                    // and reading. This way the spec returns empty until the
+                    // authorizing fact arrives, at which point the existing
+                    // inverse engine surfaces results via the auth-fact
+                    // inverses that intersection added.
+                    if (keepAlive) {
+                        await this.applySubscribeIntersection();
+                    }
                     // Ensure listeners are added BEFORE any read/fetch to close T2–T3 window.
                     if (!this.listenersAdded) {
                         this.addSpecificationListeners();
@@ -150,30 +226,32 @@ export class ObserverImpl<T> implements Observer<T> {
         if (this.listenersAdded) {
             return;
         }
-        Trace.info(`[Observer] ADDING LISTENERS - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}...`);
-        
-        const inverses = invertSpecification(this.specification);
-        Trace.info(`[Observer] Generated ${inverses.length} inverse specifications`);
-        
-        inverses.forEach((inverse, index) => {
-            const givenType = inverse.inverseSpecification.given[0].label.type;
-            const path = inverse.path || "(root)";
-            const operation = inverse.operation;
-            Trace.info(`[Observer] Inverse ${index + 1}/${inverses.length} - Path: ${path}, Operation: ${operation}, Given type: ${givenType}, Given subset: [${inverse.givenSubset.join(', ')}], Parent subset: [${inverse.parentSubset.join(', ')}]`);
-        });
-        
-        const listeners = inverses.map((inverse, index) => {
-            const listener = this.factManager.addSpecificationListener(
-                inverse.inverseSpecification,
-                (results) => this.onResult(inverse, results)
-            );
-            const path = inverse.path || "(root)";
-            Trace.info(`[Observer] Registered listener ${index + 1}/${inverses.length} for path: ${path}`);
-            return listener;
-        });
-        
-        this.listeners = listeners;
-        Trace.info(`[Observer] LISTENERS REGISTERED - Total: ${this.listeners.length}, Spec hash: ${this.specificationHash.substring(0, 8)}...`);
+        Trace.info(`[Observer] ADDING LISTENERS - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Branches: ${this.branches.length}`);
+
+        for (let branchIndex = 0; branchIndex < this.branches.length; branchIndex++) {
+            const branch = this.branches[branchIndex];
+            const inverses = invertSpecification(branch.specification);
+            Trace.info(`[Observer] Branch ${branchIndex} produced ${inverses.length} inverse specifications`);
+
+            inverses.forEach((inverse, index) => {
+                const givenType = inverse.inverseSpecification.given[0].label.type;
+                const path = inverse.path || "(root)";
+                const operation = inverse.operation;
+                Trace.info(`[Observer] Branch ${branchIndex} Inverse ${index + 1}/${inverses.length} - Path: ${path}, Operation: ${operation}, Given type: ${givenType}, Given subset: [${inverse.givenSubset.join(', ')}], Parent subset: [${inverse.parentSubset.join(', ')}]`);
+            });
+
+            branch.listeners = inverses.map((inverse, index) => {
+                const listener = this.factManager.addSpecificationListener(
+                    inverse.inverseSpecification,
+                    (results) => this.onResult(inverse, results, branch)
+                );
+                const path = inverse.path || "(root)";
+                Trace.info(`[Observer] Branch ${branchIndex} registered listener ${index + 1}/${inverses.length} for path: ${path}`);
+                return listener;
+            });
+        }
+        const totalListeners = this.branches.reduce((sum, b) => sum + b.listeners.length, 0);
+        Trace.info(`[Observer] LISTENERS REGISTERED - Total: ${totalListeners}, Spec hash: ${this.specificationHash.substring(0, 8)}...`);
         this.listenersAdded = true;
     }
 
@@ -206,11 +284,14 @@ export class ObserverImpl<T> implements Observer<T> {
 
     public stop() {
         this.stopped = true;
-        for (const listener of this.listeners) {
-            this.factManager.removeSpecificationListener(listener);
-        }
-        if (this.feeds.length > 0) {
-            this.factManager.unsubscribe(this.feeds);
+        for (const branch of this.branches) {
+            for (const listener of branch.listeners) {
+                this.factManager.removeSpecificationListener(listener);
+            }
+            if (branch.feeds.length > 0) {
+                this.factManager.unsubscribe(branch.feeds);
+                branch.feeds = [];
+            }
         }
         // Settle loadedPromise if it is still pending, so callers that await
         // loaded() are not permanently suspended after stop().
@@ -220,32 +301,102 @@ export class ObserverImpl<T> implements Observer<T> {
         }
     }
 
-    private async fetch(keepAlive: boolean) {
-        if (keepAlive) {
-            this.feeds = await this.factManager.subscribe(this.given, this.specification);
-            // If stop() was called while we were awaiting subscribe(), clean up the
-            // feeds that were just registered so the subscriber is not leaked.
-            if (this.stopped && this.feeds.length > 0) {
-                this.factManager.unsubscribe(this.feeds);
-                this.feeds = [];
+    private async applySubscribeIntersection() {
+        const originalSpec = this.branches[0].specification;
+        const branches = await this.factManager.intersectForSubscribe(this.given, originalSpec);
+        // Passthrough: a single branch carrying the original (start, spec).
+        // Keep the constructor-set state intact.
+        const passthrough = branches.length === 1
+            && branches[0].specification === originalSpec
+            && branches[0].start === this.given;
+        if (passthrough) {
+            return;
+        }
+        const previousGivenHash = this.givenHash;
+        // Every branch's intersected spec shares the same augmented given
+        // shape — the synthetic `distributionUser` given is appended with
+        // a fixed label and type, bound to the same userRef in every
+        // branch. So a single observer-level `given` and `givenHash`
+        // suffices; per-branch state covers only the spec / feeds /
+        // listeners that actually differ.
+        this.given = branches[0].start;
+        const augmentedSpec = branches[0].specification;
+        const tuple = augmentedSpec.given.reduce((tuple, label, index) => ({
+            ...tuple,
+            [label.label.name]: this.given[index]
+        }), {} as ReferencesByName);
+        this.givenHash = computeObjectHash(tuple);
+        // Keep `specificationHash` as the pre-intersection identity (set
+        // in the constructor). That hash is the MRU cache key and the
+        // user-facing subscription identity; intersection is an internal
+        // rewrite that should not change it.
+        this.branches = branches.map(b => ({
+            specification: b.specification,
+            feeds: [],
+            listeners: [],
+            // Vote labels are the branch's spec labels — broader than the
+            // shared row-identity labels because each branch's auth path
+            // contributes alpha-renamed unknowns (dist_admin, dist_user,
+            // distributionUser, ...). Two distinct auth paths through the
+            // same branch produce different vote ids; identical paths
+            // collide and ref-count as one.
+            voteLabels: [
+                ...b.specification.given.map(g => g.label.name),
+                ...b.specification.matches.map(m => m.unknown.name)
+            ]
+        }));
+        // Re-key any handlers that were registered with the pre-intersection
+        // givenHash. Notification routing matches handlers by tupleHash, so a
+        // stale value here would silently drop every result.
+        for (const handler of this.addedHandlers) {
+            if (handler.tupleHash === previousGivenHash) {
+                handler.tupleHash = this.givenHash;
             }
         }
+        Trace.info(`[Observer] INTERSECTED - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Branches: ${this.branches.length}`);
+    }
+
+    private async fetch(keepAlive: boolean) {
+        if (keepAlive) {
+            await Promise.all(this.branches.map(async branch => {
+                const feeds = await this.factManager.subscribe(this.given, branch.specification);
+                if (this.stopped) {
+                    // If stop() was called while we were awaiting subscribe(),
+                    // clean up the feeds that were just registered so the
+                    // subscriber is not leaked.
+                    if (feeds.length > 0) {
+                        this.factManager.unsubscribe(feeds);
+                    }
+                    return;
+                }
+                branch.feeds = feeds;
+            }));
+        }
         else {
-            await this.factManager.fetch(this.given, this.specification);
+            await Promise.all(this.branches.map(branch =>
+                this.factManager.fetch(this.given, branch.specification)));
         }
     }
 
     private async read() {
-        const projectedResults = await this.factManager.read(this.given, this.specification);
+        // Read every branch's spec. Each branch produces an independently
+        // filtered result set (different intersected auth conditions); the
+        // dedup at `notifyAdded` ensures each row surfaces only once.
+        const branchResults = await Promise.all(this.branches.map(async branch => ({
+            branch,
+            projected: await this.factManager.read(this.given, branch.specification)
+        })));
         if (this.stopped) {
             // The observer was stopped before the read completed.
             return;
         }
-        const givenSubset = this.specification.given.map(g => g.label.name);
-        await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
+        for (const { branch, projected } of branchResults) {
+            const givenSubset = branch.specification.given.map(g => g.label.name);
+            await this.notifyAdded(projected, branch.specification.projection, "", givenSubset, branch);
+        }
     }
 
-    private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
+    private async onResult(inverse: SpecificationInverse, results: ProjectedResult[], branch: ObserverBranch): Promise<void> {
         const path = inverse.path || "(root)";
         Trace.info(`[Observer] ON_RESULT - Path: ${path}, Operation: ${inverse.operation}, Results count: ${results.length}, Given hash: ${this.givenHash.substring(0, 8)}...`);
         
@@ -263,10 +414,10 @@ export class ObserverImpl<T> implements Observer<T> {
             Trace.info(`[Observer] Matching results: ${matchingResults.length} - Path: ${path}, Operation: ${inverse.operation}`);
 
             if (inverse.operation === "add") {
-                return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset);
+                return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset, branch);
             }
             else if (inverse.operation === "remove") {
-                return await this.notifyRemoved(inverse.resultSubset, matchingResults);
+                return await this.notifyRemoved(inverse, matchingResults, branch);
             }
             else {
                 const _exhaustiveCheck: never = inverse.operation;
@@ -283,65 +434,92 @@ export class ObserverImpl<T> implements Observer<T> {
         await notificationPromise;
     }
 
-    private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[]) {
+    /**
+     * Pick (rowHash, voteId) for `path`. At the root they're distinct so
+     * the same row from two branches collides on `rowHash` while their
+     * distinct auth paths separate on `voteId` — that's the OR fan-out.
+     * At nested paths there's a single possible auth path per row, so
+     * the two hashes coincide and the vote set degenerates to one entry.
+     */
+    private rowAndVoteHashes(tuple: ReferencesByName, path: string, branch: ObserverBranch): { rowHash: string; voteId: string } {
+        if (path === "") {
+            return {
+                rowHash: computeTupleSubsetHash(tuple, this.rowIdentityLabels),
+                voteId: computeTupleSubsetHash(tuple, branch.voteLabels)
+            };
+        }
+        const h = computeObjectHash(tuple);
+        return { rowHash: h, voteId: h };
+    }
+
+    private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[], branch: ObserverBranch) {
         const displayPath = path || "(root)";
         Trace.info(`[Observer] NOTIFY_ADDED - Path: ${displayPath}, Results: ${projectedResults.length}, Parent subset: [${parentSubset.join(', ')}]`);
-        
+
         for (const pr of projectedResults) {
             const result: any = await this.injectObservers(pr, projection, path);
             const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
-            const tupleHash = computeObjectHash(pr.tuple);
-            
-            Trace.info(`[Observer] Processing result - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
-            
+            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, path, branch);
+
+            Trace.info(`[Observer] Processing result - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., Vote id: ${voteId.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
+
             const addedHandler = this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path);
             const resultAdded = addedHandler?.handler;
-            
+
             if (!addedHandler) {
                 Trace.warn(`[Observer] NO HANDLER FOUND - Path: ${displayPath}, Parent tuple hash: ${parentTupleHash.substring(0, 8)}..., Available handlers: ${this.addedHandlers.length}`);
                 this.addedHandlers.forEach((h, index) => {
                     Trace.warn(`[Observer]   Handler ${index + 1}: Path="${h.path}", Tuple hash: ${h.tupleHash.substring(0, 8)}...`);
                 });
                 // Buffer for replay when the handler registers later.
-                this.bufferPendingNotification(path, pr, projection, parentSubset);
+                this.bufferPendingNotification(path, pr, projection, parentSubset, branch);
                 // Skip deeper recursion until handler is registered.
                 continue;
             } else if (!resultAdded) {
                 Trace.warn(`[Observer] Handler found but no callback - Path: ${displayPath}`);
                 // Buffer for replay when the callback is attached.
-                this.bufferPendingNotification(path, pr, projection, parentSubset);
+                this.bufferPendingNotification(path, pr, projection, parentSubset, branch);
                 continue;
             } else {
                 Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
             }
-            
-            // Don't call result added if we have already called it for this tuple.
-            if (this.notifiedTuples.has(tupleHash) === false) {
-                // Check if observer was stopped before calling the handler
+
+            // Cast the vote. First vote into an empty set means this is
+            // the first time the user sees this row; subsequent votes
+            // (other branches authorizing the same row, or another auth
+            // path within the same branch) ref-count silently.
+            let votes = this.votesByRow.get(rowHash);
+            const isFirstDelivery = !votes;
+            if (!votes) {
+                votes = new Set();
+                this.votesByRow.set(rowHash, votes);
+            }
+            votes.add(voteId);
+
+            if (isFirstDelivery) {
                 if (this.stopped) {
-                    Trace.info(`[Observer] SKIPPING HANDLER - Observer stopped, Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
+                    Trace.info(`[Observer] SKIPPING HANDLER - Observer stopped, Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
                     continue;
                 }
-                Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
+                Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
                 const promiseMaybe = resultAdded(result);
-                this.notifiedTuples.add(tupleHash);
                 if (promiseMaybe instanceof Promise) {
                     const functionMaybe = await promiseMaybe;
                     if (functionMaybe instanceof Function) {
-                        this.removalsByTuple[tupleHash] = functionMaybe;
+                        this.removalsByRow.set(rowHash, functionMaybe);
                     }
                 }
                 else {
                     const functionMaybe = promiseMaybe;
                     if (functionMaybe instanceof Function) {
-                        this.removalsByTuple[tupleHash] = async () => {
+                        this.removalsByRow.set(rowHash, async () => {
                             functionMaybe();
                             return Promise.resolve();
-                        };
+                        });
                     }
                 }
-            } else if (this.notifiedTuples.has(tupleHash)) {
-                Trace.info(`[Observer] Skipping already notified tuple - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}...`);
+            } else {
+                Trace.info(`[Observer] Skipping already notified row - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
             }
 
             // Recursively notify added for specification results.
@@ -351,23 +529,34 @@ export class ObserverImpl<T> implements Observer<T> {
                         const childPath = path + "." + component.name;
                         const childResults = pr.result[component.name];
                         Trace.info(`[Observer] Processing nested spec - Parent path: ${displayPath}, Child path: ${childPath}, Child results: ${childResults?.length || 0}`);
-                        await this.notifyAdded(childResults, component.projection, childPath, Object.keys(pr.tuple));
+                        await this.notifyAdded(childResults, component.projection, childPath, Object.keys(pr.tuple), branch);
                     }
                 }
             }
         }
     }
 
-    async notifyRemoved(resultSubset: string[], projectedResult: ProjectedResult[]): Promise<void> {
+    async notifyRemoved(inverse: SpecificationInverse, projectedResult: ProjectedResult[], branch: ObserverBranch): Promise<void> {
         for (const pr of projectedResult) {
-            const resultTupleHash = computeTupleSubsetHash(pr.tuple, resultSubset);
-            const removal = this.removalsByTuple[resultTupleHash];
+            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, inverse.path, branch);
+            const votes = this.votesByRow.get(rowHash);
+            if (!votes) continue;
+            // `delete` returns false if this vote wasn't recorded, in
+            // which case the remove is for a (row, auth path) the
+            // observer never delivered — nothing to do.
+            if (!votes.delete(voteId)) continue;
+            if (votes.size > 0) {
+                Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Remaining votes: ${votes.size} (row retained)`);
+                continue;
+            }
+            // Last vote withdrawn — fire the row's removal callback and
+            // forget the row entirely so a future add can re-deliver it.
+            const removal = this.removalsByRow.get(rowHash);
+            this.votesByRow.delete(rowHash);
+            this.removalsByRow.delete(rowHash);
             if (removal !== undefined) {
+                Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, firing removal`);
                 await removal();
-                delete this.removalsByTuple[resultTupleHash];
-
-                // After the tuple is removed, it can be re-added.
-                this.notifiedTuples.delete(resultTupleHash);
             }
         }
     }
@@ -380,7 +569,7 @@ export class ObserverImpl<T> implements Observer<T> {
      * @param projection - The projection associated with the result
      * @param parentSubset - The parent subset of fact references
      */
-    private bufferPendingNotification(path: string, pr: ProjectedResult, projection: Projection, parentSubset: string[]): void {
+    private bufferPendingNotification(path: string, pr: ProjectedResult, projection: Projection, parentSubset: string[], branch: ObserverBranch): void {
         const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
         const key = `${path}|${parentTupleHash}`;
         const existing = this.pendingAddsByKey.get(key);
@@ -388,10 +577,10 @@ export class ObserverImpl<T> implements Observer<T> {
             existing.results.push(pr);
         }
         else {
-            this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr] });
+            this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr], branch });
         }
     }
-    
+
     private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): Promise<any> {
         const displayPath = parentPath || "(root)";
         
@@ -422,7 +611,7 @@ export class ObserverImpl<T> implements Observer<T> {
                                 // Track this replay as a pending notification
                                 const replayWork = async () => {
                                     try {
-                                        await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset);
+                                        await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset, pending.branch);
                                     } catch (error) {
                                         Trace.error(`[Observer] ERROR in buffered replay - Path: ${path}, Error: ${error}`);
                                     }

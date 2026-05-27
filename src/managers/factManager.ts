@@ -2,6 +2,7 @@ import { generateKeyPair, KeyPair, signFacts } from "../cryptography/key-pair";
 import { computeHash } from "../fact/hash";
 import { Fork } from "../fork/fork";
 import { PersistentFork } from "../fork/persistent-fork";
+import { DistributionIntersectionBranch } from "../distribution/distribution-engine";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
@@ -122,6 +123,10 @@ export class FactManager {
     async subscribe(start: FactReference[], specification: Specification) {
         this.purgeManager.checkCompliance(specification);
         return await this.networkManager.subscribe(start, specification);
+    }
+
+    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {
+        return await this.networkManager.intersectForSubscribe(start, specification);
     }
 
     unsubscribe(feeds: string[]) {

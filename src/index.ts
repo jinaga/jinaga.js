@@ -53,6 +53,7 @@ export { describeDeclaration, describeSpecification } from './specification/desc
 export { buildFeeds } from './specification/feed-builder';
 export { FeedCache, FeedObject } from "./specification/feed-cache";
 export { invertSpecification, SpecificationInverse } from "./specification/inverse";
+export { alphaTransform, DISTRIBUTION_USER_LABEL, intersectSpecificationWithDistributionRule, specificationHasIntersection } from "./specification/specification-intersection";
 export { buildModel, FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf } from './specification/model';
 export { EdgeDescription, emptySkeleton, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, skeletonOfSpecification } from './specification/skeleton';
 export { ComponentProjection, CompositeProjection, Condition, emptySpecification, ExistentialCondition, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, isExistentialCondition, isPathCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, reduceSpecification, Role, SingularProjection, Specification, SpecificationGiven, specificationIsDeterministic, specificationIsIdentity, specificationIsNotDeterministic, SpecificationProjection, splitBeforeFirstSuccessor, TimeProjection } from './specification/specification';

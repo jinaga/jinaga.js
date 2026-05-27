@@ -1,9 +1,43 @@
+import { User } from "../model/user";
 import { describeSpecification } from "../specification/description";
+import { buildFeeds } from "../specification/feed-builder";
 import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
 import { Specification, isPathCondition, specificationIsIdentity } from "../specification/specification";
+import { intersectSpecificationWithDistributionRule } from "../specification/specification-intersection";
 import { FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { canAuthorizeByComposition } from "./distribution-composition";
 import { DistributionRules } from "./distribution-rules";
+
+export interface DistributionIntersectionBranch {
+  /**
+   * Aligned with `specification.given`. When intersection occurred, this is
+   * the original `start` with the user's fact reference appended in the
+   * position of the synthetic `distributionUser` given.
+   */
+  start: FactReference[];
+  /**
+   * The specification for this branch. Either the original (passthrough) or
+   * a spec with a synthetic `distributionUser` given that filters results
+   * by one rule's user pattern.
+   */
+  specification: Specification;
+}
+
+export interface DistributionIntersectionResult {
+  /**
+   * One branch per matching distribution rule. Multiple branches express
+   * OR semantics across rules (a row is authorized if any branch's auth
+   * pattern is satisfied). For passthrough (already authorized, or no
+   * applicable rule) the array has length 1 and carries the original
+   * `(start, specification)` unchanged.
+   */
+  branches: DistributionIntersectionBranch[];
+  /**
+   * True when the intersection algorithm produced rewritten specs. False
+   * when the original spec was returned unchanged in a single branch.
+   */
+  intersected: boolean;
+}
 
 export interface DistributionSuccess {
   type: 'success';
@@ -173,6 +207,115 @@ export class DistributionEngine {
       return userReference;
     }
   }
+
+  /**
+   * Compose a specification with a distribution rule's user specification so
+   * the result set is naturally gated by the rule. Exposed for unit testing
+   * the algorithm; runtime callers should prefer `intersectForSubscribe`,
+   * which only intersects when the user isn't already authorized.
+   */
+  intersectSpecificationWithDistributionRule(specification: Specification, ruleSpecification: Specification): Specification {
+    return intersectSpecificationWithDistributionRule(specification, ruleSpecification);
+  }
+
+  /**
+   * Phase 3 of the j.subscribe trust release. Asks: can this subscribe call
+   * proceed as-is, or do we need to compose the spec with distribution
+   * rules so it filters by an authorizing fact that hasn't arrived yet?
+   *
+   * - If the user is already authorized (single rule or compositional
+   *   fallback), returns one passthrough branch with the original
+   *   spec/start — no work to do.
+   * - If one or more rules' share-specs match the target spec by skeleton
+   *   but the user doesn't currently satisfy any user-spec, returns one
+   *   intersected branch *per* matching rule. The observer subscribes to
+   *   all branches in parallel; a row is delivered when any branch's auth
+   *   pattern fires (OR semantics).
+   * - If no applicable rule was found at all, returns one passthrough
+   *   branch; the query path will continue to fail authorization, which is
+   *   the right behavior — Phase 3 doesn't relax authorization, it makes
+   *   it reactive.
+   */
+  async intersectForSubscribe(
+    start: FactReference[],
+    specification: Specification,
+    user: FactReference | null
+  ): Promise<DistributionIntersectionResult> {
+    const namedStart = specification.given.reduce((map, given, index) => ({
+      ...map,
+      [given.label.name]: start[index]
+    }), {} as ReferencesByName);
+
+    const targetFeeds = buildFeeds(specification);
+    const authResult = await this.canDistributeToAll(targetFeeds, namedStart, user);
+    if (authResult.type === 'success') {
+      return { branches: [{ start, specification }], intersected: false };
+    }
+
+    // The user isn't authorized via any single rule or via composition. See
+    // which rules' share-specs apply to the user's spec (same shape by
+    // skeleton) and have non-null user-specs — those are the rules whose
+    // auth conditions become OR-branches.
+    const matchingRules = findRulesForIntersection(specification, this.distributionRules, targetFeeds);
+    if (matchingRules.length === 0) {
+      return { branches: [{ start, specification }], intersected: false };
+    }
+
+    // The synthetic `distributionUser` given is bound to the logged-in user.
+    // When no user is logged in, fall back to a sentinel reference — the
+    // existential will then never be satisfied (no User fact will ever
+    // match), so the subscription stays empty until login + auth fact both
+    // exist. Normalize to a bare {type, hash} so the observer's tuple hash
+    // matches the inverse engine's tuple hash byte-for-byte (the user fact
+    // from JinagaTest carries dehydrated predecessors/fields that the
+    // spec runner discards).
+    const userRef: FactReference = user
+      ? { type: user.type, hash: user.hash }
+      : { type: User.Type, hash: "" };
+    const branches: DistributionIntersectionBranch[] = matchingRules.map(ruleUserSpec => ({
+      start: [...start, userRef],
+      specification: intersectSpecificationWithDistributionRule(specification, ruleUserSpec)
+    }));
+    return { branches, intersected: true };
+  }
+}
+
+/**
+ * Find every rule whose share-specification matches the target spec by
+ * skeleton and whose user-spec has compatible given types. Returns the
+ * rule user-specs in declaration order; an empty array means no rule is
+ * applicable. Multiple matches express OR semantics: any one of the
+ * returned user-specs being satisfied authorizes the subscriber.
+ *
+ * The observer subscribes to one intersected branch per returned rule and
+ * deduplicates results across branches, so picking up multiple rules here
+ * is the path that lets a user authorized by *any* of them see the feed
+ * once the corresponding auth fact arrives.
+ */
+function findRulesForIntersection(
+  specification: Specification,
+  distributionRules: DistributionRules,
+  targetFeeds: Specification[]
+): Specification[] {
+  const targetSkeletons = targetFeeds.map(f => skeletonOfSpecification(f));
+  const matches: Specification[] = [];
+  for (const rule of distributionRules.rules) {
+    if (rule.user === null) continue;
+    for (const ruleFeed of rule.feeds) {
+      const ruleSkeleton = skeletonOfSpecification(ruleFeed);
+      if (!targetSkeletons.some(ts => skeletonsEqual(ruleSkeleton, ts))) continue;
+      // The intersection algorithm requires the rule's user-spec and the
+      // target spec to share given counts and types.
+      if (rule.user.given.length !== specification.given.length) continue;
+      const typesAlign = rule.user.given.every((g, i) =>
+        g.label.type === specification.given[i].label.type
+      );
+      if (!typesAlign) continue;
+      matches.push(rule.user);
+      break; // One match per rule is enough.
+    }
+  }
+  return matches;
 }
 
 function skeletonsEqual(ruleSkeleton: Skeleton, targetSkeleton: Skeleton): boolean {
