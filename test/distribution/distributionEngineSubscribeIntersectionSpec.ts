@@ -56,8 +56,9 @@ describe("DistributionEngine.intersectForSubscribe", () => {
             subscriberRef
         );
         expect(result.intersected).toBe(false);
-        expect(result.specification).toBe(spec);
-        expect(result.start).toEqual([companyRef]);
+        expect(result.branches).toHaveLength(1);
+        expect(result.branches[0].specification).toBe(spec);
+        expect(result.branches[0].start).toEqual([companyRef]);
     });
 
     it("intersects when the user is not yet authorized", async () => {
@@ -68,12 +69,14 @@ describe("DistributionEngine.intersectForSubscribe", () => {
             subscriberRef
         );
         expect(result.intersected).toBe(true);
+        expect(result.branches).toHaveLength(1);
         // The synthetic distributionUser given is appended; the start carries
         // the user fact reference in matching position.
-        expect(result.specification.given).toHaveLength(2);
-        expect(result.specification.given[1].label.type).toBe(User.Type);
-        expect(result.start).toHaveLength(2);
-        expect(result.start[1]).toEqual({ type: subscriberRef.type, hash: subscriberRef.hash });
+        const branch = result.branches[0];
+        expect(branch.specification.given).toHaveLength(2);
+        expect(branch.specification.given[1].label.type).toBe(User.Type);
+        expect(branch.start).toHaveLength(2);
+        expect(branch.start[1]).toEqual({ type: subscriberRef.type, hash: subscriberRef.hash });
     });
 
     it("returns the original spec when no rule's shape matches the target", async () => {
@@ -91,6 +94,45 @@ describe("DistributionEngine.intersectForSubscribe", () => {
             subscriberRef
         );
         expect(result.intersected).toBe(false);
-        expect(result.specification).toBe(otherSpec);
+        expect(result.branches).toHaveLength(1);
+        expect(result.branches[0].specification).toBe(otherSpec);
+    });
+
+    it("returns one branch per matching rule when two rules authorize the same target", async () => {
+        const store = new MemoryStore();
+        const records = [
+            ...dehydrateFact(creator),
+            ...dehydrateFact(subscriber),
+            ...dehydrateFact(company)
+        ];
+        store.save(records.map(r => ({ fact: r, signatures: [] })));
+        // Two rules with the same share-spec (Company → Administrator) but
+        // distinct user-spec shapes. The subscriber satisfies neither today,
+        // so both rules should yield an intersected branch.
+        const secondUserSpec = model.given(Company).match((c, facts) =>
+            facts.ofType(Administrator)
+                .join(a => a.company, c)
+                .selectMany(a => facts.ofType(User).join(u => u, c.creator))
+        );
+        const rules = new DistributionRules([])
+            .share(shareSpec).with(ruleUserSpec)
+            .share(shareSpec).with(secondUserSpec);
+        const engine = new DistributionEngine(rules, store);
+
+        const result = await engine.intersectForSubscribe(
+            [companyRef],
+            spec,
+            subscriberRef
+        );
+
+        expect(result.intersected).toBe(true);
+        expect(result.branches).toHaveLength(2);
+        for (const branch of result.branches) {
+            // Each branch carries the synthetic distributionUser given.
+            expect(branch.specification.given).toHaveLength(2);
+            expect(branch.specification.given[1].label.type).toBe(User.Type);
+            expect(branch.start).toHaveLength(2);
+            expect(branch.start[1]).toEqual({ type: subscriberRef.type, hash: subscriberRef.hash });
+        }
     });
 });

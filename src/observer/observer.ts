@@ -31,11 +31,16 @@ export interface Observer<T> {
     stop(): void;
 }
 
+interface ObserverBranch {
+    specification: Specification;
+    feeds: string[];
+    listeners: SpecificationListener[];
+}
+
 export class ObserverImpl<T> implements Observer<T> {
     private givenHash: string;
     private cachedPromise: Promise<boolean> | undefined;
     private loadedPromise: Promise<void> | undefined;
-    private listeners: SpecificationListener[] = [];
     private removalsByTuple: {
         [tupleHash: string]: () => Promise<void>;
     } = {};
@@ -46,7 +51,15 @@ export class ObserverImpl<T> implements Observer<T> {
         handler: ResultAddedFunc<any>;
     }[] = [];
     private specificationHash: string;
-    private feeds: string[] = [];
+    /**
+     * One branch per distribution-rule intersection that authorizes the
+     * subscription. Length 1 when no intersection occurred (no rule, or the
+     * user is already authorized). Length >=1 with multiple entries when
+     * two or more rules independently authorize the same target shape;
+     * each branch is subscribed and its results deduplicated at the
+     * observer for OR semantics.
+     */
+    private branches: ObserverBranch[];
     private stopped: boolean = false;
     private listenersAdded: boolean = false;
     private loadResolve: (() => void) | undefined;
@@ -71,13 +84,37 @@ export class ObserverImpl<T> implements Observer<T> {
      */
     private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; results: ProjectedResult[] }>
         = new Map();
+    /**
+     * Labels (givens + match unknowns) drawn from the pre-intersection
+     * specification. With multi-branch OR intersection each branch adds
+     * different alpha-renamed auth-path unknowns to the tuple, so a hash
+     * over the full tuple would differ across branches for the same row.
+     * Hashing only over these labels yields a stable row identity that
+     * collapses identical rows across branches for `notifiedTuples`.
+     */
+    private rowIdentityLabels: string[];
 
     constructor(
         private factManager: FactManager,
         private given: FactReference[],
-        private specification: Specification,
+        specification: Specification,
         resultAdded: ResultAddedFunc<T>
     ) {
+        // Start with a single passthrough branch. `applySubscribeIntersection`
+        // may replace this with one branch per matching distribution rule.
+        this.branches = [{
+            specification,
+            feeds: [],
+            listeners: []
+        }];
+
+        // Capture the original spec's labels. These are stable across any
+        // future branch fan-out from `applySubscribeIntersection`.
+        this.rowIdentityLabels = [
+            ...specification.given.map(g => g.label.name),
+            ...specification.matches.map(m => m.unknown.name)
+        ];
+
         // Map the given facts to a tuple.
         const tuple = specification.given.reduce((tuple, label, index) => ({
             ...tuple,
@@ -159,30 +196,32 @@ export class ObserverImpl<T> implements Observer<T> {
         if (this.listenersAdded) {
             return;
         }
-        Trace.info(`[Observer] ADDING LISTENERS - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}...`);
-        
-        const inverses = invertSpecification(this.specification);
-        Trace.info(`[Observer] Generated ${inverses.length} inverse specifications`);
-        
-        inverses.forEach((inverse, index) => {
-            const givenType = inverse.inverseSpecification.given[0].label.type;
-            const path = inverse.path || "(root)";
-            const operation = inverse.operation;
-            Trace.info(`[Observer] Inverse ${index + 1}/${inverses.length} - Path: ${path}, Operation: ${operation}, Given type: ${givenType}, Given subset: [${inverse.givenSubset.join(', ')}], Parent subset: [${inverse.parentSubset.join(', ')}]`);
-        });
-        
-        const listeners = inverses.map((inverse, index) => {
-            const listener = this.factManager.addSpecificationListener(
-                inverse.inverseSpecification,
-                (results) => this.onResult(inverse, results)
-            );
-            const path = inverse.path || "(root)";
-            Trace.info(`[Observer] Registered listener ${index + 1}/${inverses.length} for path: ${path}`);
-            return listener;
-        });
-        
-        this.listeners = listeners;
-        Trace.info(`[Observer] LISTENERS REGISTERED - Total: ${this.listeners.length}, Spec hash: ${this.specificationHash.substring(0, 8)}...`);
+        Trace.info(`[Observer] ADDING LISTENERS - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Branches: ${this.branches.length}`);
+
+        for (let branchIndex = 0; branchIndex < this.branches.length; branchIndex++) {
+            const branch = this.branches[branchIndex];
+            const inverses = invertSpecification(branch.specification);
+            Trace.info(`[Observer] Branch ${branchIndex} produced ${inverses.length} inverse specifications`);
+
+            inverses.forEach((inverse, index) => {
+                const givenType = inverse.inverseSpecification.given[0].label.type;
+                const path = inverse.path || "(root)";
+                const operation = inverse.operation;
+                Trace.info(`[Observer] Branch ${branchIndex} Inverse ${index + 1}/${inverses.length} - Path: ${path}, Operation: ${operation}, Given type: ${givenType}, Given subset: [${inverse.givenSubset.join(', ')}], Parent subset: [${inverse.parentSubset.join(', ')}]`);
+            });
+
+            branch.listeners = inverses.map((inverse, index) => {
+                const listener = this.factManager.addSpecificationListener(
+                    inverse.inverseSpecification,
+                    (results) => this.onResult(inverse, results)
+                );
+                const path = inverse.path || "(root)";
+                Trace.info(`[Observer] Branch ${branchIndex} registered listener ${index + 1}/${inverses.length} for path: ${path}`);
+                return listener;
+            });
+        }
+        const totalListeners = this.branches.reduce((sum, b) => sum + b.listeners.length, 0);
+        Trace.info(`[Observer] LISTENERS REGISTERED - Total: ${totalListeners}, Spec hash: ${this.specificationHash.substring(0, 8)}...`);
         this.listenersAdded = true;
     }
 
@@ -215,11 +254,14 @@ export class ObserverImpl<T> implements Observer<T> {
 
     public stop() {
         this.stopped = true;
-        for (const listener of this.listeners) {
-            this.factManager.removeSpecificationListener(listener);
-        }
-        if (this.feeds.length > 0) {
-            this.factManager.unsubscribe(this.feeds);
+        for (const branch of this.branches) {
+            for (const listener of branch.listeners) {
+                this.factManager.removeSpecificationListener(listener);
+            }
+            if (branch.feeds.length > 0) {
+                this.factManager.unsubscribe(branch.feeds);
+                branch.feeds = [];
+            }
         }
         // Settle loadedPromise if it is still pending, so callers that await
         // loaded() are not permanently suspended after stop().
@@ -230,22 +272,39 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private async applySubscribeIntersection() {
-        const result = await this.factManager.intersectForSubscribe(this.given, this.specification);
-        if (result.specification === this.specification && result.start === this.given) {
+        const originalSpec = this.branches[0].specification;
+        const branches = await this.factManager.intersectForSubscribe(this.given, originalSpec);
+        // Passthrough: a single branch carrying the original (start, spec).
+        // Keep the constructor-set state intact.
+        const passthrough = branches.length === 1
+            && branches[0].specification === originalSpec
+            && branches[0].start === this.given;
+        if (passthrough) {
             return;
         }
         const previousGivenHash = this.givenHash;
-        this.given = result.start;
-        this.specification = result.specification;
-        // Recompute identifying hashes against the augmented (start, spec).
-        const tuple = this.specification.given.reduce((tuple, label, index) => ({
+        // Every branch's intersected spec shares the same augmented given
+        // shape — the synthetic `distributionUser` given is appended with
+        // a fixed label and type, bound to the same userRef in every
+        // branch. So a single observer-level `given` and `givenHash`
+        // suffices; per-branch state covers only the spec / feeds /
+        // listeners that actually differ.
+        this.given = branches[0].start;
+        const augmentedSpec = branches[0].specification;
+        const tuple = augmentedSpec.given.reduce((tuple, label, index) => ({
             ...tuple,
             [label.label.name]: this.given[index]
         }), {} as ReferencesByName);
         this.givenHash = computeObjectHash(tuple);
-        const declarationString = describeDeclaration(this.given, this.specification.given.map(g => g.label));
-        const specificationString = describeSpecification(this.specification, 0);
-        this.specificationHash = computeStringHash(`${declarationString}\n${specificationString}`);
+        // Keep `specificationHash` as the pre-intersection identity (set
+        // in the constructor). That hash is the MRU cache key and the
+        // user-facing subscription identity; intersection is an internal
+        // rewrite that should not change it.
+        this.branches = branches.map(b => ({
+            specification: b.specification,
+            feeds: [],
+            listeners: []
+        }));
         // Re-key any handlers that were registered with the pre-intersection
         // givenHash. Notification routing matches handlers by tupleHash, so a
         // stale value here would silently drop every result.
@@ -254,32 +313,47 @@ export class ObserverImpl<T> implements Observer<T> {
                 handler.tupleHash = this.givenHash;
             }
         }
-        Trace.info(`[Observer] INTERSECTED - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}...`);
+        Trace.info(`[Observer] INTERSECTED - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Branches: ${this.branches.length}`);
     }
 
     private async fetch(keepAlive: boolean) {
         if (keepAlive) {
-            this.feeds = await this.factManager.subscribe(this.given, this.specification);
-            // If stop() was called while we were awaiting subscribe(), clean up the
-            // feeds that were just registered so the subscriber is not leaked.
-            if (this.stopped && this.feeds.length > 0) {
-                this.factManager.unsubscribe(this.feeds);
-                this.feeds = [];
-            }
+            await Promise.all(this.branches.map(async branch => {
+                const feeds = await this.factManager.subscribe(this.given, branch.specification);
+                if (this.stopped) {
+                    // If stop() was called while we were awaiting subscribe(),
+                    // clean up the feeds that were just registered so the
+                    // subscriber is not leaked.
+                    if (feeds.length > 0) {
+                        this.factManager.unsubscribe(feeds);
+                    }
+                    return;
+                }
+                branch.feeds = feeds;
+            }));
         }
         else {
-            await this.factManager.fetch(this.given, this.specification);
+            await Promise.all(this.branches.map(branch =>
+                this.factManager.fetch(this.given, branch.specification)));
         }
     }
 
     private async read() {
-        const projectedResults = await this.factManager.read(this.given, this.specification);
+        // Read every branch's spec. Each branch produces an independently
+        // filtered result set (different intersected auth conditions); the
+        // dedup at `notifyAdded` ensures each row surfaces only once.
+        const branchResults = await Promise.all(this.branches.map(async branch => ({
+            branch,
+            projected: await this.factManager.read(this.given, branch.specification)
+        })));
         if (this.stopped) {
             // The observer was stopped before the read completed.
             return;
         }
-        const givenSubset = this.specification.given.map(g => g.label.name);
-        await this.notifyAdded(projectedResults, this.specification.projection, "", givenSubset);
+        for (const { branch, projected } of branchResults) {
+            const givenSubset = branch.specification.given.map(g => g.label.name);
+            await this.notifyAdded(projected, branch.specification.projection, "", givenSubset);
+        }
     }
 
     private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
@@ -327,7 +401,17 @@ export class ObserverImpl<T> implements Observer<T> {
         for (const pr of projectedResults) {
             const result: any = await this.injectObservers(pr, projection, path);
             const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
-            const tupleHash = computeObjectHash(pr.tuple);
+            // Identify the row for dedup. In single-branch mode (no
+            // intersection, or single-rule intersection) the full tuple
+            // is the row identity. In multi-branch OR intersection each
+            // branch carries different alpha-renamed auth-path unknowns,
+            // so the full tuple would differ across branches for the
+            // same row; fall back to a subset hash over the pre-
+            // intersection spec's labels, which is stable across
+            // branches.
+            const tupleHash = this.branches.length > 1
+                ? this.computeRowIdentityHash(pr.tuple)
+                : computeObjectHash(pr.tuple);
             
             Trace.info(`[Observer] Processing result - Path: ${displayPath}, Tuple hash: ${tupleHash.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
             
@@ -427,6 +511,15 @@ export class ObserverImpl<T> implements Observer<T> {
         else {
             this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr] });
         }
+    }
+
+    /**
+     * Hash that identifies a row by the pre-intersection spec's labels,
+     * skipping any branch-specific auth-path unknowns. Used for cross-branch
+     * dedup in `notifiedTuples`.
+     */
+    private computeRowIdentityHash(tuple: ReferencesByName): string {
+        return computeTupleSubsetHash(tuple, this.rowIdentityLabels);
     }
     
     private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): Promise<any> {

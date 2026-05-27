@@ -1,4 +1,4 @@
-import { DistributionEngine } from "../distribution/distribution-engine";
+import { DistributionEngine, DistributionIntersectionBranch } from "../distribution/distribution-engine";
 import { FeedResponse } from "../http/messages";
 import { Subscriber } from "../observer/subscriber";
 import { describeDeclaration, describeSpecification } from "../specification/description";
@@ -16,13 +16,15 @@ export interface Network {
     load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
 
     /**
-     * Phase 3 hook for j.subscribe authorization-as-spec. Returns a possibly
-     * rewritten (start, specification) pair so that subscribing to an
-     * initially-forbidden feed succeeds and pushes results when the
-     * authorizing fact later arrives. Implementations without distribution
-     * rules should return the inputs unchanged.
+     * Phase 3 hook for j.subscribe authorization-as-spec. Returns one or more
+     * `(start, specification)` branches so that subscribing to an
+     * initially-forbidden feed succeeds and pushes results when an
+     * authorizing fact later arrives. Multiple branches express OR
+     * semantics across distribution rules. Implementations without
+     * distribution rules should return the inputs unchanged in a single
+     * branch.
      */
-    intersectForSubscribe?(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }>;
+    intersectForSubscribe?(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]>;
 }
 
 export class NetworkNoOp implements Network {
@@ -43,8 +45,8 @@ export class NetworkNoOp implements Network {
         return Promise.resolve([]);
     }
 
-    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }> {
-        return { start, specification };
+    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {
+        return [{ start, specification }];
     }
 }
 
@@ -136,24 +138,26 @@ export class NetworkDistribution implements Network {
         return Promise.resolve([]);
     }
 
-    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }> {
+    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {
         const result = await this.distributionEngine.intersectForSubscribe(start, specification, this.user);
         if (result.intersected) {
-            // Pre-compute feed hashes from the intersected spec and remember
-            // them. When the observer later calls `feeds` (after
+            // Pre-compute feed hashes from each intersected branch and
+            // remember them. When the observer later calls `feeds` (after
             // `reduceSpecification` reshapes the spec into a fresh object),
             // we recognize the produced hashes and skip auth — without
             // trusting the spec's structure as a marker.
-            const reducedIntersected = reduceSpecification(result.specification);
-            const namedStart = reducedIntersected.given.reduce((map, given, index) => ({
-                ...map,
-                [given.label.name]: result.start[index]
-            }), {} as ReferencesByName);
-            const producedFeeds = buildFeeds(reducedIntersected);
-            const producedHashes = this.feedCache.addFeeds(producedFeeds, namedStart);
-            for (const h of producedHashes) this.intersectedFeeds.add(h);
+            for (const branch of result.branches) {
+                const reducedIntersected = reduceSpecification(branch.specification);
+                const namedStart = reducedIntersected.given.reduce((map, given, index) => ({
+                    ...map,
+                    [given.label.name]: branch.start[index]
+                }), {} as ReferencesByName);
+                const producedFeeds = buildFeeds(reducedIntersected);
+                const producedHashes = this.feedCache.addFeeds(producedFeeds, namedStart);
+                for (const h of producedHashes) this.intersectedFeeds.add(h);
+            }
         }
-        return { start: result.start, specification: result.specification };
+        return result.branches;
     }
 }
 
@@ -257,11 +261,11 @@ export class NetworkManager {
         }
     }
 
-    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<{ start: FactReference[]; specification: Specification }> {
+    async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {
         if (this.network.intersectForSubscribe) {
             return await this.network.intersectForSubscribe(start, specification);
         }
-        return { start, specification };
+        return [{ start, specification }];
     }
 
     async subscribe(start: FactReference[], specification: Specification): Promise<string[]> {
