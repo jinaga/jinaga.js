@@ -4,7 +4,7 @@ import { describeSpecification } from '../specification/description';
 import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { SpecificationParser } from '../specification/specification-parser';
-import { FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
 import { distinct, flatten } from '../util/fn';
 import { Trace } from '../util/trace';
 
@@ -123,7 +123,7 @@ class FactGraph {
 interface AuthorizationRule {
     describe(type: string): string;
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
-    getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation>;
+    getAuthorizedPopulation(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation>;
 }
 
 export class AuthorizationRuleAny implements AuthorizationRule {
@@ -135,7 +135,7 @@ export class AuthorizationRuleAny implements AuthorizationRule {
         return Promise.resolve(true);
     }
 
-    getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+    getAuthorizedPopulation(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
         return Promise.resolve({
             quantifier: 'everyone'
         });
@@ -152,7 +152,7 @@ export class AuthorizationRuleNone implements AuthorizationRule {
         return Promise.resolve(false);
     }
 
-    getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+    getAuthorizedPopulation(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
         return Promise.resolve({
             quantifier: 'none'
         });
@@ -224,9 +224,9 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         return authorized;
     }
 
-    async getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
-        if (candidateKeys.length === 0) {
-            Trace.warn(`No candidate keys were given while attempting to authorize ${fact.type}.`);
+    async getAuthorizedPopulation(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation> {
+        if (candidateKeys.length === 0 && envelope.signatures.length === 0) {
+            Trace.warn(`No candidate keys or signatures were given while attempting to authorize ${envelope.fact.type}.`);
             return {
                 quantifier: 'none'
             };
@@ -256,11 +256,11 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         if (head.projection.type !== 'fact') {
             throw new Error('The head of the specification must project a fact.');
         }
-        const results = graph.executeSpecification(
+        let results = graph.executeSpecification(
             head.given[0].label.name,
             head.matches,
             head.projection.label,
-            fact);
+            envelope.fact);
 
         const publicKeys: string[] = [];
         // If there is a tail, execute it on the store.
@@ -277,8 +277,9 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
             publicKeys.push(...results.map(result => graph.getField(result, 'publicKey')));
         }
 
-        // Find the intersection between the candidate keys and the public keys.
-        const authorizedKeys = candidateKeys.filter(key => publicKeys.some(publicKey => publicKey === key));
+        // Find the intersection between the available keys and the public keys.
+        const availableKeys = candidateKeys.concat(envelope.signatures.map(s => s.publicKey));
+        const authorizedKeys = availableKeys.filter(key => publicKeys.some(publicKey => publicKey === key));
 
         // If any are left, then those are the authorized keys.
         if (authorizedKeys.length > 0) {
@@ -456,17 +457,27 @@ export class AuthorizationRules {
     }
 
     async getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, factRecords: FactRecord[], store: Storage): Promise<AuthorizationPopulation> {
-        const rules = this.rulesByType[fact.type];
+        return await this.getAuthorizedPopulationForEnvelope(candidateKeys, {
+            fact,
+            signatures: []
+        }, factRecords.map(fact => ({
+            fact,
+            signatures: []
+        })), store);
+    }
+
+    async getAuthorizedPopulationForEnvelope(candidateKeys: string[], envelope: FactEnvelope, factEnvelopes: FactEnvelope[], store: Storage): Promise<AuthorizationPopulation> {
+        const rules = this.rulesByType[envelope.fact.type];
         if (!rules) {
             return {
                 quantifier: 'none'
             };
         }
 
-        const graph = new FactGraph(factRecords);
+        const graph = new FactGraph(factEnvelopes.map(e => e.fact));
         let authorizedKeys: string[] = [];
         for (const rule of rules) {
-            const population = await rule.getAuthorizedPopulation(candidateKeys, fact, graph, store);
+            const population = await rule.getAuthorizedPopulation(candidateKeys, envelope, graph, store);
             if (population.quantifier === 'everyone') {
                 return population;
             }
