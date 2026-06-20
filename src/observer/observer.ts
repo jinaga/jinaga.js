@@ -441,14 +441,21 @@ export class ObserverImpl<T> implements Observer<T> {
      * At nested paths there's a single possible auth path per row, so
      * the two hashes coincide and the vote set degenerates to one entry.
      */
-    private rowAndVoteHashes(tuple: ReferencesByName, path: string, branch: ObserverBranch): { rowHash: string; voteId: string } {
+    private rowAndVoteHashes(tuple: ReferencesByName, path: string, branch: ObserverBranch, rowLabels?: string[]): { rowHash: string; voteId: string } {
         if (path === "") {
             return {
                 rowHash: computeTupleSubsetHash(tuple, this.rowIdentityLabels),
                 voteId: computeTupleSubsetHash(tuple, branch.voteLabels)
             };
         }
-        const h = computeObjectHash(tuple);
+        // Identify a nested row by the labels that define it at this path
+        // (its result subset), not by the whole tuple. A `remove` inverse's
+        // tuple carries extra given labels — e.g. the superseding fact whose
+        // arrival retracts the row — that are absent from the `add` tuple.
+        // Hashing the full tuple would give the remove a different row hash
+        // than the add, so the removal would never match the delivered row.
+        const labels = rowLabels ?? Object.getOwnPropertyNames(tuple);
+        const h = computeTupleSubsetHash(tuple, labels);
         return { rowHash: h, voteId: h };
     }
 
@@ -538,7 +545,7 @@ export class ObserverImpl<T> implements Observer<T> {
 
     async notifyRemoved(inverse: SpecificationInverse, projectedResult: ProjectedResult[], branch: ObserverBranch): Promise<void> {
         for (const pr of projectedResult) {
-            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, inverse.path, branch);
+            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, inverse.path, branch, inverse.resultSubset);
             const votes = this.votesByRow.get(rowHash);
             if (!votes) continue;
             // `delete` returns false if this vote wasn't recorded, in
