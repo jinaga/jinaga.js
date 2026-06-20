@@ -467,7 +467,11 @@ export class ObserverImpl<T> implements Observer<T> {
         Trace.info(`[Observer] NOTIFY_ADDED - Path: ${displayPath}, Results: ${projectedResults.length}, Parent subset: [${parentSubset.join(', ')}]`);
 
         for (const pr of projectedResults) {
-            const result: any = await this.injectObservers(pr, projection, path);
+            const result: any = await this.injectObservers(pr, projection, path, resultSubset);
+            // Identify the parent row by `parentSubset` (its result subset).
+            // This must equal the `tupleHash` under which the parent's
+            // injectObservers registered this path's handler — both hash the
+            // parent row over the same subset — so the lookup below finds it.
             const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
             const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, path, branch, resultSubset);
 
@@ -543,8 +547,11 @@ export class ObserverImpl<T> implements Observer<T> {
                         // matches — the same accumulation invertSpecification
                         // performs (see inverse.ts).
                         const childResultSubset = [...resultSubset, ...component.matches.map(m => m.unknown.name)];
+                        // The child's parent subset is this row's identity —
+                        // its `resultSubset` — matching how invertSpecification
+                        // sets `parentSubset: context.resultSubset` (inverse.ts).
                         Trace.info(`[Observer] Processing nested spec - Parent path: ${displayPath}, Child path: ${childPath}, Child results: ${childResults?.length || 0}`);
-                        await this.notifyAdded(childResults, component.projection, childPath, Object.keys(pr.tuple), childResultSubset, branch);
+                        await this.notifyAdded(childResults, component.projection, childPath, resultSubset, childResultSubset, branch);
                     }
                 }
             }
@@ -596,12 +603,17 @@ export class ObserverImpl<T> implements Observer<T> {
         }
     }
 
-    private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): Promise<any> {
+    private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string, resultSubset: string[]): Promise<any> {
         const displayPath = parentPath || "(root)";
-        
+
         if (projection.type === "composite") {
             const composite: any = {};
-            const tupleHash = computeObjectHash(pr.tuple);
+            // Identify this parent row by its result subset, the same labels
+            // the child's `notifyAdded` will use to compute `parentTupleHash`
+            // when matching this handler (see notifyAdded). Hashing the full
+            // tuple here would only match by the coincidence that the tuple's
+            // labels equal `resultSubset`.
+            const tupleHash = computeTupleSubsetHash(pr.tuple, resultSubset);
             
             for (const component of projection.components) {
                 if (component.type === "specification") {
