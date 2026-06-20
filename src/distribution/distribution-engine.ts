@@ -88,7 +88,18 @@ export class DistributionEngine {
         const ruleSkeleton = skeletonOfSpecification(ruleFeed);
         const permutations = permutationsOf(start, ruleSkeleton, targetSkeleton);
         for (const permutation of permutations) {
-          if (skeletonsEqual(ruleSkeleton, targetSkeleton)) {
+          // A rule's feed authorizes its own shape exactly, and also any feed
+          // whose shape is a connected sub-portion of the rule feed (rooted at
+          // the same inputs) — e.g. a direct query for an intermediate fact that
+          // the rule only traverses through on its way to a projected leaf
+          // (`Event -> Finalist` covered by a rule that projects
+          // `Event -> Finalist -> Competitor -> CompetitorName`). `skeletonContains`
+          // only admits sub-feeds whose every output fact the rule already
+          // delivers (see its soundness argument), so this grants no data beyond
+          // what the rule authorizes. This engine backs both JinagaTest and the
+          // real replicator (jinaga-server), so they stay in lock-step. See #204.
+          if (skeletonsEqual(ruleSkeleton, targetSkeleton) ||
+              skeletonContains(ruleSkeleton, targetSkeleton)) {
             // If this rule applies to any user, then we can distribute.
             if (rule.user === null) {
               return {
@@ -341,6 +352,72 @@ function skeletonsEqual(ruleSkeleton: Skeleton, targetSkeleton: Skeleton): boole
   // They don't affect the rows that match the specification.
 
   return true;
+}
+
+/**
+ * True when `targetSkeleton` is a *sound* sub-feed of `ruleSkeleton`: the target
+ * keeps a subset of the rule's facts and the rule delivers every fact the target
+ * outputs, so authorizing the rule legitimately authorizes the target.
+ *
+ * `buildFeeds` assigns fact/edge indices by a deterministic walk outward from
+ * the givens, so a target that is a prefix of the rule's traversal carries the
+ * same indices and the existing index-based predicates line up. The caller has
+ * already matched inputs via `permutationsOf`.
+ *
+ * Soundness hinges on *which* facts the target drops:
+ *  - Dropping a fact reached by a **predecessor** join (e.g. the `Competitor` of
+ *    a `Finalist`) is safe: every successor carries all its predecessors, so the
+ *    rule delivers the same output set with or without that fact in the feed.
+ *  - Dropping a fact reached by a **successor** join or existential (e.g. the
+ *    `Publish` that a "published posts" rule requires of each `Post`) is NOT
+ *    safe: that fact restricts the rule's output, and a target lacking it would
+ *    see more than the rule grants.
+ * So a dropped fact may only appear predecessor-ward of the kept facts: no rule
+ * edge may run from a kept fact to a dropped successor.
+ *
+ * This lets an authorized user run a direct query for a fact a projection rule
+ * only traverses through (issue #204), without declaring a redundant flat rule.
+ * The same engine authorizes JinagaTest and the real replicator (jinaga-server),
+ * so the relaxation applies uniformly to both.
+ */
+function skeletonContains(ruleSkeleton: Skeleton, targetSkeleton: Skeleton): boolean {
+  // Every target fact must be a rule fact.
+  if (!isSubsetOf(targetSkeleton.facts, ruleSkeleton.facts, factsEqual)) {
+    return false;
+  }
+
+  const keptFactIndices = new Set(targetSkeleton.facts.map(f => f.factIndex));
+  const isKept = (factIndex: number) => keptFactIndices.has(factIndex);
+
+  // A rule edge leading (as a successor join) to a dropped fact is a restriction
+  // the target lacks, so the target is not covered. Only predecessor-ward facts
+  // (present for every successor) may be dropped.
+  for (const edge of ruleSkeleton.edges) {
+    if (!isKept(edge.successorFactIndex) && isKept(edge.predecessorFactIndex)) {
+      return false;
+    }
+  }
+
+  // The target must preserve exactly the rule's structure among the facts it
+  // keeps: every rule edge between two kept facts must be present, and the
+  // target may not introduce edges the rule lacks.
+  const ruleEdgesAmongKept = ruleSkeleton.edges.filter(e =>
+    isKept(e.predecessorFactIndex) && isKept(e.successorFactIndex));
+  if (!compareSets(targetSkeleton.edges, ruleEdgesAmongKept, edgesEqual)) {
+    return false;
+  }
+
+  // The target must be at least as restrictive as the rule: every not-exists
+  // condition the rule imposes must also appear in the target.
+  if (!isSubsetOf(ruleSkeleton.notExistsConditions, targetSkeleton.notExistsConditions, notExistsConditionsEqual)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isSubsetOf<T>(subset: T[], superset: T[], equals: (a: T, b: T) => boolean): boolean {
+  return subset.every(item => superset.some(candidate => equals(candidate, item)));
 }
 
 function factsEqual(ruleFact: FactDescription, targetFact: FactDescription): boolean {
