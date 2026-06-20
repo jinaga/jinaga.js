@@ -86,83 +86,88 @@ export class DistributionEngine {
     for (const rule of this.distributionRules.rules) {
       for (const ruleFeed of rule.feeds) {
         const ruleSkeleton = skeletonOfSpecification(ruleFeed);
+        // A rule's feed authorizes its own shape exactly, and also any feed
+        // whose shape is a connected sub-portion of the rule feed (rooted at
+        // the same inputs) — e.g. a direct query for an intermediate fact that
+        // the rule only traverses through on its way to a projected leaf
+        // (`Event -> Finalist` covered by a rule that projects
+        // `Event -> Finalist -> Competitor -> CompetitorName`). `skeletonContains`
+        // only admits sub-feeds whose every output fact the rule already
+        // delivers (see its soundness argument), so this grants no data beyond
+        // what the rule authorizes. This engine backs both JinagaTest and the
+        // real replicator (jinaga-server), so they stay in lock-step. See #204.
+        //
+        // The shape match depends only on the two skeletons, not on the
+        // permutation, so evaluate it once and skip the feed before enumerating
+        // permutations (which can be many when givens share a type).
+        if (!skeletonsEqual(ruleSkeleton, targetSkeleton) &&
+            !skeletonContains(ruleSkeleton, targetSkeleton)) {
+          continue;
+        }
         const permutations = permutationsOf(start, ruleSkeleton, targetSkeleton);
         for (const permutation of permutations) {
-          // A rule's feed authorizes its own shape exactly, and also any feed
-          // whose shape is a connected sub-portion of the rule feed (rooted at
-          // the same inputs) — e.g. a direct query for an intermediate fact that
-          // the rule only traverses through on its way to a projected leaf
-          // (`Event -> Finalist` covered by a rule that projects
-          // `Event -> Finalist -> Competitor -> CompetitorName`). `skeletonContains`
-          // only admits sub-feeds whose every output fact the rule already
-          // delivers (see its soundness argument), so this grants no data beyond
-          // what the rule authorizes. This engine backs both JinagaTest and the
-          // real replicator (jinaga-server), so they stay in lock-step. See #204.
-          if (skeletonsEqual(ruleSkeleton, targetSkeleton) ||
-              skeletonContains(ruleSkeleton, targetSkeleton)) {
-            // If this rule applies to any user, then we can distribute.
-            if (rule.user === null) {
-              return {
-                type: 'success'
-              };
-            }
+          // If this rule applies to any user, then we can distribute.
+          if (rule.user === null) {
+            return {
+              type: 'success'
+            };
+          }
 
-            // If there is no user logged in, then we cannot distribute.
-            if (user === null) {
-              if (reasons.length === 0) {
-                reasons.push(`User is not logged in.`);
+          // If there is no user logged in, then we cannot distribute.
+          if (user === null) {
+            if (reasons.length === 0) {
+              reasons.push(`User is not logged in.`);
+            }
+          }
+          else {
+            // The projection must be a singular label.
+            if (rule.user.projection.type !== 'fact') {
+              throw new Error('The projection must be a singular label.');
+            }
+            const label = rule.user.projection.label;
+
+            // If the user specification is deterministic, then pick the labeled given.
+            if (specificationIsIdentity(rule.user)) {
+              const userReference = executeDeterministicSpecification(rule.user, label, permutation);
+              // If the user matches the given, then we can distribute to the user.
+              const authorized = factReferenceEquals(user)(userReference);
+              if (authorized) {
+                return {
+                  type: 'success'
+                };
+              }
+
+              if (this.isTest) {
+                reasons.push(
+                  `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
+                  `User hash: ${user.hash}\n` +
+                  `Expected hash: ${userReference.hash}`
+                );
+              } else {
+                reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
               }
             }
             else {
-              // The projection must be a singular label.
-              if (rule.user.projection.type !== 'fact') {
-                throw new Error('The projection must be a singular label.');
-              }
-              const label = rule.user.projection.label;
+              // Find the set of users to whom we can distribute this feed.
+              const users = await this.store.read(permutation, rule.user);
+              const results = users.map(user => user.tuple[label])
 
-              // If the user specification is deterministic, then pick the labeled given.
-              if (specificationIsIdentity(rule.user)) {
-                const userReference = executeDeterministicSpecification(rule.user, label, permutation);
-                // If the user matches the given, then we can distribute to the user.
-                const authorized = factReferenceEquals(user)(userReference);
-                if (authorized) {
-                  return {
-                    type: 'success'
-                  };
-                }
-                
-                if (this.isTest) {
-                  reasons.push(
-                    `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
-                    `User hash: ${user.hash}\n` +
-                    `Expected hash: ${userReference.hash}`
-                  );
-                } else {
-                  reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
-                }
+              // If any of the results match the user, then we can distribute to the user.
+              const authorized = results.some(factReferenceEquals(user));
+              if (authorized) {
+                return {
+                  type: 'success'
+                };
               }
-              else {
-                // Find the set of users to whom we can distribute this feed.
-                const users = await this.store.read(permutation, rule.user);
-                const results = users.map(user => user.tuple[label])
 
-                // If any of the results match the user, then we can distribute to the user.
-                const authorized = results.some(factReferenceEquals(user));
-                if (authorized) {
-                  return {
-                    type: 'success'
-                  };
-                }
-                
-                if (this.isTest) {
-                  reasons.push(
-                    `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
-                    `User hash: ${user.hash}\n` +
-                    `Expected hashes: [${results.map(r => r.hash).join(", ")}]`
-                  );
-                } else {
-                  reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
-                }
+              if (this.isTest) {
+                reasons.push(
+                  `The user does not match ${describeSpecification(rule.user, 0)}.\n` +
+                  `User hash: ${user.hash}\n` +
+                  `Expected hashes: [${results.map(r => r.hash).join(", ")}]`
+                );
+              } else {
+                reasons.push(`The user does not match ${describeSpecification(rule.user, 0)}`);
               }
             }
           }
