@@ -103,12 +103,13 @@ export class ObserverImpl<T> implements Observer<T> {
      * The value is an object containing:
      *   - `projection`: The projection associated with the results.
      *   - `parentSubset`: The parent subset of fact references.
+     *   - `resultSubset`: The labels identifying each row at this path (used for the row-identity hash on replay).
      *   - `results`: The buffered results (of type `ProjectedResult[]`) to be replayed to handlers when they are registered.
      * 
      * This map is used to buffer results that are produced before any handlers are registered,
      * enabling replay of results to late-registered handlers.
      */
-    private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; results: ProjectedResult[]; branch: ObserverBranch }>
+    private pendingAddsByKey: Map<string, { projection: Projection; parentSubset: string[]; resultSubset: string[]; results: ProjectedResult[]; branch: ObserverBranch }>
         = new Map();
     /**
      * Labels (givens + match unknowns) drawn from the pre-intersection
@@ -392,7 +393,8 @@ export class ObserverImpl<T> implements Observer<T> {
         }
         for (const { branch, projected } of branchResults) {
             const givenSubset = branch.specification.given.map(g => g.label.name);
-            await this.notifyAdded(projected, branch.specification.projection, "", givenSubset, branch);
+            const resultSubset = [...givenSubset, ...branch.specification.matches.map(m => m.unknown.name)];
+            await this.notifyAdded(projected, branch.specification.projection, "", givenSubset, resultSubset, branch);
         }
     }
 
@@ -414,7 +416,7 @@ export class ObserverImpl<T> implements Observer<T> {
             Trace.info(`[Observer] Matching results: ${matchingResults.length} - Path: ${path}, Operation: ${inverse.operation}`);
 
             if (inverse.operation === "add") {
-                return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset, branch);
+                return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset, inverse.resultSubset, branch);
             }
             else if (inverse.operation === "remove") {
                 return await this.notifyRemoved(inverse, matchingResults, branch);
@@ -441,25 +443,37 @@ export class ObserverImpl<T> implements Observer<T> {
      * At nested paths there's a single possible auth path per row, so
      * the two hashes coincide and the vote set degenerates to one entry.
      */
-    private rowAndVoteHashes(tuple: ReferencesByName, path: string, branch: ObserverBranch): { rowHash: string; voteId: string } {
+    private rowAndVoteHashes(tuple: ReferencesByName, path: string, branch: ObserverBranch, resultSubset: string[]): { rowHash: string; voteId: string } {
         if (path === "") {
             return {
                 rowHash: computeTupleSubsetHash(tuple, this.rowIdentityLabels),
                 voteId: computeTupleSubsetHash(tuple, branch.voteLabels)
             };
         }
-        const h = computeObjectHash(tuple);
+        // Identify a nested row by the labels that define it at this path
+        // (its `resultSubset`), not by the whole tuple — and identically on
+        // both the add and remove sides. A `remove` inverse's tuple carries
+        // extra labels — e.g. the superseding fact whose arrival retracts the
+        // row — that are absent from the `add` tuple. Hashing the full tuple
+        // would give the remove a different row hash than the add, so the
+        // removal would never match the delivered row. Restricting both sides
+        // to `resultSubset` keeps them in lock-step.
+        const h = computeTupleSubsetHash(tuple, resultSubset);
         return { rowHash: h, voteId: h };
     }
 
-    private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[], branch: ObserverBranch) {
+    private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[], resultSubset: string[], branch: ObserverBranch) {
         const displayPath = path || "(root)";
         Trace.info(`[Observer] NOTIFY_ADDED - Path: ${displayPath}, Results: ${projectedResults.length}, Parent subset: [${parentSubset.join(', ')}]`);
 
         for (const pr of projectedResults) {
-            const result: any = await this.injectObservers(pr, projection, path);
+            const result: any = await this.injectObservers(pr, projection, path, resultSubset);
+            // Identify the parent row by `parentSubset` (its result subset).
+            // This must equal the `tupleHash` under which the parent's
+            // injectObservers registered this path's handler — both hash the
+            // parent row over the same subset — so the lookup below finds it.
             const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
-            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, path, branch);
+            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, path, branch, resultSubset);
 
             Trace.info(`[Observer] Processing result - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., Vote id: ${voteId.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
 
@@ -472,13 +486,13 @@ export class ObserverImpl<T> implements Observer<T> {
                     Trace.warn(`[Observer]   Handler ${index + 1}: Path="${h.path}", Tuple hash: ${h.tupleHash.substring(0, 8)}...`);
                 });
                 // Buffer for replay when the handler registers later.
-                this.bufferPendingNotification(path, pr, projection, parentSubset, branch);
+                this.bufferPendingNotification(path, pr, projection, parentSubset, resultSubset, branch);
                 // Skip deeper recursion until handler is registered.
                 continue;
             } else if (!resultAdded) {
                 Trace.warn(`[Observer] Handler found but no callback - Path: ${displayPath}`);
                 // Buffer for replay when the callback is attached.
-                this.bufferPendingNotification(path, pr, projection, parentSubset, branch);
+                this.bufferPendingNotification(path, pr, projection, parentSubset, resultSubset, branch);
                 continue;
             } else {
                 Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
@@ -528,8 +542,16 @@ export class ObserverImpl<T> implements Observer<T> {
                     if (component.type === "specification") {
                         const childPath = path + "." + component.name;
                         const childResults = pr.result[component.name];
+                        // The child row's identity is this row's resultSubset
+                        // plus the labels introduced by the nested component's
+                        // matches — the same accumulation invertSpecification
+                        // performs (see inverse.ts).
+                        const childResultSubset = [...resultSubset, ...component.matches.map(m => m.unknown.name)];
+                        // The child's parent subset is this row's identity —
+                        // its `resultSubset` — matching how invertSpecification
+                        // sets `parentSubset: context.resultSubset` (inverse.ts).
                         Trace.info(`[Observer] Processing nested spec - Parent path: ${displayPath}, Child path: ${childPath}, Child results: ${childResults?.length || 0}`);
-                        await this.notifyAdded(childResults, component.projection, childPath, Object.keys(pr.tuple), branch);
+                        await this.notifyAdded(childResults, component.projection, childPath, resultSubset, childResultSubset, branch);
                     }
                 }
             }
@@ -538,7 +560,7 @@ export class ObserverImpl<T> implements Observer<T> {
 
     async notifyRemoved(inverse: SpecificationInverse, projectedResult: ProjectedResult[], branch: ObserverBranch): Promise<void> {
         for (const pr of projectedResult) {
-            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, inverse.path, branch);
+            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, inverse.path, branch, inverse.resultSubset);
             const votes = this.votesByRow.get(rowHash);
             if (!votes) continue;
             // `delete` returns false if this vote wasn't recorded, in
@@ -569,7 +591,7 @@ export class ObserverImpl<T> implements Observer<T> {
      * @param projection - The projection associated with the result
      * @param parentSubset - The parent subset of fact references
      */
-    private bufferPendingNotification(path: string, pr: ProjectedResult, projection: Projection, parentSubset: string[], branch: ObserverBranch): void {
+    private bufferPendingNotification(path: string, pr: ProjectedResult, projection: Projection, parentSubset: string[], resultSubset: string[], branch: ObserverBranch): void {
         const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
         const key = `${path}|${parentTupleHash}`;
         const existing = this.pendingAddsByKey.get(key);
@@ -577,16 +599,21 @@ export class ObserverImpl<T> implements Observer<T> {
             existing.results.push(pr);
         }
         else {
-            this.pendingAddsByKey.set(key, { projection, parentSubset, results: [pr], branch });
+            this.pendingAddsByKey.set(key, { projection, parentSubset, resultSubset, results: [pr], branch });
         }
     }
 
-    private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string): Promise<any> {
+    private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string, resultSubset: string[]): Promise<any> {
         const displayPath = parentPath || "(root)";
-        
+
         if (projection.type === "composite") {
             const composite: any = {};
-            const tupleHash = computeObjectHash(pr.tuple);
+            // Identify this parent row by its result subset, the same labels
+            // the child's `notifyAdded` will use to compute `parentTupleHash`
+            // when matching this handler (see notifyAdded). Hashing the full
+            // tuple here would only match by the coincidence that the tuple's
+            // labels equal `resultSubset`.
+            const tupleHash = computeTupleSubsetHash(pr.tuple, resultSubset);
             
             for (const component of projection.components) {
                 if (component.type === "specification") {
@@ -611,7 +638,7 @@ export class ObserverImpl<T> implements Observer<T> {
                                 // Track this replay as a pending notification
                                 const replayWork = async () => {
                                     try {
-                                        await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset, pending.branch);
+                                        await this.notifyAdded(pending.results, pending.projection, path, pending.parentSubset, pending.resultSubset, pending.branch);
                                     } catch (error) {
                                         Trace.error(`[Observer] ERROR in buffered replay - Path: ${path}, Error: ${error}`);
                                     }
