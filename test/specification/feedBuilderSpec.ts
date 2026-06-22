@@ -1,4 +1,4 @@
-import { SpecificationParser, buildFeeds, describeSpecification } from "@src";
+import { SpecificationParser, buildFeeds, describeSpecification, invertSpecification } from "@src";
 
 describe("feed generator", () => {
     it("should produce no feeds for an identity specification", () => {
@@ -142,6 +142,107 @@ describe("feed generator", () => {
         ];
 
         expect(feeds).toEqual(expectedFeeds);
+    });
+
+    it("should attach a sibling negative existential to its own match after a positive existential", () => {
+        // Regression for jinaga/jinaga-replicator#52: a match carrying a
+        // positive existential (which is flattened into top-level matches)
+        // followed by a negative existential must keep the negative attached
+        // to the original match, not to the flattened positive match.
+        const feeds = getFeeds(`
+            (root: Root) {
+                item: Item [
+                    item->root: Root = root
+                    E {
+                        tag: Tag [
+                            tag->item: Item = item
+                        ]
+                    }
+                    !E {
+                        del: Deleted [
+                            del->item: Item = item
+                        ]
+                    }
+                ]
+            }`);
+
+        const expectedFeeds: string[] = [
+            // Negating detector feed: tag (from the positive existential) and del.
+            `(root: Root) {
+                item: Item [
+                    item->root: Root = root
+                ]
+                tag: Tag [
+                    tag->item: Item = item
+                ]
+                del: Deleted [
+                    del->item: Item = item
+                ]
+            }`,
+            // Main feed: the negative existential stays on item, while tag
+            // (the flattened positive existential) is a top-level match.
+            `(root: Root) {
+                item: Item [
+                    item->root: Root = root
+                    !E {
+                        del: Deleted [
+                            del->item: Item = item
+                        ]
+                    }
+                ]
+                tag: Tag [
+                    tag->item: Item = item
+                ]
+            }`
+        ];
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
+
+    it("should produce re-parseable, invertible feeds when a match mixes positive and negative existentials", () => {
+        // The feeds produced for such a specification must be valid on their
+        // own — describable, re-parseable, and invertible — because the
+        // replicator serializes feeds and inverts them at NOTIFY time. A
+        // mis-attached existential previously produced a feed that threw
+        // "Label u2 not found" during inversion.
+        const specification = getSpecification(`
+            (user: Jinaga.User) {
+                provisioner: Provisioner [
+                    provisioner->user: Jinaga.User = user
+                ]
+                request: Request [
+                    request->domain: Domain = provisioner->domain: Domain
+                    E {
+                        redemption: Redemption [
+                            redemption->request: Request = request
+                        ]
+                    }
+                    !E {
+                        workspace: Workspace [
+                            workspace->request: Request = request
+                        ]
+                        owner: Owner [
+                            owner->workspace: Workspace = workspace
+                        ]
+                    }
+                    !E {
+                        denied: Denied [
+                            denied->request: Request = request
+                        ]
+                    }
+                ]
+            } => request`);
+
+        const feeds = buildFeeds(specification);
+        expect(feeds.length).toBeGreaterThan(0);
+        for (const feed of feeds) {
+            const description = describeSpecification(feed, 0);
+            const parser = new SpecificationParser(description);
+            parser.skipWhitespace();
+            const reparsed = parser.parseSpecification();
+            // Inversion must not throw "Label ... not found".
+            expect(() => invertSpecification(reparsed)).not.toThrow();
+        }
     });
 
     it("should parse deeply nested projection", () => {
