@@ -64,7 +64,11 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
                     exists: false,
                     matches: []
                 }, existentialCondition.matches, specification.given, unusedGivens);
-                specification = withCondition(specification, newGivens, newExistentialCondition);
+                // Attach the condition to the match it actually belongs to. A
+                // preceding positive existential may have flattened its own
+                // matches onto the end of the feed, so the current match is no
+                // longer guaranteed to be the last one.
+                specification = withCondition(specification, newGivens, newExistentialCondition, match.unknown.name);
                 unusedGivens = newUnusedGivens;
             }
         }
@@ -144,13 +148,19 @@ function withGiven(specification: Specification, label: Label): Specification {
     };
 }
 
-function withCondition(specification: Specification, newGivens: SpecificationGiven[], newExistentialCondition: ExistentialCondition) {
+function withCondition(specification: Specification, newGivens: SpecificationGiven[], newExistentialCondition: ExistentialCondition, targetLabel: string) {
+    // Find the match that owns this condition by its label name. The most
+    // recently added match with that name is the one currently being built.
+    const targetIndex = specification.matches.map(m => m.unknown.name).lastIndexOf(targetLabel);
+    if (targetIndex < 0) {
+        throw new Error(`Label ${targetLabel} not found when attaching existential condition`);
+    }
     return {
         ...specification,
         given: newGivens,
-        matches: [...specification.matches.slice(0, specification.matches.length - 1), {
-            ...specification.matches[specification.matches.length - 1],
-            conditions: [...specification.matches[specification.matches.length - 1].conditions, newExistentialCondition]
-        }]
+        matches: specification.matches.map((match, index) => index === targetIndex ? {
+            ...match,
+            conditions: [...match.conditions, newExistentialCondition]
+        } : match)
     };
 }
