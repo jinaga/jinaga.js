@@ -149,9 +149,16 @@ function withGiven(specification: Specification, label: Label): Specification {
 }
 
 function withCondition(specification: Specification, newGivens: SpecificationGiven[], newExistentialCondition: ExistentialCondition, targetLabel: string) {
-    // Find the match that owns this condition by its label name. The most
-    // recently added match with that name is the one currently being built.
-    const targetIndex = specification.matches.map(m => m.unknown.name).lastIndexOf(targetLabel);
+    // Find the match that owns this condition by its label name. Scan
+    // backwards so the most recently added match with that name (the one
+    // currently being built) wins.
+    let targetIndex = -1;
+    for (let index = specification.matches.length - 1; index >= 0; index--) {
+        if (specification.matches[index].unknown.name === targetLabel) {
+            targetIndex = index;
+            break;
+        }
+    }
     if (targetIndex < 0) {
         throw new Error(`Label ${targetLabel} not found when attaching existential condition`);
     }

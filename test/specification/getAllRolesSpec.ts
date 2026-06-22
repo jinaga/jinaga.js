@@ -39,8 +39,7 @@ describe("getAllRoles", () => {
             projection: { type: "fact", label: "u2" }
         };
 
-        expect(() => getAllRoles(specification)).not.toThrow();
-
+        // Must not throw "Label u2 not found" — the sibling reference resolves.
         const roles = getAllRoles(specification);
         // The role referenced through the sibling label must be resolved with
         // the correct successor type (Receipt -> request -> Request).
