@@ -7,7 +7,7 @@ export { AuthorizationNoOp } from "./authorization/authorization-noop";
 export { AuthorizationRules, describeAuthorizationRules } from "./authorization/authorizationRules";
 export { generateKeyPair, KeyPair, signFacts } from "./cryptography/key-pair";
 export { verifyEnvelopes } from "./cryptography/verify";
-export { DistributionEngine } from './distribution/distribution-engine';
+export { DistributionEngine, DistributionDenialCode, DistributionFailure, DistributionPerFeedFailure, DistributionResult, DistributionSuccess } from './distribution/distribution-engine';
 export { describeDistributionRules, DistributionRules } from './distribution/distribution-rules';
 export { canonicalizeFact, canonicalPredecessors, computeHash, computeObjectHash, verifyHash } from './fact/hash';
 export { dehydrateFact, dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, Hydration } from "./fact/hydrate";
@@ -20,8 +20,9 @@ export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvid
 export { GraphDeserializer, GraphSource } from "./http/deserializer";
 export { FetchConnection } from "./http/fetch";
 export { HttpNetwork } from "./http/httpNetwork";
-export { parseLoadMessage, parseSaveMessage } from './http/messageParsers';
+export { parseFeedsResponse, parseLoadMessage, parseSaveMessage } from './http/messageParsers';
 export {
+  FeedDecision,
   FeedResponse,
   FeedsResponse,
   LoadMessage,
