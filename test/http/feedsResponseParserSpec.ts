@@ -26,6 +26,13 @@ describe("parseFeedsResponse (issue #207 W3)", () => {
     expect(response.decisions![2].code).toBe("no-matching-rule");
   });
 
+  it("rejects an unknown denial code", () => {
+    expect(() => parseFeedsResponse({
+      feeds: [],
+      decisions: [{ feed: "abc", decision: "denied", code: "not-a-real-code", reason: "" }]
+    })).toThrow(/code/);
+  });
+
   it("rejects an unknown decision value", () => {
     expect(() => parseFeedsResponse({
       feeds: [],

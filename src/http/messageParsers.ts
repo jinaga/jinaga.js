@@ -1,4 +1,4 @@
-import type { DistributionDenialCode } from "../distribution/distribution-engine";
+import { DistributionDenialCode, distributionDenialCodes } from "../distribution/distribution-engine";
 import { FactRecord, FactReference, PredecessorCollection } from "../storage";
 import { FeedDecision, FeedsResponse, LoadMessage, SaveMessage } from "./messages";
 
@@ -74,6 +74,9 @@ function parseFeedDecision(decision: any): FeedDecision {
   };
   if (decision.code !== undefined) {
     if (typeof decision.code !== 'string') throw new Error("Expected a string 'code' property.");
+    if (!(distributionDenialCodes as readonly string[]).includes(decision.code)) {
+      throw new Error(`Unknown denial 'code': ${decision.code}.`);
+    }
     result.code = decision.code as DistributionDenialCode;
   }
   return result;

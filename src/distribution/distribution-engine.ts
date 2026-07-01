@@ -51,15 +51,26 @@ export interface DistributionIntersectionResult {
  *   is not among those it authorizes.
  * - `not-authenticated` means a rule's shape matched but no user is logged in.
  *
- * Note: a "rule too restrictive" outcome is not a distinct engine state — it
- * surfaces as `principal-excluded`. Do not add a code the engine cannot
- * produce.
+ * Note the distinction between the two "restrictive" ideas: a rule that is too
+ * restrictive *for this user* (the rule excludes them) is not a distinct code —
+ * it surfaces as `principal-excluded`. That is different from
+ * `spec-more-restrictive-than-rule`, which is about the *target specification*
+ * being narrower than a rule (it adds a positive join the rule lacks) and is
+ * produced by the near-miss classification pass. Do not add a code the engine
+ * cannot produce.
+ *
+ * `distributionDenialCodes` is the runtime source of truth; the type is derived
+ * from it so callers (e.g. the `POST /feeds` response parser) can validate
+ * codes against the same list.
  */
-export type DistributionDenialCode =
-  | 'no-matching-rule'
-  | 'spec-more-restrictive-than-rule'  // produced by the near-miss classification pass
-  | 'principal-excluded'
-  | 'not-authenticated';
+export const distributionDenialCodes = [
+  'no-matching-rule',
+  'spec-more-restrictive-than-rule',  // produced by the near-miss classification pass
+  'principal-excluded',
+  'not-authenticated',
+] as const;
+
+export type DistributionDenialCode = typeof distributionDenialCodes[number];
 
 export interface DistributionSuccess {
   type: 'success';
