@@ -1,5 +1,6 @@
 import { User } from "../model/user";
 import { describeSpecification } from "../specification/description";
+import { computeFeedHash } from "../specification/feed-cache";
 import { buildFeeds } from "../specification/feed-builder";
 import { EdgeDescription, FactDescription, InputDescription, NotExistsConditionDescription, Skeleton, skeletonOfSpecification } from "../specification/skeleton";
 import { Specification, isPathCondition, specificationIsIdentity } from "../specification/specification";
@@ -39,16 +40,87 @@ export interface DistributionIntersectionResult {
   intersected: boolean;
 }
 
+/**
+ * A discriminant that categorizes *why* a feed could not be distributed. The
+ * categories split by whether the outcome can self-heal when a fact later
+ * arrives (see issue #207):
+ *
+ * - `no-matching-rule` / `spec-more-restrictive-than-rule` are structural
+ *   authoring errors: no rule covers the feed, so it can never self-heal.
+ * - `principal-excluded` means a rule's shape matched but the logged-in user
+ *   is not among those it authorizes.
+ * - `not-authenticated` means a rule's shape matched but no user is logged in.
+ *
+ * Note the distinction between the two "restrictive" ideas: a rule that is too
+ * restrictive *for this user* (the rule excludes them) is not a distinct code —
+ * it surfaces as `principal-excluded`. That is different from
+ * `spec-more-restrictive-than-rule`, which is about the *target specification*
+ * being narrower than a rule (it adds a positive join the rule lacks) and is
+ * produced by the near-miss classification pass. Do not add a code the engine
+ * cannot produce.
+ *
+ * `distributionDenialCodes` is the runtime source of truth; the type is derived
+ * from it so callers (e.g. the `POST /feeds` response parser) can validate
+ * codes against the same list.
+ */
+export const distributionDenialCodes = [
+  'no-matching-rule',
+  'spec-more-restrictive-than-rule',  // produced by the near-miss classification pass
+  'principal-excluded',
+  'not-authenticated',
+] as const;
+
+export type DistributionDenialCode = typeof distributionDenialCodes[number];
+
 export interface DistributionSuccess {
   type: 'success';
+}
+
+/**
+ * The per-feed detail behind a distribution failure. `feed` is the same
+ * URL-safe hash the client uses to fetch the feed, so callers can correlate a
+ * denial with a specific feed.
+ */
+export interface DistributionPerFeedFailure {
+  feed: string;
+  code: DistributionDenialCode;
+  reason: string;
 }
 
 export interface DistributionFailure {
   type: 'failure';
   reason: string;
+  code: DistributionDenialCode;
+  perFeed: DistributionPerFeedFailure[];
 }
 
 export type DistributionResult = DistributionSuccess | DistributionFailure;
+
+/**
+ * The single-feed result computed by `canDistributeTo`. It carries a code and
+ * reason but not the per-feed array or feed hash; `canDistributeToAll`
+ * assembles those into the aggregate `DistributionFailure`.
+ */
+interface PerFeedFailure {
+  type: 'failure';
+  reason: string;
+  code: DistributionDenialCode;
+}
+
+type PerFeedResult = DistributionSuccess | PerFeedFailure;
+
+/**
+ * Relative actionability of the denial codes. `canDistributeToAll` reports the
+ * most-actionable code across all failing feeds: structural authoring errors
+ * first (a too-narrow spec is the most specific), then principal exclusion,
+ * then missing authentication.
+ */
+const denialCodePriority: { [code in DistributionDenialCode]: number } = {
+  'spec-more-restrictive-than-rule': 4,
+  'no-matching-rule': 3,
+  'principal-excluded': 2,
+  'not-authenticated': 1,
+};
 
 export class DistributionEngine {
   constructor(
@@ -59,17 +131,28 @@ export class DistributionEngine {
 
   async canDistributeToAll(targetFeeds: Specification[], namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
     // TODO: Minimize the number hits to the database.
-    const reasons: string[] = [];
+    const perFeed: DistributionPerFeedFailure[] = [];
     for (const targetFeed of targetFeeds) {
       const feedResult = await this.canDistributeTo(targetFeed, namedStart, user);
       if (feedResult.type === 'failure') {
-        reasons.push(feedResult.reason);
+        perFeed.push({
+          feed: computeFeedHash(targetFeed, namedStart),
+          code: feedResult.code,
+          reason: feedResult.reason
+        });
       }
     }
-    if (reasons.length > 0) {
+    if (perFeed.length > 0) {
+      // Pick the most-actionable code across all failing feeds while keeping
+      // the full per-feed detail for callers that want to inspect it.
+      const code = perFeed.reduce((most, f) =>
+        denialCodePriority[f.code] > denialCodePriority[most] ? f.code : most,
+        perFeed[0].code);
       return {
         type: 'failure',
-        reason: reasons.join('\n\n')
+        reason: perFeed.map(f => f.reason).join('\n\n'),
+        code,
+        perFeed
       };
     }
     else {
@@ -79,7 +162,7 @@ export class DistributionEngine {
     }
   }
 
-  private async canDistributeTo(targetFeed: Specification, namedStart: ReferencesByName, user: FactReference | null): Promise<DistributionResult> {
+  private async canDistributeTo(targetFeed: Specification, namedStart: ReferencesByName, user: FactReference | null): Promise<PerFeedResult> {
     const start = targetFeed.given.map(g => namedStart[g.label.name]);
     const targetSkeleton = skeletonOfSpecification(targetFeed);
     const reasons: string[] = [];
@@ -184,10 +267,35 @@ export class DistributionEngine {
     }
 
     if (reasons.length === 0) {
-      reasons.push("No rules apply to this feed.");
+      // No rule's shape matched the target at all. Run the diagnostic-only
+      // near-miss pass (W2, off the hot path): is the target a *narrower*
+      // version of some rule — i.e. does it contain all of a rule's facts,
+      // edges, and not-exists conditions plus additional positive structure
+      // the rule lacks? If so, the developer narrowed the spec past the rule
+      // rather than simply having no rule at all.
+      const nearMissRule = findNearMissRule(targetSkeleton, this.distributionRules);
+      if (nearMissRule !== null) {
+        return {
+          type: 'failure',
+          code: 'spec-more-restrictive-than-rule',
+          reason: `Cannot distribute to ${describeSpecification(targetFeed, 0)}` +
+            `The specification is more restrictive than the distribution rule ` +
+            `${describeSpecification(nearMissRule, 0)}`
+        };
+      }
+      return {
+        type: 'failure',
+        code: 'no-matching-rule',
+        reason: `Cannot distribute to ${describeSpecification(targetFeed, 0)}No rules apply to this feed.`
+      };
     }
+
+    // A rule's shape matched but authorization failed. When no user is logged
+    // in this is `not-authenticated`; otherwise the user is not among those the
+    // matching rule authorizes (`principal-excluded`).
     return {
       type: 'failure',
+      code: user === null ? 'not-authenticated' : 'principal-excluded',
       reason: `Cannot distribute to ${describeSpecification(targetFeed, 0)}${reasons.join('\n')}`
     };
 
@@ -419,6 +527,59 @@ function skeletonContains(ruleSkeleton: Skeleton, targetSkeleton: Skeleton): boo
   }
 
   return true;
+}
+
+/**
+ * Diagnostic-only near-miss classification (W2, issue #207). Runs only when no
+ * rule matched the target by shape (equal or sound sub-feed), so it is off the
+ * hot path. Returns the first rule feed whose skeleton is a *proper subset* of
+ * the target skeleton — meaning the target keeps every fact, edge, and
+ * not-exists condition of the rule and adds at least one positive fact, join,
+ * or condition the rule lacks. That is the "spec is more restrictive than the
+ * rule" signal; the engine is the only place it can originate because the
+ * client does not hold the replicator's distribution rules.
+ *
+ * This is deliberately distinct from `skeletonContains`: that predicate refuses
+ * to drop successor facts (it guards what the engine will *authorize*), whereas
+ * here we are diagnosing a target that *adds* them, so we test plain structural
+ * containment rather than sound-sub-feed containment.
+ */
+function findNearMissRule(targetSkeleton: Skeleton, distributionRules: DistributionRules): Specification | null {
+  for (const rule of distributionRules.rules) {
+    for (const ruleFeed of rule.feeds) {
+      const ruleSkeleton = skeletonOfSpecification(ruleFeed);
+      if (skeletonIsProperSubset(ruleSkeleton, targetSkeleton)) {
+        return ruleFeed;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * True when `subsetSkeleton` is contained in `supersetSkeleton` and the
+ * superset adds strictly more structure. Fact/edge indices are assigned by a
+ * deterministic outward walk from the givens, so a target that appends a join
+ * shares the rule's indices on the common prefix and the index-based equality
+ * predicates line up. A target that inserts a join mid-traversal shifts the
+ * indices and will not be detected — an acceptable limitation for a best-effort
+ * diagnostic.
+ */
+function skeletonIsProperSubset(subsetSkeleton: Skeleton, supersetSkeleton: Skeleton): boolean {
+  if (!isSubsetOf(subsetSkeleton.facts, supersetSkeleton.facts, factsEqual)) {
+    return false;
+  }
+  if (!isSubsetOf(subsetSkeleton.edges, supersetSkeleton.edges, edgesEqual)) {
+    return false;
+  }
+  if (!isSubsetOf(subsetSkeleton.notExistsConditions, supersetSkeleton.notExistsConditions, notExistsConditionsEqual)) {
+    return false;
+  }
+  // The target must add at least one fact, edge, or condition; otherwise the
+  // shapes are equal and would already have matched on the hot path.
+  return supersetSkeleton.facts.length > subsetSkeleton.facts.length ||
+    supersetSkeleton.edges.length > subsetSkeleton.edges.length ||
+    supersetSkeleton.notExistsConditions.length > subsetSkeleton.notExistsConditions.length;
 }
 
 function isSubsetOf<T>(subset: T[], superset: T[], equals: (a: T, b: T) => boolean): boolean {

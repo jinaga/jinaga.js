@@ -1,5 +1,6 @@
+import { DistributionDenialCode, distributionDenialCodes } from "../distribution/distribution-engine";
 import { FactRecord, FactReference, PredecessorCollection } from "../storage";
-import { LoadMessage, SaveMessage } from "./messages";
+import { FeedDecision, FeedsResponse, LoadMessage, SaveMessage } from "./messages";
 
 function parseFactReference(factReference: any): FactReference {
   if (typeof factReference !== 'object') throw new Error("Expected FactReference to be an object.");
@@ -55,4 +56,45 @@ export function parseLoadMessage(message: any): LoadMessage {
   return {
     references: message.references.map(parseFactReference)
   };
+}
+
+const feedDecisionKinds = ['authorized', 'reactive', 'denied'];
+
+function parseFeedDecision(decision: any): FeedDecision {
+  if (typeof decision !== 'object' || decision === null) throw new Error("Expected FeedDecision to be an object.");
+  if (typeof decision.feed !== 'string') throw new Error("Expected a string 'feed' property.");
+  if (!feedDecisionKinds.includes(decision.decision)) {
+    throw new Error("Expected 'decision' to be 'authorized', 'reactive', or 'denied'.");
+  }
+  if (typeof decision.reason !== 'string') throw new Error("Expected a string 'reason' property.");
+  const result: FeedDecision = {
+    feed: decision.feed,
+    decision: decision.decision,
+    reason: decision.reason
+  };
+  if (decision.code !== undefined) {
+    if (typeof decision.code !== 'string') throw new Error("Expected a string 'code' property.");
+    if (!(distributionDenialCodes as readonly string[]).includes(decision.code)) {
+      throw new Error(`Unknown denial 'code': ${decision.code}.`);
+    }
+    result.code = decision.code as DistributionDenialCode;
+  }
+  return result;
+}
+
+export function parseFeedsResponse(message: any): FeedsResponse {
+  if (typeof message !== 'object' || message === null) throw new Error("Expected an object. Check the content type of the response.");
+  if (!Array.isArray(message.feeds)) throw new Error("Expected an array 'feeds' property.");
+  const feeds: string[] = message.feeds.map((feed: any) => {
+    if (typeof feed !== 'string') throw new Error("Expected 'feeds' to be an array of strings.");
+    return feed;
+  });
+  const response: FeedsResponse = { feeds };
+  // Old replicators omit `decisions`; when absent the client simply has
+  // nothing to report (graceful degradation).
+  if (message.decisions !== undefined) {
+    if (!Array.isArray(message.decisions)) throw new Error("Expected an array 'decisions' property.");
+    response.decisions = message.decisions.map(parseFeedDecision);
+  }
+  return response;
 }
