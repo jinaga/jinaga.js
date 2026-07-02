@@ -1,3 +1,14 @@
+> **Status: superseded.** This early design sketch has been superseded by the formal
+> specification and supporting documents:
+> [`websocket-protocol-spec.md`](./websocket-protocol-spec.md) (wire grammar, state
+> machines, invariants, proofs),
+> [`websocket-design-evaluation.md`](./websocket-design-evaluation.md) (critical
+> evaluation of this design and the `src/ws/` prototype),
+> [`websocket-implementation-plan.md`](./websocket-implementation-plan.md) (TDD plan),
+> and [`websocket-deployment.md`](./websocket-deployment.md) (cloud deployment).
+> It is retained for historical context; where it disagrees with the specification,
+> the specification wins.
+
 ## WebSocket Graph Transport: Single-Connection Multiplexed Design
 
 ### Goals
