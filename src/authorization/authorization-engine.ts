@@ -1,9 +1,23 @@
 import { computeHash, verifyHash } from '../fact/hash';
 import { TopologicalSorter } from '../fact/sorter';
-import { FactEnvelope, FactRecord, FactReference, Storage, factEnvelopeEquals, factReferenceEquals } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, Storage, factEnvelopeEquals, factReferenceEquals, uniqueFactReferences } from '../storage';
 import { distinct, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 import { AuthorizationRules } from './authorizationRules';
+
+function predecessorReferences(fact: FactRecord): FactReference[] {
+    const references: FactReference[] = [];
+    for (const role in fact.predecessors) {
+        const value = fact.predecessors[role];
+        if (Array.isArray(value)) {
+            references.push(...value);
+        }
+        else if (value) {
+            references.push(value);
+        }
+    }
+    return references;
+}
 
 export class Forbidden extends Error {
     __proto__: Error;
@@ -40,8 +54,30 @@ export class AuthorizationEngine {
 
     async authorizeFacts(factEnvelopes: FactEnvelope[], userFact: FactRecord | null): Promise<AuthorizationResult[]> {
         const facts = factEnvelopes.map(e => e.fact);
-        const existing = await this.store.whichExist(facts);
+
+        // A fact in the batch may reference a predecessor that already exists in
+        // storage but is not itself included in the batch (e.g. a new fact that
+        // references an existing user from a prior login). Resolve those external
+        // predecessors against the store so the sorter doesn't wait forever for a
+        // predecessor that will never arrive in this batch.
+        const externalReferences = uniqueFactReferences(facts.flatMap(predecessorReferences))
+            .filter(reference => !facts.some(factReferenceEquals(reference)));
+
+        const existing = await this.store.whichExist([...facts, ...externalReferences]);
+
         const sorter = new TopologicalSorter<Promise<AuthorizationResult>>();
+        externalReferences.forEach(reference => {
+            if (existing.some(factReferenceEquals(reference))) {
+                sorter.markAsVisited(reference, Promise.resolve(<AuthorizationResult>{
+                    fact: { type: reference.type, hash: reference.hash, predecessors: {}, fields: {} },
+                    verdict: "Existing"
+                }));
+            }
+            else {
+                Trace.warn(`The fact ${reference.type}:${reference.hash} is referenced as a predecessor but does not exist in storage and was not included in the batch. Facts that depend on it will not be authorized.`);
+            }
+        });
+
         const userKeys : string[] = (userFact && userFact.fields.hasOwnProperty("publicKey"))
             ? [ userFact.fields.publicKey ]
             : [];
