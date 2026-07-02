@@ -5,6 +5,19 @@ export class TopologicalSorter<T> {
     private factsWaiting: { [key: string]: FactRecord[] } = {};
     private factValue: { [key: string]: T } = {};
 
+    /**
+     * Seed the sorter with a fact that is known to already exist (e.g. in
+     * storage) even though it is not part of the batch passed to `sort`.
+     * This allows facts in the batch that reference it as a predecessor to
+     * be sorted instead of waiting forever for a predecessor that will
+     * never arrive.
+     */
+    markAsVisited(reference: FactReference, value: T) {
+        const key = this.factKey(reference);
+        this.factsVisited[key] = true;
+        this.factValue[key] = value;
+    }
+
     sort(facts: FactRecord[], map: (predecessors: T[], fact: FactRecord) => T): T[] {
         const factsReceived: T[] = [];
         const factQueue = facts.slice(0);
