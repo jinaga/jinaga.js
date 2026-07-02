@@ -210,7 +210,8 @@ persisted bookmark to `""` and re-subscribes.
 Removes the subscription and its listeners. The server MUST NOT initiate new frames
 for the feed after processing `UNSUB`, but frames already in flight may still arrive;
 the client MUST ignore frames for feeds it has no Pending/Active subscription for
-(invariant C-ignore, W9 tolerance). `UNSUB` for an unknown feed is a no-op.
+(the per-feed FSM ignore rule, §10.2; this is the client-side tolerance that makes
+W9's in-flight exception safe). `UNSUB` for an unknown feed is a no-op.
 
 ### 5.3 ACK (server → client)
 

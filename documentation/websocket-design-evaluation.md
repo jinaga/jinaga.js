@@ -124,7 +124,7 @@ talking to a non-Jinaga endpoint through a misconfigured proxy). Future revision
 
 **Resolution.** Specified slow-consumer policy: the server suspends producing
 catch-up pages for a connection while `bufferedAmount` exceeds a high-water mark and
-closes with `4408 Slow consumer` if it stays above the mark past a deadline. This is
+closes with `4101 Slow consumer` if it stays above the mark past a deadline. This is
 safe precisely because of the resume design: a killed client reconnects and resumes
 from its last persisted bookmarks with no data loss (Theorem 1). Live-notification
 paths coalesce: while suspended, only the latest pending delta per feed is retained.
