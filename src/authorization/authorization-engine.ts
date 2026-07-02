@@ -82,6 +82,22 @@ export class AuthorizationEngine {
             ? [ userFact.fields.publicKey ]
             : [];
         const results = await mapAsync(sorter.sort(facts, (p, f) => this.visit(p, f, userKeys, facts, factEnvelopes, existing)), x => x);
+
+        // TopologicalSorter silently omits any fact whose predecessors never all
+        // become visited (most commonly a predecessor that is missing from both
+        // the batch and storage). Detect that here so the caller gets a loud
+        // failure instead of save()/commit() reporting success while quietly
+        // dropping facts.
+        const unresolved = facts.filter(f => !results.some(r => r.fact.type === f.type && r.fact.hash === f.hash));
+        if (unresolved.length > 0) {
+            const distinctTypes = unresolved
+                .map(f => f.type)
+                .filter(distinct)
+                .join(", ");
+            const count = unresolved.length === 1 ? "1 fact" : `${unresolved.length} facts`;
+            throw new Error(`Cannot authorize ${count} of type ${distinctTypes}: one or more predecessors could not be resolved. This can happen when a predecessor does not exist in storage and was not included in the batch.`);
+        }
+
         const rejected = results.filter(r => r.verdict === "Reject");
         if (rejected.length > 0) {
             const distinctTypes = rejected
