@@ -328,56 +328,59 @@ export class NetworkManager {
     }
 
     private async processFeed(feed: string) {
-        let bookmark = await this.store.loadBookmark(feed);
+        try {
+            let bookmark = await this.store.loadBookmark(feed);
 
-        while (true) {
-            this.fetchCount++;
-            let decremented = false;
-            try {
-                const { references: factReferences, bookmark: nextBookmark } = await this.network.fetchFeed(feed, bookmark);
+            while (true) {
+                this.fetchCount++;
+                let decremented = false;
+                try {
+                    const { references: factReferences, bookmark: nextBookmark } = await this.network.fetchFeed(feed, bookmark);
 
-                if (factReferences.length === 0) {
-                    break;
-                }
-
-                const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
-                const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
-                if (unknownFactReferences.length > 0) {
-                    let batch = this.currentBatch;
-                    if (batch === null) {
-                        // Begin a new batch.
-                        batch = new LoadBatch(this.network, this.store, this.notifyFactsAdded, () => {
-                            if (this.currentBatch === batch) {
-                                this.currentBatch = null;
-                            }
-                        });
-                        this.currentBatch = batch;
+                    if (factReferences.length === 0) {
+                        break;
                     }
-                    batch.add(unknownFactReferences);
-                    this.fetchCount--;
-                    decremented = true;
-                    if (this.fetchCount === 0) {
-                        // This is the last fetch, so trigger the batch.
-                        batch.trigger();
-                    }
-                    await batch.completed;
-                }
 
-                bookmark = nextBookmark;
-                await this.store.saveBookmark(feed, bookmark);
-            }
-            finally {
-                if (!decremented) {
-                    this.fetchCount--;
-                    if (this.fetchCount === 0 && this.currentBatch !== null) {
-                        // This is the last fetch, so trigger the batch.
-                        this.currentBatch.trigger();
+                    const knownFactReferences: FactReference[] = await this.store.whichExist(factReferences);
+                    const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
+                    if (unknownFactReferences.length > 0) {
+                        let batch = this.currentBatch;
+                        if (batch === null) {
+                            // Begin a new batch.
+                            batch = new LoadBatch(this.network, this.store, this.notifyFactsAdded, () => {
+                                if (this.currentBatch === batch) {
+                                    this.currentBatch = null;
+                                }
+                            });
+                            this.currentBatch = batch;
+                        }
+                        batch.add(unknownFactReferences);
+                        this.fetchCount--;
+                        decremented = true;
+                        if (this.fetchCount === 0) {
+                            // This is the last fetch, so trigger the batch.
+                            batch.trigger();
+                        }
+                        await batch.completed;
+                    }
+
+                    bookmark = nextBookmark;
+                    await this.store.saveBookmark(feed, bookmark);
+                }
+                finally {
+                    if (!decremented) {
+                        this.fetchCount--;
+                        if (this.fetchCount === 0 && this.currentBatch !== null) {
+                            // This is the last fetch, so trigger the batch.
+                            this.currentBatch.trigger();
+                        }
                     }
                 }
             }
         }
-
-        this.activeFeeds.delete(feed);
+        finally {
+            this.activeFeeds.delete(feed);
+        }
     }
 }
 
