@@ -47,8 +47,11 @@ jobs:
         git push origin HEAD --follow-tags
 
     # Step 7: Create a GitHub release
+    # Uses a PAT (not GITHUB_TOKEN) because releases created with the default
+    # GITHUB_TOKEN do not trigger other workflows (e.g. publish.yaml's
+    # `release: types: [created]` trigger), by GitHub Actions design.
     - name: Create Release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
       run: |
         gh release create v${{ env.VERSION }} --generate-notes --verify-tag
