@@ -315,6 +315,12 @@ The deserializer processes facts in batches (default: 20 facts) for efficiency.
 
 ## WebSocket Transport
 
+> **Note.** This section is a summary. The authoritative definition of the WebSocket
+> transport — including the complete frame set (`ACK`, `PING`/`PONG`, structured
+> `ERR` codes), connection negotiation, liveness, reconnection, and the protocol
+> invariants — is [`websocket-protocol-spec.md`](./websocket-protocol-spec.md). The
+> graph block format defined in this document is unchanged over WebSockets.
+
 ### Overview
 
 When transported over WebSockets, the graph is a single, continuous stream of fact blocks and public key declarations. There is no special framing to begin or end a graph. The stream may also contain control frames that manage feed subscriptions and bookmarks. Facts are global and not scoped to any one feed; only bookmarks are per-feed.
