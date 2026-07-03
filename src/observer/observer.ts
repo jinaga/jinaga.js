@@ -71,6 +71,15 @@ export class ObserverImpl<T> implements Observer<T> {
      * keyed by the same row identity hash as `votesByRow`.
      */
     private removalsByRow = new Map<string, () => Promise<void>>();
+    /**
+     * Rows where a remove notification arrived while the add handler was
+     * still awaiting its asynchronous result — i.e. the removal function
+     * had not been registered yet. When the add handler completes and
+     * would normally store the removal function, it checks this set and
+     * immediately invokes (and discards) the function instead, ensuring
+     * the removal is never permanently lost across concurrent saves.
+     */
+    private pendingRemovals = new Set<string>();
     private addedHandlers: {
         tupleHash: string;
         path: string;
@@ -520,7 +529,20 @@ export class ObserverImpl<T> implements Observer<T> {
                 if (promiseMaybe instanceof Promise) {
                     const functionMaybe = await promiseMaybe;
                     if (functionMaybe instanceof Function) {
-                        this.removalsByRow.set(rowHash, functionMaybe);
+                        if (this.pendingRemovals.delete(rowHash)) {
+                            // A remove notification arrived while we were
+                            // awaiting the add handler. Invoke the removal
+                            // immediately rather than storing it, so the item
+                            // is not permanently retained in the observed set.
+                            Trace.info(`[Observer] PENDING REMOVAL FOUND - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., invoking removal immediately`);
+                            await functionMaybe();
+                        } else {
+                            this.removalsByRow.set(rowHash, functionMaybe);
+                        }
+                    } else {
+                        // Handler returned no removal function; clear any
+                        // pending-removal marker that arrived during the await.
+                        this.pendingRemovals.delete(rowHash);
                     }
                 }
                 else {
@@ -579,6 +601,15 @@ export class ObserverImpl<T> implements Observer<T> {
             if (removal !== undefined) {
                 Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, firing removal`);
                 await removal();
+            } else {
+                // The add handler for this row is still awaiting its async
+                // result — the removal function has not been registered yet.
+                // Record a pending removal so that when the add handler
+                // completes, it fires the removal immediately rather than
+                // storing it. This prevents the item from being permanently
+                // retained in the observed set across concurrent saves.
+                Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, no removal registered yet — marking pending`);
+                this.pendingRemovals.add(rowHash);
             }
         }
     }

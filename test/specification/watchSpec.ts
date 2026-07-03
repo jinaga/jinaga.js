@@ -867,4 +867,62 @@ describe("specification watch", () => {
         // This SHOULD work but currently doesn't due to matches.length <= 1 constraint
         expect(results.length).toBeGreaterThan(0);
     });
+
+    it("should not retain a result when removal arrives during async add handler (concurrent saves)", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        // Deferred helpers to coordinate the interleaving
+        let addEnteredResolve: () => void;
+        let releaseAddResolve: () => void;
+        const addEntered = new Promise<void>(resolve => { addEnteredResolve = resolve; });
+        const releaseAdd = new Promise<void>(resolve => { releaseAddResolve = resolve; });
+
+        // Use emptyCompany so no results match initially and loaded() returns immediately.
+        const offices: string[] = [];
+        const officeObserver = j.watch(specification, emptyCompany, office => {
+            const hash = j.hash(office);
+            offices.push(hash);
+            // Return an async promise so the remove path can interleave during the await.
+            return (async () => {
+                addEnteredResolve!();   // signal that the add handler is running
+                await releaseAdd;       // park here — removal fn not yet registered
+                return async () => {
+                    const i = offices.indexOf(hash);
+                    if (i >= 0) offices.splice(i, 1);
+                };
+            })();
+        });
+
+        // No offices match emptyCompany initially; loaded() returns without firing the handler.
+        await officeObserver.loaded();
+
+        const newOffice = new Office(emptyCompany, "NewOffice");
+        // Start the add but do NOT await — the handler will park at releaseAdd.
+        const p1 = j.fact(newOffice);
+
+        // Wait until the add handler has entered and is parked (removal fn not registered yet).
+        await addEntered;
+
+        // Close the office while the add handler is still suspended.
+        await j.fact(new OfficeClosed(newOffice, new Date()));
+
+        // Release the add handler so it can finish and check for the pending removal.
+        releaseAddResolve!();
+        await p1;
+
+        // Wait for all in-flight observer callbacks to settle.
+        await officeObserver.processed();
+
+        officeObserver.stop();
+
+        // The office was closed concurrently; it must not remain in the observed collection.
+        expect(offices).toEqual([]);
+    });
 });
