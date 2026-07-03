@@ -925,4 +925,72 @@ describe("specification watch", () => {
         // The office was closed concurrently; it must not remain in the observed collection.
         expect(offices).toEqual([]);
     });
+
+    it("should not leave a stale pending-removal marker when a row is removed after its void-returning async add handler already completed", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        // Use emptyCompany so no results match initially and loaded() returns immediately.
+        const officeObserver = j.watch(specification, emptyCompany, office => {
+            // Async handler that resolves to void: no removal callback is ever
+            // registered for this row, even though the add is not "in flight"
+            // by the time it resolves.
+            return Promise.resolve();
+        });
+
+        await officeObserver.loaded();
+
+        const newOffice = new Office(emptyCompany, "NewOffice");
+        await j.fact(newOffice);
+        await officeObserver.processed();
+
+        // The add has fully completed by now — there is nothing "in flight".
+        const pendingRemovals = (officeObserver as any).pendingRemovals as Set<string>;
+        expect(pendingRemovals.size).toBe(0);
+
+        // Close the office well after the add settled — there is no concurrent
+        // add for the removal to race with.
+        await j.fact(new OfficeClosed(newOffice, new Date()));
+        await officeObserver.processed();
+
+        officeObserver.stop();
+
+        // BUG: notifyRemoved cannot tell "no removal registered because the add
+        // handler is still awaiting" apart from "no removal registered because
+        // the handler already finished with nothing to clean up" — it marks
+        // this rowHash as a pending removal either way, and nothing will ever
+        // clear a marker set for the latter reason.
+        expect(pendingRemovals.size).toBe(0);
+    });
+
+    it("should not silently drop sibling results in the same batch when an add handler's promise rejects", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+        );
+
+        // `company`'s initialState already includes two offices (`office` and
+        // `closedOffice`), so both are delivered to notifyAdded in one batch.
+        const notified: string[] = [];
+        const handler: (office: Office) => Promise<void> = async office => {
+            notified.push(j.hash(office));
+            throw new Error("add handler failed");
+        };
+        const officeObserver = j.watch(specification, company, handler);
+
+        await expect(officeObserver.loaded()).rejects.toThrow("add handler failed");
+
+        officeObserver.stop();
+
+        // BUG: notifyAdded's `for` loop has no try/catch around `await
+        // promiseMaybe`, so a single rejecting handler aborts delivery for
+        // every other row still pending in the same batch.
+        expect(notified.length).toBe(2);
+    });
 });
