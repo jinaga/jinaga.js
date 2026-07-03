@@ -43,7 +43,42 @@ describe ('Hash', () => {
 
         expect(verifyHash(records[0])).toBeTruthy();
         expect(verifyHash(records[1])).toBeTruthy();
-    })
+    });
+
+    it('should escape field names when canonicalizing', () => {
+        const hash1 = computeHash({
+            a: 1,
+            b: 2
+        }, {});
+        const hash2 = computeHash({
+            'a":1,"b': 2
+        }, {});
+
+        expect(hash1).not.toEqual(hash2);
+    });
+
+    it('should distinguish null from empty object field values', () => {
+        const hash1 = computeHash({
+            x: null
+        }, {});
+        const hash2 = computeHash({
+            x: {}
+        }, {});
+
+        expect(hash1).not.toEqual(hash2);
+    });
+
+    it('should ignore inherited enumerable properties', () => {
+        const hash1 = computeHash({
+            identifier: 'x'
+        }, {});
+
+        const crafted = Object.create({ injected: 'evil' });
+        crafted.identifier = 'x';
+        const hash2 = computeHash(crafted, {});
+
+        expect(hash2).toEqual(hash1);
+    });
 });
 
 describe('Nullable Predecessors', () => {
