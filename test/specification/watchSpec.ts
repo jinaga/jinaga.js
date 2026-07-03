@@ -879,8 +879,8 @@ describe("specification watch", () => {
         );
 
         // Deferred helpers to coordinate the interleaving
-        let addEnteredResolve: () => void;
-        let releaseAddResolve: () => void;
+        let addEnteredResolve!: () => void;
+        let releaseAddResolve!: () => void;
         const addEntered = new Promise<void>(resolve => { addEnteredResolve = resolve; });
         const releaseAdd = new Promise<void>(resolve => { releaseAddResolve = resolve; });
 
@@ -891,7 +891,7 @@ describe("specification watch", () => {
             offices.push(hash);
             // Return an async promise so the remove path can interleave during the await.
             return (async () => {
-                addEnteredResolve!();   // signal that the add handler is running
+                addEnteredResolve();    // signal that the add handler is running
                 await releaseAdd;       // park here — removal fn not yet registered
                 return async () => {
                     const i = offices.indexOf(hash);
@@ -914,7 +914,7 @@ describe("specification watch", () => {
         await j.fact(new OfficeClosed(newOffice, new Date()));
 
         // Release the add handler so it can finish and check for the pending removal.
-        releaseAddResolve!();
+        releaseAddResolve();
         await p1;
 
         // Wait for all in-flight observer callbacks to settle.

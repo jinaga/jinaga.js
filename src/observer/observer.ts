@@ -540,8 +540,12 @@ export class ObserverImpl<T> implements Observer<T> {
                             this.removalsByRow.set(rowHash, functionMaybe);
                         }
                     } else {
-                        // Handler returned no removal function; clear any
-                        // pending-removal marker that arrived during the await.
+                        // The handler returned no removal function (resolved to void).
+                        // A concurrent remove may still have set pendingRemovals during
+                        // the await (e.g. if the spec uses notExists but the handler
+                        // chooses not to return a cleanup callback). Clear the marker so
+                        // it does not linger and incorrectly affect a future re-add of
+                        // the same row.
                         this.pendingRemovals.delete(rowHash);
                     }
                 }
