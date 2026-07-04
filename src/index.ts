@@ -7,7 +7,7 @@ export { AuthorizationNoOp } from "./authorization/authorization-noop";
 export { AuthorizationRules, describeAuthorizationRules } from "./authorization/authorizationRules";
 export { generateKeyPair, KeyPair, signFacts } from "./cryptography/key-pair";
 export { verifyEnvelopes } from "./cryptography/verify";
-export { DistributionEngine } from './distribution/distribution-engine';
+export { DistributionEngine, DistributionDenialCode, distributionDenialCodes, DistributionFailure, DistributionPerFeedFailure, DistributionResult, DistributionSuccess } from './distribution/distribution-engine';
 export { describeDistributionRules, DistributionRules } from './distribution/distribution-rules';
 export { canonicalizeFact, canonicalPredecessors, computeHash, computeObjectHash, verifyHash } from './fact/hash';
 export { dehydrateFact, dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, Hydration } from "./fact/hydrate";
@@ -20,8 +20,9 @@ export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvid
 export { GraphDeserializer, GraphSource } from "./http/deserializer";
 export { FetchConnection } from "./http/fetch";
 export { HttpNetwork } from "./http/httpNetwork";
-export { parseLoadMessage, parseSaveMessage } from './http/messageParsers';
+export { parseFeedsResponse, parseLoadMessage, parseSaveMessage } from './http/messageParsers';
 export {
+  FeedDecision,
   FeedResponse,
   FeedsResponse,
   LoadMessage,
@@ -53,9 +54,10 @@ export { describeDeclaration, describeSpecification } from './specification/desc
 export { buildFeeds } from './specification/feed-builder';
 export { FeedCache, FeedObject } from "./specification/feed-cache";
 export { invertSpecification, SpecificationInverse } from "./specification/inverse";
+export { alphaTransform, DISTRIBUTION_USER_LABEL, intersectSpecificationWithDistributionRule, specificationHasIntersection } from "./specification/specification-intersection";
 export { buildModel, FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf } from './specification/model';
 export { EdgeDescription, emptySkeleton, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, skeletonOfSpecification } from './specification/skeleton';
-export { ComponentProjection, CompositeProjection, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, Label, Match, PathCondition, Projection, SingularProjection, Specification, SpecificationGiven, specificationIsDeterministic, specificationIsNotDeterministic, SpecificationProjection, splitBeforeFirstSuccessor, TimeProjection } from './specification/specification';
+export { ComponentProjection, CompositeProjection, Condition, emptySpecification, ExistentialCondition, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, isExistentialCondition, isPathCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, reduceSpecification, Role, SingularProjection, Specification, SpecificationGiven, specificationIsDeterministic, specificationIsIdentity, specificationIsNotDeterministic, SpecificationProjection, splitBeforeFirstSuccessor, TimeProjection } from './specification/specification';
 export { Invalid, SpecificationParser } from './specification/specification-parser';
 export { detectDisconnectedSpecification, DisconnectedSpecificationError } from "./specification/UnionFind";
 export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, uniqueFactReferences, validateGiven } from './storage';

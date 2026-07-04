@@ -166,17 +166,24 @@ export function getAllRoles(specification: Specification): RoleDescription[] {
             [given.label.name]: given.label.type
         }),
         {} as TypeByLabel);
-    
-    // Collect roles from existential conditions on givens
+
+    // Walk the matches first so that the label map includes every unknown in
+    // the specification, not just the givens. An existential condition lifted
+    // onto a given (as inversion does) can path-reference a sibling match
+    // label; without those labels seeded, resolving its roles would fail with
+    // "Label <name> not found".
+    const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, specification.matches);
+
+    // Collect roles from existential conditions on givens, using the full
+    // label map so sibling references resolve.
     let rolesFromGivenConditions: RoleDescription[] = [];
     for (const given of specification.given) {
         for (const condition of given.conditions) {
-            const { roles } = getAllRolesFromMatches(labels, condition.matches);
+            const { roles } = getAllRolesFromMatches(labelsFromMatches, condition.matches);
             rolesFromGivenConditions.push(...roles);
         }
     }
-    
-    const { roles: rolesFromMatches, labels: labelsFromMatches } = getAllRolesFromMatches(labels, specification.matches);
+
     const components = specification.projection.type === "composite" ? specification.projection.components : [];
     const rolesFromComponents = getAllRolesFromComponents(labelsFromMatches, components);
     const roles: RoleDescription[] = [ ...rolesFromGivenConditions, ...rolesFromMatches, ...rolesFromComponents ];

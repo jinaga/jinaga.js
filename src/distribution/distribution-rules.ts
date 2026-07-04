@@ -87,7 +87,15 @@ export class DistributionRules {
   static loadFromDescription(description: string): DistributionRules {
     const parser = new SpecificationParser(description);
     parser.skipWhitespace();
-    const distributionRules = parser.parseDistributionRules();
+    let distributionRules = DistributionRules.empty;
+    while (!parser.atEnd()) {
+      if (parser.continues("distribution")) {
+        distributionRules = distributionRules.merge(parser.parseDistributionRules());
+      }
+      else {
+        parser.expectEnd();
+      }
+    }
     return distributionRules;
   }
 }

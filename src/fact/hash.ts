@@ -63,6 +63,9 @@ type Pair = { key: string, value: any };
 function canonicalize(obj: HashMap) {
     const pairs: Pair[] = [];
     for (const key in obj) {
+        if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+            continue;
+        }
         const value = obj[key];
         pairs.push({ key, value });
     }
@@ -77,13 +80,17 @@ function canonicalize(obj: HashMap) {
     const members = pairs.reduce((text, pair) => {
         if (text.length > 0)
             text += ',';
-        text += '"' + pair.key + '":' + serialize(pair.value);
+        text += JSON.stringify(pair.key) + ':' + serialize(pair.value);
         return text;
     }, '');
     return '{' + members + '}';
 }
 
 function serialize(value: any) {
+    if (value === null) {
+        return JSON.stringify(value);
+    }
+
     if (typeof(value) === 'object') {
         if (value instanceof Date) {
             return 'Date.parse("' + value.toISOString() + '")';

@@ -105,6 +105,23 @@ class UnionFind {
  * Also collects all labels encountered during traversal.
  */
 function addConnectionsToUnionFind(specification: Specification, unionFind: UnionFind, allLabels: Set<string>, labelTypes: Map<string, string>): void {
+    // Conditions on givens (e.g., the existential introduced by
+    // distribution-rule intersection) reference other labels and are part
+    // of the connectivity graph. The inverter promotes given conditions to
+    // match conditions, so connectedness must include them too.
+    for (const given of specification.given) {
+        for (const condition of given.conditions) {
+            for (const nestedMatch of condition.matches) {
+                addConnectionsFromMatchToUnionFind(unionFind, nestedMatch, allLabels, labelTypes);
+                const nestedConnections = getLabelsReferencedInMatch(nestedMatch);
+                for (const connectedLabel of nestedConnections) {
+                    allLabels.add(connectedLabel);
+                    unionFind.union(given.label.name, connectedLabel);
+                }
+            }
+        }
+    }
+
     // Add connections from path conditions in matches
     for (const match of specification.matches) {
         addConnectionsFromMatchToUnionFind(unionFind, match, allLabels, labelTypes);

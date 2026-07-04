@@ -4,7 +4,7 @@ import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
 import { distinct, flatten, flattenAsync } from '../util/fn';
-import { execRequest, factKey, keyToReference, withDatabase, withTransaction } from './driver';
+import { execRequest, factKey, keyToReference, requestErrorMessage, withDatabase, withTransaction } from './driver';
 
 export function getPredecessors(fact: FactRecord, role: string) {
   if (!fact) {
@@ -231,12 +231,21 @@ export class IndexedDBStore implements Storage {
 
         // Remove specifications older than 30 days.
         const oldMruDate = new Date(mruDate.getTime() - 1000 * 60 * 60 * 24 * 30);
-        const cursor = await execRequest<IDBCursorWithValue | null>(
-          specificationObjectStore.openCursor(IDBKeyRange.upperBound(oldMruDate)));
-        while (cursor) {
-          await execRequest(cursor.delete());
-          await cursor.continue();
-        }
+        const request = specificationObjectStore.index('mru')
+          .openCursor(IDBKeyRange.upperBound(oldMruDate));
+        await new Promise<void>((resolve, reject) => {
+          request.onerror = _ => reject(requestErrorMessage(request));
+          request.onsuccess = _ => {
+            const cursor = request.result;
+            if (!cursor) {
+              resolve();
+              return;
+            }
+            const deleteRequest = cursor.delete();
+            deleteRequest.onerror = _ => reject(requestErrorMessage(deleteRequest));
+            deleteRequest.onsuccess = _ => cursor.continue();
+          };
+        });
       });
     });
   }

@@ -2,6 +2,16 @@ name: Automated Release
 
 on:
   workflow_dispatch: # Allows manual triggering from the GitHub Actions interface
+    inputs:
+      release_type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   release:
@@ -35,7 +45,7 @@ jobs:
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        npm version patch
+        npm version ${{ github.event.inputs.release_type }}
         VERSION=$(node -p "require('./package.json').version")
         echo "VERSION=$VERSION" >> $GITHUB_ENV
 
@@ -47,8 +57,11 @@ jobs:
         git push origin HEAD --follow-tags
 
     # Step 7: Create a GitHub release
+    # Uses a PAT (not GITHUB_TOKEN) because releases created with the default
+    # GITHUB_TOKEN do not trigger other workflows (e.g. publish.yaml's
+    # `release: types: [created]` trigger), by GitHub Actions design.
     - name: Create Release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
       run: |
         gh release create v${{ env.VERSION }} --generate-notes --verify-tag
