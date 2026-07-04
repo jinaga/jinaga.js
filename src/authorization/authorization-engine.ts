@@ -81,7 +81,7 @@ export class AuthorizationEngine {
         const userKeys : string[] = (userFact && userFact.fields.hasOwnProperty("publicKey"))
             ? [ userFact.fields.publicKey ]
             : [];
-        const results = await mapAsync(sorter.sort(facts, (p, f) => this.visit(p, f, userKeys, facts, factEnvelopes, existing)), x => x);
+        const results = await mapAsync(sorter.sort(facts, (p, f) => this.visit(p, f, userKeys, factEnvelopes, existing)), x => x);
 
         // TopologicalSorter silently omits any fact whose predecessors never all
         // become visited (most commonly a predecessor that is missing from both
@@ -111,7 +111,7 @@ export class AuthorizationEngine {
         return results;
     }
 
-    private async visit(predecessors: Promise<AuthorizationResult>[], fact: FactRecord, userKeys: string[], factRecords: FactRecord[], factEnvelopes: FactEnvelope[], existing: FactReference[]): Promise<AuthorizationResult> {
+    private async visit(predecessors: Promise<AuthorizationResult>[], fact: FactRecord, userKeys: string[], factEnvelopes: FactEnvelope[], existing: FactReference[]): Promise<AuthorizationResult> {
         const predecessorResults = await mapAsync(predecessors, p => p);
         if (predecessorResults.some(p => p.verdict === "Reject")) {
             const predecessor = predecessorResults
@@ -132,11 +132,9 @@ export class AuthorizationEngine {
             return { fact, verdict: "Existing" };
         }
 
-        const envelope = factEnvelopes.find(factEnvelopeEquals(fact));
-        const envelopeKeys = envelope ? envelope.signatures.map(s => s.publicKey) : [];
-        const candidateKeys = envelopeKeys.concat(userKeys);
+        const envelope = factEnvelopes.find(factEnvelopeEquals(fact)) || { fact, signatures: [] };
 
-        const population = await this.authorizationRules.getAuthorizedPopulation(candidateKeys, fact, factRecords, this.store);
+        const population = await this.authorizationRules.getAuthorizedPopulationForEnvelope(userKeys, envelope, factEnvelopes, this.store);
         if (population.quantifier === "none") {
             if (this.authorizationRules.hasRule(fact.type)) {
                 Trace.warn(`The user is not authorized to create a fact of type ${fact.type}.`);

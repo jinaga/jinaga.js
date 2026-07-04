@@ -256,7 +256,7 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         if (head.projection.type !== 'fact') {
             throw new Error('The head of the specification must project a fact.');
         }
-        let results = graph.executeSpecification(
+        const results = graph.executeSpecification(
             head.given[0].label.name,
             head.matches,
             head.projection.label,
@@ -454,16 +454,6 @@ export class AuthorizationRules {
 
     hasRule(type: string) {
         return !!this.rulesByType[type];
-    }
-
-    async getAuthorizedPopulation(candidateKeys: string[], fact: FactRecord, factRecords: FactRecord[], store: Storage): Promise<AuthorizationPopulation> {
-        return await this.getAuthorizedPopulationForEnvelope(candidateKeys, {
-            fact,
-            signatures: []
-        }, factRecords.map(fact => ({
-            fact,
-            signatures: []
-        })), store);
     }
 
     async getAuthorizedPopulationForEnvelope(candidateKeys: string[], envelope: FactEnvelope, factEnvelopes: FactEnvelope[], store: Storage): Promise<AuthorizationPopulation> {
