@@ -234,16 +234,20 @@ export class IndexedDBStore implements Storage {
         const request = specificationObjectStore.index('mru')
           .openCursor(IDBKeyRange.upperBound(oldMruDate));
         await new Promise<void>((resolve, reject) => {
-          request.onerror = _ => reject(request.error);
-          request.onsuccess = _ => {
+          request.onerror = _ => reject(`Error executing request ${JSON.stringify(request.error?.message, null, 2)}`);
+          request.onsuccess = async _ => {
             const cursor = request.result;
             if (!cursor) {
               resolve();
               return;
             }
-            const deleteRequest = cursor.delete();
-            deleteRequest.onerror = _ => reject(deleteRequest.error);
-            deleteRequest.onsuccess = _ => cursor.continue();
+            try {
+              await execRequest(cursor.delete());
+              cursor.continue();
+            }
+            catch (error) {
+              reject(error);
+            }
           };
         });
       });
