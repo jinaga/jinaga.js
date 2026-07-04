@@ -867,4 +867,130 @@ describe("specification watch", () => {
         // This SHOULD work but currently doesn't due to matches.length <= 1 constraint
         expect(results.length).toBeGreaterThan(0);
     });
+
+    it("should not retain a result when removal arrives during async add handler (concurrent saves)", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        // Deferred helpers to coordinate the interleaving
+        let addEnteredResolve!: () => void;
+        let releaseAddResolve!: () => void;
+        const addEntered = new Promise<void>(resolve => { addEnteredResolve = resolve; });
+        const releaseAdd = new Promise<void>(resolve => { releaseAddResolve = resolve; });
+
+        // Use emptyCompany so no results match initially and loaded() returns immediately.
+        const offices: string[] = [];
+        const officeObserver = j.watch(specification, emptyCompany, office => {
+            const hash = j.hash(office);
+            offices.push(hash);
+            // Return an async promise so the remove path can interleave during the await.
+            return (async () => {
+                addEnteredResolve();    // signal that the add handler is running
+                await releaseAdd;       // park here — removal fn not yet registered
+                return async () => {
+                    const i = offices.indexOf(hash);
+                    if (i >= 0) offices.splice(i, 1);
+                };
+            })();
+        });
+
+        // No offices match emptyCompany initially; loaded() returns without firing the handler.
+        await officeObserver.loaded();
+
+        const newOffice = new Office(emptyCompany, "NewOffice");
+        // Start the add but do NOT await — the handler will park at releaseAdd.
+        const p1 = j.fact(newOffice);
+
+        // Wait until the add handler has entered and is parked (removal fn not registered yet).
+        await addEntered;
+
+        // Close the office while the add handler is still suspended.
+        await j.fact(new OfficeClosed(newOffice, new Date()));
+
+        // Release the add handler so it can finish and check for the pending removal.
+        releaseAddResolve();
+        await p1;
+
+        // Wait for all in-flight observer callbacks to settle.
+        await officeObserver.processed();
+
+        officeObserver.stop();
+
+        // The office was closed concurrently; it must not remain in the observed collection.
+        expect(offices).toEqual([]);
+    });
+
+    it("should not leave a stale pending-removal marker when a row is removed after its void-returning async add handler already completed", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                )
+        );
+
+        // Use emptyCompany so no results match initially and loaded() returns immediately.
+        const officeObserver = j.watch(specification, emptyCompany, office => {
+            // Async handler that resolves to void: no removal callback is ever
+            // registered for this row, even though the add is not "in flight"
+            // by the time it resolves.
+            return Promise.resolve();
+        });
+
+        await officeObserver.loaded();
+
+        const newOffice = new Office(emptyCompany, "NewOffice");
+        await j.fact(newOffice);
+        await officeObserver.processed();
+
+        // The add has fully completed by now — there is nothing "in flight".
+        const pendingRemovals = (officeObserver as any).pendingRemovals as Set<string>;
+        expect(pendingRemovals.size).toBe(0);
+
+        // Close the office well after the add settled — there is no concurrent
+        // add for the removal to race with.
+        await j.fact(new OfficeClosed(newOffice, new Date()));
+        await officeObserver.processed();
+
+        officeObserver.stop();
+
+        // BUG: notifyRemoved cannot tell "no removal registered because the add
+        // handler is still awaiting" apart from "no removal registered because
+        // the handler already finished with nothing to clean up" — it marks
+        // this rowHash as a pending removal either way, and nothing will ever
+        // clear a marker set for the latter reason.
+        expect(pendingRemovals.size).toBe(0);
+    });
+
+    it("should not silently drop sibling results in the same batch when an add handler's promise rejects", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+        );
+
+        // `company`'s initialState already includes two offices (`office` and
+        // `closedOffice`), so both are delivered to notifyAdded in one batch.
+        const notified: string[] = [];
+        const handler: (office: Office) => Promise<void> = async office => {
+            notified.push(j.hash(office));
+            throw new Error("add handler failed");
+        };
+        const officeObserver = j.watch(specification, company, handler);
+
+        await expect(officeObserver.loaded()).rejects.toThrow("add handler failed");
+
+        officeObserver.stop();
+
+        // BUG: notifyAdded's `for` loop has no try/catch around `await
+        // promiseMaybe`, so a single rejecting handler aborts delivery for
+        // every other row still pending in the same batch.
+        expect(notified.length).toBe(2);
+    });
 });

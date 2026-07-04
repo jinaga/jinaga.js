@@ -71,6 +71,24 @@ export class ObserverImpl<T> implements Observer<T> {
      * keyed by the same row identity hash as `votesByRow`.
      */
     private removalsByRow = new Map<string, () => Promise<void>>();
+    /**
+     * Rows whose add handler is currently awaiting its asynchronous result,
+     * keyed by row identity hash. Consulted by `notifyRemoved` to tell a
+     * genuine in-flight race (removal function not registered *yet*) apart
+     * from a row whose add handler already finished without registering one
+     * (nothing to await, nothing to clean up).
+     */
+    private addsInFlight = new Set<string>();
+    /**
+     * Rows where a remove notification arrived while the add handler was
+     * still awaiting its asynchronous result — i.e. the removal function
+     * had not been registered yet (row present in `addsInFlight`). When the
+     * add handler completes and would normally store the removal function,
+     * it checks this set and immediately invokes (and discards) the
+     * function instead, ensuring the removal is never permanently lost
+     * across concurrent saves.
+     */
+    private pendingRemovals = new Set<string>();
     private addedHandlers: {
         tupleHash: string;
         path: string;
@@ -466,93 +484,137 @@ export class ObserverImpl<T> implements Observer<T> {
         const displayPath = path || "(root)";
         Trace.info(`[Observer] NOTIFY_ADDED - Path: ${displayPath}, Results: ${projectedResults.length}, Parent subset: [${parentSubset.join(', ')}]`);
 
+        // Track the first error from a failing row so it can still surface to
+        // the caller (e.g. reject `loaded()`), without letting one row's
+        // handler failure abort delivery to the rest of this batch.
+        let firstError: unknown;
         for (const pr of projectedResults) {
-            const result: any = await this.injectObservers(pr, projection, path, resultSubset);
-            // Identify the parent row by `parentSubset` (its result subset).
-            // This must equal the `tupleHash` under which the parent's
-            // injectObservers registered this path's handler — both hash the
-            // parent row over the same subset — so the lookup below finds it.
-            const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
-            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, path, branch, resultSubset);
-
-            Trace.info(`[Observer] Processing result - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., Vote id: ${voteId.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
-
-            const addedHandler = this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path);
-            const resultAdded = addedHandler?.handler;
-
-            if (!addedHandler) {
-                Trace.warn(`[Observer] NO HANDLER FOUND - Path: ${displayPath}, Parent tuple hash: ${parentTupleHash.substring(0, 8)}..., Available handlers: ${this.addedHandlers.length}`);
-                this.addedHandlers.forEach((h, index) => {
-                    Trace.warn(`[Observer]   Handler ${index + 1}: Path="${h.path}", Tuple hash: ${h.tupleHash.substring(0, 8)}...`);
-                });
-                // Buffer for replay when the handler registers later.
-                this.bufferPendingNotification(path, pr, projection, parentSubset, resultSubset, branch);
-                // Skip deeper recursion until handler is registered.
-                continue;
-            } else if (!resultAdded) {
-                Trace.warn(`[Observer] Handler found but no callback - Path: ${displayPath}`);
-                // Buffer for replay when the callback is attached.
-                this.bufferPendingNotification(path, pr, projection, parentSubset, resultSubset, branch);
-                continue;
-            } else {
-                Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
-            }
-
-            // Cast the vote. First vote into an empty set means this is
-            // the first time the user sees this row; subsequent votes
-            // (other branches authorizing the same row, or another auth
-            // path within the same branch) ref-count silently.
-            let votes = this.votesByRow.get(rowHash);
-            const isFirstDelivery = !votes;
-            if (!votes) {
-                votes = new Set();
-                this.votesByRow.set(rowHash, votes);
-            }
-            votes.add(voteId);
-
-            if (isFirstDelivery) {
-                if (this.stopped) {
-                    Trace.info(`[Observer] SKIPPING HANDLER - Observer stopped, Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
-                    continue;
+            try {
+                await this.notifyAddedRow(pr, projection, path, displayPath, parentSubset, resultSubset, branch);
+            } catch (e) {
+                Trace.error(`[Observer] ADD HANDLER ERROR - Path: ${displayPath}, Error: ${e}`);
+                if (firstError === undefined) {
+                    firstError = e;
                 }
-                Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
-                const promiseMaybe = resultAdded(result);
-                if (promiseMaybe instanceof Promise) {
+            }
+        }
+        if (firstError !== undefined) {
+            throw firstError;
+        }
+    }
+
+    private async notifyAddedRow(pr: ProjectedResult, projection: Projection, path: string, displayPath: string, parentSubset: string[], resultSubset: string[], branch: ObserverBranch) {
+        const result: any = await this.injectObservers(pr, projection, path, resultSubset);
+        // Identify the parent row by `parentSubset` (its result subset).
+        // This must equal the `tupleHash` under which the parent's
+        // injectObservers registered this path's handler — both hash the
+        // parent row over the same subset — so the lookup below finds it.
+        const parentTupleHash = computeTupleSubsetHash(pr.tuple, parentSubset);
+        const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, path, branch, resultSubset);
+
+        Trace.info(`[Observer] Processing result - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., Vote id: ${voteId.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
+
+        const addedHandler = this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path);
+        const resultAdded = addedHandler?.handler;
+
+        if (!addedHandler) {
+            Trace.warn(`[Observer] NO HANDLER FOUND - Path: ${displayPath}, Parent tuple hash: ${parentTupleHash.substring(0, 8)}..., Available handlers: ${this.addedHandlers.length}`);
+            this.addedHandlers.forEach((h, index) => {
+                Trace.warn(`[Observer]   Handler ${index + 1}: Path="${h.path}", Tuple hash: ${h.tupleHash.substring(0, 8)}...`);
+            });
+            // Buffer for replay when the handler registers later.
+            this.bufferPendingNotification(path, pr, projection, parentSubset, resultSubset, branch);
+            // Skip deeper recursion until handler is registered.
+            return;
+        } else if (!resultAdded) {
+            Trace.warn(`[Observer] Handler found but no callback - Path: ${displayPath}`);
+            // Buffer for replay when the callback is attached.
+            this.bufferPendingNotification(path, pr, projection, parentSubset, resultSubset, branch);
+            return;
+        } else {
+            Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
+        }
+
+        // Cast the vote. First vote into an empty set means this is
+        // the first time the user sees this row; subsequent votes
+        // (other branches authorizing the same row, or another auth
+        // path within the same branch) ref-count silently.
+        let votes = this.votesByRow.get(rowHash);
+        const isFirstDelivery = !votes;
+        if (!votes) {
+            votes = new Set();
+            this.votesByRow.set(rowHash, votes);
+        }
+        votes.add(voteId);
+
+        if (isFirstDelivery) {
+            if (this.stopped) {
+                Trace.info(`[Observer] SKIPPING HANDLER - Observer stopped, Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
+                return;
+            }
+            Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
+            const promiseMaybe = resultAdded(result);
+            if (promiseMaybe instanceof Promise) {
+                // Mark this row as having a genuine in-flight async add so
+                // `notifyRemoved` can tell this case apart from a row whose
+                // add handler already finished without registering a removal.
+                this.addsInFlight.add(rowHash);
+                try {
                     const functionMaybe = await promiseMaybe;
                     if (functionMaybe instanceof Function) {
-                        this.removalsByRow.set(rowHash, functionMaybe);
+                        if (this.pendingRemovals.delete(rowHash)) {
+                            // A remove notification arrived while we were
+                            // awaiting the add handler. Invoke the removal
+                            // immediately rather than storing it, so the item
+                            // is not permanently retained in the observed set.
+                            Trace.info(`[Observer] PENDING REMOVAL FOUND - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., invoking removal immediately`);
+                            await functionMaybe();
+                        } else {
+                            this.removalsByRow.set(rowHash, functionMaybe);
+                        }
+                    } else {
+                        // The handler returned no removal function (resolved to void).
+                        // A concurrent remove may still have set pendingRemovals during
+                        // the await. Clear the marker so it does not linger and
+                        // incorrectly affect a future re-add of the same row.
+                        this.pendingRemovals.delete(rowHash);
                     }
+                } finally {
+                    // Whether the await resolved or rejected, this row is no
+                    // longer in flight — clear it so a remove arriving after
+                    // this point is not mistaken for the in-flight race.
+                    this.addsInFlight.delete(rowHash);
                 }
-                else {
-                    const functionMaybe = promiseMaybe;
-                    if (functionMaybe instanceof Function) {
-                        this.removalsByRow.set(rowHash, async () => {
-                            functionMaybe();
-                            return Promise.resolve();
-                        });
-                    }
-                }
-            } else {
-                Trace.info(`[Observer] Skipping already notified row - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
             }
+            else {
+                const functionMaybe = promiseMaybe;
+                if (functionMaybe instanceof Function) {
+                    this.removalsByRow.set(rowHash, async () => {
+                        functionMaybe();
+                        return Promise.resolve();
+                    });
+                }
+            }
+        } else {
+            Trace.info(`[Observer] Skipping already notified row - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
+        }
 
-            // Recursively notify added for specification results.
-            if (projection.type === "composite") {
-                for (const component of projection.components) {
-                    if (component.type === "specification") {
-                        const childPath = path + "." + component.name;
-                        const childResults = pr.result[component.name];
-                        // The child row's identity is this row's resultSubset
-                        // plus the labels introduced by the nested component's
-                        // matches — the same accumulation invertSpecification
-                        // performs (see inverse.ts).
-                        const childResultSubset = [...resultSubset, ...component.matches.map(m => m.unknown.name)];
-                        // The child's parent subset is this row's identity —
-                        // its `resultSubset` — matching how invertSpecification
-                        // sets `parentSubset: context.resultSubset` (inverse.ts).
-                        Trace.info(`[Observer] Processing nested spec - Parent path: ${displayPath}, Child path: ${childPath}, Child results: ${childResults?.length || 0}`);
-                        await this.notifyAdded(childResults, component.projection, childPath, resultSubset, childResultSubset, branch);
-                    }
+        // Recursively notify added for specification results.
+        if (projection.type === "composite") {
+            for (const component of projection.components) {
+                if (component.type === "specification") {
+                    const childPath = path + "." + component.name;
+                    const childResults = pr.result[component.name];
+                    // The child row's identity is this row's resultSubset
+                    // plus the labels introduced by the nested component's
+                    // matches — the same accumulation invertSpecification
+                    // performs (see inverse.ts).
+                    const childResultSubset = [...resultSubset, ...component.matches.map(m => m.unknown.name)];
+                    // The child's parent subset is this row's identity —
+                    // its `resultSubset` — matching how invertSpecification
+                    // sets `parentSubset: context.resultSubset` (inverse.ts).
+                    Trace.info(`[Observer] Processing nested spec - Parent path: ${displayPath}, Child path: ${childPath}, Child results: ${childResults?.length || 0}`);
+                    await this.notifyAdded(childResults, component.projection, childPath, resultSubset, childResultSubset, branch);
                 }
             }
         }
@@ -579,6 +641,20 @@ export class ObserverImpl<T> implements Observer<T> {
             if (removal !== undefined) {
                 Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, firing removal`);
                 await removal();
+            } else if (this.addsInFlight.has(rowHash)) {
+                // The add handler for this row is still awaiting its async
+                // result — the removal function has not been registered yet.
+                // Record a pending removal so that when the add handler
+                // completes, it fires the removal immediately rather than
+                // storing it. This prevents the item from being permanently
+                // retained in the observed set across concurrent saves.
+                Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, add still in flight — marking pending`);
+                this.pendingRemovals.add(rowHash);
+            } else {
+                // No removal was ever registered, and no add is currently in
+                // flight for this row — its add handler already finished
+                // with nothing to clean up. Nothing to do.
+                Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, no removal to fire`);
             }
         }
     }
