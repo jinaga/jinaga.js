@@ -49,10 +49,14 @@ export async function withTransaction<T>(db: IDBDatabase, storeNames: string[], 
   return result;
 }
 
+export function requestErrorMessage(request: IDBRequest) {
+  return `Error executing request ${JSON.stringify(request.error?.message, null, 2)}`;
+}
+
 export function execRequest<T>(request: IDBRequest) {
   return new Promise<T>((resolve, reject) => {
     request.onsuccess = (_: Event) => resolve(request.result);
-    request.onerror = (_: Event) => reject(`Error executing request ${JSON.stringify(request.error?.message, null, 2)}`);
+    request.onerror = (_: Event) => reject(requestErrorMessage(request));
   });
 }
 

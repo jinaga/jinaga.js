@@ -4,7 +4,7 @@ import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
 import { distinct, flatten, flattenAsync } from '../util/fn';
-import { execRequest, factKey, keyToReference, withDatabase, withTransaction } from './driver';
+import { execRequest, factKey, keyToReference, requestErrorMessage, withDatabase, withTransaction } from './driver';
 
 export function getPredecessors(fact: FactRecord, role: string) {
   if (!fact) {
@@ -234,20 +234,16 @@ export class IndexedDBStore implements Storage {
         const request = specificationObjectStore.index('mru')
           .openCursor(IDBKeyRange.upperBound(oldMruDate));
         await new Promise<void>((resolve, reject) => {
-          request.onerror = _ => reject(`Error executing request ${JSON.stringify(request.error?.message, null, 2)}`);
-          request.onsuccess = async _ => {
+          request.onerror = _ => reject(requestErrorMessage(request));
+          request.onsuccess = _ => {
             const cursor = request.result;
             if (!cursor) {
               resolve();
               return;
             }
-            try {
-              await execRequest(cursor.delete());
-              cursor.continue();
-            }
-            catch (error) {
-              reject(error);
-            }
+            const deleteRequest = cursor.delete();
+            deleteRequest.onerror = _ => reject(requestErrorMessage(deleteRequest));
+            deleteRequest.onsuccess = _ => cursor.continue();
           };
         });
       });
