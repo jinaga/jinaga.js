@@ -46,7 +46,12 @@ export function createDevelopmentDiagnosticHandler(): (diagnostic: DistributionD
             seen.delete(seen.values().next().value as string);
         }
 
-        if (diagnostic.reactive) {
+        // A clearing diagnostic (W9) resolves an earlier reactive line; always
+        // an informational, positive signal.
+        if (diagnostic.cleared) {
+            console.info(message);
+        }
+        else if (diagnostic.reactive) {
             console.info(message);
         }
         else if (diagnostic.code === 'no-matching-rule' || diagnostic.code === 'spec-more-restrictive-than-rule') {
@@ -60,6 +65,10 @@ export function createDevelopmentDiagnosticHandler(): (diagnostic: DistributionD
 
 function formatMessage(diagnostic: DistributionDiagnostic): string {
     const spec = diagnostic.specification.trim();
+    if (diagnostic.cleared) {
+        return `[jinaga] Specification is now authorized for the current user; ` +
+            `data is flowing. The earlier pending-authorization notice is resolved.\n${spec}`;
+    }
     if (diagnostic.reactive) {
         return `[jinaga] Specification is pending authorization for the current user; ` +
             `it will populate when the authorizing fact arrives.\n${spec}`;

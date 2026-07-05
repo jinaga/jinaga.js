@@ -135,6 +135,15 @@ export class FactManager {
         this.networkManager.unsubscribe(feeds);
     }
 
+    /**
+     * Register a listener fired when `feed` first delivers data (issue #207 W9),
+     * so the observer can clear a `reactive` diagnostic once the race resolves.
+     * Returns an unregister function.
+     */
+    onFeedData(feed: string, listener: () => void): () => void {
+        return this.networkManager.onFeedData(feed, listener);
+    }
+
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
         const loaded = await this.fork.load(references);
         Trace.counter("facts_loaded", loaded.length);
