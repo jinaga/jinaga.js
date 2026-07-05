@@ -51,3 +51,39 @@ export function toDistributionDiagnostics(
             reason: d.reason
         }));
 }
+
+/**
+ * The denial codes that are *structural* — a missing rule or a spec narrowed
+ * past its rule. These never self-heal (unlike the subscription race), so they
+ * are the only cases `query` throws for in development mode (issue #207 W8) and
+ * the ones the default dev handler reports at error level (W7). A `reactive`
+ * diagnostic is never structural regardless of its code.
+ */
+export function isStructuralDenial(diagnostic: DistributionDiagnostic): boolean {
+    return !diagnostic.reactive
+        && (diagnostic.code === 'no-matching-rule'
+            || diagnostic.code === 'spec-more-restrictive-than-rule');
+}
+
+/**
+ * Thrown by `query` in development mode (issue #207 W8) when a feed is denied by
+ * a structural cause that provably never self-heals — so a mis-authored spec
+ * fails loudly at the call site instead of silently returning empty. Never
+ * thrown for a `reactive` decision (that would break the subscription race) and
+ * never in production, where `query` stays silent-empty. `diagnostics` carries
+ * the structural diagnostics that caused the throw.
+ */
+export class DistributionDeniedError extends Error {
+    constructor(public readonly diagnostics: DistributionDiagnostic[]) {
+        super(DistributionDeniedError.buildMessage(diagnostics));
+        this.name = 'DistributionDeniedError';
+        // Restore the prototype chain so `instanceof` works after TypeScript's
+        // down-level `extends Error` transpilation.
+        Object.setPrototypeOf(this, DistributionDeniedError.prototype);
+    }
+
+    private static buildMessage(diagnostics: DistributionDiagnostic[]): string {
+        return diagnostics.map(d => d.reason).join('\n\n')
+            || 'The specification is denied by distribution.';
+    }
+}
