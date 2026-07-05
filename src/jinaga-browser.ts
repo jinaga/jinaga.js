@@ -14,6 +14,7 @@ import { IndexedDBLoginStore } from "./indexeddb/indexeddb-login-store";
 import { IndexedDBQueue } from "./indexeddb/indexeddb-queue";
 import { IndexedDBStore } from "./indexeddb/indexeddb-store";
 import { Jinaga } from "./jinaga";
+import { createDevelopmentDiagnosticHandler } from "./managers/developmentDiagnosticHandler";
 import { FactManager } from "./managers/factManager";
 import { Network, NetworkNoOp } from "./managers/NetworkManager";
 import { MemoryStore } from "./memory/memory-store";
@@ -32,7 +33,15 @@ export type JinagaBrowserConfig = {
     httpAuthenticationProvider?: AuthenticationProvider,
     queueProcessingDelayMs?: number,
     feedRefreshIntervalSeconds?: number,
-    purgeConditions?: (p: PurgeConditions) => PurgeConditions
+    purgeConditions?: (p: PurgeConditions) => PurgeConditions,
+    /**
+     * Enable development-mode distribution diagnostics (issue #207 W7/W8). When
+     * true, `query` throws a typed `DistributionDeniedError` for structural
+     * denials, and a default handler logs deduplicated, actionable messages to
+     * the console. A library cannot reliably read `NODE_ENV`, so the app passes
+     * this explicitly, e.g. `developmentMode: process.env.NODE_ENV !== 'production'`.
+     */
+    developmentMode?: boolean
 }
 
 export class JinagaBrowser {
@@ -46,7 +55,7 @@ export class JinagaBrowser {
         const network = createNetwork(config, webClient, store);
         const purgeConditions = createPurgeConditions(config);
         const factManager = new FactManager(fork, observableSource, store, network, purgeConditions, config.feedRefreshIntervalSeconds);
-        
+
         // Phase 3.4: Connect observer notification bridge if network supports it
         if (network && 'setFactsAddedListener' in network && typeof network.setFactsAddedListener === 'function') {
             (network as any).setFactsAddedListener(async (envelopes: FactEnvelope[]) => {
@@ -54,8 +63,15 @@ export class JinagaBrowser {
                 (factManager as any).factsAdded(envelopes);
             });
         }
-        
-        return new Jinaga(authentication, factManager, syncStatusNotifier);
+
+        const developmentMode = config.developmentMode === true;
+        const jinaga = new Jinaga(authentication, factManager, syncStatusNotifier, developmentMode);
+        // In development mode, surface otherwise-silent distribution denials as
+        // deduplicated, actionable console messages (issue #207 W7).
+        if (developmentMode) {
+            jinaga.onDistributionDiagnostic(createDevelopmentDiagnosticHandler());
+        }
+        return jinaga;
     }
 }
 

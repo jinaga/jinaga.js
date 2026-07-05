@@ -1,7 +1,7 @@
 import { Authentication } from "./authentication/authentication";
 import { dehydrateReference, Dehydration, HashMap, hashSymbol, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
-import { DistributionDiagnostic, toDistributionDiagnostics } from './managers/distributionDiagnostic';
+import { DistributionDeniedError, DistributionDiagnostic, isStructuralDenial, toDistributionDiagnostics } from './managers/distributionDiagnostic';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
@@ -13,7 +13,7 @@ import { FactEnvelope, FactReference, ProjectedResult } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
 
-export { DistributionDiagnostic } from './managers/distributionDiagnostic';
+export { DistributionDeniedError, DistributionDiagnostic } from './managers/distributionDiagnostic';
 
 export interface Profile {
     displayName: string;
@@ -37,7 +37,12 @@ export class Jinaga {
     constructor(
         private authentication: Authentication,
         private factManager: FactManager,
-        private syncStatusNotifier: SyncStatusNotifier | null
+        private syncStatusNotifier: SyncStatusNotifier | null,
+        // Development mode (issue #207 W7/W8): when true, `query` throws a
+        // typed `DistributionDeniedError` for structural denials so a
+        // mis-authored spec fails loudly at the call site. Off by default, so
+        // production keeps the silent-empty behavior.
+        private readonly developmentMode: boolean = false
     ) { }
 
     /**
@@ -189,11 +194,22 @@ export class Jinaga {
 
         const references = given.map(g => this.prepareFactReference(g));
         const decisions = await this.factManager.fetch(references, innerSpecification);
-        this.emitDistributionDiagnostics(toDistributionDiagnostics(
+        const diagnostics = toDistributionDiagnostics(
             'query',
             describeSpecification(innerSpecification, 0),
             decisions
-        ));
+        );
+        this.emitDistributionDiagnostics(diagnostics);
+        // In development mode, fail loudly for a structural denial (a missing or
+        // narrowed-past rule) that provably never self-heals — never for a
+        // `reactive` decision, which is the subscription race. Production keeps
+        // the silent-empty behavior below.
+        if (this.developmentMode) {
+            const structural = diagnostics.filter(isStructuralDenial);
+            if (structural.length > 0) {
+                throw new DistributionDeniedError(structural);
+            }
+        }
         const projectedResults = await this.factManager.read(references, innerSpecification);
         const extracted = extractResults(projectedResults, innerSpecification.projection);
         Trace.counter("facts_loaded", extracted.totalCount);
