@@ -4,13 +4,14 @@ import { Fork } from "../fork/fork";
 import { PersistentFork } from "../fork/persistent-fork";
 import { DistributionIntersectionBranch } from "../distribution/distribution-engine";
 import { FeedDecision } from "../http/messages";
+import { DistributionDiagnostic } from "./distributionDiagnostic";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
 import { Trace } from "../util/trace";
-import { Network, NetworkManager } from "./NetworkManager";
+import { CachedFeeds, Network, NetworkManager } from "./NetworkManager";
 import { PurgeManager } from "./PurgeManager";
 
 export class FactManager {
@@ -121,7 +122,7 @@ export class FactManager {
         return await this.networkManager.fetch(start, specification);
     }
 
-    async subscribe(start: FactReference[], specification: Specification) {
+    async subscribe(start: FactReference[], specification: Specification): Promise<CachedFeeds> {
         this.purgeManager.checkCompliance(specification);
         return await this.networkManager.subscribe(start, specification);
     }
@@ -148,8 +149,8 @@ export class FactManager {
         return this.store.setMruDate(specificationHash, mruDate);
     }
 
-    startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>, keepAlive: boolean): Observer<U> {
-        const observer = new ObserverImpl<U>(this, references, specification, resultAdded);
+    startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>, keepAlive: boolean, onDiagnostics?: (diagnostics: DistributionDiagnostic[]) => void): Observer<U> {
+        const observer = new ObserverImpl<U>(this, references, specification, resultAdded, onDiagnostics);
         observer.start(keepAlive);
         return observer;
     }
