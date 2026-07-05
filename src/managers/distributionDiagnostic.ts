@@ -82,8 +82,13 @@ export function toClearingDiagnostic(
         specification,
         decision: decision.decision === 'denied' ? 'denied' : 'reactive',
         code: decision.code,
-        reactive: decision.decision === 'reactive',
-        reason: decision.reason,
+        // The race has resolved, so this is no longer a pending state: a
+        // consumer that only inspects `reactive`/`reason` (ignoring `cleared`)
+        // must not read it as another pending-authorization event. Hence
+        // `reactive: false` and a resolution-specific reason rather than reusing
+        // the original "pending authorization" text.
+        reactive: false,
+        reason: 'Distribution is now authorized for the current user; the feed is delivering data.',
         feed: decision.feed,
         cleared: true
     };

@@ -368,10 +368,15 @@ export class NetworkManager {
             if (!subscriber) {
                 // Wrap notifyFactsAdded so this feed's "began delivering data"
                 // signal fires after facts are saved (issue #207 W9), letting a
-                // reactive diagnostic clear when the race resolves.
+                // reactive diagnostic clear when the race resolves. Only signal
+                // when facts actually arrived: the subscriber calls
+                // notifyFactsAdded even for an empty graph (references present
+                // but load() returned nothing), which must not count as delivery.
                 const notify = async (envelopes: FactEnvelope[]) => {
                     await this.notifyFactsAdded(envelopes);
-                    this.handleFeedData(feed);
+                    if (envelopes.length > 0) {
+                        this.handleFeedData(feed);
+                    }
                 };
                 subscriber = new Subscriber(feed, this.network, this.store, notify, this.feedRefreshIntervalSeconds);
                 this.subscribers.set(feed, subscriber);
