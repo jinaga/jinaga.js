@@ -182,5 +182,23 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
       handler(d);
       expect(errorSpy).toHaveBeenCalledTimes(1);
     });
+
+    it("bounds the dedupe set, evicting the oldest so it can recur but recent ones stay deduped", () => {
+      const handler = createDevelopmentDiagnosticHandler();
+      // More distinct messages than any reasonable cap, so the first is evicted.
+      const count = 2000;
+      for (let i = 0; i < count; i++) {
+        handler(diagnostic({ code: "no-matching-rule", specification: `spec-${i}` }));
+      }
+      expect(errorSpy).toHaveBeenCalledTimes(count);
+
+      // The most-recent message is still remembered — re-sending is deduped.
+      handler(diagnostic({ code: "no-matching-rule", specification: `spec-${count - 1}` }));
+      expect(errorSpy).toHaveBeenCalledTimes(count);
+
+      // The oldest was evicted, so re-sending it logs once more.
+      handler(diagnostic({ code: "no-matching-rule", specification: "spec-0" }));
+      expect(errorSpy).toHaveBeenCalledTimes(count + 1);
+    });
   });
 });

@@ -1,6 +1,16 @@
 import { DistributionDiagnostic } from "./distributionDiagnostic";
 
 /**
+ * Upper bound on the dedupe set (issue #207 W7). A long-lived app in
+ * development mode with dynamic specs/reasons would otherwise accumulate
+ * distinct messages without bound; once the cap is reached the oldest entry is
+ * evicted (FIFO — `Set` preserves insertion order). Eviction only means the
+ * evicted message could be logged once more if it recurs, which is harmless for
+ * a development aid.
+ */
+const MAX_DEDUP_ENTRIES = 1000;
+
+/**
  * Create the default development-mode distribution-diagnostic handler
  * (issue #207 W7). Installed by `JinagaBrowser` when `developmentMode` is on, it
  * turns otherwise-silent distribution denials into deduplicated, actionable
@@ -8,8 +18,8 @@ import { DistributionDiagnostic } from "./distributionDiagnostic";
  *
  *  - `no-matching-rule` / `spec-more-restrictive-than-rule` → `console.error`
  *    (structural authoring errors that never self-heal),
- *  - non-reactive `principal-excluded` → `console.warn`
- *    (the logged-in user is simply not permitted),
+ *  - any other non-reactive denial (`principal-excluded`, `not-authenticated`,
+ *    or an unrecognized code) → `console.warn`,
  *  - any `reactive` decision → `console.info`
  *    (the pending-authorization race; will populate when the fact arrives).
  *
@@ -18,9 +28,10 @@ import { DistributionDiagnostic } from "./distributionDiagnostic";
  * `NoOpTracer` would swallow them), and without flipping the global tracer on
  * and flooding the console with the library's internal traces.
  *
- * Deduplicated by message text so a long-lived subscription that re-reports the
- * same feed does not spam the console. (Clearing a `reactive` line once data
- * flows is the subscription-lifecycle concern handled separately in W9.)
+ * Deduplicated by message text (bounded — see `MAX_DEDUP_ENTRIES`) so a
+ * long-lived subscription that re-reports the same feed does not spam the
+ * console. (Clearing a `reactive` line once data flows is the
+ * subscription-lifecycle concern handled separately in W9.)
  */
 export function createDevelopmentDiagnosticHandler(): (diagnostic: DistributionDiagnostic) => void {
     const seen = new Set<string>();
@@ -30,6 +41,10 @@ export function createDevelopmentDiagnosticHandler(): (diagnostic: DistributionD
             return;
         }
         seen.add(message);
+        // Bound the dedupe set: evict the oldest entry once over the cap.
+        if (seen.size > MAX_DEDUP_ENTRIES) {
+            seen.delete(seen.values().next().value as string);
+        }
 
         if (diagnostic.reactive) {
             console.info(message);
