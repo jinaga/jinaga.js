@@ -72,5 +72,20 @@ describe("ForbiddenError (issue #207 W10)", () => {
       expect(error).toBeInstanceOf(ForbiddenError);
       expect(error.reason).toBe("Forbidden");
     });
+
+    it("falls back to the status line for an object body without reason/message, keeping the raw body", async () => {
+      const body = { code: "denied", detail: { feed: "abc" } };
+      global.fetch = jest.fn().mockResolvedValue(
+        fakeResponse(403, "application/json", body)
+      ) as any;
+
+      const conn = connection();
+      const error = await conn.get("/feeds/abc").catch(e => e);
+      expect(error).toBeInstanceOf(ForbiddenError);
+      // Not stringified into a noisy reason...
+      expect(error.reason).toBe("Forbidden");
+      // ...but the full body is preserved for inspection.
+      expect(error.body).toEqual(body);
+    });
   });
 });

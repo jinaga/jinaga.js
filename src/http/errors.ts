@@ -22,7 +22,10 @@ export class ForbiddenError extends Error {
 /**
  * Derive a human-readable reason from a 403 response body, preferring a
  * `reason`/`message` field or a plain-string body, and falling back to the HTTP
- * status line when the body carries nothing useful.
+ * status line otherwise. An object body without a `reason`/`message` field is
+ * not stringified into the reason — that would yield noisy or oversized text
+ * like `"{}"`; the raw body is preserved on `ForbiddenError.body` for callers
+ * that want to inspect it.
  */
 export function forbiddenReason(body: unknown, fallback: string | undefined): string {
     if (typeof body === 'string' && body.trim().length > 0) {
@@ -35,12 +38,6 @@ export function forbiddenReason(body: unknown, fallback: string | undefined): st
         }
         if (typeof record.message === 'string' && record.message.length > 0) {
             return record.message;
-        }
-        try {
-            return JSON.stringify(body);
-        }
-        catch {
-            // Non-serializable body; fall through to the status line.
         }
     }
     return fallback || 'Forbidden';
