@@ -27,6 +27,18 @@ export interface DistributionDiagnostic {
     code?: DistributionDenialCode;
     reactive: boolean;                // true => will self-heal; NEVER treat as fatal
     reason: string;
+    /**
+     * The feed hash this diagnostic pertains to (issue #207 W9). Lets a
+     * consumer correlate a raised diagnostic with its later clearing and
+     * deduplicate per `(feed, code)`.
+     */
+    feed?: string;
+    /**
+     * True when this diagnostic reports that a previously `reactive` feed has
+     * begun delivering data — the subscription race resolving (issue #207 W9).
+     * The matching raised diagnostic (same `feed`) can be considered resolved.
+     */
+    cleared?: boolean;
 }
 
 /**
@@ -48,8 +60,33 @@ export function toDistributionDiagnostics(
             decision: d.decision as 'reactive' | 'denied',
             code: d.code,
             reactive: d.decision === 'reactive',
-            reason: d.reason
+            reason: d.reason,
+            feed: d.feed
         }));
+}
+
+/**
+ * Build the clearing diagnostic (issue #207 W9) emitted when a previously
+ * `reactive` feed begins delivering data — the subscription race resolving. It
+ * carries the same feed/code/operation as the raised diagnostic, with
+ * `cleared: true`, so a consumer can retire the earlier "pending authorization"
+ * signal.
+ */
+export function toClearingDiagnostic(
+    operation: DistributionDiagnostic['operation'],
+    specification: string,
+    decision: FeedDecision
+): DistributionDiagnostic {
+    return {
+        operation,
+        specification,
+        decision: decision.decision === 'denied' ? 'denied' : 'reactive',
+        code: decision.code,
+        reactive: decision.decision === 'reactive',
+        reason: decision.reason,
+        feed: decision.feed,
+        cleared: true
+    };
 }
 
 /**

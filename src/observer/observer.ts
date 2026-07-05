@@ -1,6 +1,6 @@
 import { computeObjectHash } from "../fact/hash";
 import { FeedDecision } from "../http/messages";
-import { DistributionDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
+import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
 import { SpecificationListener } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
@@ -166,6 +166,12 @@ export class ObserverImpl<T> implements Observer<T> {
     private readonly _diagnostics: DistributionDiagnostic[] = [];
     private readonly diagnosticHandlers: ((diagnostic: DistributionDiagnostic) => void)[] = [];
     private readonly specificationString: string;
+    /**
+     * Unregister callbacks for the per-feed "began delivering data" listeners
+     * (issue #207 W9) that clear a reactive diagnostic when the subscription
+     * race resolves. Torn down in `stop()`.
+     */
+    private readonly clearingUnsubscribes: (() => void)[] = [];
 
     constructor(
         private factManager: FactManager,
@@ -337,6 +343,12 @@ export class ObserverImpl<T> implements Observer<T> {
 
     public stop() {
         this.stopped = true;
+        // Drop any diagnostic-clearing listeners (issue #207 W9) so a feed that
+        // delivers after stop() does not emit through a torn-down observer.
+        for (const unsubscribe of this.clearingUnsubscribes) {
+            unsubscribe();
+        }
+        this.clearingUnsubscribes.length = 0;
         for (const branch of this.branches) {
             for (const listener of branch.listeners) {
                 this.factManager.removeSpecificationListener(listener);
@@ -428,6 +440,7 @@ export class ObserverImpl<T> implements Observer<T> {
                 }
                 branch.feeds = feeds;
                 decisions.push(...branchDecisions);
+                this.registerClearingListeners(feeds, branchDecisions);
             }));
         }
         else {
@@ -474,6 +487,55 @@ export class ObserverImpl<T> implements Observer<T> {
     private safelyInvokeDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void, diagnostic: DistributionDiagnostic) {
         try {
             handler(diagnostic);
+        }
+        catch (e) {
+            Trace.error(e);
+        }
+    }
+
+    /**
+     * For each kept-alive `reactive` feed, register a one-shot listener that
+     * emits a clearing diagnostic once the feed begins delivering data (issue
+     * #207 W9). A structural denial never delivers, so it never clears; only
+     * reactive feeds — the subscription race — resolve this way. Fires once per
+     * feed (NetworkManager dedupes the transition).
+     */
+    private registerClearingListeners(feeds: string[], decisions: FeedDecision[]) {
+        if (this.stopped) {
+            return;
+        }
+        const keptAlive = new Set(feeds);
+        for (const decision of decisions) {
+            if (decision.decision === 'reactive' && decision.feed && keptAlive.has(decision.feed)) {
+                const unsubscribe = this.factManager.onFeedData(decision.feed, () => this.emitFeedCleared(decision));
+                this.clearingUnsubscribes.push(unsubscribe);
+            }
+        }
+    }
+
+    /**
+     * Emit the clearing diagnostic for a resolved reactive feed to the observer
+     * handlers (W6) and the instance sink (W5). Guarded like `captureDiagnostics`
+     * so it never disturbs the observer.
+     */
+    private emitFeedCleared(decision: FeedDecision) {
+        if (this.stopped) {
+            return;
+        }
+        try {
+            const cleared = toClearingDiagnostic('subscribe', this.specificationString, decision);
+            this._diagnostics.push(cleared);
+            for (const handler of this.diagnosticHandlers) {
+                this.safelyInvokeDiagnostic(handler, cleared);
+            }
+            if (this.onDiagnostics) {
+                try {
+                    this.onDiagnostics([cleared]);
+                }
+                catch (e) {
+                    Trace.error(e);
+                }
+            }
         }
         catch (e) {
             Trace.error(e);

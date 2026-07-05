@@ -261,14 +261,63 @@ export class NetworkManager {
     private currentBatch: LoadBatch | null = null;
     private subscribers: Map<string, Subscriber> = new Map();
     private readonly feedRefreshIntervalSeconds: number;
+    // Per-feed "began delivering data" signal (issue #207 W9). `feedsDelivered`
+    // remembers feeds that have delivered at least one fact so a late listener
+    // fires immediately; `feedDataListeners` holds observers waiting to clear a
+    // reactive diagnostic when the feed's race resolves.
+    private readonly feedsDelivered = new Set<string>();
+    private readonly feedDataListeners = new Map<string, Set<() => void>>();
 
     constructor(
         private readonly network: Network,
         private readonly store: Storage,
         private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>,
         feedRefreshIntervalSeconds?: number
-    ) { 
+    ) {
         this.feedRefreshIntervalSeconds = feedRefreshIntervalSeconds || 90; // Default to 90 seconds
+    }
+
+    /**
+     * Register a listener fired the first time `feed` delivers data (issue #207
+     * W9). If the feed has already delivered, the listener fires immediately.
+     * Returns an unregister function. The observer uses this to clear a
+     * `reactive` diagnostic once the subscription race resolves.
+     */
+    onFeedData(feed: string, listener: () => void): () => void {
+        if (this.feedsDelivered.has(feed)) {
+            // Already delivered — fire immediately (isolated) and don't retain.
+            try { listener(); } catch (e) { Trace.error(e); }
+            return () => { };
+        }
+        let listeners = this.feedDataListeners.get(feed);
+        if (!listeners) {
+            listeners = new Set();
+            this.feedDataListeners.set(feed, listeners);
+        }
+        listeners.add(listener);
+        return () => {
+            const set = this.feedDataListeners.get(feed);
+            if (set) {
+                set.delete(listener);
+                if (set.size === 0) this.feedDataListeners.delete(feed);
+            }
+        };
+    }
+
+    // Called when a feed's subscriber saves new facts. Fires waiting listeners
+    // once, on the first delivery for that feed.
+    private handleFeedData(feed: string) {
+        if (this.feedsDelivered.has(feed)) {
+            return;
+        }
+        this.feedsDelivered.add(feed);
+        const listeners = this.feedDataListeners.get(feed);
+        if (listeners) {
+            this.feedDataListeners.delete(feed);
+            for (const listener of listeners) {
+                try { listener(); } catch (e) { Trace.error(e); }
+            }
+        }
     }
 
     /**
@@ -317,7 +366,14 @@ export class NetworkManager {
         const subscribers = feeds.map(feed => {
             let subscriber = this.subscribers.get(feed);
             if (!subscriber) {
-                subscriber = new Subscriber(feed, this.network, this.store, this.notifyFactsAdded, this.feedRefreshIntervalSeconds);
+                // Wrap notifyFactsAdded so this feed's "began delivering data"
+                // signal fires after facts are saved (issue #207 W9), letting a
+                // reactive diagnostic clear when the race resolves.
+                const notify = async (envelopes: FactEnvelope[]) => {
+                    await this.notifyFactsAdded(envelopes);
+                    this.handleFeedData(feed);
+                };
+                subscriber = new Subscriber(feed, this.network, this.store, notify, this.feedRefreshIntervalSeconds);
                 this.subscribers.set(feed, subscriber);
             }
             return subscriber;
