@@ -19,7 +19,7 @@ describe('SingleUse with Store', () => {
     const observableSource = new ObservableSource(store);
     const authentication = new AuthenticationTest(store, null, null, null);
     const factManager = new FactManager(fork, observableSource, store, {
-      feeds: async () => [],
+      feeds: async () => ({ feeds: [] }),
       fetchFeed: async () => ({ references: [], bookmark: '' }),
       streamFeed: () => () => {},
       load: async () => []

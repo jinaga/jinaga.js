@@ -3,6 +3,7 @@ import { computeHash } from "../fact/hash";
 import { Fork } from "../fork/fork";
 import { PersistentFork } from "../fork/persistent-fork";
 import { DistributionIntersectionBranch } from "../distribution/distribution-engine";
+import { FeedDecision } from "../http/messages";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
@@ -115,9 +116,9 @@ export class FactManager {
         return await this.store.read(start, specification);
     }
 
-    async fetch(start: FactReference[], specification: Specification) {
+    async fetch(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
         this.purgeManager.checkCompliance(specification);
-        await this.networkManager.fetch(start, specification);
+        return await this.networkManager.fetch(start, specification);
     }
 
     async subscribe(start: FactReference[], specification: Specification) {

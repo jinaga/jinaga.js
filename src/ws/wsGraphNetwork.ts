@@ -1,7 +1,7 @@
 import { Network } from "../managers/NetworkManager";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactReference, Storage } from "../storage";
-import { FeedResponse } from "../http/messages";
+import { FeedResponse, FeedsResponse } from "../http/messages";
 import { HttpNetwork } from "../http/httpNetwork";
 import { WsGraphClient } from "./ws-graph-client";
 import { UserIdentity } from "../user-identity";
@@ -60,7 +60,7 @@ export class WsGraphNetwork implements Network {
     );
   }
 
-  feeds(start: FactReference[], specification: Specification): Promise<string[]> {
+  feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
     return this.httpNetwork.feeds(start, specification);
   }
 

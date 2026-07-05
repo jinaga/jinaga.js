@@ -1,5 +1,5 @@
 import { DistributionEngine, DistributionIntersectionBranch } from "../distribution/distribution-engine";
-import { FeedResponse } from "../http/messages";
+import { FeedDecision, FeedResponse, FeedsResponse } from "../http/messages";
 import { Subscriber } from "../observer/subscriber";
 import { describeDeclaration, describeSpecification } from "../specification/description";
 import { buildFeeds } from "../specification/feed-builder";
@@ -10,7 +10,14 @@ import { computeStringHash } from "../util/encoding";
 import { Trace } from "../util/trace";
 
 export interface Network {
-    feeds(start: FactReference[], specification: Specification): Promise<string[]>;
+    /**
+     * Request the feed hashes for a specification from the replicator's
+     * `POST /feeds`. The response carries the feed hashes and, from
+     * replicator 3.7.0 onward, the per-feed distribution `decisions`
+     * (issue #207). Old replicators omit `decisions`, which degrades
+     * gracefully to no diagnostics.
+     */
+    feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse>;
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse>;
     streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds: number): () => void;
     load(factReferences: FactReference[]): Promise<FactEnvelope[]>;
@@ -28,8 +35,8 @@ export interface Network {
 }
 
 export class NetworkNoOp implements Network {
-    feeds(start: FactReference[], specification: Specification): Promise<string[]> {
-        return Promise.resolve([]);
+    feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
+        return Promise.resolve({ feeds: [] });
     }
 
     fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
@@ -67,7 +74,7 @@ export class NetworkDistribution implements Network {
         private readonly user: FactReference | null
     ) { }
 
-    async feeds(start: FactReference[], specification: Specification): Promise<string[]> {
+    async feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
         const feeds = buildFeeds(specification);
         const namedStart = specification.given.reduce((map, given, index) => ({
             ...map,
@@ -87,7 +94,10 @@ export class NetworkDistribution implements Network {
                 throw new Error(`Not authorized: ${canDistribute.reason}`);
             }
         }
-        return feedHashes;
+        // The in-process engine either authorizes (returns the feed hashes) or
+        // throws above; it does not surface per-feed decisions. Diagnostics
+        // originate from the real replicator's `POST /feeds` response.
+        return { feeds: feedHashes };
     }
 
     async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
@@ -219,8 +229,33 @@ class LoadBatch {
     }
 }
 
+/**
+ * The feed hashes for a specification together with the replicator's per-feed
+ * distribution decisions (issue #207 W4). `decisions` is empty when the
+ * replicator does not report them (old replicators), which makes every
+ * downstream diagnostic channel inert. This is the single choke point the
+ * instance hook (W5), the observer (W6), and `queryWithDiagnostics` (W8b) all
+ * draw from.
+ *
+ * Both fields are cached under the same specification key. Feed hashes are
+ * deterministic in the specification, but decisions depend on the requester's
+ * authorization state and can change over time — most notably a `reactive`
+ * feed becoming `authorized` once the authorizing fact arrives. Caching the
+ * decision keeps a non-self-healing denial (`denied`) reported on repeated
+ * calls, which is correct; the only staleness is a `reactive` decision that
+ * should stop being reported once data begins to flow. Clearing a diagnostic
+ * on that transition is W9's responsibility (re-emit only on transition; fire
+ * a clearing diagnostic when a `reactive`/`denied` feed starts delivering),
+ * which is deferred to a later tranche. Within a single `queryWithDiagnostics`
+ * call the decisions are correlated to that fetch's specification and start.
+ */
+export interface CachedFeeds {
+    feeds: string[];
+    decisions: FeedDecision[];
+}
+
 export class NetworkManager {
-    private readonly feedsCache = new Map<string, string[]>();
+    private readonly feedsCache = new Map<string, CachedFeeds>();
     private readonly activeFeeds = new Map<string, Promise<void>>();
     private fetchCount = 0;
     private currentBatch: LoadBatch | null = null;
@@ -236,9 +271,15 @@ export class NetworkManager {
         this.feedRefreshIntervalSeconds = feedRefreshIntervalSeconds || 90; // Default to 90 seconds
     }
 
-    async fetch(start: FactReference[], specification: Specification) {
+    /**
+     * Fetch all feeds for a specification and return the replicator's per-feed
+     * distribution decisions correlated to this exact fetch (issue #207 W4).
+     * Callers that don't need diagnostics (plain `query`/`watch`) ignore the
+     * return value; `queryWithDiagnostics` (W8b) maps it to diagnostics.
+     */
+    async fetch(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
         const reducedSpecification = reduceSpecification(specification);
-        const feeds: string[] = await this.getFeedsFromCache(start, reducedSpecification);
+        const { feeds, decisions } = await this.getFeedsFromCache(start, reducedSpecification);
 
         // Fork to fetch from each feed.
         const promises = feeds.map(feed => {
@@ -259,6 +300,7 @@ export class NetworkManager {
             this.removeFeedsFromCache(start, reducedSpecification);
             throw e;
         }
+        return decisions;
     }
 
     async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {
@@ -270,7 +312,7 @@ export class NetworkManager {
 
     async subscribe(start: FactReference[], specification: Specification): Promise<string[]> {
         const reducedSpecification = reduceSpecification(specification);
-        const feeds: string[] = await this.getFeedsFromCache(start, reducedSpecification);
+        const { feeds } = await this.getFeedsFromCache(start, reducedSpecification);
 
         const subscribers = feeds.map(feed => {
             let subscriber = this.subscribers.get(feed);
@@ -311,15 +353,21 @@ export class NetworkManager {
         }
     }
 
-    private async getFeedsFromCache(start: FactReference[], specification: Specification): Promise<string[]> {
+    private async getFeedsFromCache(start: FactReference[], specification: Specification): Promise<CachedFeeds> {
         const hash = getSpecificationHash(start, specification);
         const cached = this.feedsCache.get(hash);
         if (cached) {
             return cached;
         }
-        const feeds = await this.network.feeds(start, specification);
-        this.feedsCache.set(hash, feeds);
-        return feeds;
+        const response = await this.network.feeds(start, specification);
+        // Old replicators omit `decisions`; normalize to an empty array so every
+        // downstream diagnostic channel is simply inert rather than undefined.
+        const cachedFeeds: CachedFeeds = {
+            feeds: response.feeds,
+            decisions: response.decisions ?? []
+        };
+        this.feedsCache.set(hash, cachedFeeds);
+        return cachedFeeds;
     }
 
     private removeFeedsFromCache(start: FactReference[], specification: Specification) {

@@ -35,7 +35,7 @@ export { GraphSerializer, serializeGraph } from "./http/serializer";
 export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
 export * as driver from './indexeddb/driver';
 export { IndexedDBQueue } from './indexeddb/indexeddb-queue';
-export { Fact, Jinaga, MakeObservable, Profile } from './jinaga';
+export { DistributionDiagnostic, Fact, Jinaga, MakeObservable, Profile } from './jinaga';
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { FactManager } from "./managers/factManager";

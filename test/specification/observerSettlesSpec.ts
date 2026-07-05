@@ -24,6 +24,7 @@ import {
     FactManager,
     FactReference,
     FeedResponse,
+    FeedsResponse,
     MemoryStore,
     Network,
     NetworkNoOp,
@@ -46,9 +47,9 @@ import {
  *  stop() is called before the delay fires (e.g. via subscriber.stop()).
  */
 class HangingNetwork implements Network {
-    feeds(_start: FactReference[], _spec: Specification): Promise<string[]> {
+    feeds(_start: FactReference[], _spec: Specification): Promise<FeedsResponse> {
         // Return one synthetic feed so subscribe() actually creates a Subscriber.
-        return Promise.resolve(["test-feed"]);
+        return Promise.resolve({ feeds: ["test-feed"] });
     }
 
     fetchFeed(_feed: string, bookmark: string): Promise<FeedResponse> {
