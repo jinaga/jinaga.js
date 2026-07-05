@@ -1,18 +1,68 @@
 import { Authentication } from "./authentication/authentication";
+import { DistributionDenialCode } from './distribution/distribution-engine';
 import { dehydrateReference, Dehydration, HashMap, hashSymbol, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
+import { FeedDecision } from './http/messages';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
+import { describeSpecification } from './specification/description';
 import { FactConstructor, SpecificationOf } from './specification/model';
 import { Projection } from './specification/specification';
 import { detectDisconnectedSpecification } from "./specification/UnionFind";
 import { FactEnvelope, FactReference, ProjectedResult } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
-    
+
 export interface Profile {
     displayName: string;
+}
+
+/**
+ * A developer-facing distribution diagnostic (issue #207). Emitted for a feed
+ * that the replicator marked `reactive` or `denied`; authorized feeds produce
+ * none.
+ *
+ * The single load-bearing field is `reactive`. When `true`, the decision is the
+ * subscription race — the feed is denied for the current user *right now* but
+ * will self-heal once the authorizing fact arrives — and must NEVER be treated
+ * as fatal. When `false`, the denial is structural (a missing or narrowed-past
+ * rule, or a principal the rule excludes) and will not self-heal on its own.
+ *
+ * `code` is optional because a `reactive` decision need not carry one (the
+ * replicator may report the pending case without a denial code); a `denied`
+ * decision always carries one.
+ */
+export interface DistributionDiagnostic {
+    operation: 'query' | 'watch' | 'subscribe';
+    specification: string;            // describeSpecification(...)
+    decision: 'reactive' | 'denied';
+    code?: DistributionDenialCode;
+    reactive: boolean;                // true => will self-heal; NEVER treat as fatal
+    reason: string;
+}
+
+/**
+ * Map the replicator's per-feed decisions (issue #207 W4) to developer-facing
+ * diagnostics. Only `denied` and `reactive` feeds produce a diagnostic;
+ * `authorized` feeds are silent. Old replicators report no decisions, so this
+ * yields an empty array and the new APIs are inert.
+ */
+function toDistributionDiagnostics(
+    operation: DistributionDiagnostic['operation'],
+    specification: string,
+    decisions: FeedDecision[]
+): DistributionDiagnostic[] {
+    return decisions
+        .filter(d => d.decision === 'denied' || d.decision === 'reactive')
+        .map(d => ({
+            operation,
+            specification,
+            decision: d.decision as 'reactive' | 'denied',
+            code: d.code,
+            reactive: d.decision === 'reactive',
+            reason: d.reason
+        }));
 }
 
 export type MakeObservable<T> =
@@ -151,6 +201,48 @@ export class Jinaga {
         const extracted = extractResults(projectedResults, innerSpecification.projection);
         Trace.counter("facts_loaded", extracted.totalCount);
         return extracted.results;
+    }
+
+    /**
+     * Execute a query and return, alongside the results, the distribution
+     * diagnostics correlated to this exact fetch (issue #207 W8b). This is the
+     * one-shot, correlated channel deliberate callers (e.g. the factual MCP)
+     * use to distinguish "denied by distribution" from "authorized but empty"
+     * in a single call — without a `POST /feeds/explain` endpoint.
+     *
+     * Unlike `query`, this never throws on a distribution decision. A `reactive`
+     * decision (the subscription race — the current user is not yet authorized
+     * but the feed will self-heal when the authorizing fact arrives) is reported
+     * as a diagnostic, not an error; the results stay silently empty. Against an
+     * old replicator that omits decisions, `diagnostics` is always empty.
+     *
+     * @param specification Use Model.given().match() to create a specification
+     * @param given The fact or facts from which to begin the query
+     * @returns A promise resolving to the projected results and the diagnostics
+     */
+    async queryWithDiagnostics<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<{ results: U[]; diagnostics: DistributionDiagnostic[] }> {
+        const innerSpecification = specification.specification;
+
+        detectDisconnectedSpecification(innerSpecification);
+
+        if (!given || given.some(g => !g)) {
+            return { results: [], diagnostics: [] };
+        }
+        if (given.length !== innerSpecification.given.length) {
+            throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
+        }
+
+        const references = given.map(g => this.prepareFactReference(g));
+        const decisions = await this.factManager.fetch(references, innerSpecification);
+        const projectedResults = await this.factManager.read(references, innerSpecification);
+        const extracted = extractResults(projectedResults, innerSpecification.projection);
+        Trace.counter("facts_loaded", extracted.totalCount);
+        const diagnostics = toDistributionDiagnostics(
+            'query',
+            describeSpecification(innerSpecification, 0),
+            decisions
+        );
+        return { results: extracted.results, diagnostics };
     }
 
     /**

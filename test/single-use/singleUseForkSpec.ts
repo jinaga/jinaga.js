@@ -41,7 +41,7 @@ describe('SingleUse with FakeFork', () => {
         const observableSource = new ObservableSource(store);
         const authentication = new AuthenticationTest(store, null, null, null);
         const factManager = new FactManager(fakeFork, observableSource, store, {
-            feeds: async () => [],
+            feeds: async () => ({ feeds: [] }),
             fetchFeed: async () => ({ references: [], bookmark: '' }),
             streamFeed: () => () => {},
             load: async () => []
@@ -65,7 +65,7 @@ describe('SingleUse with FakeFork', () => {
         const observableSource = new ObservableSource(store);
         const authentication = new AuthenticationTest(store, null, null, null);
         const factManager = new FactManager(fakeFork, observableSource, store, {
-            feeds: async () => [],
+            feeds: async () => ({ feeds: [] }),
             fetchFeed: async () => ({ references: [], bookmark: '' }),
             streamFeed: () => () => {},
             load: async () => []
