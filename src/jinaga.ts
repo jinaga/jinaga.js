@@ -1,8 +1,7 @@
 import { Authentication } from "./authentication/authentication";
-import { DistributionDenialCode } from './distribution/distribution-engine';
 import { dehydrateReference, Dehydration, HashMap, hashSymbol, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
-import { FeedDecision } from './http/messages';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
+import { DistributionDiagnostic, toDistributionDiagnostics } from './managers/distributionDiagnostic';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
@@ -14,55 +13,10 @@ import { FactEnvelope, FactReference, ProjectedResult } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
 
+export { DistributionDiagnostic } from './managers/distributionDiagnostic';
+
 export interface Profile {
     displayName: string;
-}
-
-/**
- * A developer-facing distribution diagnostic (issue #207). Emitted for a feed
- * that the replicator marked `reactive` or `denied`; authorized feeds produce
- * none.
- *
- * The single load-bearing field is `reactive`. When `true`, the decision is the
- * subscription race — the feed is denied for the current user *right now* but
- * will self-heal once the authorizing fact arrives — and must NEVER be treated
- * as fatal. When `false`, the denial is structural (a missing or narrowed-past
- * rule, or a principal the rule excludes) and will not self-heal on its own.
- *
- * `code` is optional because a `reactive` decision need not carry one (the
- * replicator may report the pending case without a denial code); a `denied`
- * decision always carries one.
- */
-export interface DistributionDiagnostic {
-    operation: 'query' | 'watch' | 'subscribe';
-    specification: string;            // describeSpecification(...)
-    decision: 'reactive' | 'denied';
-    code?: DistributionDenialCode;
-    reactive: boolean;                // true => will self-heal; NEVER treat as fatal
-    reason: string;
-}
-
-/**
- * Map the replicator's per-feed decisions (issue #207 W4) to developer-facing
- * diagnostics. Only `denied` and `reactive` feeds produce a diagnostic;
- * `authorized` feeds are silent. Old replicators report no decisions, so this
- * yields an empty array and the new APIs are inert.
- */
-function toDistributionDiagnostics(
-    operation: DistributionDiagnostic['operation'],
-    specification: string,
-    decisions: FeedDecision[]
-): DistributionDiagnostic[] {
-    return decisions
-        .filter(d => d.decision === 'denied' || d.decision === 'reactive')
-        .map(d => ({
-            operation,
-            specification,
-            decision: d.decision as 'reactive' | 'denied',
-            code: d.code,
-            reactive: d.decision === 'reactive',
-            reason: d.reason
-        }));
 }
 
 export type MakeObservable<T> =
@@ -78,7 +32,8 @@ export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
     private loadingHandlers: ((loading: boolean) => void)[] = [];
     private progressHandlers: ((count: number) => void)[] = [];
-    
+    private distributionDiagnosticHandlers: ((diagnostic: DistributionDiagnostic) => void)[] = [];
+
     constructor(
         private authentication: Authentication,
         private factManager: FactManager,
@@ -115,6 +70,43 @@ export class Jinaga {
 
     onSyncStatus(handler: (status: SyncStatus) => void) {
         this.syncStatusNotifier?.onSyncStatus(handler);
+    }
+
+    /**
+     * Register a callback to receive distribution diagnostics (issue #207 W5).
+     * Fires for `query`, `watch`, and `subscribe` alike — all three pass through
+     * the same per-feed decision capture — whenever a feed is `denied` or
+     * `reactive`. Authorized feeds and old replicators (which report no
+     * decisions) produce nothing, so this channel is inert until there is
+     * something to report.
+     *
+     * This is the always-on programmatic channel: route it to your own
+     * devtools/telemetry. Branch on `diagnostic.reactive` — a `reactive`
+     * diagnostic is the subscription race and must never be treated as fatal.
+     *
+     * @param handler A function to receive each distribution diagnostic
+     */
+    onDistributionDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void) {
+        this.distributionDiagnosticHandlers.push(handler);
+    }
+
+    /**
+     * Deliver diagnostics to every registered handler. A throwing handler must
+     * not abort delivery to the others or bubble into the operation that
+     * produced the diagnostic (a diagnostic is never fatal), so each call is
+     * isolated.
+     */
+    private emitDistributionDiagnostics(diagnostics: DistributionDiagnostic[]) {
+        for (const diagnostic of diagnostics) {
+            for (const handler of this.distributionDiagnosticHandlers) {
+                try {
+                    handler(diagnostic);
+                }
+                catch (e) {
+                    Trace.error(e);
+                }
+            }
+        }
     }
 
     /**
@@ -196,7 +188,12 @@ export class Jinaga {
         }
 
         const references = given.map(g => this.prepareFactReference(g));
-        await this.factManager.fetch(references, innerSpecification);
+        const decisions = await this.factManager.fetch(references, innerSpecification);
+        this.emitDistributionDiagnostics(toDistributionDiagnostics(
+            'query',
+            describeSpecification(innerSpecification, 0),
+            decisions
+        ));
         const projectedResults = await this.factManager.read(references, innerSpecification);
         const extracted = extractResults(projectedResults, innerSpecification.projection);
         Trace.counter("facts_loaded", extracted.totalCount);
@@ -242,6 +239,10 @@ export class Jinaga {
             describeSpecification(innerSpecification, 0),
             decisions
         );
+        // Also drive the always-on instance hook so a caller that registered
+        // `onDistributionDiagnostic` sees these alongside the correlated return
+        // value, exactly as it would for a plain `query`.
+        this.emitDistributionDiagnostics(diagnostics);
         return { results: extracted.results, diagnostics };
     }
 
@@ -276,7 +277,8 @@ export class Jinaga {
 
         const references = given.map(g => this.prepareFactReference(g));
 
-        return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, false);
+        return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, false,
+            diagnostics => this.emitDistributionDiagnostics(diagnostics));
     }
 
     /**
@@ -308,7 +310,8 @@ export class Jinaga {
 
         const references = given.map(g => this.prepareFactReference(g));
 
-        return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true);
+        return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true,
+            diagnostics => this.emitDistributionDiagnostics(diagnostics));
     }
 
     /**

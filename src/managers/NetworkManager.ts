@@ -310,9 +310,9 @@ export class NetworkManager {
         return [{ start, specification }];
     }
 
-    async subscribe(start: FactReference[], specification: Specification): Promise<string[]> {
+    async subscribe(start: FactReference[], specification: Specification): Promise<CachedFeeds> {
         const reducedSpecification = reduceSpecification(specification);
-        const { feeds } = await this.getFeedsFromCache(start, reducedSpecification);
+        const { feeds, decisions } = await this.getFeedsFromCache(start, reducedSpecification);
 
         const subscribers = feeds.map(feed => {
             let subscriber = this.subscribers.get(feed);
@@ -337,7 +337,10 @@ export class NetworkManager {
             this.unsubscribe(feeds);
             throw e;
         }
-        return feeds;
+        // Return the feed hashes alongside the per-feed decisions so the observer
+        // can surface diagnostics (issue #207 W5/W6) while still using `feeds`
+        // for its keep-alive/unsubscribe bookkeeping.
+        return { feeds, decisions };
     }
 
     unsubscribe(feeds: string[]) {

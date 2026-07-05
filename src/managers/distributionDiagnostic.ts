@@ -1,0 +1,53 @@
+import { DistributionDenialCode } from "../distribution/distribution-engine";
+import { FeedDecision } from "../http/messages";
+
+/**
+ * A developer-facing distribution diagnostic (issue #207). Emitted for a feed
+ * that the replicator marked `reactive` or `denied`; authorized feeds produce
+ * none.
+ *
+ * The single load-bearing field is `reactive`. When `true`, the decision is the
+ * subscription race — the feed is denied for the current user *right now* but
+ * will self-heal once the authorizing fact arrives — and must NEVER be treated
+ * as fatal. When `false`, the denial is structural (a missing or narrowed-past
+ * rule, or a principal the rule excludes) and will not self-heal on its own.
+ *
+ * `code` is optional because a `reactive` decision need not carry one (the
+ * replicator may report the pending case without a denial code); a `denied`
+ * decision always carries one.
+ *
+ * Defined here rather than in `jinaga.ts` so both the client (`Jinaga`) and the
+ * `Observer` can build diagnostics without an import cycle (`jinaga.ts` already
+ * imports from `observer.ts`).
+ */
+export interface DistributionDiagnostic {
+    operation: 'query' | 'watch' | 'subscribe';
+    specification: string;            // describeSpecification(...)
+    decision: 'reactive' | 'denied';
+    code?: DistributionDenialCode;
+    reactive: boolean;                // true => will self-heal; NEVER treat as fatal
+    reason: string;
+}
+
+/**
+ * Map the replicator's per-feed decisions (issue #207 W4) to developer-facing
+ * diagnostics. Only `denied` and `reactive` feeds produce a diagnostic;
+ * `authorized` feeds are silent. Old replicators report no decisions, so this
+ * yields an empty array and the new APIs are inert.
+ */
+export function toDistributionDiagnostics(
+    operation: DistributionDiagnostic['operation'],
+    specification: string,
+    decisions: FeedDecision[]
+): DistributionDiagnostic[] {
+    return decisions
+        .filter(d => d.decision === 'denied' || d.decision === 'reactive')
+        .map(d => ({
+            operation,
+            specification,
+            decision: d.decision as 'reactive' | 'denied',
+            code: d.code,
+            reactive: d.decision === 'reactive',
+            reason: d.reason
+        }));
+}

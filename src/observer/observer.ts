@@ -1,4 +1,6 @@
 import { computeObjectHash } from "../fact/hash";
+import { FeedDecision } from "../http/messages";
+import { DistributionDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
 import { SpecificationListener } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
@@ -29,6 +31,23 @@ export interface Observer<T> {
      */
     processed(): Promise<void>;
     stop(): void;
+    /**
+     * The distribution diagnostics (issue #207 W6) captured for this observer's
+     * feeds while loading. This is where a developer holding the observer handle
+     * looks to learn that a feed is `denied` or `reactive`.
+     *
+     * Non-fatal by contract: a denied/reactive feed never rejects `loaded()` and
+     * never puts the observer into an error state — that is what keeps `watch`
+     * and `subscribe` correct through the subscription race.
+     */
+    diagnostics(): DistributionDiagnostic[];
+    /**
+     * Register a callback for distribution diagnostics. Any diagnostics already
+     * captured are replayed to the handler immediately, and future ones are
+     * delivered as they are captured. A throwing handler is isolated and never
+     * disturbs the observer.
+     */
+    onDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void): void;
 }
 
 interface ObserverBranch {
@@ -138,12 +157,25 @@ export class ObserverImpl<T> implements Observer<T> {
      * collapses identical rows across branches for `votesByRow`.
      */
     private rowIdentityLabels: string[];
+    /**
+     * Distribution diagnostics captured for this observer's feeds (issue #207
+     * W6), plus the handlers registered via `onDiagnostic`. `specificationString`
+     * is the developer's pre-intersection spec, so diagnostics name the query
+     * they wrote rather than an internally rewritten branch.
+     */
+    private readonly _diagnostics: DistributionDiagnostic[] = [];
+    private readonly diagnosticHandlers: ((diagnostic: DistributionDiagnostic) => void)[] = [];
+    private readonly specificationString: string;
 
     constructor(
         private factManager: FactManager,
         private given: FactReference[],
         specification: Specification,
-        resultAdded: ResultAddedFunc<T>
+        resultAdded: ResultAddedFunc<T>,
+        // Instance-level sink (issue #207 W5): forwards this observer's
+        // diagnostics to `j.onDistributionDiagnostic`. Optional so the observer
+        // works standalone (e.g. in tests) without the client hook.
+        private readonly onDiagnostics?: (diagnostics: DistributionDiagnostic[]) => void
     ) {
         // Capture the original spec's labels. These are stable across any
         // future branch fan-out from `applySubscribeIntersection`.
@@ -183,6 +215,8 @@ export class ObserverImpl<T> implements Observer<T> {
         const specificationString = describeSpecification(specification, 0);
         const request = `${declarationString}\n${specificationString}`;
         this.specificationHash = computeStringHash(request);
+        // Retain the pre-intersection spec description for diagnostics.
+        this.specificationString = specificationString;
     }
 
     public start(keepAlive: boolean) {
@@ -376,9 +410,13 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private async fetch(keepAlive: boolean) {
+        // Collect the per-feed decisions across all branches so they can be
+        // surfaced as diagnostics (issue #207 W5/W6). Array.push from the
+        // concurrent branch callbacks is safe on JS's single thread.
+        const decisions: FeedDecision[] = [];
         if (keepAlive) {
             await Promise.all(this.branches.map(async branch => {
-                const feeds = await this.factManager.subscribe(this.given, branch.specification);
+                const { feeds, decisions: branchDecisions } = await this.factManager.subscribe(this.given, branch.specification);
                 if (this.stopped) {
                     // If stop() was called while we were awaiting subscribe(),
                     // clean up the feeds that were just registered so the
@@ -389,11 +427,71 @@ export class ObserverImpl<T> implements Observer<T> {
                     return;
                 }
                 branch.feeds = feeds;
+                decisions.push(...branchDecisions);
             }));
         }
         else {
-            await Promise.all(this.branches.map(branch =>
-                this.factManager.fetch(this.given, branch.specification)));
+            await Promise.all(this.branches.map(async branch => {
+                const branchDecisions = await this.factManager.fetch(this.given, branch.specification);
+                decisions.push(...branchDecisions);
+            }));
+        }
+        this.captureDiagnostics(keepAlive ? 'subscribe' : 'watch', decisions);
+    }
+
+    /**
+     * Map the fetch/subscribe decisions to diagnostics and deliver them to the
+     * observer-level handlers (W6) and the instance-level sink (W5). This must
+     * never throw into the load flow — a distribution diagnostic is not fatal —
+     * so the whole body is guarded and a throwing handler is isolated.
+     */
+    private captureDiagnostics(operation: 'watch' | 'subscribe', decisions: FeedDecision[]) {
+        try {
+            const diagnostics = toDistributionDiagnostics(operation, this.specificationString, decisions);
+            if (diagnostics.length === 0) {
+                return;
+            }
+            this._diagnostics.push(...diagnostics);
+            for (const diagnostic of diagnostics) {
+                for (const handler of this.diagnosticHandlers) {
+                    this.safelyInvokeDiagnostic(handler, diagnostic);
+                }
+            }
+            if (this.onDiagnostics) {
+                try {
+                    this.onDiagnostics(diagnostics);
+                }
+                catch (e) {
+                    Trace.error(e);
+                }
+            }
+        }
+        catch (e) {
+            Trace.error(e);
+        }
+    }
+
+    private safelyInvokeDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void, diagnostic: DistributionDiagnostic) {
+        try {
+            handler(diagnostic);
+        }
+        catch (e) {
+            Trace.error(e);
+        }
+    }
+
+    public diagnostics(): DistributionDiagnostic[] {
+        return [...this._diagnostics];
+    }
+
+    public onDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void): void {
+        this.diagnosticHandlers.push(handler);
+        // Replay diagnostics already captured before this handler registered —
+        // the observer starts as soon as it is created, so a caller wiring up
+        // `onDiagnostic` right after `watch`/`subscribe` returns would otherwise
+        // miss any diagnostic captured during that same tick.
+        for (const diagnostic of this._diagnostics) {
+            this.safelyInvokeDiagnostic(handler, diagnostic);
         }
     }
 

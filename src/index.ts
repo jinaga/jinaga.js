@@ -18,6 +18,7 @@ export { PersistentFork } from "./fork/persistent-fork";
 export { TransientFork } from './fork/transient-fork';
 export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvider";
 export { GraphDeserializer, GraphSource } from "./http/deserializer";
+export { ForbiddenError } from "./http/errors";
 export { FetchConnection } from "./http/fetch";
 export { HttpNetwork } from "./http/httpNetwork";
 export { parseFeedsResponse, parseLoadMessage, parseSaveMessage } from './http/messageParsers';

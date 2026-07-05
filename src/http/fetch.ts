@@ -1,6 +1,7 @@
 import { Trace } from "../util/trace";
 import { HttpHeaders } from "./authenticationProvider";
 import { PostAccept, PostContentType, ContentTypeJson } from "./ContentType";
+import { ForbiddenError, forbiddenReason } from "./errors";
 import { HttpConnection, HttpResponse } from "./web-client";
 
 interface FetchHttpResponse {
@@ -28,7 +29,12 @@ export class FetchConnection implements HttpConnection {
                     response = await this.httpGet(path, headers);
                 }
             }
-            if (response.statusCode >= 400) {
+            if (response.statusCode === 403) {
+                // Preserve the replicator's forbidden reason from the body
+                // instead of discarding it for the bare status line (W10).
+                throw new ForbiddenError(forbiddenReason(response.response, response.statusMessage), response.response);
+            }
+            else if (response.statusCode >= 400) {
                 throw new Error(response.statusMessage);
             }
             else if (response.statusCode === 200) {
@@ -202,7 +208,9 @@ export class FetchConnection implements HttpConnection {
                 }
             }
             if (response.statusCode === 403) {
-                throw new Error(response.statusMessage);
+                // Preserve the replicator's forbidden reason from the body
+                // instead of discarding it for the bare status line (W10).
+                throw new ForbiddenError(forbiddenReason(response.response, response.statusMessage), response.response);
             }
             else if (response.statusCode >= 400) {
                 return {
