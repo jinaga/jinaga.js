@@ -5,11 +5,12 @@ import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload 
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { SpecificationParser } from '../specification/specification-parser';
 import { FactEnvelope, FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
-import { distinct, filterAsync, flattenAsync } from '../util/fn';
+import { distinct, filterAsync, flatten, flattenAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 
 class FactGraph {
     private loadedRecords: FactRecord[] = [];
+    private pendingLoads = new Map<string, Promise<void>>();
 
     constructor(
         private factRecords: FactRecord[],
@@ -85,8 +86,11 @@ class FactGraph {
     }
 
     private async executePredecessorStep(set: FactReference[], name: string, predecessorType: string): Promise<FactReference[]> {
-        return await flattenAsync(set, async reference => {
-            const record = await this.findFact(reference);
+        // Resolve every reference needed for this step with a single batched
+        // store read, rather than one store.load() call per fact.
+        await this.ensureLoaded(set);
+        return flatten(set, reference => {
+            const record = this.findFactSync(reference);
             if (record === null) {
                 throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
             }
@@ -121,21 +125,59 @@ class FactGraph {
     // already been saved to the store, we can load it from there instead of
     // failing the whole authorization.
     private async findFact(reference: FactReference): Promise<FactRecord | null> {
-        const local = this.factRecords.find(factReferenceEquals(reference));
-        if (local) {
-            return local;
+        await this.ensureLoaded([reference]);
+        return this.findFactSync(reference);
+    }
+
+    private findFactSync(reference: FactReference): FactRecord | null {
+        return this.factRecords.find(factReferenceEquals(reference))
+            ?? this.loadedRecords.find(factReferenceEquals(reference))
+            ?? null;
+    }
+
+    // Resolves every reference not already known locally with as few
+    // store.load() calls as possible: references still missing after
+    // checking `factRecords` and the cache are fetched in a single batched
+    // call, and concurrent requests for the same reference share one
+    // in-flight load instead of issuing duplicate store reads.
+    private async ensureLoaded(references: FactReference[]): Promise<void> {
+        const missing = references.filter(r => !this.findFactSync(r));
+        if (missing.length === 0) {
+            return;
         }
-        const loaded = this.loadedRecords.find(factReferenceEquals(reference));
-        if (loaded) {
-            return loaded;
+
+        const pending = missing
+            .map(r => this.pendingLoads.get(this.factKeyOf(r)))
+            .filter((p): p is Promise<void> => p !== undefined);
+        if (pending.length > 0) {
+            await Promise.all(pending);
         }
-        const envelopes = await this.store.load([reference]);
-        const record = envelopes.map(e => e.fact).find(factReferenceEquals(reference));
-        if (record) {
-            this.loadedRecords.push(record);
-            return record;
+
+        const toLoad = missing.filter(r => !this.findFactSync(r) && !this.pendingLoads.has(this.factKeyOf(r)));
+        if (toLoad.length === 0) {
+            return;
         }
-        return null;
+
+        const loadPromise = (async () => {
+            const envelopes = await this.store.load(toLoad);
+            for (const envelope of envelopes) {
+                if (!this.findFactSync(envelope.fact)) {
+                    this.loadedRecords.push(envelope.fact);
+                }
+            }
+        })();
+
+        toLoad.forEach(r => this.pendingLoads.set(this.factKeyOf(r), loadPromise));
+        try {
+            await loadPromise;
+        }
+        finally {
+            toLoad.forEach(r => this.pendingLoads.delete(this.factKeyOf(r)));
+        }
+    }
+
+    private factKeyOf(reference: FactReference): string {
+        return `${reference.type}:${reference.hash}`;
     }
 }
 

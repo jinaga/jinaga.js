@@ -104,9 +104,13 @@ describe("Authorization across a GraphDeserializer flush boundary", () => {
             await store.save(results.map(r => ({ fact: r.fact, signatures: [] })));
         });
 
-        // Confirm the graph really did split across flush batches, or this
-        // test would not exercise the bug.
+        // Confirm the graph really did split across flush batches, with the
+        // Application landing in a later batch than its Workspace/User
+        // predecessors. Otherwise this test would pass without ever
+        // exercising the flush boundary the bug depends on.
         expect(batches.length).toBeGreaterThan(1);
+        expect(batches[0].some(e => e.fact.type === Application.Type)).toBe(false);
+        expect(batches.slice(1).some(batch => batch.some(e => e.fact.type === Application.Type))).toBe(true);
 
         const saved = await store.whichExist([{ type: Application.Type, hash: chainRecords.find(f => f.type === Application.Type)!.hash }]);
         expect(saved.length).toBe(1);
