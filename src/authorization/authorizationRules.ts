@@ -5,51 +5,53 @@ import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload 
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { SpecificationParser } from '../specification/specification-parser';
 import { FactEnvelope, FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
-import { distinct, flatten } from '../util/fn';
+import { distinct, filterAsync, flatten, flattenAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 
 class FactGraph {
+    private loadedRecords: FactRecord[] = [];
+    private pendingLoads = new Map<string, Promise<void>>();
+
     constructor(
-        private factRecords: FactRecord[]
+        private factRecords: FactRecord[],
+        private store: Storage
     ) { }
 
-    getField(reference: FactReference, name: string) {
-        const record = this.findFact(reference);
+    async getField(reference: FactReference, name: string) {
+        const record = await this.findFact(reference);
         if (record === null) {
             throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
         }
         return record.fields[name];
     }
 
-    executeSpecification(givenName: string, matches: Match[], label: string, fact: FactRecord): FactReference[] {
+    async executeSpecification(givenName: string, matches: Match[], label: string, fact: FactRecord): Promise<FactReference[]> {
         const references: ReferencesByName = {
             [givenName]: {
                 type: fact.type,
                 hash: fact.hash
             }
         };
-        const results = this.executeMatches(references, matches);
+        const results = await this.executeMatches(references, matches);
         return results.map(result => result[label]);
     }
 
-    private executeMatches(references: ReferencesByName, matches: Match[]): ReferencesByName[] {
-        const results = matches.reduce(
-            (tuples, match) => tuples.flatMap(
-                tuple => this.executeMatch(tuple, match)
-            ),
-            [references]
-        );
-        return results;
+    private async executeMatches(references: ReferencesByName, matches: Match[]): Promise<ReferencesByName[]> {
+        let tuples = [references];
+        for (const match of matches) {
+            tuples = await flattenAsync(tuples, tuple => this.executeMatch(tuple, match));
+        }
+        return tuples;
     }
 
-    private executeMatch(references: ReferencesByName, match: Match): ReferencesByName[] {
+    private async executeMatch(references: ReferencesByName, match: Match): Promise<ReferencesByName[]> {
         let results: ReferencesByName[] = [];
         if (match.conditions.length === 0) {
             throw new Error("A match must have at least one condition.");
         }
         const firstCondition = match.conditions[0];
         if (firstCondition.type === "path") {
-            const result: FactReference[] = this.executePathCondition(references, match.unknown, firstCondition);
+            const result: FactReference[] = await this.executePathCondition(references, match.unknown, firstCondition);
             results = result.map(reference => ({
                 ...references,
                 [match.unknown.name]: {
@@ -64,29 +66,31 @@ class FactGraph {
 
         const remainingConditions = match.conditions.slice(1);
         for (const condition of remainingConditions) {
-            results = this.filterByCondition(references, match.unknown, results, condition);
+            results = await this.filterByCondition(references, match.unknown, results, condition);
         }
         return results;
     }
 
-    private executePathCondition(references: ReferencesByName, unknown: Label, pathCondition: PathCondition): FactReference[] {
+    private async executePathCondition(references: ReferencesByName, unknown: Label, pathCondition: PathCondition): Promise<FactReference[]> {
         if (!references.hasOwnProperty(pathCondition.labelRight)) {
             throw new Error(`The label ${pathCondition.labelRight} is not defined.`);
         }
-        const start = references[pathCondition.labelRight];
-        const predecessors = pathCondition.rolesRight.reduce(
-            (set, role) => this.executePredecessorStep(set, role.name, role.predecessorType),
-            [start]
-        );
+        let predecessors = [references[pathCondition.labelRight]];
+        for (const role of pathCondition.rolesRight) {
+            predecessors = await this.executePredecessorStep(predecessors, role.name, role.predecessorType);
+        }
         if (pathCondition.rolesLeft.length > 0) {
             throw new Error('Cannot execute successor steps on evidence.');
         }
         return predecessors;
     }
 
-    private executePredecessorStep(set: FactReference[], name: string, predecessorType: string): FactReference[] {
+    private async executePredecessorStep(set: FactReference[], name: string, predecessorType: string): Promise<FactReference[]> {
+        // Resolve every reference needed for this step with a single batched
+        // store read, rather than one store.load() call per fact.
+        await this.ensureLoaded(set);
         return flatten(set, reference => {
-            const record = this.findFact(reference);
+            const record = this.findFactSync(reference);
             if (record === null) {
                 throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
             }
@@ -95,14 +99,14 @@ class FactGraph {
         });
     }
 
-    private filterByCondition(references: ReferencesByName, unknown: Label, results: ReferencesByName[], condition: Condition): ReferencesByName[] {
+    private async filterByCondition(references: ReferencesByName, unknown: Label, results: ReferencesByName[], condition: Condition): Promise<ReferencesByName[]> {
         if (condition.type === "path") {
-            const otherResults = this.executePathCondition(references, unknown, condition);
+            const otherResults = await this.executePathCondition(references, unknown, condition);
             return results.filter(result => otherResults.some(factReferenceEquals(result[unknown.name])));
         }
         else if (condition.type === "existential") {
-            const matchingReferences = results.filter(result => {
-                const matches = this.executeMatches(result, condition.matches);
+            const matchingReferences = await filterAsync(results, async result => {
+                const matches = await this.executeMatches(result, condition.matches);
                 return condition.exists ?
                     matches.length > 0 :
                     matches.length === 0;
@@ -115,8 +119,65 @@ class FactGraph {
         }
     }
 
-    private findFact(reference: FactReference): FactRecord | null {
-        return this.factRecords.find(factReferenceEquals(reference)) ?? null;
+    // A fact referenced by a multi-hop rule may live in an earlier flush batch
+    // than the one currently being authorized (see GraphDeserializer's
+    // flushThreshold). Such a fact is not in `factRecords`, but if it has
+    // already been saved to the store, we can load it from there instead of
+    // failing the whole authorization.
+    private async findFact(reference: FactReference): Promise<FactRecord | null> {
+        await this.ensureLoaded([reference]);
+        return this.findFactSync(reference);
+    }
+
+    private findFactSync(reference: FactReference): FactRecord | null {
+        return this.factRecords.find(factReferenceEquals(reference))
+            ?? this.loadedRecords.find(factReferenceEquals(reference))
+            ?? null;
+    }
+
+    // Resolves every reference not already known locally with as few
+    // store.load() calls as possible: references still missing after
+    // checking `factRecords` and the cache are fetched in a single batched
+    // call, and concurrent requests for the same reference share one
+    // in-flight load instead of issuing duplicate store reads.
+    private async ensureLoaded(references: FactReference[]): Promise<void> {
+        const missing = references.filter(r => !this.findFactSync(r));
+        if (missing.length === 0) {
+            return;
+        }
+
+        const pending = missing
+            .map(r => this.pendingLoads.get(this.factKeyOf(r)))
+            .filter((p): p is Promise<void> => p !== undefined);
+        if (pending.length > 0) {
+            await Promise.all(pending);
+        }
+
+        const toLoad = missing.filter(r => !this.findFactSync(r) && !this.pendingLoads.has(this.factKeyOf(r)));
+        if (toLoad.length === 0) {
+            return;
+        }
+
+        const loadPromise = (async () => {
+            const envelopes = await this.store.load(toLoad);
+            for (const envelope of envelopes) {
+                if (!this.findFactSync(envelope.fact)) {
+                    this.loadedRecords.push(envelope.fact);
+                }
+            }
+        })();
+
+        toLoad.forEach(r => this.pendingLoads.set(this.factKeyOf(r), loadPromise));
+        try {
+            await loadPromise;
+        }
+        finally {
+            toLoad.forEach(r => this.pendingLoads.delete(this.factKeyOf(r)));
+        }
+    }
+
+    private factKeyOf(reference: FactReference): string {
+        return `${reference.type}:${reference.hash}`;
     }
 }
 
@@ -200,7 +261,7 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         if (head.projection.type !== 'fact') {
             throw new Error('The head of the specification must project a fact.');
         }
-        let results = graph.executeSpecification(
+        let results = await graph.executeSpecification(
             head.given[0].label.name,
             head.matches,
             head.projection.label,
@@ -256,7 +317,7 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         if (head.projection.type !== 'fact') {
             throw new Error('The head of the specification must project a fact.');
         }
-        const results = graph.executeSpecification(
+        const results = await graph.executeSpecification(
             head.given[0].label.name,
             head.matches,
             head.projection.label,
@@ -274,7 +335,9 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
             }
         }
         else {
-            publicKeys.push(...results.map(result => graph.getField(result, 'publicKey')));
+            for (const result of results) {
+                publicKeys.push(await graph.getField(result, 'publicKey'));
+            }
         }
 
         // Find the intersection between the available keys and the public keys.
@@ -464,7 +527,7 @@ export class AuthorizationRules {
             };
         }
 
-        const graph = new FactGraph(factEnvelopes.map(e => e.fact));
+        const graph = new FactGraph(factEnvelopes.map(e => e.fact), store);
         let authorizedKeys: string[] = [];
         for (const rule of rules) {
             const population = await rule.getAuthorizedPopulation(candidateKeys, envelope, graph, store);
