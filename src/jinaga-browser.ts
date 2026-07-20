@@ -35,11 +35,16 @@ export type JinagaBrowserConfig = {
     feedRefreshIntervalSeconds?: number,
     purgeConditions?: (p: PurgeConditions) => PurgeConditions,
     /**
-     * Enable development-mode distribution diagnostics (issue #207 W7/W8). When
-     * true, `query` throws a typed `DistributionDeniedError` for structural
-     * denials, and a default handler logs deduplicated, actionable messages to
-     * the console. A library cannot reliably read `NODE_ENV`, so the app passes
-     * this explicitly, e.g. `developmentMode: process.env.NODE_ENV !== 'production'`.
+     * Enable development-mode distribution diagnostics (issue #207 W7). When
+     * true, a default handler logs deduplicated, actionable messages to the
+     * console for every distribution denial. A library cannot reliably read
+     * `NODE_ENV`, so the app passes this explicitly, e.g.
+     * `developmentMode: process.env.NODE_ENV !== 'production'`.
+     *
+     * This no longer controls whether `query` throws: a one-shot `query` fails
+     * loudly with a typed `DistributionDeniedError` on a structural denial in
+     * every mode by default (issue jinaga-server#179). Development mode only
+     * adds the console logging on top.
      */
     developmentMode?: boolean
 }

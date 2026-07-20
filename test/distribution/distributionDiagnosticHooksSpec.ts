@@ -1,5 +1,6 @@
 import {
   AuthenticationNoOp,
+  DistributionDeniedError,
   DistributionDiagnostic,
   FactEnvelope,
   FactManager,
@@ -95,12 +96,14 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
   }
 
   describe("W5 — j.onDistributionDiagnostic", () => {
-    it("fires for query with operation 'query'", async () => {
+    it("fires for query with operation 'query' (the hook fires before the structural denial throws)", async () => {
       network.response = deniedResponse();
       const received: DistributionDiagnostic[] = [];
       j.onDistributionDiagnostic(d => received.push(d));
 
-      await j.query(blogPosts, blog);
+      // A structural denial now makes a one-shot query throw by default
+      // (issue jinaga-server#179). The diagnostic hook still fires first.
+      await expect(j.query(blogPosts, blog)).rejects.toBeInstanceOf(DistributionDeniedError);
 
       expect(received).toHaveLength(1);
       expect(received[0].operation).toBe("query");
@@ -165,7 +168,9 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
     });
 
     it("isolates a throwing handler so the operation still succeeds", async () => {
-      network.response = deniedResponse();
+      // A reactive decision never throws (it self-heals), so this isolates the
+      // handler-isolation behavior from the structural-denial throw path.
+      network.response = reactiveResponse();
       const received: DistributionDiagnostic[] = [];
       j.onDistributionDiagnostic(() => { throw new Error("handler boom"); });
       j.onDistributionDiagnostic(d => received.push(d));
