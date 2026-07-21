@@ -112,16 +112,13 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
       expect(received[0].code).toBe("no-matching-rule");
     });
 
-    it("fires for watch with operation 'watch' (the hook fires before the structural denial rejects loaded())", async () => {
+    it("fires for watch with operation 'watch'", async () => {
       network.response = deniedResponse();
       const received: DistributionDiagnostic[] = [];
       j.onDistributionDiagnostic(d => received.push(d));
 
-      // watch() is a one-shot fetch like query(), so a structural denial now
-      // rejects loaded() by default (issue jinaga-server#179). The diagnostic
-      // hook still fires first.
       const observer = j.watch(blogPosts, blog, () => {});
-      await expect(observer.loaded()).rejects.toBeInstanceOf(DistributionDeniedError);
+      await observer.loaded();
       observer.stop();
 
       expect(received).toHaveLength(1);
@@ -201,9 +198,7 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
       network.response = deniedResponse();
 
       const observer = j.watch(blogPosts, blog, () => {});
-      // The structural denial rejects loaded(); the diagnostic is still
-      // captured on the observer before the rejection.
-      await expect(observer.loaded()).rejects.toBeInstanceOf(DistributionDeniedError);
+      await observer.loaded();
 
       // Registered after load — the already-captured diagnostic must replay.
       const received: DistributionDiagnostic[] = [];
@@ -215,21 +210,8 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
       observer.stop();
     });
 
-    it("rejects loaded() for a structural denial but still captures the diagnostic", async () => {
+    it("never rejects loaded() for a denied feed", async () => {
       network.response = deniedResponse();
-
-      const observer = j.watch(blogPosts, blog, () => {});
-      // watch() does not self-heal (no streaming feed), so a structural denial
-      // is surfaced by rejecting loaded() rather than observing empty.
-      await expect(observer.loaded()).rejects.toBeInstanceOf(DistributionDeniedError);
-      expect(observer.diagnostics()).toHaveLength(1);
-      observer.stop();
-    });
-
-    it("does NOT reject loaded() for a reactive decision on watch", async () => {
-      // A reactive decision is not structural, so watch resolves empty (as
-      // before) rather than rejecting.
-      network.response = reactiveResponse();
 
       const observer = j.watch(blogPosts, blog, () => {});
       await expect(observer.loaded()).resolves.toBeUndefined();
