@@ -45,28 +45,34 @@ export const j = JinagaBrowser.create({
 
 If you are upgrading from an older version, you may need to update your code.
 
-### `query()` now throws on structural distribution denials
+### `query()` and `watch()` now fail loudly on structural distribution denials
 
-A one-shot `j.query()` now throws a typed `DistributionDeniedError` when the
+`j.query()` now throws a typed `DistributionDeniedError`, and `j.watch()`'s
+`observer.loaded()` promise now rejects with the same error, when the
 specification is denied by a *structural* distribution cause — no rule covers
 the feed (`no-matching-rule`), or the spec is narrower than its rule
-(`spec-more-restrictive-than-rule`). Previously the denial was silent and
-`query()` returned an empty array (except in development mode).
+(`spec-more-restrictive-than-rule`). Previously the denial was silent:
+`query()` returned an empty array and `watch()` observed an empty result
+(except that `query()` threw in development mode).
 
-This makes a mis-authored spec or distribution rule observable at the call
-site instead of masquerading as "no matching data". A one-shot query has no
-"later" to wait for, unlike `j.subscribe()`, whose feed stays open and
-self-heals when the authorizing fact arrives.
+Both `query()` and `watch()` perform a one-shot fetch from the replicator —
+neither holds a streaming feed open the way `j.subscribe()` does — so a
+structural denial has no "later" to self-heal into. Failing loudly makes a
+mis-authored spec or distribution rule observable at the call site instead of
+masquerading as "no matching data". `subscribe()` is unchanged: its feed stays
+open and delivers results once the authorizing fact arrives, so it keeps the
+silent-empty behavior.
 
 Unchanged: `reactive` decisions (the subscription race) and non-structural
 denials (`principal-excluded`, `not-authenticated`) still return an empty
-result without throwing.
+result without throwing or rejecting.
 
 To upgrade:
-- Wrap one-shot `query()` calls that can be denied in a `try`/`catch` for
+- Wrap one-shot `query()` calls that can be denied in a `try`/`catch`, and add
+  a `.catch()` / rejection handler to `watch(...).loaded()`, for
   `DistributionDeniedError`, or
-- Switch to `queryWithDiagnostics()`, which never throws and returns the
-  distribution diagnostics alongside the results.
+- For `query()`, switch to `queryWithDiagnostics()`, which never throws and
+  returns the distribution diagnostics alongside the results.
 
 The `developmentMode` flag on `JinagaBrowser` no longer affects this — it only
 installs the console diagnostic handler. The `Jinaga` constructor no longer

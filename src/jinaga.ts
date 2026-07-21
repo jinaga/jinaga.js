@@ -268,7 +268,16 @@ export class Jinaga {
      * The notification function will initially receive all matching results.
      * It will then subsequently receive new results as they are created.
      * Return a function to be called when the result is removed.
-     * 
+     *
+     * Like `query`, `watch` performs a one-shot fetch from the replicator — it
+     * does not hold a streaming feed open the way `subscribe` does. So a
+     * structural distribution denial (a missing rule or a spec narrowed past
+     * its rule) never self-heals here, and `observer.loaded()` rejects with a
+     * typed `DistributionDeniedError` by default rather than silently observing
+     * an empty result (issue jinaga-server#179). Reactive and non-structural
+     * denials do not reject. Use `subscribe` when you want the feed to stay open
+     * and deliver results once the authorizing fact arrives.
+     *
      * @param specification Use Model.given().match() to create a specification
      * @param given The fact or facts from which to begin the query
      * @param resultAdded A function to receive the initial and new results

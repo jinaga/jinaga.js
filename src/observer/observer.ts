@@ -1,6 +1,6 @@
 import { computeObjectHash } from "../fact/hash";
 import { FeedDecision } from "../http/messages";
-import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
+import { DistributionDeniedError, DistributionDiagnostic, isStructuralDenial, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
 import { SpecificationListener } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
@@ -450,6 +450,23 @@ export class ObserverImpl<T> implements Observer<T> {
             }));
         }
         this.captureDiagnostics(keepAlive ? 'subscribe' : 'watch', decisions);
+
+        // A one-shot watch fails loudly on a structural denial, exactly like
+        // query() (issue jinaga-server#179). watch() does NOT hold a streaming
+        // feed open — that is subscribe() (keepAlive) — so the replicator will
+        // never push the authorizing fact later and the denial has no "later"
+        // to self-heal into. Reject loaded() with a typed error instead of
+        // silently observing an empty result. subscribe() keeps the
+        // silent-empty/self-heal behavior below. As in query(), only structural
+        // denials (a missing rule or a spec narrowed past its rule) throw; a
+        // reactive decision and non-structural denials do not.
+        if (!keepAlive) {
+            const structural = toDistributionDiagnostics('watch', this.specificationString, decisions)
+                .filter(isStructuralDenial);
+            if (structural.length > 0) {
+                throw new DistributionDeniedError(structural);
+            }
+        }
     }
 
     /**
