@@ -37,12 +37,7 @@ export class Jinaga {
     constructor(
         private authentication: Authentication,
         private factManager: FactManager,
-        private syncStatusNotifier: SyncStatusNotifier | null,
-        // Development mode (issue #207 W7/W8): when true, `query` throws a
-        // typed `DistributionDeniedError` for structural denials so a
-        // mis-authored spec fails loudly at the call site. Off by default, so
-        // production keeps the silent-empty behavior.
-        private readonly developmentMode: boolean = false
+        private syncStatusNotifier: SyncStatusNotifier | null
     ) { }
 
     /**
@@ -200,15 +195,21 @@ export class Jinaga {
             decisions
         );
         this.emitDistributionDiagnostics(diagnostics);
-        // In development mode, fail loudly for a structural denial (a missing or
-        // narrowed-past rule) that provably never self-heals — never for a
-        // `reactive` decision, which is the subscription race. Production keeps
-        // the silent-empty behavior below.
-        if (this.developmentMode) {
-            const structural = diagnostics.filter(isStructuralDenial);
-            if (structural.length > 0) {
-                throw new DistributionDeniedError(structural);
-            }
+        // Fail loudly, by default, for a structural denial (a missing rule or a
+        // spec narrowed past its rule) that provably never self-heals. A
+        // one-shot `query` has no "later" to wait for — unlike `subscribe`, whose
+        // feed stays open and delivers the moment the authorizing fact arrives —
+        // so a silent empty result is indistinguishable from "no data" and hides
+        // the mis-authored spec or distribution rule. This matches the write
+        // path's exception-on-authorization-failure contract (issue
+        // jinaga-server#179). A `reactive` decision (the subscription race) is
+        // NEVER thrown for — it self-heals — and neither are non-structural
+        // denials (`principal-excluded` / `not-authenticated`), which are auth
+        // states rather than authoring errors. Callers that want to inspect any
+        // decision without throwing use `queryWithDiagnostics`.
+        const structural = diagnostics.filter(isStructuralDenial);
+        if (structural.length > 0) {
+            throw new DistributionDeniedError(structural);
         }
         const projectedResults = await this.factManager.read(references, innerSpecification);
         const extracted = extractResults(projectedResults, innerSpecification.projection);

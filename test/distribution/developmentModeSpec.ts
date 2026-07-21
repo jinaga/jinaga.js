@@ -47,18 +47,22 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
     facts.ofType(Post).join(post => post.blog, blog)
   );
 
-  describe("W8 — query strict-throw in development mode", () => {
+  describe("W8 — query strict-throw on a structural denial (issue jinaga-server#179)", () => {
     let network: DecisionNetwork;
 
-    function makeJinaga(developmentMode: boolean): Jinaga {
+    // A one-shot query fails loudly on a structural denial unconditionally: it
+    // has no "later" to self-heal into, unlike subscribe(). This is no longer
+    // gated by any mode — the throw is the default behavior of every Jinaga
+    // instance.
+    function makeJinaga(): Jinaga {
       network = new DecisionNetwork();
       const store = new MemoryStore();
       const factManager = new FactManager(new PassThroughFork(store), new ObservableSource(store), store, network, []);
-      return new Jinaga(new AuthenticationNoOp(), factManager, null, developmentMode);
+      return new Jinaga(new AuthenticationNoOp(), factManager, null);
     }
 
     it("throws DistributionDeniedError for a structural denial (no-matching-rule)", async () => {
-      const j = makeJinaga(true);
+      const j = makeJinaga();
       network.response = {
         feeds: [],
         decisions: [{ feed: "f", decision: "denied", code: "no-matching-rule", reason: "No rules apply to this feed." }],
@@ -68,7 +72,7 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
     });
 
     it("carries the structural diagnostics on the thrown error", async () => {
-      const j = makeJinaga(true);
+      const j = makeJinaga();
       network.response = {
         feeds: [],
         decisions: [{ feed: "f", decision: "denied", code: "spec-more-restrictive-than-rule", reason: "narrower than rule" }],
@@ -81,7 +85,7 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
     });
 
     it("does NOT throw for a reactive decision (the subscription race)", async () => {
-      const j = makeJinaga(true);
+      const j = makeJinaga();
       network.response = {
         feeds: ["f"],
         decisions: [{ feed: "f", decision: "reactive", reason: "pending authorization" }],
@@ -91,7 +95,7 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
     });
 
     it("does NOT throw for a non-structural denial (principal-excluded)", async () => {
-      const j = makeJinaga(true);
+      const j = makeJinaga();
       network.response = {
         feeds: [],
         decisions: [{ feed: "f", decision: "denied", code: "principal-excluded", reason: "excluded" }],
@@ -100,18 +104,8 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
       await expect(j.query(blogPosts, blog)).resolves.toEqual([]);
     });
 
-    it("stays silent-empty in production mode even for a structural denial", async () => {
-      const j = makeJinaga(false);
-      network.response = {
-        feeds: [],
-        decisions: [{ feed: "f", decision: "denied", code: "no-matching-rule", reason: "No rules apply to this feed." }],
-      };
-
-      await expect(j.query(blogPosts, blog)).resolves.toEqual([]);
-    });
-
-    it("queryWithDiagnostics never throws in development mode — it returns diagnostics", async () => {
-      const j = makeJinaga(true);
+    it("queryWithDiagnostics never throws — it returns diagnostics", async () => {
+      const j = makeJinaga();
       network.response = {
         feeds: [],
         decisions: [{ feed: "f", decision: "denied", code: "no-matching-rule", reason: "No rules apply to this feed." }],
