@@ -37,13 +37,7 @@ export class Jinaga {
     constructor(
         private authentication: Authentication,
         private factManager: FactManager,
-        private syncStatusNotifier: SyncStatusNotifier | null,
-        // Development mode (issue #207 W7): when true, `JinagaBrowser` installs
-        // the default development diagnostic handler that logs distribution
-        // decisions to the console. This no longer gates `query`'s throw
-        // behavior — a one-shot `query` fails loudly on a structural denial in
-        // every mode by default (issue jinaga-server#179); see `query`.
-        private readonly developmentMode: boolean = false
+        private syncStatusNotifier: SyncStatusNotifier | null
     ) { }
 
     /**

@@ -37,11 +37,12 @@ export type JinagaBrowserConfig = {
     /**
      * Enable development-mode distribution diagnostics (issue #207 W7). When
      * true, a default handler logs deduplicated, actionable messages to the
-     * console for every distribution denial. A library cannot reliably read
-     * `NODE_ENV`, so the app passes this explicitly, e.g.
+     * console for every distribution decision that is `denied` (error/warn
+     * level) or `reactive` (info level, a pending authorization). A library
+     * cannot reliably read `NODE_ENV`, so the app passes this explicitly, e.g.
      * `developmentMode: process.env.NODE_ENV !== 'production'`.
      *
-     * This no longer controls whether `query` throws: a one-shot `query` fails
+     * This does not control whether `query` throws: a one-shot `query` fails
      * loudly with a typed `DistributionDeniedError` on a structural denial in
      * every mode by default (issue jinaga-server#179). Development mode only
      * adds the console logging on top.
@@ -70,7 +71,7 @@ export class JinagaBrowser {
         }
 
         const developmentMode = config.developmentMode === true;
-        const jinaga = new Jinaga(authentication, factManager, syncStatusNotifier, developmentMode);
+        const jinaga = new Jinaga(authentication, factManager, syncStatusNotifier);
         // In development mode, surface otherwise-silent distribution denials as
         // deduplicated, actionable console messages (issue #207 W7).
         if (developmentMode) {
