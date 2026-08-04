@@ -2,6 +2,7 @@ import { serializeSave } from "../fork/serialize";
 import { FactEnvelope } from "../storage";
 import { Trace } from "../util/trace";
 import { ContentTypeGraph, ContentTypeJson, ContentTypeText, PostAccept, PostContentType } from "./ContentType";
+import { HttpError } from "./errors";
 import { parseFeedsResponse } from "./messageParsers";
 import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse } from "./messages";
 import { serializeGraph } from "./serializer";
@@ -35,11 +36,19 @@ export interface HttpSuccess {
 export interface HttpFailure {
     result: "failure";
     error: string;
+    /** HTTP status, when the connection knows it. See {@link httpError}. */
+    statusCode?: number;
+    /** Raw response body, preserved for callers that want to inspect it. */
+    body?: unknown;
 }
 
 export interface HttpRetry {
     result: "retry";
     error: string
+    /** HTTP status, when the connection knows it. See {@link httpError}. */
+    statusCode?: number;
+    /** Raw response body, preserved for callers that want to inspect it. */
+    body?: unknown;
 }
 
 export type HttpResponse = HttpSuccess | HttpFailure | HttpRetry;
@@ -49,6 +58,18 @@ export interface HttpConnection {
     getStream(path: string, onResponse: (response: {}) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds: number): () => void;
     post(path: string, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<HttpResponse>;
     getAcceptedContentTypes(path: string): Promise<string[]>;
+}
+
+/**
+ * Build the error to throw for a failed response. A connection that reports the
+ * status gets the richer `HttpError`, so callers can read `statusCode` and the
+ * raw `body` (issue #234); the status is optional on `HttpFailure`/`HttpRetry`,
+ * so a third-party `HttpConnection` that omits it still gets a plain `Error`.
+ */
+function httpError(response: HttpFailure | HttpRetry): Error {
+    return response.statusCode === undefined
+        ? new Error(response.error)
+        : new HttpError(response.error, response.statusCode, response.body);
 }
 
 function delay(timeSeconds: number): Promise<void> {
@@ -125,7 +146,7 @@ export class WebClient {
             return response.response;
         }
         else {
-            throw new Error(response.error);
+            throw httpError(response);
         }
     }
 
@@ -139,7 +160,7 @@ export class WebClient {
                 return response.response;
             }
             else if (response.result === 'failure') {
-                throw new Error(response.error);
+                throw httpError(response);
             }
             else {
                 if (retrySeconds <= 4) {
@@ -149,7 +170,7 @@ export class WebClient {
                     retrySeconds = retrySeconds * 2;
                 }
                 else {
-                    throw new Error(response.error);
+                    throw httpError(response);
                 }
             }
         }

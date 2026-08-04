@@ -1,5 +1,6 @@
 import { computeHash } from "../fact/hash";
 import { FactEnvelope, FactReference, FactRecord, PredecessorCollection, FactSignature } from "../storage";
+import { ValidationError } from "../util/errors";
 
 export interface GraphSource {
     read(
@@ -42,12 +43,12 @@ export class GraphDeserializer implements GraphSource {
 
     private async readPublicKey(index: number) {
         if (index !== this.publicKeys.length) {
-            throw new Error(`Public key index ${index} is out of order`);
+            throw new ValidationError(`Public key index ${index} is out of order`);
         }
         const publicKey = await this.parseNextJSONLine();
         const emptyLine = await this.readLine();
         if (emptyLine !== "") {
-            throw new Error(`Expected empty line after public key, but got "${emptyLine}"`);
+            throw new ValidationError(`Expected empty line after public key, but got "${emptyLine}"`);
         }
         this.publicKeys.push(publicKey);
     }
@@ -81,13 +82,13 @@ export class GraphDeserializer implements GraphSource {
             if (Array.isArray(index)) {
                 predecessors[role] = index.map(i => {
                     if (i >= this.factReferences.length) {
-                        throw new Error(`Predecessor reference ${i} is out of range`);
+                        throw new ValidationError(`Predecessor reference ${i} is out of range`);
                     }
                     return this.factReferences[i];
                 });
             } else {
                 if (index >= this.factReferences.length) {
-                    throw new Error(`Predecessor reference ${index} is out of range`);
+                    throw new ValidationError(`Predecessor reference ${index} is out of range`);
                 }
                 predecessors[role] = this.factReferences[index];
             }
@@ -100,11 +101,11 @@ export class GraphDeserializer implements GraphSource {
         let line: string | null;
         while ((line = await this.readLine()) !== null && line !== "") {
             if (!line.startsWith("PK")) {
-                throw new Error(`Expected public key reference, but got "${line}"`);
+                throw new ValidationError(`Expected public key reference, but got "${line}"`);
             }
             const publicKeyIndex = parseInt(line.substring(2));
             if (publicKeyIndex >= this.publicKeys.length) {
-                throw new Error(`Public key reference ${publicKeyIndex} is out of range`);
+                throw new ValidationError(`Public key reference ${publicKeyIndex} is out of range`);
             }
             const publicKey = this.publicKeys[publicKeyIndex];
             const signature = await this.parseNextJSONLine();
@@ -117,7 +118,7 @@ export class GraphDeserializer implements GraphSource {
     private async parseNextJSONLine() {
         const line = await this.readLine();
         if (!line) {
-            throw new Error("Expected JSON line, but got end of file");
+            throw new ValidationError("Expected JSON line, but got end of file");
         }
         return JSON.parse(line);
     }

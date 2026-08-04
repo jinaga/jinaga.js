@@ -1,7 +1,7 @@
 import { Trace } from "../util/trace";
 import { HttpHeaders } from "./authenticationProvider";
 import { PostAccept, PostContentType, ContentTypeJson } from "./ContentType";
-import { ForbiddenError, forbiddenReason } from "./errors";
+import { ForbiddenError, forbiddenReason, HttpError, responseReason } from "./errors";
 import { HttpConnection, HttpResponse } from "./web-client";
 
 interface FetchHttpResponse {
@@ -9,6 +9,17 @@ interface FetchHttpResponse {
     statusMessage: string | undefined;
     responseType: string;
     response: any;
+}
+
+/**
+ * Decide whether a POST that failed with this status is worth retrying
+ * (issue #234). 5xx is transient by definition. Of the 4xx, only 408 — which
+ * this connection also synthesizes for its own timeout — and 429 ask to be
+ * retried. Every other 4xx is deterministic: the same request will fail the
+ * same way, so retrying only delays the failure the caller needs to act on.
+ */
+function isRetryableStatus(statusCode: number): boolean {
+    return statusCode >= 500 || statusCode === 408 || statusCode === 429;
 }
 
 export class FetchConnection implements HttpConnection {
@@ -35,7 +46,12 @@ export class FetchConnection implements HttpConnection {
                 throw new ForbiddenError(forbiddenReason(response.response, response.statusMessage), response.response);
             }
             else if (response.statusCode >= 400) {
-                throw new Error(response.statusMessage);
+                // Surface the server's diagnostic body instead of the bare
+                // status line (issue #234).
+                throw new HttpError(
+                    responseReason(response.response, response.statusMessage, "Unknown error"),
+                    response.statusCode,
+                    response.response);
             }
             else if (response.statusCode === 200) {
                 if (typeof response.response === 'string') {
@@ -213,9 +229,14 @@ export class FetchConnection implements HttpConnection {
                 throw new ForbiddenError(forbiddenReason(response.response, response.statusMessage), response.response);
             }
             else if (response.statusCode >= 400) {
+                // Surface the server's diagnostic body instead of the bare
+                // status line, and only ask for a retry when the status can
+                // actually succeed on a second attempt (issue #234).
                 return {
-                    result: "retry",
-                    error: response.statusMessage || "Unknown error"
+                    result: isRetryableStatus(response.statusCode) ? "retry" : "failure",
+                    error: responseReason(response.response, response.statusMessage, "Unknown error"),
+                    statusCode: response.statusCode,
+                    body: response.response
                 }
             }
             else if (response.statusCode === 201) {

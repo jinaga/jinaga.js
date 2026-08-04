@@ -1,3 +1,4 @@
+import { AuthorizationRuleError } from './errors';
 import { getPredecessors } from '../memory/memory-store';
 import { Device, User } from '../model/user';
 import { describeSpecification } from '../specification/description';
@@ -20,7 +21,7 @@ class FactGraph {
     async getField(reference: FactReference, name: string) {
         const record = await this.findFact(reference);
         if (record === null) {
-            throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
+            throw new AuthorizationRuleError(`The fact ${reference.type}:${reference.hash} is not defined.`);
         }
         return record.fields[name];
     }
@@ -47,7 +48,7 @@ class FactGraph {
     private async executeMatch(references: ReferencesByName, match: Match): Promise<ReferencesByName[]> {
         let results: ReferencesByName[] = [];
         if (match.conditions.length === 0) {
-            throw new Error("A match must have at least one condition.");
+            throw new AuthorizationRuleError("A match must have at least one condition.");
         }
         const firstCondition = match.conditions[0];
         if (firstCondition.type === "path") {
@@ -61,7 +62,7 @@ class FactGraph {
             }));
         }
         else {
-            throw new Error("The first condition must be a path condition.");
+            throw new AuthorizationRuleError("The first condition must be a path condition.");
         }
 
         const remainingConditions = match.conditions.slice(1);
@@ -73,14 +74,14 @@ class FactGraph {
 
     private async executePathCondition(references: ReferencesByName, unknown: Label, pathCondition: PathCondition): Promise<FactReference[]> {
         if (!references.hasOwnProperty(pathCondition.labelRight)) {
-            throw new Error(`The label ${pathCondition.labelRight} is not defined.`);
+            throw new AuthorizationRuleError(`The label ${pathCondition.labelRight} is not defined.`);
         }
         let predecessors = [references[pathCondition.labelRight]];
         for (const role of pathCondition.rolesRight) {
             predecessors = await this.executePredecessorStep(predecessors, role.name, role.predecessorType);
         }
         if (pathCondition.rolesLeft.length > 0) {
-            throw new Error('Cannot execute successor steps on evidence.');
+            throw new AuthorizationRuleError('Cannot execute successor steps on evidence.');
         }
         return predecessors;
     }
@@ -92,7 +93,7 @@ class FactGraph {
         return flatten(set, reference => {
             const record = this.findFactSync(reference);
             if (record === null) {
-                throw new Error(`The fact ${reference.type}:${reference.hash} is not defined.`);
+                throw new AuthorizationRuleError(`The fact ${reference.type}:${reference.hash} is not defined.`);
             }
             const predecessors = getPredecessors(record, name);
             return predecessors.filter(predecessor => predecessor.type === predecessorType);
@@ -115,7 +116,7 @@ class FactGraph {
         }
         else {
             const _exhaustiveCheck: never = condition;
-            throw new Error(`Unknown condition type: ${(_exhaustiveCheck as any).type}`);
+            throw new AuthorizationRuleError(`Unknown condition type: ${(_exhaustiveCheck as any).type}`);
         }
     }
 
@@ -238,12 +239,12 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
 
         // The specification must be given a single fact.
         if (this.specification.given.length !== 1) {
-            throw new Error('The specification must be given a single fact.');
+            throw new AuthorizationRuleError('The specification must be given a single fact.');
         }
 
         // The projection must be a singular label.
         if (this.specification.projection.type !== 'fact') {
-            throw new Error('The projection must be a singular label.');
+            throw new AuthorizationRuleError('The projection must be a singular label.');
         }
         const label = this.specification.projection.label;
 
@@ -254,12 +255,12 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
 
         // If there is no head, then the specification is unsatisfiable.
         if (head === undefined) {
-            throw new Error('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
+            throw new AuthorizationRuleError('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
         }
 
         // Execute the head on the graph.
         if (head.projection.type !== 'fact') {
-            throw new Error('The head of the specification must project a fact.');
+            throw new AuthorizationRuleError('The head of the specification must project a fact.');
         }
         let results = await graph.executeSpecification(
             head.given[0].label.name,
@@ -270,7 +271,7 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         // If there is a tail, execute it on the store.
         if (tail !== undefined) {
             if (tail.given.length !== 1) {
-                throw new Error('The tail of the specification must be given a single fact.');
+                throw new AuthorizationRuleError('The tail of the specification must be given a single fact.');
             }
             const tailResults: FactReference[] = [];
             for (const result of results) {
@@ -295,12 +296,12 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
 
         // The specification must be given a single fact.
         if (this.specification.given.length !== 1) {
-            throw new Error('The specification must be given a single fact.');
+            throw new AuthorizationRuleError('The specification must be given a single fact.');
         }
 
         // The projection must be a singular label.
         if (this.specification.projection.type !== 'fact') {
-            throw new Error('The projection must be a singular label.');
+            throw new AuthorizationRuleError('The projection must be a singular label.');
         }
 
         // Split the specification.
@@ -310,12 +311,12 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
 
         // If there is no head, then the specification is unsatisfiable.
         if (head === undefined) {
-            throw new Error('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
+            throw new AuthorizationRuleError('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
         }
 
         // Execute the head on the graph.
         if (head.projection.type !== 'fact') {
-            throw new Error('The head of the specification must project a fact.');
+            throw new AuthorizationRuleError('The head of the specification must project a fact.');
         }
         const results = await graph.executeSpecification(
             head.given[0].label.name,
@@ -327,7 +328,7 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         // If there is a tail, execute it on the store.
         if (tail !== undefined) {
             if (tail.given.length !== 1) {
-                throw new Error('The tail of the specification must be given a single fact.');
+                throw new AuthorizationRuleError('The tail of the specification must be given a single fact.');
             }
             for (const result of results) {
                 const users = await store.read([result], tail);
@@ -424,7 +425,7 @@ export class AuthorizationRules {
     private typeFromDefinition<T>(factConstructor: FactConstructor<T>, definition: UserSpecificationDefinition<T>): AuthorizationRules {
         const type = factConstructor.Type;
         if (this.model === undefined) {
-            throw new Error('The model must be given to define a rule using a specification.');
+            throw new AuthorizationRuleError('The model must be given to define a rule using a specification.');
         }
         const specification = this.model.given(factConstructor).match<unknown>(definition);
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
@@ -433,7 +434,7 @@ export class AuthorizationRules {
     private typeFromPredecessorSelector<T>(factConstructor: FactConstructor<T>, predecessorSelector: UserPredecessorSelector<T>): AuthorizationRules {
         const type = factConstructor.Type;
         if (this.model === undefined) {
-            throw new Error('The model must be given to define a rule using a specification.');
+            throw new AuthorizationRuleError('The model must be given to define a rule using a specification.');
         }
         const specification = this.model.given(factConstructor).match<unknown>((fact, facts) => {
             const label = predecessorSelector(fact);
@@ -442,20 +443,20 @@ export class AuthorizationRules {
                 const traversal = payload as Traversal<LabelOf<User> | LabelOf<Device>>;
                 const projection = traversal.projection;
                 if (projection.type !== 'fact') {
-                    throw new Error('Authorization rules must select facts.');
+                    throw new AuthorizationRuleError('Authorization rules must select facts.');
                 }
                 const label = projection.label;
                 const match = traversal.matches.find(m => m.unknown.name === label);
                 if (match === undefined) {
-                    throw new Error(`The traversal must match the label ${label}.`);
+                    throw new AuthorizationRuleError(`The traversal must match the label ${label}.`);
                 }
                 if (match.unknown.type !== User.Type && match.unknown.type !== Device.Type) {
-                    throw new Error(`The traversal must match a user or device.`);
+                    throw new AuthorizationRuleError(`The traversal must match a user or device.`);
                 }
                 return traversal;
             }
             if (payload.type !== 'fact') {
-                throw new Error('Authorization rules must select facts.');
+                throw new AuthorizationRuleError('Authorization rules must select facts.');
             }
             if (payload.factType === User.Type) {
                 const userTraversal = facts.ofType(User)
@@ -468,7 +469,7 @@ export class AuthorizationRules {
                 return deviceTraversal;
             }
             else {
-                throw new Error(`Authorization rules must select users or devices.`);
+                throw new AuthorizationRuleError(`Authorization rules must select users or devices.`);
             }
         });
         return this.withRule(type, new AuthorizationRuleSpecification(specification.specification));
