@@ -4,6 +4,7 @@ import { FactEnvelope, FactRecord, FactReference, Storage, factEnvelopeEquals, f
 import { distinct, mapAsync } from '../util/fn';
 import { Trace } from '../util/trace';
 import { AuthorizationRules } from './authorizationRules';
+import { AuthorizationRuleError, PredecessorNotResolvedError } from './errors';
 
 function predecessorReferences(fact: FactRecord): FactReference[] {
     const references: FactReference[] = [];
@@ -66,6 +67,7 @@ export class AuthorizationEngine {
         const existing = await this.store.whichExist([...facts, ...externalReferences]);
 
         const sorter = new TopologicalSorter<Promise<AuthorizationResult>>();
+        const missingPredecessors: FactReference[] = [];
         externalReferences.forEach(reference => {
             if (existing.some(factReferenceEquals(reference))) {
                 sorter.markAsVisited(reference, Promise.resolve(<AuthorizationResult>{
@@ -74,6 +76,7 @@ export class AuthorizationEngine {
                 }));
             }
             else {
+                missingPredecessors.push(reference);
                 Trace.warn(`The fact ${reference.type}:${reference.hash} is referenced as a predecessor but does not exist in storage and was not included in the batch. Facts that depend on it will not be authorized.`);
             }
         });
@@ -95,7 +98,18 @@ export class AuthorizationEngine {
                 .filter(distinct)
                 .join(", ");
             const count = unresolved.length === 1 ? "1 fact" : `${unresolved.length} facts`;
-            throw new Error(`Cannot authorize ${count} of type ${distinctTypes}: one or more predecessors could not be resolved. This can happen when a predecessor does not exist in storage and was not included in the batch.`);
+            // Name the predecessors that could not be found. They were already
+            // identified above; previously only the failed successors reached the
+            // message, which left the caller with nothing to act on (issue #234).
+            const detail = missingPredecessors.length === 1
+                ? `predecessor ${missingPredecessors[0].type}:${missingPredecessors[0].hash} does not exist in storage and was not included in the batch. Add it to the batch, or commit it first.`
+                : missingPredecessors.length > 1
+                    ? `the following predecessors do not exist in storage and were not included in the batch. Add them to the batch, or commit them first:\n${missingPredecessors.map(r => `${r.type}:${r.hash}`).join("\n")}`
+                    : "one or more predecessors could not be resolved. This can happen when a predecessor does not exist in storage and was not included in the batch.";
+            throw new PredecessorNotResolvedError(
+                `Cannot authorize ${count} of type ${distinctTypes}: ${detail}`,
+                missingPredecessors,
+                unresolved.map(f => ({ type: f.type, hash: f.hash })));
         }
 
         const rejected = results.filter(r => r.verdict === "Reject");
@@ -155,7 +169,7 @@ export class AuthorizationEngine {
         }
         else {
             const _exhaustiveCheck: never = population;
-            throw new Error(`Unknown quantifier ${(_exhaustiveCheck as any).quantifier}.`);
+            throw new AuthorizationRuleError(`Unknown quantifier ${(_exhaustiveCheck as any).quantifier}.`);
         }
     }
 }

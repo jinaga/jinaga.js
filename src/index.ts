@@ -5,6 +5,7 @@ export { Authorization } from './authorization/authorization';
 export { AuthorizationEngine, Forbidden } from './authorization/authorization-engine';
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
 export { AuthorizationRules, describeAuthorizationRules } from "./authorization/authorizationRules";
+export { AuthorizationRuleError, PredecessorNotResolvedError } from "./authorization/errors";
 export { generateKeyPair, KeyPair, signFacts } from "./cryptography/key-pair";
 export { verifyEnvelopes } from "./cryptography/verify";
 export { DistributionEngine, DistributionDenialCode, distributionDenialCodes, DistributionFailure, DistributionPerFeedFailure, DistributionResult, DistributionSuccess } from './distribution/distribution-engine';
@@ -18,7 +19,7 @@ export { PersistentFork } from "./fork/persistent-fork";
 export { TransientFork } from './fork/transient-fork';
 export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvider";
 export { GraphDeserializer, GraphSource } from "./http/deserializer";
-export { ForbiddenError } from "./http/errors";
+export { ForbiddenError, HttpError } from "./http/errors";
 export { FetchConnection } from "./http/fetch";
 export { HttpNetwork } from "./http/httpNetwork";
 export { parseFeedsResponse, parseLoadMessage, parseSaveMessage } from './http/messageParsers';
@@ -63,6 +64,7 @@ export { Invalid, SpecificationParser } from './specification/specification-pars
 export { detectDisconnectedSpecification, DisconnectedSpecificationError } from "./specification/UnionFind";
 export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, uniqueFactReferences, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
+export { ValidationError } from './util/errors';
 export { delay } from './util/promise';
 export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
 

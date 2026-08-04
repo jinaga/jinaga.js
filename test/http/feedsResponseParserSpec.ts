@@ -1,4 +1,4 @@
-import { parseFeedsResponse } from "@src";
+import { parseFeedsResponse, parseLoadMessage, parseSaveMessage, ValidationError } from "@src";
 
 describe("parseFeedsResponse (issue #207 W3)", () => {
   it("parses a response with only feeds (old replicator)", () => {
@@ -46,5 +46,11 @@ describe("parseFeedsResponse (issue #207 W3)", () => {
 
   it("rejects non-string feed entries", () => {
     expect(() => parseFeedsResponse({ feeds: [1, 2] })).toThrow(/'feeds'/);
+  });
+
+  it("throws a ValidationError so callers can classify without matching prose (issue #234)", () => {
+    expect(() => parseFeedsResponse({ feeds: "abc" })).toThrow(ValidationError);
+    expect(() => parseSaveMessage({ facts: "abc" })).toThrow(ValidationError);
+    expect(() => parseLoadMessage("not an object")).toThrow(ValidationError);
   });
 });

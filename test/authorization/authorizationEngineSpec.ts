@@ -1,4 +1,4 @@
-import { AuthorizationEngine, AuthorizationRules, FactEnvelope, MemoryStore, dehydrateFact } from "@src";
+import { AuthorizationEngine, AuthorizationRules, FactEnvelope, MemoryStore, PredecessorNotResolvedError, dehydrateFact } from "@src";
 
 describe("AuthorizationEngine.authorizeFacts", () => {
     it("authorizes a fact whose predecessor already exists in the store but is not in the current batch", async () => {
@@ -35,7 +35,7 @@ describe("AuthorizationEngine.authorizeFacts", () => {
         expect(authorizedTypes).toEqual(["Test.Channel", "Test.ChannelOwner"]);
     });
 
-    it("throws instead of silently dropping a fact whose predecessor does not exist anywhere", async () => {
+    it("names the missing predecessor instead of only the facts that depend on it", async () => {
         const store = new MemoryStore();
 
         // The user does not exist in the store, and is not resubmitted as
@@ -51,6 +51,7 @@ describe("AuthorizationEngine.authorizeFacts", () => {
                 publicKey: "nonexistent-owner"
             }
         });
+        const missingUser = facts.find(f => f.type === "Jinaga.User")!;
         const batchFacts = facts.filter(f => f.type !== "Jinaga.User");
 
         const authorizationRules = new AuthorizationRules(undefined)
@@ -60,6 +61,16 @@ describe("AuthorizationEngine.authorizeFacts", () => {
 
         const envelopes: FactEnvelope[] = batchFacts.map(fact => ({ fact, signatures: [] }));
 
-        await expect(engine.authorizeFacts(envelopes, null)).rejects.toThrow();
+        const error = await engine.authorizeFacts(envelopes, null).catch(e => e);
+
+        expect(error).toBeInstanceOf(PredecessorNotResolvedError);
+        expect(error.message).toContain(`predecessor Jinaga.User:${missingUser.hash}`);
+        expect(error.message).toContain("Add it to the batch, or commit it first.");
+        expect(error.missingPredecessors).toEqual([
+            { type: "Jinaga.User", hash: missingUser.hash }
+        ]);
+        expect(error.unresolvedFacts).toEqual([
+            { type: "Test.ChannelOwner", hash: batchFacts.find(f => f.type === "Test.ChannelOwner")!.hash }
+        ]);
     });
 });
