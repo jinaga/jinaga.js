@@ -53,4 +53,33 @@ describe("parseFeedsResponse (issue #207 W3)", () => {
     expect(() => parseSaveMessage({ facts: "abc" })).toThrow(ValidationError);
     expect(() => parseLoadMessage("not an object")).toThrow(ValidationError);
   });
+
+  // `typeof null === 'object'`, and so is an array, so these once slipped past
+  // the guard and failed later as a bare TypeError — unclassifiable downstream.
+  it.each([null, [], ["abc"]])("rejects %p as a message with a ValidationError", (message) => {
+    expect(() => parseFeedsResponse(message)).toThrow(ValidationError);
+    expect(() => parseSaveMessage(message)).toThrow(ValidationError);
+    expect(() => parseLoadMessage(message)).toThrow(ValidationError);
+  });
+
+  it("rejects a null or array fact reference with a ValidationError", () => {
+    expect(() => parseLoadMessage({ references: [null] }))
+      .toThrow("Expected FactReference to be an object.");
+    expect(() => parseLoadMessage({ references: [["Test.Type", "hash"]] }))
+      .toThrow("Expected FactReference to be an object.");
+  });
+
+  it("rejects a null fact record, fields map, or predecessor collection with a ValidationError", () => {
+    expect(() => parseSaveMessage({ facts: [null] }))
+      .toThrow("Expected FactRecord to be an object.");
+    expect(() => parseSaveMessage({ facts: [{ type: "Test.Type", hash: "abc", fields: null }] }))
+      .toThrow("Expected an object 'fields' property.");
+    expect(() => parseSaveMessage({ facts: [{ type: "Test.Type", hash: "abc", fields: {}, predecessors: null }] }))
+      .toThrow("Expected PredecessorCollection to be an object.");
+  });
+
+  it("rejects a null feed decision with a ValidationError", () => {
+    expect(() => parseFeedsResponse({ feeds: [], decisions: [null] }))
+      .toThrow("Expected FeedDecision to be an object.");
+  });
 });

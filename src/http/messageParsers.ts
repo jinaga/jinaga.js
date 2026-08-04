@@ -3,8 +3,16 @@ import { FactRecord, FactReference, PredecessorCollection } from "../storage";
 import { ValidationError } from "../util/errors";
 import { FeedDecision, FeedsResponse, LoadMessage, SaveMessage } from "./messages";
 
+// `typeof null === 'object'`, and so is an array. Neither is a valid message
+// object here: letting them through produced a bare TypeError on the next
+// property access rather than the intended ValidationError, which is exactly
+// the classification hole this parser is meant to close.
+function isObject(value: any): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function parseFactReference(factReference: any): FactReference {
-  if (typeof factReference !== 'object') throw new ValidationError("Expected FactReference to be an object.");
+  if (!isObject(factReference)) throw new ValidationError("Expected FactReference to be an object.");
   if (typeof factReference.type !== 'string') throw new ValidationError("Expected a string 'type' property.");
   if (typeof factReference.hash !== 'string') throw new ValidationError("Expected a string 'hash' property.");
   return {
@@ -23,7 +31,7 @@ function parsePredecessor(predecessor: any): FactReference | FactReference[] {
 }
 
 function parsePredecessorCollection(predecessors: any): PredecessorCollection {
-  if (typeof predecessors !== 'object') throw new ValidationError("Expected PredecessorCollection to be an object.");
+  if (!isObject(predecessors)) throw new ValidationError("Expected PredecessorCollection to be an object.");
   return Object.keys(predecessors).reduce((result, key) => ({
     ...result,
     [key]: parsePredecessor(predecessors[key])
@@ -31,10 +39,10 @@ function parsePredecessorCollection(predecessors: any): PredecessorCollection {
 }
 
 function parseFactRecord(factRecord: any): FactRecord {
-  if (typeof factRecord !== 'object') throw new ValidationError("Expected FactRecord to be an object.");
+  if (!isObject(factRecord)) throw new ValidationError("Expected FactRecord to be an object.");
   if (typeof factRecord.type !== 'string') throw new ValidationError("Expected a string 'type' property.");
   if (typeof factRecord.hash !== 'string') throw new ValidationError("Expected a string 'hash' property.");
-  if (typeof factRecord.fields !== 'object') throw new ValidationError("Expected an object 'fields' property.");
+  if (!isObject(factRecord.fields)) throw new ValidationError("Expected an object 'fields' property.");
   return {
     type: factRecord.type,
     hash: factRecord.hash,
@@ -44,7 +52,7 @@ function parseFactRecord(factRecord: any): FactRecord {
 }
 
 export function parseSaveMessage(message: any): SaveMessage {
-  if (typeof message !== 'object') throw new ValidationError("Expected an object. Check the content type of the request.");
+  if (!isObject(message)) throw new ValidationError("Expected an object. Check the content type of the request.");
   if (!Array.isArray(message.facts)) throw new ValidationError("Expected an array 'facts' property.");
   return {
     facts: message.facts.map(parseFactRecord)
@@ -52,7 +60,7 @@ export function parseSaveMessage(message: any): SaveMessage {
 }
 
 export function parseLoadMessage(message: any): LoadMessage {
-  if (typeof message !== 'object') throw new ValidationError("Expected an object. Check the content type of the request.");
+  if (!isObject(message)) throw new ValidationError("Expected an object. Check the content type of the request.");
   if (!Array.isArray(message.references)) throw new ValidationError("Expected an array 'references' property.");
   return {
     references: message.references.map(parseFactReference)
@@ -62,7 +70,7 @@ export function parseLoadMessage(message: any): LoadMessage {
 const feedDecisionKinds = ['authorized', 'reactive', 'denied'];
 
 function parseFeedDecision(decision: any): FeedDecision {
-  if (typeof decision !== 'object' || decision === null) throw new ValidationError("Expected FeedDecision to be an object.");
+  if (!isObject(decision)) throw new ValidationError("Expected FeedDecision to be an object.");
   if (typeof decision.feed !== 'string') throw new ValidationError("Expected a string 'feed' property.");
   if (!feedDecisionKinds.includes(decision.decision)) {
     throw new ValidationError("Expected 'decision' to be 'authorized', 'reactive', or 'denied'.");
@@ -84,7 +92,7 @@ function parseFeedDecision(decision: any): FeedDecision {
 }
 
 export function parseFeedsResponse(message: any): FeedsResponse {
-  if (typeof message !== 'object' || message === null) throw new ValidationError("Expected an object. Check the content type of the response.");
+  if (!isObject(message)) throw new ValidationError("Expected an object. Check the content type of the response.");
   if (!Array.isArray(message.feeds)) throw new ValidationError("Expected an array 'feeds' property.");
   const feeds: string[] = message.feeds.map((feed: any) => {
     if (typeof feed !== 'string') throw new ValidationError("Expected 'feeds' to be an array of strings.");
