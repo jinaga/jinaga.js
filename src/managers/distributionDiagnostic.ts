@@ -97,9 +97,13 @@ export function toClearingDiagnostic(
 /**
  * The denial codes that are *structural* — a missing rule or a spec narrowed
  * past its rule. These never self-heal (unlike the subscription race), so they
- * are the only cases `query` throws for in development mode (issue #207 W8) and
- * the ones the default dev handler reports at error level (W7). A `reactive`
- * diagnostic is never structural regardless of its code.
+ * are the only cases `query` throws for (issue #207 W8) and the ones the
+ * default dev handler reports at error level (W7). A `reactive` diagnostic is
+ * never structural regardless of its code.
+ *
+ * The throw is unconditional. `developmentMode` gates only the installation of
+ * the console handler in `JinagaBrowser`, never `query`'s contract, so a
+ * structural denial fails loudly in production too.
  */
 export function isStructuralDenial(diagnostic: DistributionDiagnostic): boolean {
     return !diagnostic.reactive
