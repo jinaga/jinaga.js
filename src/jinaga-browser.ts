@@ -43,9 +43,12 @@ export type JinagaBrowserConfig = {
      * `developmentMode: process.env.NODE_ENV !== 'production'`.
      *
      * This does not control whether `query` throws: a one-shot `query` fails
-     * loudly with a typed `DistributionDeniedError` on a structural denial in
-     * every mode by default (issue jinaga-server#179). Development mode only
-     * adds the console logging on top.
+     * loudly with a typed `DistributionDeniedError` on a structural denial, and
+     * with `GivenNotFoundError` when a given fact is missing locally and nothing
+     * could have supplied it (issue #232), in every mode by default. Development
+     * mode only adds the console logging on top — which is the channel that
+     * reaches a `watch` or `subscribe` caller, since those report rather than
+     * throw.
      */
     developmentMode?: boolean
 }

@@ -17,11 +17,15 @@ import {
 import { Network } from "../../src/managers/NetworkManager";
 import { DistributionIntersectionBranch } from "../../src/distribution/distribution-engine";
 import { Blog, Post, model } from "../blogModel";
+import { asDistribution } from "./diagnosticNarrowing";
 
 // A Network double that returns the caller-configured feed hashes and
 // per-feed decisions from `feeds()` (issue #207 W3/W4), so we can drive
 // `queryWithDiagnostics` (W8b) the way a real replicator would.
 class DecisionNetwork implements Network {
+    // Stands in for a replicator, so it can supply facts the store lacks.
+    readonly canLoad = true;
+
   public response: FeedsResponse = { feeds: [] };
   public feedsCalls = 0;
 
@@ -123,9 +127,9 @@ describe("queryWithDiagnostics (issue #207 W8b)", () => {
     expect(results).toHaveLength(0);
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0].operation).toBe("query");
-    expect(diagnostics[0].decision).toBe("denied");
-    expect(diagnostics[0].reactive).toBe(false);
-    expect(diagnostics[0].code).toBe("no-matching-rule");
+    expect(asDistribution(diagnostics[0]).decision).toBe("denied");
+    expect(asDistribution(diagnostics[0]).reactive).toBe(false);
+    expect(asDistribution(diagnostics[0]).code).toBe("no-matching-rule");
     expect(diagnostics[0].reason).toContain("No rules apply to this feed.");
     expect(diagnostics[0].specification).toContain("Post");
   });
@@ -149,8 +153,8 @@ describe("queryWithDiagnostics (issue #207 W8b)", () => {
     const { diagnostics } = await promise;
 
     expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0].decision).toBe("reactive");
-    expect(diagnostics[0].reactive).toBe(true);
+    expect(asDistribution(diagnostics[0]).decision).toBe("reactive");
+    expect(asDistribution(diagnostics[0]).reactive).toBe(true);
     expect(diagnostics[0].reason).toBe("pending authorization");
   });
 
@@ -167,7 +171,7 @@ describe("queryWithDiagnostics (issue #207 W8b)", () => {
     const { diagnostics } = await j.queryWithDiagnostics(blogPosts, blog);
 
     expect(diagnostics).toHaveLength(2);
-    expect(diagnostics.map(d => d.decision).sort()).toEqual(["denied", "reactive"]);
+    expect(diagnostics.map(d => asDistribution(d).decision).sort()).toEqual(["denied", "reactive"]);
     expect(diagnostics.every(d => d.operation === "query")).toBe(true);
   });
 

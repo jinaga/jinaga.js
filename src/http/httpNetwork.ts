@@ -6,6 +6,9 @@ import { WebClient } from "./web-client";
 import { describeDeclaration, describeSpecification } from "../specification/description";
 
 export class HttpNetwork implements Network {
+    // Backed by a replicator, so `load` can supply facts the local store lacks.
+    readonly canLoad = true;
+
     constructor(
         private readonly webClient: WebClient
     ) { }

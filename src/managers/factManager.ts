@@ -3,15 +3,14 @@ import { computeHash } from "../fact/hash";
 import { Fork } from "../fork/fork";
 import { PersistentFork } from "../fork/persistent-fork";
 import { DistributionIntersectionBranch } from "../distribution/distribution-engine";
-import { FeedDecision } from "../http/messages";
-import { DistributionDiagnostic } from "./distributionDiagnostic";
+import { ReadDiagnostic } from "./distributionDiagnostic";
 import { ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
+import { FactEnvelope, FactRecord, FactReference, ProjectedResult, ReadResult, Storage } from "../storage";
 import { Trace } from "../util/trace";
-import { CachedFeeds, Network, NetworkManager } from "./NetworkManager";
+import { FetchOutcome, Network, NetworkManager, SubscribeOutcome } from "./NetworkManager";
 import { PurgeManager } from "./PurgeManager";
 
 export class FactManager {
@@ -117,14 +116,32 @@ export class FactManager {
         return await this.store.read(start, specification);
     }
 
-    async fetch(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
+    /**
+     * Read, reporting whether any given fact was absent from the store
+     * (issue #232).
+     */
+    async readFull(start: FactReference[], specification: Specification): Promise<ReadResult> {
+        this.purgeManager.checkCompliance(specification);
+        return await this.store.readFull(start, specification);
+    }
+
+    async fetch(start: FactReference[], specification: Specification): Promise<FetchOutcome> {
         this.purgeManager.checkCompliance(specification);
         return await this.networkManager.fetch(start, specification);
     }
 
-    async subscribe(start: FactReference[], specification: Specification): Promise<CachedFeeds> {
+    async subscribe(start: FactReference[], specification: Specification): Promise<SubscribeOutcome> {
         this.purgeManager.checkCompliance(specification);
         return await this.networkManager.subscribe(start, specification);
+    }
+
+    /**
+     * Which of these references are present in the local store. Used to report
+     * a given that is still absent after a fetch (issue #232) without paying
+     * for a second specification evaluation.
+     */
+    whichExist(references: FactReference[]): Promise<FactReference[]> {
+        return this.store.whichExist(references);
     }
 
     async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {
@@ -158,7 +175,7 @@ export class FactManager {
         return this.store.setMruDate(specificationHash, mruDate);
     }
 
-    startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>, keepAlive: boolean, onDiagnostics?: (diagnostics: DistributionDiagnostic[]) => void): Observer<U> {
+    startObserver<U>(references: FactReference[], specification: Specification, resultAdded: ResultAddedFunc<U>, keepAlive: boolean, onDiagnostics?: (diagnostics: ReadDiagnostic[]) => void): Observer<U> {
         const observer = new ObserverImpl<U>(this, references, specification, resultAdded, onDiagnostics);
         observer.start(keepAlive);
         return observer;

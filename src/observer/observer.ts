@@ -1,12 +1,12 @@
 import { computeObjectHash } from "../fact/hash";
 import { FeedDecision } from "../http/messages";
-import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
+import { ReadDiagnostic, toClearingDiagnostic, toDistributionDiagnostics, toGivenFoundDiagnostic, toGivenNotFoundDiagnostic } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
 import { SpecificationListener } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
 import { SpecificationInverse, invertSpecification } from "../specification/inverse";
 import { Projection, Specification } from "../specification/specification";
-import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
+import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash, factReferenceEquals } from "../storage";
 import { computeStringHash } from "../util/encoding";
 import { Trace } from "../util/trace";
 
@@ -40,14 +40,14 @@ export interface Observer<T> {
      * never puts the observer into an error state — that is what keeps `watch`
      * and `subscribe` correct through the subscription race.
      */
-    diagnostics(): DistributionDiagnostic[];
+    diagnostics(): ReadDiagnostic[];
     /**
      * Register a callback for distribution diagnostics. Any diagnostics already
      * captured are replayed to the handler immediately, and future ones are
      * delivered as they are captured. A throwing handler is isolated and never
      * disturbs the observer.
      */
-    onDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void): void;
+    onDiagnostic(handler: (diagnostic: ReadDiagnostic) => void): void;
 }
 
 interface ObserverBranch {
@@ -163,8 +163,8 @@ export class ObserverImpl<T> implements Observer<T> {
      * is the developer's pre-intersection spec, so diagnostics name the query
      * they wrote rather than an internally rewritten branch.
      */
-    private readonly _diagnostics: DistributionDiagnostic[] = [];
-    private readonly diagnosticHandlers: ((diagnostic: DistributionDiagnostic) => void)[] = [];
+    private readonly _diagnostics: ReadDiagnostic[] = [];
+    private readonly diagnosticHandlers: ((diagnostic: ReadDiagnostic) => void)[] = [];
     private readonly specificationString: string;
     /**
      * Unregister callbacks for the per-feed "began delivering data" listeners
@@ -172,6 +172,24 @@ export class ObserverImpl<T> implements Observer<T> {
      * race resolves. Torn down in `stop()`.
      */
     private readonly clearingUnsubscribes: (() => void)[] = [];
+    /**
+     * True once any branch's fetch consulted a source capable of supplying
+     * facts absent from the local store (issue #232). While false, a given that
+     * is not resident could not have been supplied by anything, so its absence
+     * is worth reporting.
+     */
+    private remoteConsulted = false;
+    /**
+     * The givens reported absent, held so the notice can be retired when they
+     * materialize. Null once cleared or never raised.
+     */
+    private missingGivens: FactReference[] | null = null;
+    private keepAlive = false;
+
+    /** How this observer names itself in diagnostics. */
+    private get operation(): 'watch' | 'subscribe' {
+        return this.keepAlive ? 'subscribe' : 'watch';
+    }
 
     constructor(
         private factManager: FactManager,
@@ -181,7 +199,7 @@ export class ObserverImpl<T> implements Observer<T> {
         // Instance-level sink (issue #207 W5): forwards this observer's
         // diagnostics to `j.onDistributionDiagnostic`. Optional so the observer
         // works standalone (e.g. in tests) without the client hook.
-        private readonly onDiagnostics?: (diagnostics: DistributionDiagnostic[]) => void
+        private readonly onDiagnostics?: (diagnostics: ReadDiagnostic[]) => void
     ) {
         // Capture the original spec's labels. These are stable across any
         // future branch fan-out from `applySubscribeIntersection`.
@@ -226,6 +244,7 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     public start(keepAlive: boolean) {
+        this.keepAlive = keepAlive;
         const givenTypes = this.given.map(g => g.type).join(', ');
         Trace.info(`[Observer] START - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Given types: [${givenTypes}], KeepAlive: ${keepAlive}`);
 
@@ -255,6 +274,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         await this.fetch(keepAlive);
                         if (this.stopped) return;
                         await this.read();
+                        await this.reportMissingGivens();
                         loadResolve();
                     }
                     else {
@@ -265,6 +285,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         // Then fetch from the server to update the cache.
                         await this.fetch(keepAlive);
                         if (this.stopped) return;
+                        await this.reportMissingGivens();
                         loadResolve();
                     }
                     await this.factManager.setMruDate(this.specificationHash, new Date());
@@ -428,7 +449,10 @@ export class ObserverImpl<T> implements Observer<T> {
         const decisions: FeedDecision[] = [];
         if (keepAlive) {
             await Promise.all(this.branches.map(async branch => {
-                const { feeds, decisions: branchDecisions } = await this.factManager.subscribe(this.given, branch.specification);
+                const { feeds, decisions: branchDecisions, remoteConsulted } = await this.factManager.subscribe(this.given, branch.specification);
+                if (remoteConsulted) {
+                    this.remoteConsulted = true;
+                }
                 if (this.stopped) {
                     // If stop() was called while we were awaiting subscribe(),
                     // clean up the feeds that were just registered so the
@@ -445,11 +469,64 @@ export class ObserverImpl<T> implements Observer<T> {
         }
         else {
             await Promise.all(this.branches.map(async branch => {
-                const branchDecisions = await this.factManager.fetch(this.given, branch.specification);
+                const { decisions: branchDecisions, remoteConsulted } = await this.factManager.fetch(this.given, branch.specification);
+                if (remoteConsulted) {
+                    this.remoteConsulted = true;
+                }
                 decisions.push(...branchDecisions);
             }));
         }
         this.captureDiagnostics(keepAlive ? 'subscribe' : 'watch', decisions);
+    }
+
+    /**
+     * Report any given still absent from the local store once the fetch has
+     * had its chance (issue #232).
+     *
+     * A watch has a "later" in which the fact may arrive, so this never throws
+     * and never rejects `cached()` or `loaded()` — it reports on the same
+     * channel as a distribution diagnostic, and retires itself through
+     * `clearMissingGivens` when results start flowing.
+     *
+     * Deliberately called only after the fetch. In the cached branch the first
+     * read happens before the fetch, where an absent given says nothing yet.
+     * Uses `whichExist` rather than a second specification evaluation, since
+     * only the givens' presence is in question.
+     */
+    private async reportMissingGivens() {
+        try {
+            if (this.remoteConsulted || this.stopped) {
+                return;
+            }
+            const existing = await this.factManager.whichExist(this.given);
+            const missing = this.given.filter(g => !existing.some(factReferenceEquals(g)));
+            if (missing.length === 0) {
+                return;
+            }
+            this.missingGivens = missing;
+            this.captureReadDiagnostics([
+                toGivenNotFoundDiagnostic(this.operation, this.specificationString, missing)
+            ]);
+        }
+        catch (e) {
+            // A diagnostic must never break the load flow.
+            Trace.error(e);
+        }
+    }
+
+    /**
+     * Retire an earlier given-not-found notice once the read starts producing
+     * results, which can only happen if the given resolved (issue #232).
+     */
+    private clearMissingGivens() {
+        const missing = this.missingGivens;
+        if (!missing) {
+            return;
+        }
+        this.missingGivens = null;
+        this.captureReadDiagnostics([
+            toGivenFoundDiagnostic(this.operation, this.specificationString, missing)
+        ]);
     }
 
     /**
@@ -460,31 +537,41 @@ export class ObserverImpl<T> implements Observer<T> {
      */
     private captureDiagnostics(operation: 'watch' | 'subscribe', decisions: FeedDecision[]) {
         try {
-            const diagnostics = toDistributionDiagnostics(operation, this.specificationString, decisions);
-            if (diagnostics.length === 0) {
-                return;
-            }
-            this._diagnostics.push(...diagnostics);
-            for (const diagnostic of diagnostics) {
-                for (const handler of this.diagnosticHandlers) {
-                    this.safelyInvokeDiagnostic(handler, diagnostic);
-                }
-            }
-            if (this.onDiagnostics) {
-                try {
-                    this.onDiagnostics(diagnostics);
-                }
-                catch (e) {
-                    Trace.error(e);
-                }
-            }
+            this.captureReadDiagnostics(
+                toDistributionDiagnostics(operation, this.specificationString, decisions));
         }
         catch (e) {
             Trace.error(e);
         }
     }
 
-    private safelyInvokeDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void, diagnostic: DistributionDiagnostic) {
+    /**
+     * Record diagnostics and deliver them to the observer-level handlers (W6)
+     * and the instance-level sink (W5). Shared by the distribution decisions of
+     * issue #207 and the given-not-found reports of issue #232, so both reach
+     * every consumer of this channel on identical terms.
+     */
+    private captureReadDiagnostics(diagnostics: ReadDiagnostic[]) {
+        if (diagnostics.length === 0) {
+            return;
+        }
+        this._diagnostics.push(...diagnostics);
+        for (const diagnostic of diagnostics) {
+            for (const handler of this.diagnosticHandlers) {
+                this.safelyInvokeDiagnostic(handler, diagnostic);
+            }
+        }
+        if (this.onDiagnostics) {
+            try {
+                this.onDiagnostics(diagnostics);
+            }
+            catch (e) {
+                Trace.error(e);
+            }
+        }
+    }
+
+    private safelyInvokeDiagnostic(handler: (diagnostic: ReadDiagnostic) => void, diagnostic: ReadDiagnostic) {
         try {
             handler(diagnostic);
         }
@@ -542,11 +629,11 @@ export class ObserverImpl<T> implements Observer<T> {
         }
     }
 
-    public diagnostics(): DistributionDiagnostic[] {
+    public diagnostics(): ReadDiagnostic[] {
         return [...this._diagnostics];
     }
 
-    public onDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void): void {
+    public onDiagnostic(handler: (diagnostic: ReadDiagnostic) => void): void {
         this.diagnosticHandlers.push(handler);
         // Replay diagnostics already captured before this handler registered —
         // the observer starts as soon as it is created, so a caller wiring up
@@ -592,6 +679,11 @@ export class ObserverImpl<T> implements Observer<T> {
             }
             
             Trace.info(`[Observer] Matching results: ${matchingResults.length} - Path: ${path}, Operation: ${inverse.operation}`);
+
+            // Results matching this observer's given can only exist if the
+            // given resolved, so an earlier given-not-found notice is now
+            // stale (issue #232).
+            this.clearMissingGivens();
 
             if (inverse.operation === "add") {
                 return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset, inverse.resultSubset, branch);

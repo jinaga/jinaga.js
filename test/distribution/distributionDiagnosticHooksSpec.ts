@@ -13,16 +13,21 @@ import {
   PassThroughFork,
   Specification,
   User,
+  ReadDiagnostic,
 } from "@src";
 import { Network } from "../../src/managers/NetworkManager";
 import { DistributionIntersectionBranch } from "../../src/distribution/distribution-engine";
 import { Blog, Post, model } from "../blogModel";
+import { asDistribution } from "./diagnosticNarrowing";
 
 // A Network double that reports caller-configured feed hashes and per-feed
 // decisions from `feeds()` (issue #207 W3/W4), and resolves subscriptions
 // immediately so watch/subscribe complete. Drives the W5 instance hook and the
 // W6 observer channel the way a real replicator would.
 class DecisionNetwork implements Network {
+    // Stands in for a replicator, so it can supply facts the store lacks.
+    readonly canLoad = true;
+
   public response: FeedsResponse = { feeds: [] };
 
   feeds(_start: FactReference[], _specification: Specification): Promise<FeedsResponse> {
@@ -98,7 +103,7 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
   describe("W5 — j.onDistributionDiagnostic", () => {
     it("fires for query with operation 'query' (the hook fires before the structural denial throws)", async () => {
       network.response = deniedResponse();
-      const received: DistributionDiagnostic[] = [];
+      const received: ReadDiagnostic[] = [];
       j.onDistributionDiagnostic(d => received.push(d));
 
       // A structural denial now makes a one-shot query throw by default
@@ -107,14 +112,14 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
 
       expect(received).toHaveLength(1);
       expect(received[0].operation).toBe("query");
-      expect(received[0].decision).toBe("denied");
-      expect(received[0].reactive).toBe(false);
-      expect(received[0].code).toBe("no-matching-rule");
+      expect(asDistribution(received[0]).decision).toBe("denied");
+      expect(asDistribution(received[0]).reactive).toBe(false);
+      expect(asDistribution(received[0]).code).toBe("no-matching-rule");
     });
 
     it("fires for watch with operation 'watch'", async () => {
       network.response = deniedResponse();
-      const received: DistributionDiagnostic[] = [];
+      const received: ReadDiagnostic[] = [];
       j.onDistributionDiagnostic(d => received.push(d));
 
       const observer = j.watch(blogPosts, blog, () => {});
@@ -123,12 +128,12 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
 
       expect(received).toHaveLength(1);
       expect(received[0].operation).toBe("watch");
-      expect(received[0].decision).toBe("denied");
+      expect(asDistribution(received[0]).decision).toBe("denied");
     });
 
     it("fires for subscribe with operation 'subscribe' and reactive:true, without throwing", async () => {
       network.response = reactiveResponse();
-      const received: DistributionDiagnostic[] = [];
+      const received: ReadDiagnostic[] = [];
       j.onDistributionDiagnostic(d => received.push(d));
 
       const observer = j.subscribe(blogPosts, blog, () => {});
@@ -137,8 +142,8 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
 
       expect(received).toHaveLength(1);
       expect(received[0].operation).toBe("subscribe");
-      expect(received[0].decision).toBe("reactive");
-      expect(received[0].reactive).toBe(true);
+      expect(asDistribution(received[0]).decision).toBe("reactive");
+      expect(asDistribution(received[0]).reactive).toBe(true);
     });
 
     it("does not fire for authorized-only feeds", async () => {
@@ -146,7 +151,7 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
         feeds: [FEED],
         decisions: [{ feed: FEED, decision: "authorized", reason: "" }],
       };
-      const received: DistributionDiagnostic[] = [];
+      const received: ReadDiagnostic[] = [];
       j.onDistributionDiagnostic(d => received.push(d));
 
       await j.query(blogPosts, blog);
@@ -156,7 +161,7 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
 
     it("is inert against an old replicator that omits decisions", async () => {
       network.response = { feeds: [FEED] };
-      const received: DistributionDiagnostic[] = [];
+      const received: ReadDiagnostic[] = [];
       j.onDistributionDiagnostic(d => received.push(d));
 
       await j.query(blogPosts, blog);
@@ -171,7 +176,7 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
       // A reactive decision never throws (it self-heals), so this isolates the
       // handler-isolation behavior from the structural-denial throw path.
       network.response = reactiveResponse();
-      const received: DistributionDiagnostic[] = [];
+      const received: ReadDiagnostic[] = [];
       j.onDistributionDiagnostic(() => { throw new Error("handler boom"); });
       j.onDistributionDiagnostic(d => received.push(d));
 
@@ -190,7 +195,7 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
       const diagnostics = observer.diagnostics();
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0].operation).toBe("subscribe");
-      expect(diagnostics[0].reactive).toBe(true);
+      expect(asDistribution(diagnostics[0]).reactive).toBe(true);
       observer.stop();
     });
 
@@ -201,12 +206,12 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
       await observer.loaded();
 
       // Registered after load — the already-captured diagnostic must replay.
-      const received: DistributionDiagnostic[] = [];
+      const received: ReadDiagnostic[] = [];
       observer.onDiagnostic(d => received.push(d));
 
       expect(received).toHaveLength(1);
       expect(received[0].operation).toBe("watch");
-      expect(received[0].code).toBe("no-matching-rule");
+      expect(asDistribution(received[0]).code).toBe("no-matching-rule");
       observer.stop();
     });
 

@@ -1,7 +1,7 @@
 import { Authentication } from "./authentication/authentication";
 import { dehydrateReference, Dehydration, HashMap, hashSymbol, hydrate, hydrateFromTree, lookupHash } from './fact/hydrate';
 import { SyncStatus, SyncStatusNotifier } from './http/web-client';
-import { DistributionDeniedError, DistributionDiagnostic, isStructuralDenial, toDistributionDiagnostics } from './managers/distributionDiagnostic';
+import { DistributionDeniedError, GivenNotFoundError, isStructuralDenial, ReadDiagnostic, toDistributionDiagnostics, toGivenNotFoundDiagnostic } from './managers/distributionDiagnostic';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
@@ -13,7 +13,7 @@ import { FactEnvelope, FactReference, ProjectedResult } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
 
-export { DistributionDeniedError, DistributionDiagnostic } from './managers/distributionDiagnostic';
+export { DiagnosticOperation, DistributionDeniedError, DistributionDiagnostic, GivenNotFoundDiagnostic, GivenNotFoundError, ReadDiagnostic } from './managers/distributionDiagnostic';
 
 export interface Profile {
     displayName: string;
@@ -32,7 +32,7 @@ export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
     private loadingHandlers: ((loading: boolean) => void)[] = [];
     private progressHandlers: ((count: number) => void)[] = [];
-    private distributionDiagnosticHandlers: ((diagnostic: DistributionDiagnostic) => void)[] = [];
+    private diagnosticHandlers: ((diagnostic: ReadDiagnostic) => void)[] = [];
 
     constructor(
         private authentication: Authentication,
@@ -86,8 +86,8 @@ export class Jinaga {
      *
      * @param handler A function to receive each distribution diagnostic
      */
-    onDistributionDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void) {
-        this.distributionDiagnosticHandlers.push(handler);
+    onDistributionDiagnostic(handler: (diagnostic: ReadDiagnostic) => void) {
+        this.diagnosticHandlers.push(handler);
     }
 
     /**
@@ -96,9 +96,9 @@ export class Jinaga {
      * produced the diagnostic (a diagnostic is never fatal), so each call is
      * isolated.
      */
-    private emitDistributionDiagnostics(diagnostics: DistributionDiagnostic[]) {
+    private emitDiagnostics(diagnostics: ReadDiagnostic[]) {
         for (const diagnostic of diagnostics) {
-            for (const handler of this.distributionDiagnosticHandlers) {
+            for (const handler of this.diagnosticHandlers) {
                 try {
                     handler(diagnostic);
                 }
@@ -170,7 +170,12 @@ export class Jinaga {
 
     /**
      * Execute a query for facts matching a specification.
-     * 
+     *
+     * Throws `DistributionDeniedError` for a structural distribution denial,
+     * and `GivenNotFoundError` when a given fact is not in the local store and
+     * nothing could have supplied it (issue #232). Use `queryWithDiagnostics`
+     * to inspect either condition without an exception.
+     *
      * @param specification Use Model.given().match() to create a specification
      * @param given The fact or facts from which to begin the query
      * @returns A promise that resolves to an array of results
@@ -188,13 +193,14 @@ export class Jinaga {
         }
 
         const references = given.map(g => this.prepareFactReference(g));
-        const decisions = await this.factManager.fetch(references, innerSpecification);
+        const { decisions, remoteConsulted } = await this.factManager.fetch(references, innerSpecification);
+        const specificationString = describeSpecification(innerSpecification, 0);
         const diagnostics = toDistributionDiagnostics(
             'query',
-            describeSpecification(innerSpecification, 0),
+            specificationString,
             decisions
         );
-        this.emitDistributionDiagnostics(diagnostics);
+        this.emitDiagnostics(diagnostics);
         // Fail loudly, by default, for a structural denial (a missing rule or a
         // spec narrowed past its rule) that provably never self-heals. A
         // one-shot `query` has no "later" to wait for — unlike `subscribe`, whose
@@ -211,7 +217,20 @@ export class Jinaga {
         if (structural.length > 0) {
             throw new DistributionDeniedError(structural);
         }
-        const projectedResults = await this.factManager.read(references, innerSpecification);
+        const readResult = await this.factManager.readFull(references, innerSpecification);
+        // Fail loudly when the read never really ran because a given is not
+        // materialized and nothing could have supplied it (issue #232). A
+        // one-shot query has no later in which the fact might arrive, so the
+        // empty result would otherwise be indistinguishable from a correct
+        // answer. This is checked after the read, so it cannot pre-empt the
+        // distribution denial above. When a remote source was consulted the
+        // replicator already answered authoritatively, so this never fires.
+        if (readResult.kind === 'given-not-found' && !remoteConsulted) {
+            const diagnostic = toGivenNotFoundDiagnostic('query', specificationString, readResult.references);
+            this.emitDiagnostics([diagnostic]);
+            throw new GivenNotFoundError(readResult.references);
+        }
+        const projectedResults = readResult.kind === 'complete' ? readResult.results : [];
         const extracted = extractResults(projectedResults, innerSpecification.projection);
         Trace.counter("facts_loaded", extracted.totalCount);
         return extracted.results;
@@ -234,7 +253,7 @@ export class Jinaga {
      * @param given The fact or facts from which to begin the query
      * @returns A promise resolving to the projected results and the diagnostics
      */
-    async queryWithDiagnostics<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<{ results: U[]; diagnostics: DistributionDiagnostic[] }> {
+    async queryWithDiagnostics<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<{ results: U[]; diagnostics: ReadDiagnostic[] }> {
         const innerSpecification = specification.specification;
 
         detectDisconnectedSpecification(innerSpecification);
@@ -247,19 +266,27 @@ export class Jinaga {
         }
 
         const references = given.map(g => this.prepareFactReference(g));
-        const decisions = await this.factManager.fetch(references, innerSpecification);
-        const projectedResults = await this.factManager.read(references, innerSpecification);
+        const { decisions, remoteConsulted } = await this.factManager.fetch(references, innerSpecification);
+        const specificationString = describeSpecification(innerSpecification, 0);
+        const readResult = await this.factManager.readFull(references, innerSpecification);
+        const projectedResults = readResult.kind === 'complete' ? readResult.results : [];
         const extracted = extractResults(projectedResults, innerSpecification.projection);
         Trace.counter("facts_loaded", extracted.totalCount);
-        const diagnostics = toDistributionDiagnostics(
+        const diagnostics: ReadDiagnostic[] = toDistributionDiagnostics(
             'query',
-            describeSpecification(innerSpecification, 0),
+            specificationString,
             decisions
         );
+        // Report a given that could not have been supplied (issue #232) rather
+        // than throwing: this is the channel for callers that want to inspect
+        // what happened without an exception.
+        if (readResult.kind === 'given-not-found' && !remoteConsulted) {
+            diagnostics.push(toGivenNotFoundDiagnostic('query', specificationString, readResult.references));
+        }
         // Also drive the always-on instance hook so a caller that registered
         // `onDistributionDiagnostic` sees these alongside the correlated return
         // value, exactly as it would for a plain `query`.
-        this.emitDistributionDiagnostics(diagnostics);
+        this.emitDiagnostics(diagnostics);
         return { results: extracted.results, diagnostics };
     }
 
@@ -295,7 +322,7 @@ export class Jinaga {
         const references = given.map(g => this.prepareFactReference(g));
 
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, false,
-            diagnostics => this.emitDistributionDiagnostics(diagnostics));
+            diagnostics => this.emitDiagnostics(diagnostics));
     }
 
     /**
@@ -328,7 +355,7 @@ export class Jinaga {
         const references = given.map(g => this.prepareFactReference(g));
 
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true,
-            diagnostics => this.emitDistributionDiagnostics(diagnostics));
+            diagnostics => this.emitDiagnostics(diagnostics));
     }
 
     /**

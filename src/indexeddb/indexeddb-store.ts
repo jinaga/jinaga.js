@@ -2,7 +2,7 @@ import { hydrateFromTree } from '../fact/hydrate';
 import { TopologicalSorter } from '../fact/sorter';
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
-import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, ReadResult, Storage } from '../storage';
 import { distinct, flatten, flattenAsync } from '../util/fn';
 import { execRequest, factKey, keyToReference, requestErrorMessage, withDatabase, withTransaction } from './driver';
 
@@ -104,7 +104,12 @@ export class IndexedDBStore implements Storage {
     });
   }
 
-  read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+  async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+    const result = await this.readFull(start, specification);
+    return result.kind === 'complete' ? result.results : [];
+  }
+
+  readFull(start: FactReference[], specification: Specification): Promise<ReadResult> {
     return withDatabase(this.indexName, db => {
       return withTransaction(db, ['edge', 'fact', 'ancestor'], 'readonly', tx => {
         const edgeObjectStore = tx.objectStore('edge');
@@ -144,7 +149,7 @@ export class IndexedDBStore implements Storage {
             return facts[0];
           }
         });
-        return runner.read(start, specification);
+        return runner.readFull(start, specification);
       });
     });
   }

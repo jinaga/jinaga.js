@@ -287,7 +287,7 @@ The system ensures all labels in a specification are connected through path rela
 
 ### 3. Runtime Error Handling
 
-- **Missing Facts**: Graceful handling of missing fact references
+- **Missing Facts**: A given fact that is not in the local store is reported rather than read as an empty result. `query` throws `GivenNotFoundError` when nothing could have supplied it; `watch` and `subscribe` raise a diagnostic and clear it if the fact arrives
 - **Type Mismatches**: Clear error messages for type inconsistencies
 - **Invalid Paths**: Detection and reporting of invalid relationship paths
 

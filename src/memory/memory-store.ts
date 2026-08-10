@@ -1,7 +1,7 @@
 import { hydrateFromTree } from '../fact/hydrate';
 import { Specification } from "../specification/specification";
 import { SpecificationRunner } from '../specification/specification-runner';
-import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals, FactTuple, uniqueFactReferences } from '../storage';
+import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, ReadResult, Storage, factEnvelopeEquals, factReferenceEquals, FactTuple, uniqueFactReferences } from '../storage';
 
 // Internal types for time projection support
 type TimestampedFactRecord = FactRecord & { timestamp: Date };
@@ -93,6 +93,10 @@ export class MemoryStore implements Storage {
 
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         return this.runner.read(start, specification);
+    }
+
+    readFull(start: FactReference[], specification: Specification): Promise<ReadResult> {
+        return this.runner.readFull(start, specification);
     }
 
     async feed(feed: Specification, start: FactReference[], _bookmark: string): Promise<FactFeed> {

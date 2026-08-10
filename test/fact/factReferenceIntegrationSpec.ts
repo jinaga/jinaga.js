@@ -1,4 +1,4 @@
-import { buildModel, Jinaga, JinagaTest, User } from '@src';
+import { buildModel, GivenNotFoundError, Jinaga, JinagaTest, User } from '@src';
 
 class Task {
     static Type = "IntegrationTest.Task" as const;
@@ -137,19 +137,39 @@ describe('factReference integration', () => {
         observer.stop();
     });
 
-    it('should handle errors gracefully when fact does not exist', async () => {
-        // Use a hash that doesn't correspond to any actual fact
+    it('should report the reference when the fact does not exist', async () => {
+        // A hash that corresponds to no actual fact. Before issue #232 this
+        // read back as an empty array, indistinguishable from a user who
+        // simply has no tasks. Nothing here can supply the fact, so the
+        // condition is terminal and the query fails loudly.
         const fakeHash = 'nonexistent+hash+that+is+fake+and+should+not+exist==';
         const userRef = j.factReference(User, fakeHash);
-        
-        // Query should not crash, just return empty results
+
+        const specification = model.given(User).match((u, facts) =>
+            facts.ofType(Task).join(t => t.creator, u)
+        );
+
+        const error: GivenNotFoundError = await j.query(specification, userRef)
+            .then(() => { throw new Error('Expected the query to reject.'); })
+            .catch(e => e);
+
+        expect(error).toBeInstanceOf(GivenNotFoundError);
+        expect(error.references).toEqual([{ type: User.Type, hash: fakeHash }]);
+    });
+
+    it('should return empty, not throw, for an existing fact with no matches', async () => {
+        // The distinction issue #232 restores: this reference resolves, so an
+        // empty result is a real answer about the specification.
+        const user = await j.fact(new User('no-tasks-key'));
+        const userRef = j.factReference(User, j.hash(user));
+
         const tasks = await j.query(
-            model.given(User).match((u, facts) => 
+            model.given(User).match((u, facts) =>
                 facts.ofType(Task).join(t => t.creator, u)
             ),
             userRef
         );
-        
+
         expect(tasks).toHaveLength(0);
     });
 

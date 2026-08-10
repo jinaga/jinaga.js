@@ -13,16 +13,21 @@ import {
   PassThroughFork,
   Specification,
   User,
+  ReadDiagnostic,
 } from "@src";
 import { Network, NetworkManager } from "../../src/managers/NetworkManager";
 import { DistributionIntersectionBranch } from "../../src/distribution/distribution-engine";
 import { Blog, Post, model } from "../blogModel";
+import { asDistribution } from "./diagnosticNarrowing";
 
 // A Network double whose feed stream can be driven on demand, so a test can
 // simulate a `reactive` feed's race resolving — the feed later delivering real
 // facts (issue #207 W9). `loadResult` is what `load()` returns for the
 // delivered references, so a test controls whether facts actually arrive.
 class ControllableNetwork implements Network {
+    // Stands in for a replicator, so it can supply facts the store lacks.
+    readonly canLoad = true;
+
   public response: FeedsResponse = { feeds: [] };
   public loadResult: FactEnvelope[] = [];
   private streamCallbacks = new Map<string, (refs: FactReference[], bookmark: string) => Promise<void>>();
@@ -88,7 +93,7 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
   });
 
   it("emits a clearing diagnostic when a reactive feed begins delivering data", async () => {
-    const received: DistributionDiagnostic[] = [];
+    const received: ReadDiagnostic[] = [];
     j.onDistributionDiagnostic(d => received.push(d));
 
     const observer = j.subscribe(blogPosts, blog, () => {});
@@ -96,17 +101,17 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
 
     // Raised only, so far.
     expect(received).toHaveLength(1);
-    expect(received[0].reactive).toBe(true);
-    expect(received[0].cleared).toBeFalsy();
-    expect(received[0].feed).toBe(FEED);
+    expect(asDistribution(received[0]).reactive).toBe(true);
+    expect(asDistribution(received[0]).cleared).toBeFalsy();
+    expect(asDistribution(received[0]).feed).toBe(FEED);
 
     // The race resolves: the feed delivers real facts.
     await network.deliver(FEED, [postRef]);
 
     expect(received).toHaveLength(2);
-    expect(received[1].cleared).toBe(true);
-    expect(received[1].reactive).toBe(false);
-    expect(received[1].feed).toBe(FEED);
+    expect(asDistribution(received[1]).cleared).toBe(true);
+    expect(asDistribution(received[1]).reactive).toBe(false);
+    expect(asDistribution(received[1]).feed).toBe(FEED);
     expect(received[1].operation).toBe("subscribe");
     expect(received[1].reason).not.toContain("pending");
 
@@ -115,14 +120,14 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
 
   it("does NOT clear when the feed delivers references but no facts load", async () => {
     network.loadResult = []; // references arrive, but load returns an empty graph
-    const received: DistributionDiagnostic[] = [];
+    const received: ReadDiagnostic[] = [];
     j.onDistributionDiagnostic(d => received.push(d));
 
     const observer = j.subscribe(blogPosts, blog, () => {});
     await observer.loaded();
     await network.deliver(FEED, [postRef]);
 
-    expect(received.filter(d => d.cleared)).toHaveLength(0);
+    expect(received.filter(d => asDistribution(d).cleared)).toHaveLength(0);
 
     observer.stop();
   });
@@ -134,14 +139,14 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
 
     const diagnostics = observer.diagnostics();
     expect(diagnostics).toHaveLength(2);
-    expect(diagnostics[0].cleared).toBeFalsy();
-    expect(diagnostics[1].cleared).toBe(true);
+    expect(asDistribution(diagnostics[0]).cleared).toBeFalsy();
+    expect(asDistribution(diagnostics[1]).cleared).toBe(true);
 
     observer.stop();
   });
 
   it("fires the clearing only once even if the feed delivers again", async () => {
-    const received: DistributionDiagnostic[] = [];
+    const received: ReadDiagnostic[] = [];
     j.onDistributionDiagnostic(d => received.push(d));
 
     const observer = j.subscribe(blogPosts, blog, () => {});
@@ -150,14 +155,14 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
     await network.deliver(FEED, [postRef]);
     await network.deliver(FEED, [postRef]);
 
-    const cleared = received.filter(d => d.cleared);
+    const cleared = received.filter(d => asDistribution(d).cleared);
     expect(cleared).toHaveLength(1);
 
     observer.stop();
   });
 
   it("does not emit a clearing after the observer is stopped", async () => {
-    const received: DistributionDiagnostic[] = [];
+    const received: ReadDiagnostic[] = [];
     j.onDistributionDiagnostic(d => received.push(d));
 
     const observer = j.subscribe(blogPosts, blog, () => {});
@@ -166,7 +171,7 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
 
     await network.deliver(FEED, [postRef]);
 
-    expect(received.filter(d => d.cleared)).toHaveLength(0);
+    expect(received.filter(d => asDistribution(d).cleared)).toHaveLength(0);
   });
 
   describe("NetworkManager.onFeedData", () => {

@@ -1,4 +1,4 @@
-import { DistributionDiagnostic } from "./distributionDiagnostic";
+import { describeMissingGivens, ReadDiagnostic } from "./distributionDiagnostic";
 
 /**
  * Upper bound on the dedupe set (issue #207 W7). A long-lived app in
@@ -33,9 +33,9 @@ const MAX_DEDUP_ENTRIES = 1000;
  * console. (Clearing a `reactive` line once data flows is the
  * subscription-lifecycle concern handled separately in W9.)
  */
-export function createDevelopmentDiagnosticHandler(): (diagnostic: DistributionDiagnostic) => void {
+export function createDevelopmentDiagnosticHandler(): (diagnostic: ReadDiagnostic) => void {
     const seen = new Set<string>();
-    return (diagnostic: DistributionDiagnostic) => {
+    return (diagnostic: ReadDiagnostic) => {
         const message = formatMessage(diagnostic);
         if (seen.has(message)) {
             return;
@@ -46,10 +46,18 @@ export function createDevelopmentDiagnosticHandler(): (diagnostic: DistributionD
             seen.delete(seen.values().next().value as string);
         }
 
-        // A clearing diagnostic (W9) resolves an earlier reactive line; always
-        // an informational, positive signal.
+        // A clearing diagnostic (W9, and issue #232's given-found companion)
+        // resolves an earlier line; always an informational, positive signal.
         if (diagnostic.cleared) {
             console.info(message);
+        }
+        // A given that could not have been supplied is an authoring or
+        // lifecycle error, not a pending state: it will not self-heal on its
+        // own, so it is reported at the same level as a structural denial
+        // (issue #232). This is the channel that reaches a developer who never
+        // awaits `loaded()` or registers `onDiagnostic`.
+        else if (diagnostic.kind === 'given-not-found') {
+            console.error(message);
         }
         else if (diagnostic.reactive) {
             console.info(message);
@@ -63,8 +71,17 @@ export function createDevelopmentDiagnosticHandler(): (diagnostic: DistributionD
     };
 }
 
-function formatMessage(diagnostic: DistributionDiagnostic): string {
+function formatMessage(diagnostic: ReadDiagnostic): string {
     const spec = diagnostic.specification.trim();
+    if (diagnostic.kind === 'given-not-found') {
+        if (diagnostic.cleared) {
+            return `[jinaga] The given fact is now in the local store; the specification can read from it. ` +
+                `The earlier missing-given notice is resolved.\n${spec}`;
+        }
+        return `[jinaga] ${describeMissingGivens(diagnostic.references)} ` +
+            `No replicator was consulted, so this specification returns empty because its starting point ` +
+            `is absent, not because nothing matches. Save the fact, or check the hash.\n${spec}`;
+    }
     if (diagnostic.cleared) {
         return `[jinaga] Specification is now authorized for the current user; ` +
             `data is flowing. The earlier pending-authorization notice is resolved.\n${spec}`;

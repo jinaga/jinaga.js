@@ -47,6 +47,9 @@ import {
  *  stop() is called before the delay fires (e.g. via subscriber.stop()).
  */
 class HangingNetwork implements Network {
+    // Stands in for a replicator, so it can supply facts the store lacks.
+    readonly canLoad = true;
+
     feeds(_start: FactReference[], _spec: Specification): Promise<FeedsResponse> {
         // Return one synthetic feed so subscribe() actually creates a Subscriber.
         return Promise.resolve({ feeds: ["test-feed"] });

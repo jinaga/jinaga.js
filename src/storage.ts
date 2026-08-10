@@ -45,10 +45,36 @@ export interface ProjectedResult {
     result: any;
 }
 
+/**
+ * The outcome of evaluating a specification against a store (issue #232).
+ *
+ * A plain `ProjectedResult[]` cannot distinguish "the specification matched
+ * nothing" from "a given fact is not materialized in this store", because both
+ * are the empty array. Only the second means the read never really ran. This
+ * sum keeps them apart at the point where the difference is known.
+ *
+ * Deliberately a sum rather than a record of results plus missing references:
+ * results and missing givens can never both be non-empty, so a record would
+ * admit a combination that has to be forbidden by convention.
+ *
+ * Note that a *given condition* that is not satisfied (an existential condition
+ * on the given itself) is `complete` with zero results, not `given-not-found`.
+ * The given exists; the specification simply excludes it.
+ */
+export type ReadResult =
+    | { kind: 'complete'; results: ProjectedResult[] }
+    | { kind: 'given-not-found'; references: FactReference[] };
+
 export interface Storage {
     close(): Promise<void>;
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
+    /**
+     * Evaluate a specification, reporting whether any given fact was absent
+     * (issue #232). `read` is the same operation with that distinction
+     * discarded; prefer this where the caller can act on the difference.
+     */
+    readFull(start: FactReference[], specification: Specification): Promise<ReadResult>;
     feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactEnvelope[]>;

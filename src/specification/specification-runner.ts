@@ -1,4 +1,4 @@
-import { FactRecord, FactReference, factReferenceEquals, ProjectedResult, ReferencesByName } from "../storage";
+import { FactRecord, FactReference, factReferenceEquals, ProjectedResult, ReadResult, ReferencesByName } from "../storage";
 import { flattenAsync, mapAsync } from "../util/fn";
 import { ComponentProjection, Condition, Label, Match, PathCondition, Projection, Role, SingularProjection, Specification } from "./specification";
 
@@ -14,20 +14,46 @@ export class SpecificationRunner {
     private readonly source: FactSource
   ) { }
 
+  /**
+   * Evaluate a specification, discarding the given-not-found distinction
+   * (issue #232). Retained as a derived projection over `readFull` so the many
+   * internal callers for which an absent given is routine — authorization
+   * rules, distribution, purge, the observable source — are unaffected.
+   */
   async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+    const result = await this.readFull(start, specification);
+    return result.kind === 'complete' ? result.results : [];
+  }
+
+  async readFull(start: FactReference[], specification: Specification): Promise<ReadResult> {
     if (start.length !== specification.given.length) {
       throw new Error(`The number of start references (${start.length}) must match the number of given facts (${specification.given.length}).`);
     }
-    
-    // Check if all given facts exist by attempting to find them
+
+    // Report every given that is missing, not just the first. A caller
+    // debugging a multi-given specification needs the whole set.
+    //
+    // `start` can be sparse: the distribution engine builds permutations by
+    // assigning into an array by index (`permutationsOf`), which leaves holes
+    // when the indices are not contiguous. A hole is as absent as a fact that
+    // is not in the store, but there is no reference to name in the report.
+    const missing: FactReference[] = [];
+    let incomplete = false;
     for (const reference of start) {
-      const fact = await this.source.findFact(reference);
+      const fact = reference ? await this.source.findFact(reference) : null;
       if (fact === null) {
-        // If any given fact doesn't exist, return empty result
-        return [];
+        if (reference) {
+          missing.push({ type: reference.type, hash: reference.hash });
+        }
+        else {
+          incomplete = true;
+        }
       }
     }
-    
+    if (incomplete || missing.length > 0) {
+      return { kind: 'given-not-found', references: missing };
+    }
+
     const references = start.reduce((references, reference, index) => ({
       ...references,
       [specification.given[index].label.name]: {
@@ -52,14 +78,16 @@ export class SpecificationRunner {
             matches.length === 0;
 
           if (!conditionSatisfied) {
-            return [];
+            // The given exists; the specification excludes it. That is a
+            // complete answer of zero rows, not a missing given.
+            return { kind: 'complete', results: [] };
           }
         }
       }
     }
 
     const products = await this.executeMatchesAndProjection(references, specification.matches, specification.projection);
-    return products;
+    return { kind: 'complete', results: products };
   }
 
   private async executeMatchesAndProjection(references: ReferencesByName, matches: Match[], projection: Projection): Promise<ProjectedResult[]> {

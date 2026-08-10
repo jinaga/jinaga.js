@@ -45,6 +45,70 @@ export const j = JinagaBrowser.create({
 
 If you are upgrading from an older version, you may need to update your code.
 
+### `query()` now throws when a given fact is missing locally
+
+A one-shot `j.query()` now throws a typed `GivenNotFoundError` when one of its
+given facts is not in the local store *and* nothing could have supplied it —
+no replicator is configured, as with `JinagaTest` or a `JinagaBrowser` without
+an HTTP endpoint. Previously the query returned an empty array, which was
+indistinguishable from a specification that legitimately matched nothing.
+
+This matters most with `j.factReference(Type, hash)`, which builds a given
+from a bare hash. A hash that was purged, evicted, never fetched, or simply
+wrong used to read back as "no results".
+
+The error names every reference that was missing:
+
+```typescript
+try {
+    const posts = await j.query(postsInBlog, j.factReference(Blog, hash));
+} catch (e) {
+    if (e instanceof GivenNotFoundError) {
+        console.log(e.references); // [{ type: 'Blog', hash: '...' }]
+    }
+}
+```
+
+Unchanged: when a replicator *was* consulted, nothing is thrown. It evaluated
+the specification from the given and reported what matches, and that answer
+holds whether or not the given is resident locally. A given that exists but is
+excluded by a given condition is also unchanged — that is a real answer of
+zero rows, not a failed read.
+
+`watch()` and `subscribe()` never throw for this. A subscription has a "later"
+in which the fact may arrive, so the condition is reported on the diagnostic
+channel instead and clears itself once results flow.
+
+To upgrade:
+- Save the fact before querying from it, or
+- Catch `GivenNotFoundError`, or
+- Switch to `queryWithDiagnostics()`, which never throws and returns the
+  condition as a diagnostic.
+
+### Diagnostics are now a discriminated union
+
+`queryWithDiagnostics()`, `onDistributionDiagnostic()`, and
+`Observer.diagnostics()` now carry `ReadDiagnostic`, a union of the existing
+per-feed `DistributionDiagnostic` and the new `GivenNotFoundDiagnostic`. Both
+variants carry a required `kind` discriminant.
+
+To upgrade, narrow before reading variant-specific fields:
+
+```typescript
+j.onDistributionDiagnostic(d => {
+    if (d.kind === 'distribution' && d.reactive) {
+        // the subscription race; never fatal
+    }
+});
+```
+
+### `Network` implementations must declare `canLoad`
+
+Custom `Network` implementations must now declare `readonly canLoad: boolean` —
+whether `load()` can return facts that are not already in the local store. This
+is what tells the library whether an absent given is terminal or merely
+pending. Set it to `true` for anything backed by a replicator.
+
 ### `query()` now throws on structural distribution denials
 
 A one-shot `j.query()` now throws a typed `DistributionDeniedError` when the

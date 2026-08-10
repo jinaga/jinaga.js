@@ -11,6 +11,19 @@ import { Trace } from "../util/trace";
 
 export interface Network {
     /**
+     * Whether `load` can return facts that are not already in the local store
+     * (issue #232). A purely local implementation always returns an empty
+     * graph, so nothing it does can ever materialize an absent given; an
+     * absent given is therefore terminal rather than pending.
+     *
+     * Required rather than optional on purpose: an optional flag would have
+     * three states for a two-state property, with `undefined` meaning the same
+     * thing as `true`, and it would leave a genuinely remote implementation
+     * correct by accident instead of by declaration.
+     */
+    readonly canLoad: boolean;
+
+    /**
      * Request the feed hashes for a specification from the replicator's
      * `POST /feeds`. The response carries the feed hashes and, from
      * replicator 3.7.0 onward, the per-feed distribution `decisions`
@@ -35,6 +48,9 @@ export interface Network {
 }
 
 export class NetworkNoOp implements Network {
+    // Nothing behind this network, so `load` can never supply a missing fact.
+    readonly canLoad = false;
+
     feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
         return Promise.resolve({ feeds: [] });
     }
@@ -58,6 +74,11 @@ export class NetworkNoOp implements Network {
 }
 
 export class NetworkDistribution implements Network {
+    // Evaluates distribution rules in process against the local store. It
+    // produces real feed hashes, but `fetchFeed` reports end-of-feed and
+    // `load` returns nothing, so it can never supply a missing fact either.
+    readonly canLoad = false;
+
     private feedCache = new FeedCache();
     // Feed hashes this instance produced via Phase 3 intersection. Used as
     // an unforgeable bypass token for the authorization check on those
@@ -254,6 +275,39 @@ export interface CachedFeeds {
     decisions: FeedDecision[];
 }
 
+/**
+ * The outcome of a one-shot `fetch` (issue #232). Carries the per-feed
+ * distribution decisions of issue #207 alongside the single derived answer to
+ * "could this fetch have supplied a fact the local store is missing?".
+ */
+export interface FetchOutcome {
+    decisions: FeedDecision[];
+    /**
+     * True when a source capable of supplying facts absent from the local store
+     * was consulted for this specification and answered. False means nothing
+     * could have backfilled a missing given, so an absent given is terminal
+     * rather than pending.
+     *
+     * A denial counts as an answer: the replicator was asked and refused, which
+     * explains the empty result without implying anything about whether the
+     * given exists.
+     *
+     * When this is true and a given is still absent, the replicator evaluated
+     * the specification server-side from that given and reported what matches.
+     * That answer stands whether or not the given is locally resident, so an
+     * empty result is authoritative and no diagnostic is warranted.
+     */
+    remoteConsulted: boolean;
+}
+
+/**
+ * The outcome of a keep-alive `subscribe`. Adds the feed hashes the caller
+ * needs for its unsubscribe bookkeeping to the same information `fetch` returns.
+ */
+export interface SubscribeOutcome extends CachedFeeds {
+    remoteConsulted: boolean;
+}
+
 export class NetworkManager {
     private readonly feedsCache = new Map<string, CachedFeeds>();
     private readonly activeFeeds = new Map<string, Promise<void>>();
@@ -322,11 +376,16 @@ export class NetworkManager {
 
     /**
      * Fetch all feeds for a specification and return the replicator's per-feed
-     * distribution decisions correlated to this exact fetch (issue #207 W4).
-     * Callers that don't need diagnostics (plain `query`/`watch`) ignore the
-     * return value; `queryWithDiagnostics` (W8b) maps it to diagnostics.
+     * distribution decisions correlated to this exact fetch (issue #207 W4),
+     * alongside whether a source capable of supplying absent facts was actually
+     * consulted (issue #232).
+     *
+     * `remoteConsulted` is derived here rather than at the call sites because
+     * this is the only place holding all three terms it depends on. Callers get
+     * one boolean instead of recombining the same formula in `query`,
+     * `queryWithDiagnostics`, and the observer.
      */
-    async fetch(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
+    async fetch(start: FactReference[], specification: Specification): Promise<FetchOutcome> {
         const reducedSpecification = reduceSpecification(specification);
         const { feeds, decisions } = await this.getFeedsFromCache(start, reducedSpecification);
 
@@ -349,7 +408,21 @@ export class NetworkManager {
             this.removeFeedsFromCache(start, reducedSpecification);
             throw e;
         }
-        return decisions;
+        // Reaching here means the feed request and every feed fetch completed:
+        // the catch above rethrows otherwise, so completion needs no flag of
+        // its own — a caller never sees `remoteConsulted` from a failed fetch.
+        //
+        // Deliberately not conditioned on the number of feeds. A replicator
+        // that denies the specification reports the decision and returns no
+        // feed to fetch, and one that has nothing to send returns an empty
+        // feed; in both cases it was asked about this specification and
+        // answered. Requiring a non-empty feed list would report a missing
+        // given on top of a denial, which is noise at best and wrong at worst,
+        // since a denial says nothing about whether the given exists.
+        return {
+            decisions,
+            remoteConsulted: this.network.canLoad
+        };
     }
 
     async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {
@@ -359,7 +432,7 @@ export class NetworkManager {
         return [{ start, specification }];
     }
 
-    async subscribe(start: FactReference[], specification: Specification): Promise<CachedFeeds> {
+    async subscribe(start: FactReference[], specification: Specification): Promise<SubscribeOutcome> {
         const reducedSpecification = reduceSpecification(specification);
         const { feeds, decisions } = await this.getFeedsFromCache(start, reducedSpecification);
 
@@ -400,8 +473,13 @@ export class NetworkManager {
         }
         // Return the feed hashes alongside the per-feed decisions so the observer
         // can surface diagnostics (issue #207 W5/W6) while still using `feeds`
-        // for its keep-alive/unsubscribe bookkeeping.
-        return { feeds, decisions };
+        // for its keep-alive/unsubscribe bookkeeping. `remoteConsulted` is
+        // derived on the same terms as in `fetch` (issue #232).
+        return {
+            feeds,
+            decisions,
+            remoteConsulted: this.network.canLoad
+        };
     }
 
     unsubscribe(feeds: string[]) {

@@ -8,6 +8,9 @@ import { model, Company, Office } from "../companyModel";
 import { User } from "@src";
 
 class FlakyNetwork implements Network {
+    // Stands in for a replicator, so it can supply facts the store lacks.
+    readonly canLoad = true;
+
     public fetchFeedShouldFail = true;
     public fetchFeedCalls = 0;
 
@@ -59,6 +62,9 @@ describe("NetworkManager", () => {
         // A network that reports its configured feeds response, so we can
         // assert the NetworkManager threads decisions to callers.
         class DecisionNetwork implements Network {
+    // Stands in for a replicator, so it can supply facts the store lacks.
+    readonly canLoad = true;
+
             public response: FeedsResponse = { feeds: ["feed1"] };
             feeds(): Promise<FeedsResponse> {
                 return Promise.resolve(this.response);
@@ -88,7 +94,9 @@ describe("NetworkManager", () => {
 
             const result = await decisionManager.fetch([], spec);
 
-            expect(result).toEqual(decisions);
+            expect(result.decisions).toEqual(decisions);
+            // A replicator-backed network can supply absent facts (issue #232).
+            expect(result.remoteConsulted).toBe(true);
         });
 
         it("returns an empty decisions array when the replicator omits them", async () => {
@@ -98,7 +106,7 @@ describe("NetworkManager", () => {
 
             const result = await decisionManager.fetch([], spec);
 
-            expect(result).toEqual([]);
+            expect(result.decisions).toEqual([]);
         });
     });
 
@@ -112,7 +120,7 @@ describe("NetworkManager", () => {
             const callsBeforeRetry = network.fetchFeedCalls;
 
             // Second fetch should succeed and call fetchFeed again.
-            await expect(manager.fetch([], spec)).resolves.toEqual([]);
+            await expect(manager.fetch([], spec)).resolves.toMatchObject({ decisions: [] });
             expect(network.fetchFeedCalls).toBeGreaterThan(callsBeforeRetry);
         });
 
@@ -124,7 +132,7 @@ describe("NetworkManager", () => {
             network.fetchFeedShouldFail = false;
 
             // Second fetch must not replay the stale rejected promise.
-            await expect(manager.fetch([], spec)).resolves.toEqual([]);
+            await expect(manager.fetch([], spec)).resolves.toMatchObject({ decisions: [] });
         });
     });
 });

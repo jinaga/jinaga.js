@@ -18,8 +18,12 @@ import { DistributionIntersectionBranch } from "../../src/distribution/distribut
 import { createDevelopmentDiagnosticHandler } from "../../src/managers/developmentDiagnosticHandler";
 import { DistributionDiagnostic } from "../../src/managers/distributionDiagnostic";
 import { Blog, Post, model } from "../blogModel";
+import { asDistribution } from "./diagnosticNarrowing";
 
 class DecisionNetwork implements Network {
+    // Stands in for a replicator, so it can supply facts the store lacks.
+    readonly canLoad = true;
+
   public response: FeedsResponse = { feeds: [] };
   feeds(): Promise<FeedsResponse> { return Promise.resolve(this.response); }
   fetchFeed(_feed: string, bookmark: string): Promise<FeedResponse> { return Promise.resolve({ references: [], bookmark }); }
@@ -32,6 +36,7 @@ class DecisionNetwork implements Network {
 
 function diagnostic(overrides: Partial<DistributionDiagnostic>): DistributionDiagnostic {
   return {
+    kind: "distribution",
     operation: "query",
     specification: "(p1: Blog) { u1: Post [ u1->blog: Blog = p1 ] } => u1",
     decision: "denied",
@@ -81,7 +86,7 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
       const error = await j.query(blogPosts, blog).catch(e => e);
       expect(error).toBeInstanceOf(DistributionDeniedError);
       expect(error.diagnostics).toHaveLength(1);
-      expect(error.diagnostics[0].code).toBe("spec-more-restrictive-than-rule");
+      expect(asDistribution(error.diagnostics[0]).code).toBe("spec-more-restrictive-than-rule");
     });
 
     it("does NOT throw for a reactive decision (the subscription race)", async () => {
@@ -114,7 +119,7 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
       const { results, diagnostics } = await j.queryWithDiagnostics(blogPosts, blog);
       expect(results).toEqual([]);
       expect(diagnostics).toHaveLength(1);
-      expect(diagnostics[0].code).toBe("no-matching-rule");
+      expect(asDistribution(diagnostics[0]).code).toBe("no-matching-rule");
     });
   });
 

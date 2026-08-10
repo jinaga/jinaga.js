@@ -7,6 +7,9 @@ import { WsGraphClient } from "./ws-graph-client";
 import { UserIdentity } from "../user-identity";
 
 export class WsGraphNetwork implements Network {
+  // Delegates `load` to the HTTP network, which reaches the replicator.
+  readonly canLoad = true;
+
   private readonly wsClient: WsGraphClient;
   private factsAddedListener?: (envelopes: FactEnvelope[]) => Promise<void>;
 
