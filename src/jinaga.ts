@@ -73,18 +73,28 @@ export class Jinaga {
     }
 
     /**
-     * Register a callback to receive distribution diagnostics (issue #207 W5).
-     * Fires for `query`, `watch`, and `subscribe` alike — all three pass through
-     * the same per-feed decision capture — whenever a feed is `denied` or
-     * `reactive`. Authorized feeds and old replicators (which report no
-     * decisions) produce nothing, so this channel is inert until there is
-     * something to report.
+     * Register a callback to receive read diagnostics. Fires for `query`,
+     * `watch`, and `subscribe` alike, and is inert until there is something to
+     * report.
+     *
+     * The handler receives the `ReadDiagnostic` union, so narrow on `kind`
+     * before reading variant-specific fields:
+     *
+     *  - `'distribution'` (issue #207 W5) reports a feed the replicator marked
+     *    `denied` or `reactive`; authorized feeds and old replicators, which
+     *    report no decisions, produce nothing. Branch on `diagnostic.reactive`
+     *    once narrowed — a `reactive` diagnostic is the subscription race and
+     *    must never be treated as fatal.
+     *  - `'given-not-found'` (issue #232) reports a given fact that is not in
+     *    the local store where nothing could have supplied it. On `query` this
+     *    accompanies a thrown `GivenNotFoundError`; on `watch`/`subscribe` it
+     *    is the only signal, and it is followed by a `cleared` diagnostic if
+     *    the fact later arrives.
      *
      * This is the always-on programmatic channel: route it to your own
-     * devtools/telemetry. Branch on `diagnostic.reactive` — a `reactive`
-     * diagnostic is the subscription race and must never be treated as fatal.
+     * devtools/telemetry.
      *
-     * @param handler A function to receive each distribution diagnostic
+     * @param handler A function to receive each read diagnostic
      */
     onDistributionDiagnostic(handler: (diagnostic: ReadDiagnostic) => void) {
         this.diagnosticHandlers.push(handler);

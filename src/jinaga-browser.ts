@@ -35,11 +35,13 @@ export type JinagaBrowserConfig = {
     feedRefreshIntervalSeconds?: number,
     purgeConditions?: (p: PurgeConditions) => PurgeConditions,
     /**
-     * Enable development-mode distribution diagnostics (issue #207 W7). When
-     * true, a default handler logs deduplicated, actionable messages to the
-     * console for every distribution decision that is `denied` (error/warn
-     * level) or `reactive` (info level, a pending authorization). A library
-     * cannot reliably read `NODE_ENV`, so the app passes this explicitly, e.g.
+     * Enable development-mode read diagnostics (issue #207 W7). When true, a
+     * default handler logs deduplicated, actionable messages to the console for
+     * every distribution decision that is `denied` (error/warn level) or
+     * `reactive` (info level, a pending authorization), and for a given fact
+     * that is missing locally where nothing could have supplied it (error
+     * level, issue #232). A library cannot reliably read `NODE_ENV`, so the app
+     * passes this explicitly, e.g.
      * `developmentMode: process.env.NODE_ENV !== 'production'`.
      *
      * This does not control whether `query` throws: a one-shot `query` fails

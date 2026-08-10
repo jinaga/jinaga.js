@@ -229,8 +229,11 @@ export class DistributionDeniedError extends Error {
 
 /**
  * Thrown by `query` when a given fact is not in the local store and nothing
- * could have supplied it (issue #232) — no replicator is configured, or the
- * fetch ran no feeds.
+ * could have supplied it (issue #232) — that is, when the network cannot load
+ * facts it does not already hold, as with a client that has no replicator
+ * configured. The number of feeds a fetch ran is deliberately not part of the
+ * condition: a replicator that denies the specification, or that simply has
+ * nothing to send, returns no feed while still having been consulted.
  *
  * A one-shot `query` has no "later" in which the fact might arrive, so a silent
  * empty result would be indistinguishable from a correct answer. `watch` and

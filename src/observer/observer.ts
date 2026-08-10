@@ -32,20 +32,30 @@ export interface Observer<T> {
     processed(): Promise<void>;
     stop(): void;
     /**
-     * The distribution diagnostics (issue #207 W6) captured for this observer's
-     * feeds while loading. This is where a developer holding the observer handle
-     * looks to learn that a feed is `denied` or `reactive`.
+     * The read diagnostics captured for this observer while loading. This is
+     * where a developer holding the observer handle looks to learn that a feed
+     * is `denied` or `reactive` (issue #207 W6), or that a given fact is not in
+     * the local store and nothing could have supplied it (issue #232).
      *
-     * Non-fatal by contract: a denied/reactive feed never rejects `loaded()` and
-     * never puts the observer into an error state — that is what keeps `watch`
-     * and `subscribe` correct through the subscription race.
+     * These are the two variants of the `ReadDiagnostic` union, so narrow on
+     * `kind` before reading variant-specific fields: `reactive`, `code`, and
+     * `feed` exist only on `kind === 'distribution'`, and `references` only on
+     * `kind === 'given-not-found'`.
+     *
+     * Non-fatal by contract: neither variant ever rejects `loaded()` or puts
+     * the observer into an error state. That is what keeps `watch` and
+     * `subscribe` correct through the subscription race, and what lets a
+     * missing given resolve later rather than failing the subscription.
      */
     diagnostics(): ReadDiagnostic[];
     /**
-     * Register a callback for distribution diagnostics. Any diagnostics already
+     * Register a callback for read diagnostics. Any diagnostics already
      * captured are replayed to the handler immediately, and future ones are
      * delivered as they are captured. A throwing handler is isolated and never
      * disturbs the observer.
+     *
+     * The handler receives the `ReadDiagnostic` union; narrow on `kind` before
+     * reading variant-specific fields.
      */
     onDiagnostic(handler: (diagnostic: ReadDiagnostic) => void): void;
 }
@@ -158,10 +168,11 @@ export class ObserverImpl<T> implements Observer<T> {
      */
     private rowIdentityLabels: string[];
     /**
-     * Distribution diagnostics captured for this observer's feeds (issue #207
-     * W6), plus the handlers registered via `onDiagnostic`. `specificationString`
-     * is the developer's pre-intersection spec, so diagnostics name the query
-     * they wrote rather than an internally rewritten branch.
+     * Read diagnostics captured for this observer — per-feed distribution
+     * decisions (issue #207 W6) and missing givens (issue #232) — plus the
+     * handlers registered via `onDiagnostic`. `specificationString` is the
+     * developer's pre-intersection spec, so diagnostics name the query they
+     * wrote rather than an internally rewritten branch.
      */
     private readonly _diagnostics: ReadDiagnostic[] = [];
     private readonly diagnosticHandlers: ((diagnostic: ReadDiagnostic) => void)[] = [];
