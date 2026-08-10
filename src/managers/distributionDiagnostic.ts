@@ -112,12 +112,16 @@ export function isStructuralDenial(diagnostic: DistributionDiagnostic): boolean 
 }
 
 /**
- * Thrown by `query` in development mode (issue #207 W8) when a feed is denied by
- * a structural cause that provably never self-heals — so a mis-authored spec
- * fails loudly at the call site instead of silently returning empty. Never
- * thrown for a `reactive` decision (that would break the subscription race) and
- * never in production, where `query` stays silent-empty. `diagnostics` carries
- * the structural diagnostics that caused the throw.
+ * Thrown by `query` (issue #207 W8) when a feed is denied by a structural cause
+ * that provably never self-heals — so a mis-authored spec fails loudly at the
+ * call site instead of silently returning empty. Never thrown for a `reactive`
+ * decision (that would break the subscription race), nor for a non-structural
+ * denial (`principal-excluded` / `not-authenticated`), which are auth states
+ * rather than authoring errors. `diagnostics` carries the structural
+ * diagnostics that caused the throw.
+ *
+ * Thrown in every environment. `developmentMode` gates only the installation of
+ * the console handler in `JinagaBrowser`, never this contract.
  */
 export class DistributionDeniedError extends Error {
     constructor(public readonly diagnostics: DistributionDiagnostic[]) {
