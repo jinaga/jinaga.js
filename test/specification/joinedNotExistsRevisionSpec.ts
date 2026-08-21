@@ -169,7 +169,7 @@ describe("inversion of a joined notExists", () => {
             i.operation === "remove");
         expect(inverse).toBeDefined();
 
-        expect("\n" + describeSpecification(inverse!.inverseSpecification, 3)).toBe(`
+        expect(formatInverse(inverse!.inverseSpecification)).toBe(`
             (u3: Test.Value) {
                 u2: Test.Value [
                     u2 = u3->prior: Test.Value
@@ -189,8 +189,7 @@ describe("inversion of a joined notExists", () => {
             } => {
                 itemId = u1.id
                 value = u2.value
-            }
-`);
+            }`);
     });
 
     it("produces only well-ordered inverses", () => {
@@ -199,6 +198,15 @@ describe("inversion of a joined notExists", () => {
         }
     });
 });
+
+/**
+ * Render an inverse the way inverseSpec.ts does, so that the golden string reads as
+ * an indented block with no trailing newline.
+ */
+function formatInverse(specification: Specification): string {
+    const description = describeSpecification(specification, 3);
+    return "\n" + description.substring(0, description.length - 1);
+}
 
 /**
  * Every label that a condition references must be bound by the given or by an
