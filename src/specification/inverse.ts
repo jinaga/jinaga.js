@@ -124,9 +124,10 @@ function invertMatches(matches: Match[], labels: Label[], context: InverterConte
         // Simplify the matches by removing any conditions that cannot be satisfied.
         const simplified: Match[] | null = simplifyMatches(matches, label.name);
         if (simplified !== null) {
+            const ordered: Match[] = relocateConditions(simplified);
             const inverseSpecification: Specification = {
-                given: [{label, conditions: simplified[0].conditions.filter(isExistentialCondition) as ExistentialCondition[]}],
-                matches: simplified.slice(1),
+                given: [{label, conditions: ordered[0].conditions.filter(isExistentialCondition) as ExistentialCondition[]}],
+                matches: ordered.slice(1),
                 projection: context.projection
             };
             const inverse: SpecificationInverse = {
@@ -228,6 +229,100 @@ function invertAndMovePathCondition(matches: Match[], label: string, pathConditi
     return matches;
 }
 
+/**
+ * Move each existential condition to the match at which every label it references
+ * is bound.
+ *
+ * `shakeTree` reorders the matches so that the tagged label comes first, which can
+ * leave an existential condition on a match that precedes a label the condition
+ * path-references. An existential condition is a filter on the tuple, not a binder
+ * of outer labels, so moving it later in the conjunction preserves the result set
+ * while restoring the invariant that `SpecificationRunner` relies on: every label a
+ * condition names is already bound by the time the condition runs.
+ *
+ * Conditions are appended, never prepended, so the "first condition must be a path
+ * condition" invariant holds. Conditions whose labels are already bound do not move,
+ * which leaves authored given conditions exactly where they were.
+ *
+ * This must run only when the inverse specification is built, not inside
+ * `shakeTree`: `invertMatches` still reads `matches[0].conditions` to drive the
+ * recursive `invertExistentialConditions` call, and relocating conditions there
+ * would drop inverses.
+ */
+function relocateConditions(matches: Match[]): Match[] {
+    const bindingIndex = new Map<string, number>();
+    matches.forEach((match, index) => bindingIndex.set(match.unknown.name, index));
+
+    const conditionsByIndex: Condition[][] = matches.map(match => [ ...match.conditions ]);
+    let moved = false;
+
+    for (let index = 0; index < conditionsByIndex.length; index++) {
+        const remaining: Condition[] = [];
+        for (const condition of conditionsByIndex[index]) {
+            const target = condition.type === "existential" ?
+                latestBindingIndex(condition, bindingIndex) :
+                index;
+            if (target > index) {
+                conditionsByIndex[target].push(condition);
+                moved = true;
+            }
+            else {
+                remaining.push(condition);
+            }
+        }
+        conditionsByIndex[index] = remaining;
+    }
+
+    if (!moved) {
+        return matches;
+    }
+
+    return matches.map((match, index) => ({
+        unknown: match.unknown,
+        conditions: conditionsByIndex[index]
+    }));
+}
+
+/**
+ * The index of the last match that binds a label referenced by this condition, or
+ * -1 if the condition references no label bound by the match list.
+ */
+function latestBindingIndex(condition: ExistentialCondition, bindingIndex: Map<string, number>): number {
+    let latest = -1;
+    for (const label of freeLabels(condition.matches, new Set<string>())) {
+        const index = bindingIndex.get(label);
+        if (index !== undefined && index > latest) {
+            latest = index;
+        }
+    }
+    return latest;
+}
+
+/**
+ * The labels that these matches reference but do not themselves bind.
+ */
+function freeLabels(matches: Match[], bound: Set<string>): string[] {
+    const innerBound = new Set<string>(bound);
+    for (const match of matches) {
+        innerBound.add(match.unknown.name);
+    }
+
+    const labels: string[] = [];
+    for (const match of matches) {
+        for (const condition of match.conditions) {
+            if (condition.type === "path") {
+                if (!innerBound.has(condition.labelRight)) {
+                    labels.push(condition.labelRight);
+                }
+            }
+            else {
+                labels.push(...freeLabels(condition.matches, innerBound));
+            }
+        }
+    }
+    return labels;
+}
+
 function findMatch(matches: Match[], label: string): Match {
     for (const match of matches) {
         if (match.unknown.name === label) {
@@ -253,9 +348,10 @@ function invertExistentialConditions(outerMatches: Match[], conditions: Conditio
                     // The matches in the existential condition are unsatisfiable.
                     continue;
                 }
+                const ordered: Match[] = relocateConditions(simplifiedMatches);
                 const inverseSpecification: Specification = {
-                    given: [{ label: match.unknown, conditions: simplifiedMatches[0].conditions.filter(isExistentialCondition) as ExistentialCondition[] }],
-                    matches: simplifiedMatches.slice(1),
+                    given: [{ label: match.unknown, conditions: ordered[0].conditions.filter(isExistentialCondition) as ExistentialCondition[] }],
+                    matches: ordered.slice(1),
                     projection: context.projection
                 };
                 const operation = inferOperation(parentOperation, condition.exists);
