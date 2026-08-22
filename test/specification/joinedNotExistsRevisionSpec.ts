@@ -1,4 +1,5 @@
-import { buildModel, Condition, describeSpecification, invertSpecification, Jinaga, JinagaTest, LabelOf, Match, Specification, User } from "@src";
+import { buildModel, describeSpecification, invertSpecification, Jinaga, JinagaTest, LabelOf, Specification, User } from "@src";
+import { expectWellOrdered } from "./specificationTestHelpers";
 
 // Issue #238: a `notExists` correlated on TWO predecessors via `.join()` crashes an
 // already-running subscription with "The label u1 is not defined" when a second
@@ -206,45 +207,4 @@ describe("inversion of a joined notExists", () => {
 function formatInverse(specification: Specification): string {
     const description = describeSpecification(specification, 3);
     return "\n" + description.substring(0, description.length - 1);
-}
-
-/**
- * Every label that a condition references must be bound by the given or by an
- * earlier match. SpecificationRunner throws "The label X is not defined" otherwise.
- */
-function expectWellOrdered(specification: Specification) {
-    const bound = new Set<string>(specification.given.map(g => g.label.name));
-    for (const given of specification.given) {
-        for (const condition of given.conditions) {
-            expectLabelsBound(condition, bound, given.label.name);
-        }
-    }
-    for (const match of specification.matches) {
-        bound.add(match.unknown.name);
-        for (const condition of match.conditions) {
-            expectLabelsBound(condition, bound, match.unknown.name);
-        }
-    }
-}
-
-function expectLabelsBound(condition: Condition, bound: Set<string>, owner: string) {
-    if (condition.type === "path") {
-        if (!bound.has(condition.labelRight)) {
-            throw new Error(`Condition on ${owner} references unbound label ${condition.labelRight}. ` +
-                `Bound: [${Array.from(bound).join(", ")}]`);
-        }
-    }
-    else {
-        expectMatchesBound(condition.matches, bound, owner);
-    }
-}
-
-function expectMatchesBound(matches: Match[], bound: Set<string>, owner: string) {
-    const inner = new Set<string>(bound);
-    for (const match of matches) {
-        inner.add(match.unknown.name);
-        for (const condition of match.conditions) {
-            expectLabelsBound(condition, inner, owner);
-        }
-    }
 }
