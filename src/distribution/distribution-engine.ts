@@ -55,9 +55,16 @@ export interface DistributionIntersectionResult {
  * restrictive *for this user* (the rule excludes them) is not a distinct code —
  * it surfaces as `principal-excluded`. That is different from
  * `spec-more-restrictive-than-rule`, which is about the *target specification*
- * being narrower than a rule (it adds a positive join the rule lacks) and is
- * produced by the near-miss classification pass. Do not add a code the engine
- * cannot produce.
+ * carrying structure some rule lacks, and is produced by the near-miss
+ * classification pass. Do not add a code the engine cannot produce.
+ *
+ * That code covers two situations the near-miss pass tells apart in its
+ * *reason* (see `describeNearMiss`): the target traverses to a fact type no
+ * rule shares, or the target adds a not-exists condition no rule imposes. Only
+ * the second is literally "more restrictive"; the first asks for more. Both
+ * deny correctly. The code name is retained for wire compatibility — a client
+ * rejects a `code` it does not recognize (`messageParsers.ts`), so a new code
+ * cannot be introduced until clients tolerate unknown ones.
  *
  * `distributionDenialCodes` is the runtime source of truth; the type is derived
  * from it so callers (e.g. the `POST /feeds` response parser) can validate
@@ -268,19 +275,18 @@ export class DistributionEngine {
 
     if (reasons.length === 0) {
       // No rule's shape matched the target at all. Run the diagnostic-only
-      // near-miss pass (W2, off the hot path): is the target a *narrower*
-      // version of some rule — i.e. does it contain all of a rule's facts,
-      // edges, and not-exists conditions plus additional positive structure
-      // the rule lacks? If so, the developer narrowed the spec past the rule
-      // rather than simply having no rule at all.
-      const nearMissRule = findNearMissRule(targetSkeleton, this.distributionRules);
-      if (nearMissRule !== null) {
+      // near-miss pass (W2, off the hot path): does the target contain all of
+      // some rule's facts, edges, and not-exists conditions, plus structure the
+      // rule lacks? If so, name the structure — that is what the developer has
+      // to add to the rule.
+      const nearMiss = findNearMissRule(targetSkeleton, this.distributionRules);
+      if (nearMiss !== null) {
         return {
           type: 'failure',
           code: 'spec-more-restrictive-than-rule',
           reason: `Cannot distribute to ${describeSpecification(targetFeed, 0)}` +
-            `The specification is more restrictive than the distribution rule ` +
-            `${describeSpecification(nearMissRule, 0)}`
+            `${describeNearMiss(nearMiss)}` +
+            `${describeSpecification(nearMiss.ruleFeed, 0)}`
         };
       }
       return {
@@ -544,16 +550,69 @@ function skeletonContains(ruleSkeleton: Skeleton, targetSkeleton: Skeleton): boo
  * here we are diagnosing a target that *adds* them, so we test plain structural
  * containment rather than sound-sub-feed containment.
  */
-function findNearMissRule(targetSkeleton: Skeleton, distributionRules: DistributionRules): Specification | null {
+function findNearMissRule(targetSkeleton: Skeleton, distributionRules: DistributionRules): NearMiss | null {
   for (const rule of distributionRules.rules) {
     for (const ruleFeed of rule.feeds) {
       const ruleSkeleton = skeletonOfSpecification(ruleFeed);
       if (skeletonIsProperSubset(ruleSkeleton, targetSkeleton)) {
-        return ruleFeed;
+        const unsharedFactTypes = Array.from(new Set(targetSkeleton.facts
+          .filter(targetFact => !ruleSkeleton.facts.some(ruleFact => factsEqual(ruleFact, targetFact)))
+          .map(fact => fact.factType)));
+        return {
+          ruleFeed,
+          unsharedFactTypes,
+          // A top-level edge the rule lacks means the target *traverses* to the
+          // extra facts and would receive them. With no extra top-level edge,
+          // the extra facts entered the skeleton as the witnesses of a
+          // not-exists condition the target added.
+          traversesFurther: targetSkeleton.edges.length > ruleSkeleton.edges.length
+        };
       }
     }
   }
   return null;
+}
+
+/**
+ * The near-miss rule feed, and what the target has that it does not.
+ */
+interface NearMiss {
+  ruleFeed: Specification;
+  unsharedFactTypes: string[];
+  traversesFurther: boolean;
+}
+
+/**
+ * Explain a near miss in the terms the developer has to act on: which fact
+ * types the rule does not share, and why adding them to the rule is the fix.
+ *
+ * Both branches deny, and both deny correctly. They are distinguished because
+ * the remedies read differently, and because the wire code
+ * (`spec-more-restrictive-than-rule`, kept for compatibility — older clients
+ * reject a code they do not know, see `messageParsers.ts`) describes only the
+ * second. A developer told "your specification is more restrictive than the
+ * rule" while the real problem is that it asks for a fact type no rule shares
+ * will look in the wrong place.
+ */
+function describeNearMiss(nearMiss: NearMiss): string {
+  // The extra structure is usually a fact type the rule never mentions, and
+  // naming it is the whole point. It need not be: a target can also add an edge
+  // between facts the rule already has, in which case there is no new type to
+  // name and the sentence has to stand without one.
+  const types = nearMiss.unsharedFactTypes.join(', ');
+  if (nearMiss.traversesFurther) {
+    const what = types.length > 0
+      ? `traverses to ${types}, which this rule does not share`
+      : `joins facts in a way this rule does not`;
+    return `The specification ${what}. ` +
+      `A rule authorizes only the facts its own feeds deliver. If the extra facts come ` +
+      `from a projection, share a specification with the same projection. Near miss: `;
+  }
+  const over = types.length > 0 ? ` over ${types}` : '';
+  return `The specification adds a not-exists condition${over}, which this rule ` +
+    `does not contain. A rule does not authorize a condition it does not itself impose: ` +
+    `evaluating one would disclose whether such facts exist, and its excluding feed would ` +
+    `deliver them. Add the same condition to the rule. Near miss: `;
 }
 
 /**
