@@ -595,13 +595,21 @@ interface NearMiss {
  * will look in the wrong place.
  */
 function describeNearMiss(nearMiss: NearMiss): string {
+  // The extra structure is usually a fact type the rule never mentions, and
+  // naming it is the whole point. It need not be: a target can also add an edge
+  // between facts the rule already has, in which case there is no new type to
+  // name and the sentence has to stand without one.
   const types = nearMiss.unsharedFactTypes.join(', ');
   if (nearMiss.traversesFurther) {
-    return `The specification traverses to ${types}, which this rule does not share. ` +
+    const what = types.length > 0
+      ? `traverses to ${types}, which this rule does not share`
+      : `joins facts in a way this rule does not`;
+    return `The specification ${what}. ` +
       `A rule authorizes only the facts its own feeds deliver. If the extra facts come ` +
       `from a projection, share a specification with the same projection. Near miss: `;
   }
-  return `The specification adds a not-exists condition over ${types}, which this rule ` +
+  const over = types.length > 0 ? ` over ${types}` : '';
+  return `The specification adds a not-exists condition${over}, which this rule ` +
     `does not contain. A rule does not authorize a condition it does not itself impose: ` +
     `evaluating one would disclose whether such facts exist, and its excluding feed would ` +
     `deliver them. Add the same condition to the rule. Near miss: `;
