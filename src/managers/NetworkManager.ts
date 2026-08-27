@@ -295,10 +295,10 @@ export class NetworkManager {
         private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>,
         feedRefreshIntervalSeconds?: number,
         /**
-         * Reports whether a notification is currently in flight. Optional so
-         * that callers without an observable source keep the old behavior.
+         * Reports whether a listener callback is currently executing. Optional
+         * so that callers without an observable source keep the old behavior.
          */
-        private readonly isNotifying?: () => boolean
+        private readonly isDispatchingListener?: () => boolean
     ) {
         this.feedRefreshIntervalSeconds = feedRefreshIntervalSeconds || 90; // Default to 90 seconds
     }
@@ -359,15 +359,14 @@ export class NetworkManager {
         // Fork to fetch from each feed.
         const promises = feeds.map(feed => {
             if (this.activeFeeds.has(feed)) {
-                if (this.blockedOnOurOwnNotification(feed)) {
+                if (this.joinWouldAwaitARunningListener(feed)) {
                     // That feed's processFeed is parked awaiting a batch that is
-                    // itself awaiting the notification we are running inside.
-                    // Waiting on it would deadlock: it cannot finish until this
-                    // call returns (issue #246). Its facts are already saved, so
-                    // read them and move on. Only later pages of the same feed
-                    // are forgone, which this caller would not have had yet.
+                    // itself awaiting a listener callback — quite possibly this
+                    // caller. Waiting on it would then deadlock, since it cannot
+                    // finish until this call returns (issue #246). Its facts are
+                    // already saved, so read them and move on.
                     Trace.counter("network_feed_join_skipped_reentrant", 1);
-                    Trace.warn(`[NetworkManager] Skipping join of in-flight feed ${feed}: its load is awaiting the notification this call is running inside. Continuing with the facts already saved.`);
+                    Trace.warn(`[NetworkManager] Skipping join of in-flight feed ${feed}: its load is awaiting a listener callback that may be this caller. Continuing with the facts already saved.`);
                     return Promise.resolve();
                 }
                 return this.activeFeeds.get(feed);
@@ -540,13 +539,22 @@ export class NetworkManager {
     }
 
     /**
-     * True when `feed` is parked on a batch that is awaiting notification and
-     * we are ourselves inside a notification turn. That is the exact shape of
-     * the re-entrant cycle: a listener callback queried for a feed whose loader
-     * is waiting on that very callback.
+     * True when `feed` is parked on a batch that is awaiting notification while
+     * some listener callback is executing. That is the shape of the re-entrant
+     * cycle: a listener queried for a feed whose loader is waiting on that very
+     * callback.
+     *
+     * It is not caller-scoped, and cannot be without async context propagation
+     * that the browser target rules out, so an unrelated `fetch` issued while
+     * some other listener runs can also match. What that costs is bounded: the
+     * condition requires this same feed to be mid-notification, so its batch's
+     * facts are already durable in the store and the caller still reads them.
+     * Only pages the feed has not fetched yet are forgone, and the feed goes on
+     * loading them for the next reader. Waiting instead risks a permanent hang,
+     * which is the failure this exists to prevent.
      */
-    private blockedOnOurOwnNotification(feed: string): boolean {
-        return this.isNotifying?.() === true
+    private joinWouldAwaitARunningListener(feed: string): boolean {
+        return this.isDispatchingListener?.() === true
             && this.feedsAwaitingBatch.get(feed)?.notifying === true;
     }
 }

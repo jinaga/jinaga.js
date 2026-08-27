@@ -29,7 +29,7 @@ export class FactManager {
     ) {
         this.networkManager = new NetworkManager(network, store,
             factsAdded => this.factsAdded(factsAdded), feedRefreshIntervalSeconds,
-            () => this.observableSource.isNotifying());
+            () => this.observableSource.isDispatchingListener());
 
         this.purgeManager = new PurgeManager(store, purgeConditions);
     }

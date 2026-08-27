@@ -59,14 +59,22 @@ export type JinagaBrowserConfig = {
      * settle. That is the deliberate trade: a bounded, logged delivery gap in
      * place of an unbounded wedge.
      */
-    listenerTimeoutMs?: number
+    listenerTimeoutMs?: number,
+    /**
+     * How the listeners registered for one specification are dispatched.
+     * `"parallel"` (the default) notifies them at once, so a slow callback does
+     * not delay its peers. `"serial"` restores one-at-a-time dispatch for an
+     * app that depends on ordering between listeners.
+     */
+    listenerDispatch?: "parallel" | "serial"
 }
 
 export class JinagaBrowser {
     static create(config: JinagaBrowserConfig) {
         const store = createStore(config);
         const observableSource = new ObservableSource(store, {
-            listenerTimeoutMs: config.listenerTimeoutMs
+            listenerTimeoutMs: config.listenerTimeoutMs,
+            listenerDispatch: config.listenerDispatch
         });
         const syncStatusNotifier = new SyncStatusNotifier();
         const webClient = createWebClient(config, syncStatusNotifier);

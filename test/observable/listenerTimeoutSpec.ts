@@ -8,8 +8,12 @@ import { waitForCondition } from "../utils/async-test-utils";
  */
 class CountingTracer extends NoOpTracer implements Tracer {
     public readonly counters: { [name: string]: number } = {};
+    public readonly errors: string[] = [];
     counter(name: string, value: number): void {
         this.counters[name] = (this.counters[name] ?? 0) + value;
+    }
+    error(error: any): void {
+        this.errors.push(String(error));
     }
 }
 
@@ -22,11 +26,12 @@ const managersInOffice = model.given(Office).match((office, facts) =>
         .join(manager => manager.office, office)
 );
 
-function createClient(listenerTimeoutMs: number): Jinaga {
+function createClient(listenerTimeoutMs: number, listenerDispatch?: "parallel" | "serial"): Jinaga {
     return JinagaTest.create({
         model,
         initialState: [creator, company, office],
-        listenerTimeoutMs
+        listenerTimeoutMs,
+        listenerDispatch
     });
 }
 
@@ -166,6 +171,32 @@ describe("a listener that never settles (issue #246)", () => {
         finally {
             process.off("unhandledRejection", onUnhandled);
         }
+    }, 15000);
+
+    it("serializes dispatch when the caller opts out of parallel", async () => {
+        // The serial opt-out is reachable from the public harness, and restores
+        // the behavior where a wedged listener holds up its peers until it
+        // times out.
+        const j = createClient(300, "serial");
+
+        const wedged = j.watch(managersInOffice, office, () => new Promise<void>(() => { }));
+        const received: number[] = [];
+        const healthy = j.watch(managersInOffice, office, manager => {
+            received.push(manager.employeeNumber);
+        });
+        await wedged.loaded();
+        await healthy.loaded();
+
+        const start = Date.now();
+        await j.fact(new Manager(office, 8));
+        const elapsed = Date.now() - start;
+
+        expect(received).toEqual([8]);
+        // The healthy listener ran only after the wedged one timed out.
+        expect(elapsed).toBeGreaterThanOrEqual(250);
+
+        wedged.stop();
+        healthy.stop();
     }, 15000);
 
     it("waits indefinitely when the timeout is disabled", async () => {

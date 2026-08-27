@@ -42,6 +42,7 @@ export class ObservableSource {
     private readonly listenerTimeoutMs: number;
     private readonly listenerDispatch: "parallel" | "serial";
     private notificationDepth = 0;
+    private listenerDispatchDepth = 0;
 
     constructor(private store: Storage, options: ObservableSourceOptions = {}) {
         this.listenerTimeoutMs = options.listenerTimeoutMs ?? DEFAULT_LISTENER_TIMEOUT_MS;
@@ -71,13 +72,21 @@ export class ObservableSource {
     }
 
     /**
-     * True while at least one `notify` is in flight. Lets the network layer
-     * recognize a feed whose load is parked in notification, so it does not
-     * wait on a promise that cannot make progress until the notification
-     * returns (issue #246).
+     * True while at least one listener callback is executing. Lets the network
+     * layer recognize a feed whose load is parked behind a listener that may be
+     * this very caller, so it does not wait on a promise that cannot make
+     * progress until the callback returns (issue #246).
+     *
+     * This is narrower than "a notify turn is open" — it excludes the store
+     * reads `notifyFactSaved` performs between spec groups — but it is still
+     * not caller-scoped: it cannot distinguish "this call came from inside a
+     * listener" from "some unrelated listener happens to be running". Precise
+     * attribution needs async context propagation, which the browser target
+     * rules out. See `NetworkManager.joinWouldAwaitARunningListener` for what
+     * the remaining imprecision costs.
      */
-    public isNotifying(): boolean {
-        return this.notificationDepth > 0;
+    public isDispatchingListener(): boolean {
+        return this.listenerDispatchDepth > 0;
     }
 
     public addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
@@ -274,13 +283,14 @@ export class ObservableSource {
         const notifyStart = Date.now();
         Trace.info(`[ObservableSource] Calling listener ${label} - Nested: ${hasNestedSpecs}`);
         Trace.counter("observable_listener_started", 1);
+        this.listenerDispatchDepth++;
         try {
             const outcome = await withTimeout(
                 specificationListener.onResult(results),
                 this.listenerTimeoutMs,
                 late => {
                     Trace.counter("observable_listener_late_settled", 1);
-                    if (late.error !== undefined) {
+                    if ("error" in late) {
                         Trace.error(`[ObservableSource] Abandoned listener ${label} rejected after ${late.elapsedMs}ms - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Error: ${late.error}`);
                     } else {
                         Trace.warn(`[ObservableSource] Abandoned listener ${label} finally completed after ${late.elapsedMs}ms - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}`);
@@ -311,6 +321,9 @@ export class ObservableSource {
             Trace.counter("observable_listener_failed", 1);
             Trace.error(`[ObservableSource] ERROR in listener notification - Listener ${label}, Nested: ${hasNestedSpecs}, Error: ${error}`);
             return false;
+        }
+        finally {
+            this.listenerDispatchDepth--;
         }
     }
 }
