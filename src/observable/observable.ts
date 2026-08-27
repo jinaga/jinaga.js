@@ -25,13 +25,6 @@ export interface ObservableSourceOptions {
      * `DEFAULT_LISTENER_TIMEOUT_MS`.
      */
     listenerTimeoutMs?: number;
-    /**
-     * `"parallel"` (the default) dispatches every listener registered for a
-     * specification at once, so one slow listener does not delay its peers.
-     * `"serial"` restores one-at-a-time dispatch for a consumer that depends
-     * on ordering between listeners.
-     */
-    listenerDispatch?: "parallel" | "serial";
 }
 
 export class ObservableSource {
@@ -40,13 +33,11 @@ export class ObservableSource {
         listeners: SpecificationListener[]
     }>> = new Map();
     private readonly listenerTimeoutMs: number;
-    private readonly listenerDispatch: "parallel" | "serial";
     private notificationDepth = 0;
     private listenerDispatchDepth = 0;
 
     constructor(private store: Storage, options: ObservableSourceOptions = {}) {
         this.listenerTimeoutMs = options.listenerTimeoutMs ?? DEFAULT_LISTENER_TIMEOUT_MS;
-        this.listenerDispatch = options.listenerDispatch ?? "parallel";
     }
 
     async notify(saved: FactEnvelope[]): Promise<void> {
@@ -63,6 +54,16 @@ export class ObservableSource {
         }
         this.notificationDepth++;
         try {
+            // KNOWN GAP: `saved` arrives in topological order — Dehydration
+            // pushes a fact's predecessors before the fact itself, and both
+            // stores preserve input order — and this line discards it. That is
+            // the one causal edge the model states explicitly and this dispatch
+            // does not honor. `ObserverImpl.pendingAddsByKey` is the standing
+            // compensation: a child row whose parent has not been delivered
+            // buffers and replays when the parent's onAdded registers.
+            // Tracked separately; do not treat this fan-out as evidence that
+            // predecessor order is unimportant.
+            //
             // Wait for all notifications to complete before resolving
             await Promise.all(saved.map(envelope => this.notifyFactSaved(envelope.fact)));
         }
@@ -237,21 +238,28 @@ export class ObservableSource {
                     // Create a snapshot of listeners to avoid modification during iteration
                     const listenerSnapshot = [...listeners.listeners];
 
-                    // notifyListener never rejects, so no dispatch strategy can
-                    // leave a sibling rejection unhandled or short-circuit the
-                    // listeners behind it.
-                    if (this.listenerDispatch === "parallel") {
-                        const outcomes = await Promise.all(listenerSnapshot.map((specificationListener, i) =>
-                            this.notifyListener(specificationListener, results, i, listenerSnapshot.length, specificationKey, fact.type, hasNestedSpecs)));
-                        totalNotifications += outcomes.filter(completed => completed).length;
-                    }
-                    else {
-                        for (let i = 0; i < listenerSnapshot.length; i++) {
-                            if (await this.notifyListener(listenerSnapshot[i], results, i, listenerSnapshot.length, specificationKey, fact.type, hasNestedSpecs)) {
-                                totalNotifications++;
-                            }
-                        }
-                    }
+                    // Concurrent by derivation, not by preference. The model
+                    // records causality explicitly — a fact names its
+                    // predecessors — and it delivers specification results as
+                    // SETS precisely to say that no such relation holds among
+                    // them. The listeners in this group are independent
+                    // subscriptions to one specification, so the model records
+                    // no edge between them and dispatch order is not ours to
+                    // define. Do not reintroduce a mode toggle here: offering
+                    // "serial" would promise an ordering the model refuses to
+                    // make, and a consumer that came to depend on it would be
+                    // depending on an accident.
+                    //
+                    // Sequencing belongs only where an edge exists: predecessor
+                    // before successor, and a parent row before its child rows
+                    // (see the await in ObserverImpl.notifyAddedRow).
+                    //
+                    // notifyListener never rejects, so one listener can neither
+                    // leave a sibling rejection unhandled nor short-circuit the
+                    // others.
+                    const outcomes = await Promise.all(listenerSnapshot.map((specificationListener, i) =>
+                        this.notifyListener(specificationListener, results, i, listenerSnapshot.length, specificationKey, fact.type, hasNestedSpecs)));
+                    totalNotifications += outcomes.filter(completed => completed).length;
                 } else {
                     Trace.info(`[ObservableSource] Skipping spec ${specCount}/${listenersBySpecification.size} - No listeners or null group`);
                 }

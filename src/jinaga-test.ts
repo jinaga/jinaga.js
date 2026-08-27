@@ -30,13 +30,7 @@ export type JinagaTestConfig = {
    * settle before continuing without it (issue #246). Set to 0 to wait
    * indefinitely. Defaults to `DEFAULT_LISTENER_TIMEOUT_MS`.
    */
-  listenerTimeoutMs?: number,
-  /**
-   * How the listeners registered for one specification are dispatched.
-   * `"parallel"` (the default) notifies them at once; `"serial"` restores
-   * one-at-a-time dispatch.
-   */
-  listenerDispatch?: "parallel" | "serial"
+  listenerTimeoutMs?: number
 }
 
 export class JinagaTest {
@@ -44,8 +38,7 @@ export class JinagaTest {
     const store = new MemoryStore();
     this.saveInitialState(config, store);
     const observableSource = new ObservableSource(store, {
-      listenerTimeoutMs: config.listenerTimeoutMs,
-      listenerDispatch: config.listenerDispatch
+      listenerTimeoutMs: config.listenerTimeoutMs
     });
     const syncStatusNotifier = new SyncStatusNotifier();
     const fork = new PassThroughFork(store);

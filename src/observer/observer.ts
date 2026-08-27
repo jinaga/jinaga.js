@@ -713,6 +713,12 @@ export class ObserverImpl<T> implements Observer<T> {
                 return;
             }
             Trace.info(`[Observer] CALLING HANDLER - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
+            // Awaiting this handler before the recursion below is a causal
+            // requirement, not a convenience. `injectObservers` captured THIS
+            // row's tupleHash in the onAdded closure it put on `result`, so a
+            // child handler enters `addedHandlers` only when this callback
+            // reaches into `result.<component>.onAdded`. Descending before that
+            // returns finds no handler and buffers instead of delivering.
             const promiseMaybe = resultAdded(result);
             if (promiseMaybe instanceof Promise) {
                 // Mark this row as having a genuine in-flight async add so
@@ -759,7 +765,13 @@ export class ObserverImpl<T> implements Observer<T> {
             Trace.info(`[Observer] Skipping already notified row - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
         }
 
-        // Recursively notify added for specification results.
+        // Recursively notify added for specification results. Parent before
+        // child is the model's causal edge here — the closure capture in
+        // injectObservers is what records it — so this must stay downstream of
+        // the awaited handler above and must not become a Promise.all with it.
+        // Sibling ROWS carry no such edge (results are a set), which is why
+        // notifyAdded's loop is merely conservative rather than required; see
+        // ObservableSource's listener fan-out for the same rule stated there.
         if (projection.type === "composite") {
             for (const component of projection.components) {
                 if (component.type === "specification") {
