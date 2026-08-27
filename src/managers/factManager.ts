@@ -28,7 +28,8 @@ export class FactManager {
         feedRefreshIntervalSeconds?: number
     ) {
         this.networkManager = new NetworkManager(network, store,
-            factsAdded => this.factsAdded(factsAdded), feedRefreshIntervalSeconds);
+            factsAdded => this.factsAdded(factsAdded), feedRefreshIntervalSeconds,
+            () => this.observableSource.isNotifying());
 
         this.purgeManager = new PurgeManager(store, purgeConditions);
     }

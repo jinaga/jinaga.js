@@ -175,6 +175,13 @@ class LoadBatch {
     private readonly factReferences: FactReference[] = [];
     private started = false;
     public readonly completed: Promise<void>;
+    /**
+     * True once the graph is saved and this batch is awaiting the notification
+     * fan-out. A feed parked on `completed` at this point cannot make progress
+     * until every listener returns, which is what lets `fetch` recognize a
+     * re-entrant join it must not wait on (issue #246).
+     */
+    public notifying = false;
     private resolve: (() => void) | undefined;
     private reject: ((reason: any) => void) | undefined;
     private timeout: NodeJS.Timeout;
@@ -224,7 +231,15 @@ class LoadBatch {
         const factsAdded = await this.store.save(graph);
         if (factsAdded.length > 0) {
             Trace.counter("facts_saved", factsAdded.length);
-            await this.notifyFactsAdded(factsAdded);
+            // The graph is durable in the store before this point, so a reader
+            // that declines to wait for the notification still sees these facts.
+            this.notifying = true;
+            try {
+                await this.notifyFactsAdded(factsAdded);
+            }
+            finally {
+                this.notifying = false;
+            }
         }
     }
 }
@@ -259,6 +274,12 @@ export class NetworkManager {
     private readonly activeFeeds = new Map<string, Promise<void>>();
     private fetchCount = 0;
     private currentBatch: LoadBatch | null = null;
+    /**
+     * The batch each in-flight feed is currently parked on, if any. Together
+     * with `LoadBatch.notifying` this identifies a feed whose progress depends
+     * on a notification completing (issue #246).
+     */
+    private readonly feedsAwaitingBatch = new Map<string, LoadBatch>();
     private subscribers: Map<string, Subscriber> = new Map();
     private readonly feedRefreshIntervalSeconds: number;
     // Per-feed "began delivering data" signal (issue #207 W9). `feedsDelivered`
@@ -272,7 +293,12 @@ export class NetworkManager {
         private readonly network: Network,
         private readonly store: Storage,
         private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>,
-        feedRefreshIntervalSeconds?: number
+        feedRefreshIntervalSeconds?: number,
+        /**
+         * Reports whether a notification is currently in flight. Optional so
+         * that callers without an observable source keep the old behavior.
+         */
+        private readonly isNotifying?: () => boolean
     ) {
         this.feedRefreshIntervalSeconds = feedRefreshIntervalSeconds || 90; // Default to 90 seconds
     }
@@ -333,6 +359,17 @@ export class NetworkManager {
         // Fork to fetch from each feed.
         const promises = feeds.map(feed => {
             if (this.activeFeeds.has(feed)) {
+                if (this.blockedOnOurOwnNotification(feed)) {
+                    // That feed's processFeed is parked awaiting a batch that is
+                    // itself awaiting the notification we are running inside.
+                    // Waiting on it would deadlock: it cannot finish until this
+                    // call returns (issue #246). Its facts are already saved, so
+                    // read them and move on. Only later pages of the same feed
+                    // are forgone, which this caller would not have had yet.
+                    Trace.counter("network_feed_join_skipped_reentrant", 1);
+                    Trace.warn(`[NetworkManager] Skipping join of in-flight feed ${feed}: its load is awaiting the notification this call is running inside. Continuing with the facts already saved.`);
+                    return Promise.resolve();
+                }
                 return this.activeFeeds.get(feed);
             }
             else {
@@ -473,7 +510,13 @@ export class NetworkManager {
                             // This is the last fetch, so trigger the batch.
                             batch.trigger();
                         }
-                        await batch.completed;
+                        this.feedsAwaitingBatch.set(feed, batch);
+                        try {
+                            await batch.completed;
+                        }
+                        finally {
+                            this.feedsAwaitingBatch.delete(feed);
+                        }
                     }
 
                     bookmark = nextBookmark;
@@ -491,8 +534,20 @@ export class NetworkManager {
             }
         }
         finally {
+            this.feedsAwaitingBatch.delete(feed);
             this.activeFeeds.delete(feed);
         }
+    }
+
+    /**
+     * True when `feed` is parked on a batch that is awaiting notification and
+     * we are ourselves inside a notification turn. That is the exact shape of
+     * the re-entrant cycle: a listener callback queried for a feed whose loader
+     * is waiting on that very callback.
+     */
+    private blockedOnOurOwnNotification(feed: string): boolean {
+        return this.isNotifying?.() === true
+            && this.feedsAwaitingBatch.get(feed)?.notifying === true;
     }
 }
 

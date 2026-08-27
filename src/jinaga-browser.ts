@@ -47,13 +47,27 @@ export type JinagaBrowserConfig = {
      * every mode by default (issue jinaga-server#179). Development mode only
      * adds the console logging on top.
      */
-    developmentMode?: boolean
+    developmentMode?: boolean,
+    /**
+     * Maximum milliseconds to wait for a single watch or subscribe callback to
+     * settle before continuing without it (issue #246). A callback that never
+     * settles would otherwise block `fact()`, and every query behind it,
+     * forever. Set to 0 to wait indefinitely. Defaults to 30000.
+     *
+     * Once a listener exceeds this bound, `fact()` may resolve before that
+     * callback has run, and `processed()` on the affected observer may never
+     * settle. That is the deliberate trade: a bounded, logged delivery gap in
+     * place of an unbounded wedge.
+     */
+    listenerTimeoutMs?: number
 }
 
 export class JinagaBrowser {
     static create(config: JinagaBrowserConfig) {
         const store = createStore(config);
-        const observableSource = new ObservableSource(store);
+        const observableSource = new ObservableSource(store, {
+            listenerTimeoutMs: config.listenerTimeoutMs
+        });
         const syncStatusNotifier = new SyncStatusNotifier();
         const webClient = createWebClient(config, syncStatusNotifier);
         const fork = createFork(config, store, webClient);

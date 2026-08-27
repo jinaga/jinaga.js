@@ -127,4 +127,73 @@ describe("NetworkManager", () => {
             await expect(manager.fetch([], spec)).resolves.toEqual([]);
         });
     });
+
+    describe("in-flight feed joining (issue #246)", () => {
+        // A network whose fetchFeed is held open until the test releases it,
+        // so a second fetch is guaranteed to arrive while the first is active.
+        class GatedNetwork implements Network {
+            public fetchFeedCalls = 0;
+            private release: (() => void) | undefined;
+            public readonly gate: Promise<void>;
+
+            constructor() {
+                this.gate = new Promise<void>(resolve => { this.release = resolve; });
+            }
+
+            open() {
+                this.release?.();
+            }
+
+            feeds(): Promise<FeedsResponse> {
+                return Promise.resolve({ feeds: ["feed1"] });
+            }
+
+            async fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
+                this.fetchFeedCalls++;
+                await this.gate;
+                return { references: [], bookmark };
+            }
+
+            streamFeed(): () => void {
+                return () => { };
+            }
+
+            load(): Promise<FactEnvelope[]> {
+                return Promise.resolve([]);
+            }
+
+            intersectForSubscribe(start: FactReference[], specification: Specification) {
+                return Promise.resolve([{ start, specification }]);
+            }
+        }
+
+        it("still joins an in-flight feed when no notification is in progress", async () => {
+            const gated = new GatedNetwork();
+            // isNotifying reports false, so the re-entrancy escape hatch never
+            // applies and the second call must share the first call's work.
+            const gatedManager = new NetworkManager(gated, new MemoryStore(), async () => { }, undefined, () => false);
+
+            const first = gatedManager.fetch([], spec);
+            const second = gatedManager.fetch([], spec);
+            gated.open();
+            await Promise.all([first, second]);
+
+            expect(gated.fetchFeedCalls).toBe(1);
+        });
+
+        it("still joins an in-flight feed while notifying, unless that feed is awaiting the notification", async () => {
+            const gated = new GatedNetwork();
+            // A notification is in flight, but this feed is parked on the
+            // network rather than on a notification, so joining it makes
+            // progress and must not be skipped.
+            const gatedManager = new NetworkManager(gated, new MemoryStore(), async () => { }, undefined, () => true);
+
+            const first = gatedManager.fetch([], spec);
+            const second = gatedManager.fetch([], spec);
+            gated.open();
+            await Promise.all([first, second]);
+
+            expect(gated.fetchFeedCalls).toBe(1);
+        });
+    });
 });
