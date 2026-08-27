@@ -52,7 +52,8 @@ export type JinagaBrowserConfig = {
      * Maximum milliseconds to wait for a single watch or subscribe callback to
      * settle before continuing without it (issue #246). A callback that never
      * settles would otherwise block `fact()`, and every query behind it,
-     * forever. Set to 0 to wait indefinitely. Defaults to 30000.
+     * forever. Set to 0 to wait indefinitely. Defaults to
+     * `DEFAULT_LISTENER_TIMEOUT_MS`.
      *
      * Once a listener exceeds this bound, `fact()` may resolve before that
      * callback has run, and `processed()` on the affected observer may never

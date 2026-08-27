@@ -45,7 +45,7 @@ export { Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager"
 export { QueueProcessor, Saver } from './managers/QueueProcessor';
 export { MemoryStore } from './memory/memory-store';
 export { Device, User, UserName } from "./model/user";
-export { ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
+export { DEFAULT_LISTENER_TIMEOUT_MS, ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
 export { ObservableCollection } from './observer/observer';
 export { Subscriber } from './observer/subscriber';
 export { PurgeConditions } from './purge/purgeConditions';

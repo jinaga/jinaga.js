@@ -64,7 +64,12 @@ export class ObservableSource {
             // Tracked separately; do not treat this fan-out as evidence that
             // predecessor order is unimportant.
             //
-            // Wait for all notifications to complete before resolving
+            // Every fact's notification is awaited to a conclusion, but a
+            // conclusion is not the same as completion: a listener either
+            // finishes, fails, or is abandoned once it exceeds
+            // `listenerTimeoutMs`. So `notify()` resolving does NOT imply that
+            // every listener ran to completion, and neither does the `save()`
+            // above it. Bounding that wait is the point of issue #246.
             await Promise.all(saved.map(envelope => this.notifyFactSaved(envelope.fact)));
         }
         finally {
