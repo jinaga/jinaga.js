@@ -2,10 +2,34 @@ import { describeSpecification } from '../specification/description';
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, ProjectedResult, Storage } from '../storage';
 import { computeStringHash } from '../util/encoding';
+import { TIMED_OUT, withTimeout } from '../util/promise';
 import { Trace } from '../util/trace';
 
 export interface SpecificationListener {
     onResult(results: ProjectedResult[]): Promise<void>;
+}
+
+/**
+ * Ceiling on a single listener's `onResult`, in milliseconds. Deliberately
+ * generous: it must never fire for a healthy handler, only for a wedged one.
+ */
+export const DEFAULT_LISTENER_TIMEOUT_MS = 30000;
+
+export interface ObservableSourceOptions {
+    /**
+     * Maximum time to wait for one listener's `onResult` to settle before
+     * abandoning the wait and continuing without it. A callback that never
+     * settles would otherwise block the save that triggered the notification,
+     * and every query behind it, forever (issue #246). Set to 0 to wait
+     * indefinitely, which is the behavior prior to that fix. Defaults to
+     * `DEFAULT_LISTENER_TIMEOUT_MS`.
+     *
+     * This bounds one listener, not one save. Listeners registered for the
+     * same specification are dispatched concurrently, but specification groups
+     * are notified in sequence, so a fact type with K wedged groups can delay
+     * its save by up to K times this value.
+     */
+    listenerTimeoutMs?: number;
 }
 
 export class ObservableSource {
@@ -13,21 +37,49 @@ export class ObservableSource {
         specification: Specification,
         listeners: SpecificationListener[]
     }>> = new Map();
+    private readonly listenerTimeoutMs: number;
+    private listenerDispatchDepth = 0;
 
-    constructor(private store: Storage) {
+    constructor(private store: Storage, options: ObservableSourceOptions = {}) {
+        this.listenerTimeoutMs = options.listenerTimeoutMs ?? DEFAULT_LISTENER_TIMEOUT_MS;
     }
 
     async notify(saved: FactEnvelope[]): Promise<void> {
-        // Collect all notification promises to ensure all callbacks complete
-        const notificationPromises: Promise<void>[] = [];
-        
-        for (let index = 0; index < saved.length; index++) {
-            const envelope = saved[index];
-            notificationPromises.push(this.notifyFactSaved(envelope.fact));
+        if (this.listenerDispatchDepth > 0) {
+            // A notification entered while a listener callback is running. Two
+            // overlapping notifications are ordinary concurrency -- two feeds
+            // delivering at once -- and keying on that would warn on nearly
+            // every busy client, drowning the signal. Keying on a listener
+            // being mid-dispatch is what actually distinguishes re-entrancy:
+            // a callback that wrote or queried facts and came back through
+            // this path from inside its own notification.
+            //
+            // Still not caller-scoped -- an unrelated listener may simply
+            // happen to be running -- because precise attribution needs async
+            // context propagation that the browser target rules out. So this
+            // warns and continues rather than throwing on a pattern that works
+            // today.
+            Trace.counter("observable_notify_reentrant", 1);
+            Trace.warn(`[ObservableSource] RE-ENTRANT NOTIFY - Listener dispatch depth on entry: ${this.listenerDispatchDepth}, Envelopes: ${saved.length}. A listener callback appears to be writing or querying facts from inside its own notification; the listener timeout (${this.listenerTimeoutMs}ms) bounds any stall this causes.`);
         }
-        
-        // Wait for all notifications to complete before resolving
-        await Promise.all(notificationPromises);
+
+        // KNOWN GAP: `saved` arrives in topological order — Dehydration
+        // pushes a fact's predecessors before the fact itself, and both
+        // stores preserve input order — and this line discards it. That is
+        // the one causal edge the model states explicitly and this dispatch
+        // does not honor. `ObserverImpl.pendingAddsByKey` is the standing
+        // compensation: a child row whose parent has not been delivered
+        // buffers and replays when the parent's onAdded registers.
+        // Tracked separately; do not treat this fan-out as evidence that
+        // predecessor order is unimportant.
+        //
+        // Every fact's notification is awaited to a conclusion, but a
+        // conclusion is not the same as completion: a listener either
+        // finishes, fails, or is abandoned once it exceeds
+        // `listenerTimeoutMs`. So `notify()` resolving does NOT imply that
+        // every listener ran to completion, and neither does the `save()`
+        // above it. Bounding that wait is the point of issue #246.
+        await Promise.all(saved.map(envelope => this.notifyFactSaved(envelope.fact)));
     }
 
     public addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
@@ -177,32 +229,38 @@ export class ObservableSource {
                     
                     // Create a snapshot of listeners to avoid modification during iteration
                     const listenerSnapshot = [...listeners.listeners];
-                    if (listenerSnapshot.length !== listeners.listeners.length) {
-                        Trace.warn(`[ObservableSource] RACE CONDITION DETECTED - Listener count changed during snapshot: ${listenerSnapshot.length} vs ${listeners.listeners.length}`);
-                    }
-                    
-                    for (let i = 0; i < listenerSnapshot.length; i++) {
-                        const specificationListener = listenerSnapshot[i];
-                        if (specificationListener) {
-                            try {
-                                const notifyStart = Date.now();
-                                Trace.info(`[ObservableSource] Calling listener ${i+1}/${listenerSnapshot.length} - Nested: ${hasNestedSpecs}`);
-                                await specificationListener.onResult(results);
-                                const notifyDuration = Date.now() - notifyStart;
-                                totalNotifications++;
-                                
-                                if (notifyDuration > 100) {
-                                    Trace.warn(`[ObservableSource] SLOW notification - Listener ${i+1}/${listenerSnapshot.length}, Duration: ${notifyDuration}ms, Nested: ${hasNestedSpecs}`);
-                                } else {
-                                    Trace.info(`[ObservableSource] Listener completed - ${i+1}/${listenerSnapshot.length}, Duration: ${notifyDuration}ms`);
-                                }
-                            } catch (error) {
-                                Trace.error(`[ObservableSource] ERROR in listener notification - Listener ${i+1}/${listenerSnapshot.length}, Nested: ${hasNestedSpecs}, Error: ${error}`);
-                            }
-                        } else {
-                            Trace.warn(`[ObservableSource] NULL listener encountered at index ${i}`);
-                        }
-                    }
+
+                    // Concurrent by derivation, not by preference. The model
+                    // records causality explicitly — a fact names its
+                    // predecessors — and it delivers specification results as
+                    // SETS precisely to say that no such relation holds among
+                    // them. The listeners in this group are independent
+                    // subscriptions to one specification, so the model records
+                    // no edge between them and dispatch order is not ours to
+                    // define. Do not reintroduce a mode toggle here: offering
+                    // "serial" would promise an ordering the model refuses to
+                    // make, and a consumer that came to depend on it would be
+                    // depending on an accident.
+                    //
+                    // Sequencing belongs only where an edge exists: predecessor
+                    // before successor, and a parent row before its child rows
+                    // (see the await in ObserverImpl.notifyAddedRow).
+                    //
+                    // notifyListener never rejects, so one listener can neither
+                    // leave a sibling rejection unhandled nor short-circuit the
+                    // others.
+                    //
+                    // The fan-out is within a spec group only; the loop over
+                    // spec groups above is still serial, so a wedged listener
+                    // delays the groups after it by up to listenerTimeoutMs
+                    // each. A fact type with K wedged groups therefore costs
+                    // K * listenerTimeoutMs, not one. Distinct specifications
+                    // carry no causal edge either, so hoisting this Promise.all
+                    // to that loop would be sound; it is left serial here to
+                    // keep this change to the wait that caused issue #246.
+                    const outcomes = await Promise.all(listenerSnapshot.map((specificationListener, i) =>
+                        this.notifyListener(specificationListener, results, i, listenerSnapshot.length, specificationKey, fact.type, hasNestedSpecs)));
+                    totalNotifications += outcomes.filter(completed => completed).length;
                 } else {
                     Trace.info(`[ObservableSource] Skipping spec ${specCount}/${listenersBySpecification.size} - No listeners or null group`);
                 }
@@ -212,6 +270,69 @@ export class ObservableSource {
             Trace.info(`[ObservableSource] NOTIFY COMPLETE - Fact: ${fact.hash.substring(0, 8)}..., Type: ${fact.type}, Specs processed: ${specCount} (${nestedSpecCount} nested), Total notifications: ${totalNotifications}, Duration: ${totalDuration}ms`);
         } else {
             Trace.info(`[ObservableSource] No listeners for fact type: ${fact.type} - Available types: [${Array.from(this.listenersByTypeAndSpecification.keys()).join(', ')}]`);
+        }
+    }
+
+    /**
+     * Dispatch one listener, bounding how long we wait for it. Never rejects:
+     * a listener that throws, or one that never settles, is reported and
+     * stepped over so it cannot hold the save that triggered this notification
+     * (issue #246). Returns whether the listener actually completed.
+     */
+    private async notifyListener(
+        specificationListener: SpecificationListener,
+        results: ProjectedResult[],
+        index: number,
+        count: number,
+        specificationKey: string,
+        givenType: string,
+        hasNestedSpecs: boolean
+    ): Promise<boolean> {
+        const label = `${index + 1}/${count}`;
+        const notifyStart = Date.now();
+        Trace.info(`[ObservableSource] Calling listener ${label} - Nested: ${hasNestedSpecs}`);
+        Trace.counter("observable_listener_started", 1);
+        this.listenerDispatchDepth++;
+        try {
+            const outcome = await withTimeout(
+                specificationListener.onResult(results),
+                this.listenerTimeoutMs,
+                late => {
+                    Trace.counter("observable_listener_late_settled", 1);
+                    if ("error" in late) {
+                        Trace.error(`[ObservableSource] Abandoned listener ${label} rejected after ${late.elapsedMs}ms - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Error: ${late.error}`);
+                    } else {
+                        Trace.warn(`[ObservableSource] Abandoned listener ${label} finally completed after ${late.elapsedMs}ms - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}`);
+                    }
+                });
+            const notifyDuration = Date.now() - notifyStart;
+
+            if (outcome === TIMED_OUT) {
+                Trace.counter("observable_listener_timed_out", 1);
+                Trace.warn(`[ObservableSource] LISTENER TIMEOUT - Listener ${label} did not settle within ${this.listenerTimeoutMs}ms; abandoning the wait so the save can complete. Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Nested: ${hasNestedSpecs}`);
+                Trace.metric("observable_listener_timeout", {
+                    durationMs: notifyDuration,
+                    listenerIndex: index,
+                    listenerCount: count
+                });
+                return false;
+            }
+
+            Trace.counter("observable_listener_completed", 1);
+            if (notifyDuration > 100) {
+                Trace.warn(`[ObservableSource] SLOW notification - Listener ${label}, Duration: ${notifyDuration}ms, Nested: ${hasNestedSpecs}`);
+            } else {
+                Trace.info(`[ObservableSource] Listener completed - ${label}, Duration: ${notifyDuration}ms`);
+            }
+            return true;
+        }
+        catch (error) {
+            Trace.counter("observable_listener_failed", 1);
+            Trace.error(`[ObservableSource] ERROR in listener notification - Listener ${label}, Nested: ${hasNestedSpecs}, Error: ${error}`);
+            return false;
+        }
+        finally {
+            this.listenerDispatchDepth--;
         }
     }
 }
