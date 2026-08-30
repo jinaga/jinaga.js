@@ -19,7 +19,11 @@
 #   scripts/register-stack.sh create <pr> <pr> [<pr> ...]   # bottom to top, min 2
 #   scripts/register-stack.sh add <stack_number> <pr> [...] # append above current top
 #
-# Requires GH_TOKEN or GITHUB_TOKEN with pull_requests write.
+# Requires GH_TOKEN or GITHUB_TOKEN with write access to pull requests. That is
+# "Pull requests: Read and write" on a fine-grained token, `pull-requests: write`
+# in an Actions workflow, or the `repo` scope on a classic token. The API reports
+# the requirement itself as `X-Accepted-Github-Permissions: pull_requests=write`.
+#
 # Override the target repository with STACK_REPO=owner/name.
 
 set -euo pipefail
@@ -36,9 +40,11 @@ die() { printf 'register-stack: %s\n' "$1" >&2; exit 1; }
 # from being widened by clever arguments. Validation must run in the calling
 # shell, never inside a command substitution: `exit` in a substitution ends only
 # the subshell, which would let a rejected argument through to the API.
+# Pull request and stack numbers are always 1 or greater, so reject 0 and any
+# leading-zero form here rather than letting the API reject them for us.
 require_number() {
   case "$1" in
-    ''|*[!0-9]*) die "expected a positive integer, got '$1'" ;;
+    ''|*[!0-9]*|0*) die "expected a positive integer, got '$1'" ;;
     *) : ;;
   esac
 }
