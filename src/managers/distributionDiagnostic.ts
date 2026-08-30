@@ -12,6 +12,10 @@ import { FeedDecision } from "../http/messages";
  * as fatal. When `false`, the denial is structural (a missing or narrowed-past
  * rule, or a principal the rule excludes) and will not self-heal on its own.
  *
+ * It is therefore *not* a copy of `decision`: a replicator that reports
+ * `decision: "reactive"` for a structurally denied feed yields `reactive:
+ * false` here. See `toDistributionDiagnostics`.
+ *
  * `code` is optional because a `reactive` decision need not carry one (the
  * replicator may report the pending case without a denial code); a `denied`
  * decision always carries one.
@@ -42,10 +46,36 @@ export interface DistributionDiagnostic {
 }
 
 /**
+ * The denial codes that describe the *shape* of the specification against the
+ * shape of every rule: no rule matched it, or it carries structure no rule has.
+ * Neither depends on which facts exist or on who is logged in, so no fact that
+ * later arrives can change either verdict. That is what makes them structural,
+ * and it is a property of the code alone.
+ */
+const structuralDenialCodes: readonly DistributionDenialCode[] = ['no-matching-rule', 'spec-more-restrictive-than-rule'];
+
+/**
+ * True when a denial code is one of those. A decision need not carry a code at
+ * all — the replicator may report the pending case without one — and an absent
+ * code claims nothing about the shapes, so it is not structural.
+ */
+function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
+    return code !== undefined && structuralDenialCodes.includes(code);
+}
+
+/**
  * Map the replicator's per-feed decisions (issue #207 W4) to developer-facing
  * diagnostics. Only `denied` and `reactive` feeds produce a diagnostic;
  * `authorized` feeds are silent. Old replicators report no decisions, so this
  * yields an empty array and the new APIs are inert.
+ *
+ * `reactive` is derived from the *code* rather than copied from the decision.
+ * A replicator can report `decision: "reactive"` alongside a structural code
+ * (observed on jinaga-replicator 3.7.7, issue #242), and the two disagree: the
+ * decision predicts the feed will self-heal, while the code says the shapes
+ * never matched, which no arriving fact can change. The code is the narrower,
+ * checkable claim, so it wins. `decision` still carries what the replicator
+ * actually said, for a consumer that wants to see it.
  */
 export function toDistributionDiagnostics(
     operation: DistributionDiagnostic['operation'],
@@ -59,7 +89,7 @@ export function toDistributionDiagnostics(
             specification,
             decision: d.decision as 'reactive' | 'denied',
             code: d.code,
-            reactive: d.decision === 'reactive',
+            reactive: d.decision === 'reactive' && !isStructuralCode(d.code),
             reason: d.reason,
             feed: d.feed
         }));
@@ -99,7 +129,8 @@ export function toClearingDiagnostic(
  * past its rule. These never self-heal (unlike the subscription race), so they
  * are the only cases `query` throws for (issue #207 W8) and the ones the
  * default dev handler reports at error level (W7). A `reactive` diagnostic is
- * never structural regardless of its code.
+ * never structural — but `reactive` is itself derived from the code, so a
+ * replicator calling a structural denial reactive does not suppress the throw.
  *
  * The throw is unconditional. `developmentMode` gates only the installation of
  * the console handler in `JinagaBrowser`, never `query`'s contract, so a
@@ -107,8 +138,7 @@ export function toClearingDiagnostic(
  */
 export function isStructuralDenial(diagnostic: DistributionDiagnostic): boolean {
     return !diagnostic.reactive
-        && (diagnostic.code === 'no-matching-rule'
-            || diagnostic.code === 'spec-more-restrictive-than-rule');
+        && isStructuralCode(diagnostic.code);
 }
 
 /**
