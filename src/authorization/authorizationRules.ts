@@ -5,6 +5,7 @@ import { describeSpecification } from '../specification/description';
 import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload } from '../specification/model';
 import { Condition, Label, Match, PathCondition, Specification, splitBeforeFirstSuccessor } from '../specification/specification';
 import { SpecificationParser } from '../specification/specification-parser';
+import { validateSpecificationOrThrow } from '../specification/specification-validation';
 import { FactEnvelope, FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
 import { distinct, filterAsync, flatten, flattenAsync } from '../util/fn';
 import { Trace } from '../util/trace';
@@ -224,7 +225,11 @@ export class AuthorizationRuleNone implements AuthorizationRule {
 export class AuthorizationRuleSpecification implements AuthorizationRule {
     constructor(
         private specification: Specification
-    ) { }
+    ) {
+        // A rule is stored once and run on every save of the type it governs.
+        // Refuse a specification that could never run, at the point it is written.
+        validateSpecificationOrThrow(specification, "The specification of an authorization rule");
+    }
 
     describe(type: string): string {
         const description = describeSpecification(this.specification, 1);

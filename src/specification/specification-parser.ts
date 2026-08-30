@@ -5,6 +5,7 @@ import { PurgeConditions } from "../purge/purgeConditions";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
 import { Condition, ExistentialCondition, SpecificationGiven, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
+import { matchStructureError } from "./specification-validation";
 
 type FieldValue = string | number | boolean;
 
@@ -233,7 +234,12 @@ export class SpecificationParser {
         while (!this.consume("]")) {
             conditions.push(this.parseCondition(unknown, labels));
         }
-        return { unknown, conditions };
+        const match = { unknown, conditions };
+        const error = matchStructureError(match);
+        if (error) {
+            throw new Invalid(error);
+        }
+        return match;
     }
 
     parseMatches(labels: Label[]): { matches: Match[], labels: Label[] } {
