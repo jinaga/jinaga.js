@@ -24,14 +24,22 @@ export type JinagaTestConfig = {
   device?: {},
   initialState?: {}[],
   purgeConditions?: (p: PurgeConditions) => PurgeConditions,
-  feedRefreshIntervalSeconds?: number
+  feedRefreshIntervalSeconds?: number,
+  /**
+   * Maximum milliseconds to wait for a single watch or subscribe callback to
+   * settle before continuing without it (issue #246). Set to 0 to wait
+   * indefinitely. Defaults to `DEFAULT_LISTENER_TIMEOUT_MS`.
+   */
+  listenerTimeoutMs?: number
 }
 
 export class JinagaTest {
   static create(config: JinagaTestConfig) {
     const store = new MemoryStore();
     this.saveInitialState(config, store);
-    const observableSource = new ObservableSource(store);
+    const observableSource = new ObservableSource(store, {
+      listenerTimeoutMs: config.listenerTimeoutMs
+    });
     const syncStatusNotifier = new SyncStatusNotifier();
     const fork = new PassThroughFork(store);
     const authentication = this.createAuthentication(config, store);
