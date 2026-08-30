@@ -892,7 +892,7 @@ query, it was not this library's handling of the shape.
 Exercised on both, at the level each mechanism actually fails at rather than
 only end to end:
 
-| | verdict |
+| check | verdict |
 |---|---|
 | `buildFeeds` on every variant | decomposes; no feed unordered, no skeleton throws |
 | one level of negation per feed (chapter 12) | holds; the predecessor walk smuggles no second level in |

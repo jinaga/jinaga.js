@@ -23,7 +23,7 @@ import { expectWellOrdered } from "./specificationTestHelpers";
 // and edges by traversal order, so this sees an ordering divergence that a diff
 // of the two texts cannot.
 function expectRuleToDecomposeLikeTheQuery(specification: Specification) {
-    const rules = new DistributionRules([]).share(new SpecificationOf(specification) as any).withEveryone();
+    const rules = new DistributionRules([]).share(new SpecificationOf(specification)).withEveryone();
     const policyText = rules.saveToDescription();
     const loaded = DistributionRules.loadFromDescription(policyText);
 
@@ -38,7 +38,10 @@ function expectRuleToDecomposeLikeTheQuery(specification: Specification) {
 // decided. `viaPolicyText` selects the replicator's route: rule objects written
 // out by `saveToDescription` and read back by the parser.
 async function canDistribute(specification: Specification, given: any, viaPolicyText: boolean) {
-    let rules: DistributionRules = new DistributionRules([]).share(new SpecificationOf(specification) as any).withEveryone();
+    // Every specification here is given a single Tenant. Say so, rather than
+    // letting `given[0]` silently pick the first of several.
+    expect(specification.given).toHaveLength(1);
+    let rules: DistributionRules = new DistributionRules([]).share(new SpecificationOf(specification)).withEveryone();
     if (viaPolicyText) {
         rules = DistributionRules.loadFromDescription(rules.saveToDescription());
     }
