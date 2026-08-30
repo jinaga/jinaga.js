@@ -77,9 +77,28 @@ There is no MCP tool for the Stacks API. Use the committed script, which is pre-
 ./scripts/register-stack.sh add <stack-number> <pr>    # append above the current top
 ```
 
-Register as soon as the second pull request in a chain exists. Observed behaviour, from the first real run: registration alone was enough — `build` fired on both upper layers without any further push. Do not count on that, because `pull_request.opened` cannot carry stack information (a pull request is created before it joins a stack) and `stacked` is not among the workflow's default `pull_request` types. Treat a short gap as normal and a long one as worth reporting.
+Register as soon as the second pull request in a chain exists. **Registration does not, by itself, start a check run on a layer whose pull request already exists.** It changes how *future* `pull_request` events on that layer are evaluated; it does not reach back and trigger a run for an event that already fired. A pull request is created before it joins a stack, so its `opened` event carried no stack information, and `stacked` is not among the workflow's default `pull_request` types.
 
-Until checks appear, absent checks are expected. **Never push an empty commit, and never close and reopen a pull request, to provoke a run.** `main.yml` declares `workflow_dispatch` if a run genuinely needs forcing.
+Measured on the first real stack (`main` ← #253 ← #255 ← #257), by reading the `event` field of each workflow run rather than only its conclusion:
+
+| head | layer | how CI actually ran |
+|---|---|---|
+| `f3af791` | #253, base `main` | `pull_request` |
+| `699c705` | #255, base = #253's branch | `workflow_dispatch` |
+| `aadee42` | #257, base = #255's branch | `workflow_dispatch` |
+
+Only the bottom layer ran from its own pull request event. Both upper layers were green because a session dispatched the workflow by hand. An earlier revision of this section claimed registration alone had been enough, because whoever wrote it saw green checks and never looked at what triggered them. Check the `event`, not just the conclusion.
+
+Scope that lookup by commit. Listing a workflow's recent runs returns tens of kilobytes and will overflow a tool result; ask for the one head you care about instead:
+
+```
+gh api "repos/jinaga/jinaga.js/actions/runs?head_sha=<sha>" \
+  --jq '.workflow_runs[] | select(.name=="CI") | "\(.event)/\(.conclusion)"'
+```
+
+So an upper layer's first run arrives on its **next push**, or you trigger it yourself. `main.yml` declares `workflow_dispatch` for exactly that, and using it is the sanctioned move here rather than a workaround — say in your report that you dispatched it.
+
+Until then, absent checks are expected. **Never push an empty commit, and never close and reopen a pull request, to provoke a run.**
 
 ## 6. When to stop and ask instead
 
