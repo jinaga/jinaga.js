@@ -51,7 +51,7 @@ Every bug fix needs a regression test that fails before the change and passes af
 
 ## Working from issues
 
-Issues labelled `ready` are queued for automated work. `.claude/skills/night-shift/SKILL.md` documents that protocol: how to tell whether an issue is already claimed or already fixed, how ordering is decided, when to stop and ask a question instead of guessing, and how stacked pull requests are opened and registered.
+Issues labelled `ready` are queued for automated work. `.claude/skills/night-shift/SKILL.md` documents that protocol: how to tell whether an issue is already claimed or already fixed, how ordering is decided, when to stop and ask a question instead of guessing, how stacked pull requests are opened and registered, and how each run is recorded so the reasoning survives the container.
 
 Read it before picking up a `ready` issue, whether you are a scheduled agent or a person driving one.
 
