@@ -52,7 +52,16 @@ export interface DistributionDiagnostic {
  * later arrives can change either verdict. That is what makes them structural,
  * and it is a property of the code alone.
  */
-const structuralDenialCodes: readonly string[] = ['no-matching-rule', 'spec-more-restrictive-than-rule'];
+const structuralDenialCodes: readonly DistributionDenialCode[] = ['no-matching-rule', 'spec-more-restrictive-than-rule'];
+
+/**
+ * True when a denial code is one of those. A decision need not carry a code at
+ * all — the replicator may report the pending case without one — and an absent
+ * code claims nothing about the shapes, so it is not structural.
+ */
+function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
+    return code !== undefined && structuralDenialCodes.includes(code);
+}
 
 /**
  * Map the replicator's per-feed decisions (issue #207 W4) to developer-facing
@@ -80,7 +89,7 @@ export function toDistributionDiagnostics(
             specification,
             decision: d.decision as 'reactive' | 'denied',
             code: d.code,
-            reactive: d.decision === 'reactive' && !structuralDenialCodes.includes(d.code ?? ''),
+            reactive: d.decision === 'reactive' && !isStructuralCode(d.code),
             reason: d.reason,
             feed: d.feed
         }));
@@ -129,7 +138,7 @@ export function toClearingDiagnostic(
  */
 export function isStructuralDenial(diagnostic: DistributionDiagnostic): boolean {
     return !diagnostic.reactive
-        && structuralDenialCodes.includes(diagnostic.code ?? '');
+        && isStructuralCode(diagnostic.code);
 }
 
 /**
