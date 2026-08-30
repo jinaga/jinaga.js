@@ -874,3 +874,66 @@ everything on either side of it, and both halves matter:
 So the lock-step claim holds for the *decision* and not, previously, for its
 *consequences*. A passing `JinagaTest` run is still not sufficient evidence for
 a distribution fix, for the reason `CLAUDE.md` gives.
+
+### 10.5 #241 — the shape is not a limitation, and #244 is not why
+
+Issue #241 reports that a `notExists` predicate resolving a **predecessor**
+chain before it reaches `successors` is denied by the distribution engine, even
+against a rule built from the literally identical function, while the same query
+restructured to walk successors end to end is authorized.
+
+**It does not reproduce.** Not on this branch, and — the part that matters — not
+at `0d6c13b` (`6.11.4`), the client version the reporter was running. PR #255's
+note to this session guessed that #244's restoring-feed continuation (L6c, in
+`6.11.5`) had fixed it under the reporter's feet. That guess is wrong:
+`6.11.4` predates #244 and answers the same way. Whatever denied the reporter's
+query, it was not this library's handling of the shape.
+
+Exercised on both, at the level each mechanism actually fails at rather than
+only end to end:
+
+| | verdict |
+|---|---|
+| `buildFeeds` on every variant | decomposes; no feed unordered, no skeleton throws |
+| one level of negation per feed (chapter 12) | holds; the predecessor walk smuggles no second level in |
+| rule feeds vs. query feeds, TypeScript objects | skeleton-identical |
+| rule feeds vs. query feeds, `saveToDescription` → parser | skeleton-identical, text round trip idempotent |
+| `canDistributeToAll`, both routes | `success` |
+| result set vs. the successors-only restructuring | equal, across live / deleted / restored |
+| the facts the feeds carry | every selected fact is delivered by some feed |
+
+Seven shapes were tried, not one: the issue's own generalized reproduction; the
+reporter's described model, where the predicate walks up a predecessor edge the
+query never walked down, so it binds fact types that appear nowhere else in the
+specification; that walk spelled compactly as one two-role path condition, which
+reaches a different branch of `addPathCondition`; a walk correlated back to an
+outer label by `join`; a single level of negation; a walk inside the *second*
+level of negation; and the walk reached through a chain that already carries its
+own delete/restore `notExists`. All seven authorize.
+
+`predecessorNotExistsDistributionSpec.ts` pins the two that correspond to what
+the issue and its production account describe.
+
+**What this rules out and what it does not.** Everything on the client side of
+the wire is measured. Nothing on the replicator side is: the reporter ran
+`jinaga-replicator` 3.7.7, whose embedded feed decomposition and rule loading no
+in-repo test reaches. `CLAUDE.md`'s warning cuts both ways here — a green
+`JinagaTest` run is not sufficient evidence that a distribution fix works, and
+seven green in-repo shapes are not sufficient evidence that a reported denial
+has no cause.
+
+**On the reporter's second ask.** They asked that, if predecessor traversal
+inside a `notExists` predicate is a genuine limitation, it surface as a
+validation error rather than a query-time `DistributionDeniedError`
+indistinguishable from an authorization failure. On this evidence it is not a
+limitation, so no such diagnostic is warranted: rejecting the shape would refuse
+specifications that work. `validateSpecification` (§ the #226 work) accepts every
+variant above, correctly.
+
+Two denials *do* produce the message the reporter saw, and both are already
+named: a query whose projection reaches fact types no rule shares (§10.2, whose
+reason text now says so), and a structural denial reported as `reactive` and
+therefore swallowed (§10.4, now derived from the code). The first reproduces the
+reporter's log prefix exactly —
+`Cannot distribute to (p1: <Tenant>) {` — from a cause that has nothing to do
+with `notExists`.
