@@ -117,6 +117,13 @@ function buildFeedsOfRule(specification: Specification): Specification[] {
 function validatedUserSpecification(user: Specification | null): Specification | null {
   if (user) {
     validateSpecificationOrThrow(user, "The user specification of a distribution rule");
+    // `DistributionEngine.canDistributeTo` reads the principal out of this
+    // projection, and throws while distributing if it is anything else. A rule
+    // that projects a composite could never authorize anyone, so refuse it here
+    // instead.
+    if (user.projection.type !== "fact") {
+      throw new Error(`The user specification of a distribution rule must project a single fact, not a ${user.projection.type}.\n${describeSpecification(user, 1)}`);
+    }
   }
   return user;
 }

@@ -223,6 +223,24 @@ describe("rules that carry a specification", () => {
         }
     });
 
+    it("refuses a distribution rule whose user specification projects a composite", () => {
+        // `DistributionEngine.canDistributeTo` reads the principal out of a fact
+        // projection, and throws while distributing if the rule projects anything
+        // else -- the same deferred failure, one step further on.
+        const composite: Specification = {
+            ...parse(traversal),
+            projection: {
+                type: "composite",
+                components: [
+                    { type: "fact", name: "workspace", label: "workspace" }
+                ]
+            }
+        };
+
+        expect(() => DistributionRules.combine(DistributionRules.empty, parse(traversal), composite))
+            .toThrow(/must project a single fact, not a composite/);
+    });
+
     it("refuses to build an authorization rule that cannot be run", () => {
         expect(() => new AuthorizationRuleSpecification(unbuildableSpecification))
             .toThrow(/The specification of an authorization rule is not valid/);

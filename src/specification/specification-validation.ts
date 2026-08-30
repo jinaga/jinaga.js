@@ -1,17 +1,19 @@
 import { Match, Projection, Specification, isPathCondition } from "./specification";
 
 /**
- * Every match must be *rooted*: its first condition has to be a path condition
- * that joins the unknown to a given or to a label bound by an earlier match.
+ * A match must begin with a path condition. That is the condition that roots the
+ * match: it names the label the unknown is reached from. Whether that label is
+ * actually in scope is a question about the surrounding specification, not about
+ * this match, and is checked where the scope is known --
+ * `SpecificationParser.parsePathCondition` while it reads the text, and
+ * `SpecificationRunner` when it runs.
  *
- * That is not a stylistic rule. Jinaga reaches facts only by walking edges out
+ * Rooting is not a stylistic rule. Jinaga reaches facts only by walking edges out
  * of the facts it was given -- `SpecificationRunner.executeMatch` starts a match
  * by following its first path condition, and `skeletonOfSpecification` registers
- * the unknown while it walks one. There is no "all facts of this type"
- * operation for either of them to fall back on. An existential condition can
- * only filter the candidates a path condition produced; on its own it names no
- * candidates at all, even though `SpecificationParser` is happy to parse a match
- * whose sole condition is one.
+ * the unknown while it walks one. Neither has an "all facts of this type"
+ * operation to fall back on. An existential condition only filters the candidates
+ * a path condition produced, so a match that has none names no candidates at all.
  *
  * @param match The match to inspect.
  * @returns A description of the defect, or null if the match is rooted.
@@ -34,15 +36,18 @@ export function matchStructureError(match: Match): string | null {
 }
 
 /**
- * Collect the structural defects that would keep a specification from being
- * executed or decomposed into feeds.
+ * Collect the unrooted matches of a specification -- in its matches, in the
+ * matches nested in existential conditions, in the conditions on its givens, and
+ * in the matches of its projections.
  *
  * Use this at an authoring boundary -- wherever a specification is accepted from
  * outside and stored -- so that a defect is reported where it was written rather
- * than much later, from deep inside feed generation.
+ * than much later, from deep inside feed generation. It answers one question,
+ * not every question: `detectDisconnectedSpecification` covers connectedness,
+ * which no single match can decide.
  *
  * @param specification The specification to validate.
- * @returns One message per defect, or an empty array if the specification is sound.
+ * @returns One message per unrooted match, or an empty array if every match is rooted.
  */
 export function validateSpecification(specification: Specification): string[] {
     const errors: string[] = [];
@@ -57,7 +62,8 @@ export function validateSpecification(specification: Specification): string[] {
 }
 
 /**
- * Validate a specification, throwing if it has any structural defect.
+ * Validate a specification with {@link validateSpecification}, throwing if any of
+ * its matches is unrooted.
  *
  * @param specification The specification to validate.
  * @param description Names the specification in the error message.
