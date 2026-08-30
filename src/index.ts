@@ -61,6 +61,7 @@ export { buildModel, FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf,
 export { EdgeDescription, emptySkeleton, FactDescription, InputDescription, NotExistsConditionDescription, OutputDescription, Skeleton, skeletonOfSpecification } from './specification/skeleton';
 export { ComponentProjection, CompositeProjection, Condition, emptySpecification, ExistentialCondition, FactProjection, FieldProjection, getAllFactTypes, getAllRoles, HashProjection, isExistentialCondition, isPathCondition, Label, Match, NamedComponentProjection, PathCondition, Projection, reduceSpecification, Role, SingularProjection, Specification, SpecificationGiven, specificationIsDeterministic, specificationIsIdentity, specificationIsNotDeterministic, SpecificationProjection, splitBeforeFirstSuccessor, TimeProjection } from './specification/specification';
 export { Invalid, SpecificationParser } from './specification/specification-parser';
+export { validateSpecification, validateSpecificationOrThrow } from './specification/specification-validation';
 export { detectDisconnectedSpecification, DisconnectedSpecificationError } from "./specification/UnionFind";
 export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, uniqueFactReferences, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';

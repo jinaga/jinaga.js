@@ -3,7 +3,9 @@ import { describeSpecification } from "../specification/description";
 import { buildFeeds } from "../specification/feed-builder";
 import { SpecificationOf } from "../specification/model";
 import { Specification } from "../specification/specification";
+import { skeletonOfSpecification } from "../specification/skeleton";
 import { SpecificationParser } from "../specification/specification-parser";
+import { validateSpecificationOrThrow } from "../specification/specification-validation";
 
 interface DistributionRule {
   specification: Specification;
@@ -18,25 +20,11 @@ class ShareTarget<T, U> {
   ) { }
 
   with(user: SpecificationOf<T, User>): DistributionRules {
-    return new DistributionRules([
-      ...this.rules,
-      {
-        specification: this.specification,
-        feeds: buildFeeds(this.specification),
-        user: user.specification
-      }
-    ]);
+    return DistributionRules.combine(new DistributionRules(this.rules), this.specification, user.specification);
   }
 
   withEveryone(): DistributionRules {
-    return new DistributionRules([
-      ...this.rules,
-      {
-        specification: this.specification,
-        feeds: buildFeeds(this.specification),
-        user: null
-      }
-    ]);
+    return DistributionRules.combine(new DistributionRules(this.rules), this.specification, null);
   }
 }
 
@@ -78,8 +66,8 @@ export class DistributionRules {
       ...distributionRules.rules,
       {
         specification,
-        feeds: buildFeeds(specification),
-        user
+        feeds: buildFeedsOfRule(specification),
+        user: validatedUserSpecification(user)
       }
     ]);
   }
@@ -98,6 +86,39 @@ export class DistributionRules {
     }
     return distributionRules;
   }
+}
+
+/**
+ * Build the feeds of a distribution rule, refusing a specification that cannot
+ * produce them.
+ *
+ * A rule enters a set that lives as long as the process does, and
+ * `canAuthorizeByComposition` builds the skeleton of *every* rule's feeds each
+ * time it authorizes a query. One rule that cannot be built therefore fails
+ * authorization for queries that have nothing to do with it, so the rule is
+ * rejected here, where the specification that carries the defect can still be
+ * named.
+ */
+function buildFeedsOfRule(specification: Specification): Specification[] {
+  validateSpecificationOrThrow(specification, "The specification of a distribution rule");
+  const feeds = buildFeeds(specification);
+  for (const feed of feeds) {
+    try {
+      skeletonOfSpecification(feed);
+    }
+    catch (error) {
+      const message = error instanceof Error ? error.message : `${error}`;
+      throw new Error(`A feed of a distribution rule could not be built. ${message}\n${describeSpecification(specification, 1)}`);
+    }
+  }
+  return feeds;
+}
+
+function validatedUserSpecification(user: Specification | null): Specification | null {
+  if (user) {
+    validateSpecificationOrThrow(user, "The user specification of a distribution rule");
+  }
+  return user;
 }
 
 export function describeDistributionRules(rules: (r: DistributionRules) => DistributionRules): string {
