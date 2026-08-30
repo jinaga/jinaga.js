@@ -89,12 +89,14 @@ Measured on the first real stack (`main` ← #253 ← #255 ← #257), by reading
 
 Only the bottom layer ran from its own pull request event. Both upper layers were green because a session dispatched the workflow by hand. An earlier revision of this section claimed registration alone had been enough, because whoever wrote it saw green checks and never looked at what triggered them. Check the `event`, not just the conclusion.
 
-Scope that lookup by commit. Listing a workflow's recent runs returns tens of kilobytes and will overflow a tool result; ask for the one head you care about instead:
+Scope that lookup to one commit and one workflow. Listing a workflow's recent runs returns tens of kilobytes and will overflow a tool result; ask for the one head you care about instead:
 
 ```
-gh api "repos/jinaga/jinaga.js/actions/runs?head_sha=<sha>" \
-  --jq '.workflow_runs[] | select(.name=="CI") | "\(.event)/\(.conclusion)"'
+gh api "repos/jinaga/jinaga.js/actions/workflows/main.yml/runs?head_sha=<sha>" \
+  --jq '.workflow_runs[] | "\(.event)/\(.conclusion)"'
 ```
+
+Address the workflow by its **file**, not by matching a display name. This repository runs ten workflows, so an unscoped `actions/runs?head_sha=` returns several rows per commit — and a run's `name` is the *run* name, which a workflow can override with `run-name:`. A name filter that stops matching returns nothing, which reads exactly like "CI never ran." Getting that backwards is the failure this whole section exists to prevent.
 
 So an upper layer's first run arrives on its **next push**, or you trigger it yourself. `main.yml` declares `workflow_dispatch` for exactly that, and using it is the sanctioned move here rather than a workaround — say in your report that you dispatched it.
 
