@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm ci)",
+      "Bash(npm run build)",
+      "Bash(npm test)",
+      "Bash(npx tsc --noEmit --project tsconfig.test.json)",
+      "Bash(./scripts/register-stack.sh:*)",
+      "mcp__github__get_me",
+      "mcp__github__issue_read",
+      "mcp__github__list_issues",
+      "mcp__github__search_issues",
+      "mcp__github__get_label",
+      "mcp__github__list_pull_requests",
+      "mcp__github__search_pull_requests",
+      "mcp__github__pull_request_read",
+      "mcp__github__list_branches",
+      "mcp__github__list_commits",
+      "mcp__github__get_commit",
+      "mcp__github__get_file_contents",
+      "mcp__github__get_check_run",
+      "mcp__github__get_job_logs",
+      "mcp__github__actions_list",
+      "mcp__github__actions_get",
+      "mcp__github__search_code",
+      "mcp__Claude_Code_Remote__get_session",
+      "mcp__Claude_Code_Remote__list_sessions",
+      "mcp__Claude_Code_Remote__list_environments",
+      "mcp__Claude_Code_Remote__list_repos",
+      "mcp__Claude_Code_Remote__list_triggers"
+    ]
+  }
+}
