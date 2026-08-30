@@ -1,3 +1,4 @@
+import { NoOpTracer, Trace, Tracer } from "@src";
 import { LateSettle, TIMED_OUT, withTimeout } from "../../src/util/promise";
 
 describe("withTimeout", () => {
@@ -60,6 +61,35 @@ describe("withTimeout", () => {
             expect(unhandled).toEqual([]);
         }
         finally {
+            process.off("unhandledRejection", onUnhandled);
+        }
+    });
+
+    it("contains a reporter that throws", async () => {
+        // `onLateSettle` runs in a `then` handler on a promise nobody holds, so
+        // a throw there has no caller to catch it. The reporters this exists
+        // for end in a consumer-supplied Tracer, which is exactly the code the
+        // timeout is here to contain.
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", onUnhandled);
+        const reported: unknown[] = [];
+        Trace.configure(new class extends NoOpTracer implements Tracer {
+            error(error: any): void { reported.push(error); }
+        }());
+
+        try {
+            const slow = new Promise<void>(resolve => setTimeout(resolve, 60));
+            await expect(withTimeout(slow, 20, () => { throw new Error("reporter blew up"); }))
+                .resolves.toBe(TIMED_OUT);
+            await slow;
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            expect(unhandled).toEqual([]);
+            expect(reported.map(String)).toEqual(["Error: reporter blew up"]);
+        }
+        finally {
+            Trace.off();
             process.off("unhandledRejection", onUnhandled);
         }
     });

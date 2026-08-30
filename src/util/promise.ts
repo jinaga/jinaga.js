@@ -1,3 +1,5 @@
+import { Trace } from './trace';
+
 export function delay(ms: number) {
   return new Promise<void>((resolve, reject) => {
     setTimeout(() => resolve(), ms);
@@ -29,6 +31,11 @@ export interface LateSettle {
  * decided cannot escape as an unhandled rejection; `onLateSettle` additionally
  * reports it.
  *
+ * `onLateSettle` runs in a `then` handler on a promise nobody holds, so a
+ * reporter that throws is contained here rather than escaping as an unhandled
+ * rejection. The reporters this exists for end in a consumer-supplied `Tracer`,
+ * which is the same untrusted code the timeout exists to contain.
+ *
  * Note that abandoning the wait does not cancel the work. A promise that never
  * settles is retained by these handlers for the lifetime of the process. That
  * is inherent to continuing without it, and is bounded by the number of
@@ -52,9 +59,23 @@ export function withTimeout<T>(
     }, timeoutMs);
   });
   if (onLateSettle) {
+    const report = (late: LateSettle) => {
+      try {
+        onLateSettle(late);
+      }
+      catch (reporterError) {
+        try {
+          Trace.error(reporterError);
+        }
+        catch (tracerError) {
+          // The tracer itself threw. There is nowhere left to report this, and
+          // rethrowing would produce the unhandled rejection this guards.
+        }
+      }
+    };
     promise.then(
-      () => { if (timedOut) onLateSettle({ elapsedMs: Date.now() - start }); },
-      error => { if (timedOut) onLateSettle({ error, elapsedMs: Date.now() - start }); }
+      () => { if (timedOut) report({ elapsedMs: Date.now() - start }); },
+      error => { if (timedOut) report({ error, elapsedMs: Date.now() - start }); }
     );
   }
   return Promise.race([promise, expiry])
