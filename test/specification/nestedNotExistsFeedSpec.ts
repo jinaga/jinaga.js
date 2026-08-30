@@ -1,4 +1,5 @@
-import { JinagaTest, LabelOf, SpecificationOf, User, buildFeeds, buildModel } from "@src";
+import { DistributionRules, JinagaTest, LabelOf, MemoryStore, SpecificationOf, User, buildFeeds, buildModel, dehydrateFact } from "@src";
+import { DistributionEngine } from "../../src/distribution/distribution-engine";
 import { skeletonOfSpecification } from "../../src/specification/skeleton";
 import { isExistentialCondition } from "../../src/specification/specification";
 import { expectWellOrdered } from "./specificationTestHelpers";
@@ -112,6 +113,8 @@ const accessPathsToConfigure = model.given(Tenant).match(tenant =>
         .notExists(accessPath => AccessPathConfigured.for(accessPath))
 );
 
+const servicePrincipals = model.given(Tenant).match(tenant => ServicePrincipal.usersOf(tenant));
+
 // The shape from issue #242 comment 1: a composite `select()` inside a
 // `selectMany` chain, three hops deep.
 const accessPathsWithConfiguration = model.given(Tenant).match(tenant =>
@@ -174,7 +177,7 @@ describe("feeds for nested notExists across two fact types", () => {
             user: new User("---SERVICE-PRINCIPAL---"),
             distribution: d => d
                 .share(accessPathsToConfigure)
-                .with(model.given(Tenant).match(tenant => ServicePrincipal.usersOf(tenant)))
+                .with(servicePrincipals)
         });
         const { userFact } = await j.login<User>();
         const tenant = await j.fact(new Tenant("tenant-1"));
@@ -185,6 +188,54 @@ describe("feeds for nested notExists across two fact types", () => {
         const results = await j.query(accessPathsToConfigure, tenant);
 
         expect(results.length).toBe(1);
+    });
+
+    it("authorizes the specification against a rule loaded from policy text", async () => {
+        // `JinagaTest` hands the engine the rule objects built here in
+        // TypeScript. The replicator never sees those: it loads a policy *file*,
+        // so its rule feeds come out of `saveToDescription` -> the parser. The
+        // reporter of issue #242 diffed the two texts and found them identical,
+        // yet was denied — so the text is not the only thing that has to agree.
+        // What has to agree is the feeds each path decomposes to. Exercise the
+        // parser path the replicator uses, against the same target the client
+        // sends, at the level of the engine rather than end to end.
+        const rules = new DistributionRules([]).share(accessPathsToConfigure).with(servicePrincipals);
+        const policyText = rules.saveToDescription();
+        const loaded = DistributionRules.loadFromDescription(policyText);
+
+        // The text survives a round trip, so a policy file written by one
+        // version and read by another describes the same rule.
+        expect(loaded.saveToDescription()).toEqual(policyText);
+
+        // And the rule decomposes to feeds skeleton-identical to the client's.
+        // Skeleton equality is what `canDistributeTo` actually compares, and
+        // `skeletonOfSpecification` assigns fact and edge indices by traversal
+        // order, so this catches an ordering divergence between the two paths
+        // that a text diff cannot see.
+        const loadedSkeletons = loaded.rules[0].feeds.map(feed => skeletonOfSpecification(feed));
+        const targetSkeletons = buildFeeds(accessPathsToConfigure.specification)
+            .map(feed => skeletonOfSpecification(feed));
+        expect(loadedSkeletons).toEqual(targetSkeletons);
+
+        // Finally, the decision itself.
+        const store = new MemoryStore();
+        const user = new User("---SERVICE-PRINCIPAL---");
+        const tenant = new Tenant("tenant-1");
+        const tenantRecords = dehydrateFact(tenant);
+        await store.save([
+            ...tenantRecords,
+            ...dehydrateFact(user),
+            ...dehydrateFact(new ServicePrincipal(tenant, user))
+        ].map(fact => ({ fact, signatures: [] })));
+
+        const engine = new DistributionEngine(loaded, store, false);
+        const givenLabel = accessPathsToConfigure.specification.given[0].label.name;
+        const result = await engine.canDistributeToAll(
+            buildFeeds(accessPathsToConfigure.specification),
+            { [givenLabel]: tenantRecords[tenantRecords.length - 1] },
+            dehydrateFact(user)[0]);
+
+        expect(result.type).toBe("success");
     });
 
     it("delivers the access path of a restored event through a feed", async () => {

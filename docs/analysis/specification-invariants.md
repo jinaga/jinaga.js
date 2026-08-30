@@ -516,7 +516,7 @@ successor walk or existential.
 | Symptom | Invariant violated |
 |---|---|
 | #238 `"Label u1 not found"` on incremental re-evaluation | MI.1 — W3 broken by `shakeTree`, since fixed by `relocateConditions` (O4) |
-| #242 repro 1/2: silent empty result, `spec-more-restrictive-than-rule` | **Correct authorization, misleading diagnostic** when the query projects a child collection the rule does not share (§10.2). Repro 1 as literally quoted (`=> u4`) still authorizes under test |
+| #242 repro 1/2: silent empty result, `spec-more-restrictive-than-rule` | **Correct authorization, misleading diagnostic** when the query projects a child collection the rule does not share (§10.2). Repro 1 as literally quoted (`=> u4`) still authorizes under test, including through the policy-text path (§10.4). The silence itself was a client-side defect, since fixed (§10.4) |
 | #242 comment 1: HTTP 500 `"Label u4 not found"` from `/feeds` | MI.1 — W3 broken by `buildFeeds`'s projection attachment to a truncated restoring feed (§9.3) |
 | #242 comment 1: JinagaTest and replicator disagree | L3 vs L6/L7 — the two paths evaluate different laws; agreement is a *consequence* of MI, not an axiom |
 | #242 comment 3: unbounded write amplification | **Unattributed.** L4b holds for this shape under test (§10.1); the mechanism is still unidentified |
@@ -792,7 +792,9 @@ the parser tolerate unknown codes is the prerequisite for ever splitting it, and
 was not done here.
 
 The `reactive` degradation on `/feeds` (a `200` that leaves `query()` returning
-`[]` with no error) is a client-contract change and was not altered.
+`[]` with no error) was left alone here as a client-contract change. It turned
+out to be a defect in this library rather than a contract worth keeping; see
+§10.4.
 
 ### 10.3 Operational note on the L6c fix
 
@@ -803,3 +805,72 @@ one additional feed appears per positive branch. Existing bookmarks for those
 feeds no longer resolve, so clients re-read them from the beginning. Fact
 delivery is idempotent, so this is benign, but it is a one-time re-read on
 upgrade and worth expecting in replicator logs.
+
+### 10.4 The silence, attributed: `reactive` was copied, not derived
+
+§10.2 recorded the `/feeds` silence as untouched. It is a client-side defect,
+and it is the reason issue #242 repro 2 outlived #244.
+
+Two independent signals travel with each per-feed decision, and they answer
+different questions:
+
+- `decision` (`authorized` / `reactive` / `denied`) is the replicator's
+  *prediction* about whether the feed will start delivering.
+- `code` names *why* it did not. `no-matching-rule` and
+  `spec-more-restrictive-than-rule` compare the target's shape against every
+  rule's shape. Neither reads a fact or a principal, so no fact that later
+  arrives can change either verdict.
+
+`toDistributionDiagnostics` set `reactive: d.decision === 'reactive'`, copying
+the prediction. `isStructuralDenial` — the predicate that decides whether
+`query` throws (W8) — then required `!reactive`, so a decision that said
+`reactive` suppressed the throw no matter what its code said.
+
+Replicator 3.7.7 reports exactly that pairing for the #242 shape: `200`, every
+decomposed feed `"decision": "reactive"`, each carrying
+`"code": "spec-more-restrictive-than-rule"`. Measured against the reporter's
+captured response, `query()` resolved to `[]` with no error and no throw. The
+loud-failure work of #207 W8 had covered only the `denied` spelling of the same
+verdict.
+
+**Fix.** Derive `reactive` from the code instead of copying it from the
+decision: a structural code is never reactive. The claims conflict, and the
+code is the checkable one. `decision` still carries what the replicator said,
+so nothing is hidden from a consumer that wants it.
+
+This corrects every consumer at one point, because `reactive` is the field the
+interface documents as load-bearing: `query` throws `DistributionDeniedError`,
+the development handler logs the actionable "no rule / narrowed rule" message at
+error level instead of "pending authorization" at info, and an application
+branching on `diagnostic.reactive` stops waiting for a resolution that cannot
+arrive.
+
+What deliberately did not change: a `reactive` decision with no code, or with a
+non-structural code (`principal-excluded`, `not-authenticated`), stays reactive.
+Those are auth states — the rule's shape matched and the authorizing fact may
+still arrive — so the subscription race is untouched. `observer.ts`'s keep-alive
+for clearing diagnostics reads the raw wire `decision`, not this field, so
+`subscribe` is unaffected either way.
+
+#### On the JinagaTest / replicator divergence (#242 comment 1)
+
+The engine is shared, as `distribution-engine.ts` says. What is *not* shared is
+everything on either side of it, and both halves matter:
+
+- **Rules reach the engine by different routes.** `JinagaTest` passes the rule
+  objects built in TypeScript; the replicator loads a policy file, so its rules
+  come from `saveToDescription` through the parser. §9.1 measured these to agree
+  for the #242 shape; that is now pinned by a test rather than a one-off
+  measurement (`nestedNotExistsFeedSpec.ts`, "authorizes the specification
+  against a rule loaded from policy text"), because skeleton indices are
+  assigned by traversal order and a text diff cannot see an ordering divergence.
+- **Verdicts are reported by different mechanisms.** `NetworkManager` throws
+  `Error("Not authorized: ...")` for any failure, so under `JinagaTest` a
+  denial is always loud. The replicator answers `200` with per-feed decisions,
+  and the client decides what to do with them. That is where the two paths
+  diverged on loudness for one and the same engine verdict, and it is what the
+  fix above closes.
+
+So the lock-step claim holds for the *decision* and not, previously, for its
+*consequences*. A passing `JinagaTest` run is still not sufficient evidence for
+a distribution fix, for the reason `CLAUDE.md` gives.

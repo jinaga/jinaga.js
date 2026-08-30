@@ -219,4 +219,92 @@ describe("distribution diagnostic hooks (issue #207 W5/W6)", () => {
       observer.stop();
     });
   });
+
+  describe("issue #242 — a structural denial the replicator called reactive", () => {
+    // The reporter captured this exact `POST /feeds` response from
+    // jinaga-replicator 3.7.7: HTTP 200, every decomposed feed marked
+    // `reactive`, each carrying `spec-more-restrictive-than-rule`. Because the
+    // loud-failure path (W8) keyed on `decision === 'denied'`, `query` resolved
+    // to `[]` and the caller had no signal at all that the specification was
+    // never authorized. The two fields disagree, and the code is the one that
+    // can be checked: it says no rule's shape matched, which no arriving fact
+    // can change.
+    function reactiveStructuralResponse(): FeedsResponse {
+      return {
+        feeds: [FEED],
+        decisions: [
+          {
+            feed: FEED,
+            decision: "reactive",
+            code: "spec-more-restrictive-than-rule",
+            reason: "The specification adds a not-exists condition over Publish, which this rule does not contain.",
+          },
+        ],
+      };
+    }
+
+    it("throws from query rather than resolving to an empty array", async () => {
+      network.response = reactiveStructuralResponse();
+
+      await expect(j.query(blogPosts, blog)).rejects.toBeInstanceOf(DistributionDeniedError);
+    });
+
+    it("reports the diagnostic as non-reactive while preserving the reported decision", async () => {
+      network.response = reactiveStructuralResponse();
+      const received: DistributionDiagnostic[] = [];
+      j.onDistributionDiagnostic(d => received.push(d));
+
+      await expect(j.query(blogPosts, blog)).rejects.toBeInstanceOf(DistributionDeniedError);
+
+      expect(received).toHaveLength(1);
+      // Not self-healing: a consumer branching on `reactive` must not wait for
+      // a resolution that cannot arrive.
+      expect(received[0].reactive).toBe(false);
+      // What the replicator actually said is still visible.
+      expect(received[0].decision).toBe("reactive");
+      expect(received[0].code).toBe("spec-more-restrictive-than-rule");
+    });
+
+    it("leaves a reactive decision with no structural code self-healing", async () => {
+      // The genuine subscription race: the rule's shape matched, the
+      // authorizing fact has not arrived yet. This must stay non-fatal.
+      network.response = reactiveResponse();
+      const received: DistributionDiagnostic[] = [];
+      j.onDistributionDiagnostic(d => received.push(d));
+
+      await expect(j.query(blogPosts, blog)).resolves.toEqual([]);
+
+      expect(received).toHaveLength(1);
+      expect(received[0].reactive).toBe(true);
+    });
+
+    it("leaves a reactive decision carrying a non-structural code self-healing", async () => {
+      // `principal-excluded` is an auth state, not an authoring error: it
+      // resolves the moment the user is granted the fact the rule requires.
+      network.response = {
+        feeds: [FEED],
+        decisions: [
+          { feed: FEED, decision: "reactive", code: "principal-excluded", reason: "excluded" },
+        ],
+      };
+      const received: DistributionDiagnostic[] = [];
+      j.onDistributionDiagnostic(d => received.push(d));
+
+      await expect(j.query(blogPosts, blog)).resolves.toEqual([]);
+
+      expect(received[0].reactive).toBe(true);
+    });
+
+    it("still throws when the replicator reports the same code as denied", async () => {
+      // The path W8 already covered, pinned alongside the one it missed.
+      network.response = {
+        feeds: [FEED],
+        decisions: [
+          { feed: FEED, decision: "denied", code: "spec-more-restrictive-than-rule", reason: "narrower than rule" },
+        ],
+      };
+
+      await expect(j.query(blogPosts, blog)).rejects.toBeInstanceOf(DistributionDeniedError);
+    });
+  });
 });
