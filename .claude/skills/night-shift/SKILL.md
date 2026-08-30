@@ -1,6 +1,6 @@
 ---
 name: night-shift
-description: Work the queue of GitHub issues labelled `ready` in jinaga/jinaga.js, unattended. Use when sweeping for ready issues, deciding which are actually available to work, ordering them, opening a fix as a stacked pull request, or recording a blocking question instead of guessing. Covers the claim rule, the stacked-PR registration step, and the stop condition for PR monitoring.
+description: Work the queue of GitHub issues labelled `ready` in jinaga/jinaga.js, unattended. Use when sweeping for ready issues, deciding which are actually available to work, ordering them, opening a fix as a stacked pull request, or recording a blocking question instead of guessing. Covers the claim rule, the stacked-PR registration step, the stop condition for PR monitoring, and how each run is recorded in the Night Shift Log so the reasoning outlives the container.
 ---
 
 # Night shift: working `ready` issues
@@ -77,10 +77,9 @@ There is no MCP tool for the Stacks API. Use the committed script, which is pre-
 ./scripts/register-stack.sh add <stack-number> <pr>    # append above the current top
 ```
 
-Register as soon as the second pull request in a chain exists. Two timing notes:
+Register as soon as the second pull request in a chain exists. Observed behaviour, from the first real run: registration alone was enough — `build` fired on both upper layers without any further push. Do not count on that, because `pull_request.opened` cannot carry stack information (a pull request is created before it joins a stack) and `stacked` is not among the workflow's default `pull_request` types. Treat a short gap as normal and a long one as worth reporting.
 
-- `pull_request.opened` never carries stack information, because a pull request is created before it joins a stack, and the `stacked` action is not among the workflow's default `pull_request` types. So an upper layer's first check run normally arrives on its **next push** after registration.
-- Until then, absent checks are expected. **Never push an empty commit, and never close and reopen a pull request, to provoke a run.** `main.yml` declares `workflow_dispatch` if a run genuinely needs forcing.
+Until checks appear, absent checks are expected. **Never push an empty commit, and never close and reopen a pull request, to provoke a run.** `main.yml` declares `workflow_dispatch` if a run genuinely needs forcing.
 
 ## 6. When to stop and ask instead
 
@@ -107,12 +106,37 @@ After opening a pull request:
 
 Until both conditions hold, schedule a check-in roughly an hour out before ending a turn, and re-arm it each time.
 
-## 8. Hard limits
+**Check-run events name a stale head.** In the first real run, two `check_suite.completed` events arrived naming commits the pull request had already moved past, and a third arrived for a head that a co-author's push had superseded seconds earlier. Acting on the SHA in the event would have declared green on a commit that was no longer current. Always re-read the pull request's own head before concluding anything about its state, and treat the event as a nudge to look rather than as a report of what is true.
+
+## 8. Record the run in the Night Shift Log
+
+A run that leaves no trace teaches nothing. GitHub keeps the artifacts — a pull request, a comment, a label — but not the judgments: what you considered and passed over, why you ordered the work as you did, what a verdict rested on. Those die with the container unless you record them.
+
+They go in the **Night Shift Log**, a Jinaga application reached through the Factual MCP server. Open a console, run `applications`, and open the one whose routing matches; its manifest carries the full action catalog with argument guidance, so read `describe` there rather than relying on this list.
+
+The shape of a run:
+
+1. `practicesForAdministrator($me)` — the entry point. Find the repository whose current name matches the one you are sweeping and take its `repositoryRef`. If no practice or no matching repository exists, **stop and say so**. `createPractice` and `registerGitHubRepository` are one-time setup, and calling them speculatively mints duplicates that split the history.
+2. `startSweep($repository, $headCommit)` once, before examining anything.
+3. Per issue: `considerIssue`, then exactly one finding action — `findOpenPullRequest`, `findMergedPullRequest`, `findClosedPullRequest`, `findBranch`, or `findNoPriorWork` — matching what section 2's claim check turned up.
+4. Then `dispatchWork` (with the ordering argument in `rationale`) or `skipIssue`. Creating the fact *is* the decision; there is no decision value to set.
+5. Per dispatch, when it finishes: `openPullRequest`, `raiseQuestion`, or `findNoChange`.
+6. Later, when a question is answered or a verdict turns out wrong: `answerQuestion`, or `correctVerdictFromWork` naming the consideration whose work produced the disproof.
+
+Two rules about what goes in:
+
+- **Record what you skipped, not just what you worked.** A skip with its reason is the evidence the claim rule is working, and it is the only record that an issue was looked at at all.
+- **Never record availability.** GitHub is the queue and the only authority on what is currently ready. The log holds what was observed and decided, and when. Storing "issue 242 is available" would create a second source of truth that can go stale, which is the exact failure the claim rule exists to catch.
+
+If the Factual server is unreachable, do the GitHub work anyway and say in your final report that the run went unrecorded. A missing log entry is a gap; a blocked run is a worse one.
+
+## 9. Hard limits
 
 - Never push to `main`, and never push to another session's branch.
 - Never merge a pull request.
 - Never close an issue, and never remove `ready` except as part of the question swap.
 - Never skip, disable, or quarantine a test to get a green build.
 - Never push an empty commit to re-trigger CI.
+- Never put a mutating call in a retry or fallback position. A shell `cmd-a || cmd-b` runs `cmd-b` when `cmd-a` merely prints something unexpected, and a "test" invocation of a create endpoint is a real write. Both happened in the first run; the API's own validation caught them, which is luck, not method.
 - End every GitHub comment with the Claude Code attribution footer.
 - Do not put model identifiers in commit messages, pull request text, or code comments.
