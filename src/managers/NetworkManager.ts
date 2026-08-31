@@ -254,13 +254,25 @@ export interface CachedFeeds {
     decisions: FeedDecision[];
 }
 
+/**
+ * One entry in the feed cache: the replicator's response, plus the arguments
+ * that produced it. The arguments are kept so a feed the replicator has
+ * forgotten can be registered again (issue #243) -- the response cannot
+ * reproduce the `POST /feeds` that returned it, and the cache key is a hash.
+ */
+interface CachedFeedRegistration {
+    cached: CachedFeeds;
+    start: FactReference[];
+    specification: Specification;
+}
+
 export class NetworkManager {
-    private readonly feedsCache = new Map<string, CachedFeeds>();
-    // What each cache entry was registered from, so a feed the replicator has
-    // forgotten can be registered again (issue #243). `feedsCache` holds only
-    // the response, and the key is a hash, so neither can reproduce the
-    // `POST /feeds` that produced it.
-    private readonly feedRegistrations = new Map<string, { start: FactReference[], specification: Specification }>();
+    // Each entry carries the response *and* what it was registered from, so a
+    // feed the replicator has forgotten can be registered again (issue #243).
+    // The response alone cannot reproduce the `POST /feeds` that produced it,
+    // and the key is a hash. Keeping the two in one entry rather than in
+    // parallel maps means they cannot fall out of step as entries are evicted.
+    private readonly feedsCache = new Map<string, CachedFeedRegistration>();
     private readonly feedReregistrations = new Map<string, Promise<void>>();
     private readonly activeFeeds = new Map<string, Promise<void>>();
     private fetchCount = 0;
@@ -426,9 +438,9 @@ export class NetworkManager {
 
     private async getFeedsFromCache(start: FactReference[], specification: Specification): Promise<CachedFeeds> {
         const hash = getSpecificationHash(start, specification);
-        const cached = this.feedsCache.get(hash);
-        if (cached) {
-            return cached;
+        const entry = this.feedsCache.get(hash);
+        if (entry) {
+            return entry.cached;
         }
         const response = await this.network.feeds(start, specification);
         // Old replicators omit `decisions`; normalize to an empty array so every
@@ -437,8 +449,7 @@ export class NetworkManager {
             feeds: response.feeds,
             decisions: response.decisions ?? []
         };
-        this.feedsCache.set(hash, cachedFeeds);
-        this.feedRegistrations.set(hash, { start, specification });
+        this.feedsCache.set(hash, { cached: cachedFeeds, start, specification });
         return cachedFeeds;
     }
 
@@ -477,17 +488,12 @@ export class NetworkManager {
         // One feed hash can belong to several cached specifications, so
         // re-register every one that produced it.
         const affected = Array.from(this.feedsCache.entries())
-            .filter(([, cached]) => cached.feeds.includes(feed))
-            .map(([hash]) => hash);
-        for (const hash of affected) {
-            const registration = this.feedRegistrations.get(hash);
-            if (!registration) {
-                continue;
-            }
+            .filter(([, entry]) => entry.cached.feeds.includes(feed));
+        for (const [hash, entry] of affected) {
             // Drop the cached response first so getFeedsFromCache actually
             // reaches the replicator instead of returning the stale entry.
             this.feedsCache.delete(hash);
-            await this.getFeedsFromCache(registration.start, registration.specification);
+            await this.getFeedsFromCache(entry.start, entry.specification);
         }
     }
 
