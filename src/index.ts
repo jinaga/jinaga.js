@@ -21,6 +21,7 @@ export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvid
 export { GraphDeserializer, GraphSource } from "./http/deserializer";
 export { ForbiddenError, HttpError } from "./http/errors";
 export { FetchConnection } from "./http/fetch";
+export { DEFAULT_MAX_SAVE_BATCH_BYTES, DEFAULT_MAX_SAVE_BATCH_COUNT, WebClientSaverOptions } from "./fork/web-client-saver";
 export { HttpNetwork } from "./http/httpNetwork";
 export { parseFeedsResponse, parseLoadMessage, parseSaveMessage } from './http/messageParsers';
 export {
