@@ -35,11 +35,15 @@ This has already caught a real case. Issue #242 carried `ready` for six days aft
 
 ### Read merge state from `merged_at`, never from `merged`
 
-The table's top three rows turn on one distinction, and the field that looks like it settles that distinction does not. `list_pull_requests` reports `"merged": false` on every pull request it returns, merged or not, while carrying a populated `merged_at` on the ones that merged. Only a per-pull-request read (`pull_request_read` with `method: "get"`) fills in `merged` correctly.
+The table's top three rows turn on one distinction, and the field named for it does not carry it. GitHub's list-pull-requests response is a **subset** of the single-pull-request response, omitting `merged` along with `mergeable`, `merged_by` and the diff counts. `list_pull_requests` renders every row through one schema regardless, so a field the response never carried surfaces as its zero value, `false`, on every row alike. Nothing is reporting a wrong answer. A question that was never asked is showing a default.
 
-A merged pull request misread that way arrives as `state: closed, merged: false`, which is the **closed, unmerged** row: *an attempt was abandoned, read it before starting.* That sends the next session to re-fix work that already shipped, which is the #242 failure above arriving through a different door.
+`merged_at` is in the list response, and it is populated.
 
-So treat a non-null `merged_at` as merged, or confirm with a per-pull-request `get`. Do not branch on `merged` from a list response. Measured on 2026-08-31 against pull requests 253, 255, 257, 260 and 261: all five were merged, and the list endpoint reported `"merged": false` for all five.
+A merged pull request read through `merged` therefore arrives as `state: closed, merged: false`, which is the **closed, unmerged** row: *an attempt was abandoned, read it before starting.* That sends the next session to re-fix work that already shipped, which is the #242 failure above arriving through a different door.
+
+So treat a non-null `merged_at` as merged, or confirm with a per-pull-request read (`pull_request_read` with `method: "get"`). Do not branch on `merged` from a list response.
+
+Measured on 2026-08-31, and the contrast is the tell. Pull requests 253, 255, 257, 260 and 261 had all merged, and each came back `"merged": false` carrying its own `merged_at`. Pull request 247, closed without merging, came back `"merged": false` with no `merged_at` key at all. The timestamp tracks reality row by row; the boolean is constant.
 
 This is the same genus of mistake as reading a workflow run's conclusion without its `event` (section 5). A surface field that reads like an answer is not one until you know what populates it.
 
