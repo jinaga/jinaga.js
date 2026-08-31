@@ -5,7 +5,7 @@ import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Queue, Sto
 import { Trace } from "../util/trace";
 import { Fork } from "./fork";
 import { serializeLoad } from './serialize';
-import { WebClientSaver } from './web-client-saver';
+import { WebClientSaver, WebClientSaverOptions } from './web-client-saver';
 
 export class PersistentFork implements Fork {
     private queueProcessor: QueueProcessor;
@@ -14,9 +14,10 @@ export class PersistentFork implements Fork {
         private storage: Storage,
         private queue: Queue,
         private client: WebClient,
-        private delayMilliseconds: number
+        private delayMilliseconds: number,
+        saverOptions: WebClientSaverOptions = {}
     ) {
-        const saver = new WebClientSaver(client, queue);
+        const saver = new WebClientSaver(client, queue, saverOptions);
         this.queueProcessor = new QueueProcessor(saver, delayMilliseconds);
     }
 

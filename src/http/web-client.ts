@@ -95,6 +95,16 @@ export class WebClient {
         return <LoginResponse> await this.httpConnection.get('/login');
     }
 
+    /**
+     * Publish a sync status to whoever registered through `j.onSyncStatus`.
+     * The notifier has been held here since the client was written but never
+     * fired, so the public handler could never observe anything. The save
+     * queue uses it to report that it is not draining (issue #245).
+     */
+    notifySyncStatus(status: SyncStatus) {
+        this.syncStatusNotifier.notify(status);
+    }
+
     async save(envelopes: FactEnvelope[]) {
         if (this.saveContentTypes === null) {
             this.saveContentTypes = await this.httpConnection.getAcceptedContentTypes('/save');

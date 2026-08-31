@@ -62,7 +62,22 @@ export type JinagaBrowserConfig = {
      * deliberate trade: a bounded, logged loss of the delivery guarantee in
      * place of an unbounded wedge.
      */
-    listenerTimeoutMs?: number
+    listenerTimeoutMs?: number,
+    /**
+     * Approximate maximum serialized size, in bytes, of one `POST /save`
+     * request (issue #245). The outgoing queue is flushed in batches under this
+     * bound instead of as one request, so a queue that grows past a
+     * request-size limit somewhere between the client and the replicator still
+     * drains. Set it below the smallest limit in that path -- a proxy's
+     * `client_max_body_size`, an API gateway's payload cap. Defaults to
+     * `DEFAULT_MAX_SAVE_BATCH_BYTES`.
+     */
+    saveBatchBytes?: number,
+    /**
+     * Maximum number of facts in one `POST /save` request. Defaults to
+     * `DEFAULT_MAX_SAVE_BATCH_COUNT`.
+     */
+    saveBatchCount?: number
 }
 
 export class JinagaBrowser {
@@ -140,7 +155,10 @@ function createFork(
         if (config.indexedDb) {
             const queue = new IndexedDBQueue(config.indexedDb);
             const queueProcessingDelay = config.queueProcessingDelayMs || 100;
-            const fork = new PersistentFork(store, queue, webClient, queueProcessingDelay);
+            const fork = new PersistentFork(store, queue, webClient, queueProcessingDelay, {
+                maxBatchBytes: config.saveBatchBytes,
+                maxBatchCount: config.saveBatchCount
+            });
             fork.initialize();
             return fork;
         }
