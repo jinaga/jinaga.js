@@ -1,3 +1,4 @@
+import { HttpError } from "../http/errors";
 import { Network } from "../managers/NetworkManager";
 import { Storage, FactEnvelope, FactReference } from "../storage";
 import { Trace } from "../util/trace";
@@ -9,13 +10,21 @@ export class Subscriber {
   private disconnect: (() => void) | undefined;
   private timer: NodeJS.Timer | undefined;
   private reject: ((reason?: any) => void) | undefined;
+  private reregistering: boolean = false;
 
   constructor(
     private readonly feed: string,
     private readonly network: Network,
     private readonly store: Storage,
     private readonly notifyFactsAdded: (envelopes: FactEnvelope[]) => Promise<void>,
-    private readonly refreshIntervalSeconds: number
+    private readonly refreshIntervalSeconds: number,
+    /**
+     * Ask the owner to register this feed with the replicator again, because
+     * the replicator says it no longer holds it (issue #243). Optional so a
+     * Subscriber can still be constructed without one; a subscription that has
+     * no way to re-register simply keeps its old retry behavior.
+     */
+    private readonly reregisterFeed?: () => Promise<void>
   ) {}
 
   addRef() {
@@ -97,6 +106,36 @@ export class Subscriber {
       if (err.name !== 'AbortError') {
         Trace.warn(`Subscriber connection error: ${err}`);
       }
+      // A 404 on GET /feeds/:hash is the replicator's documented way of saying
+      // the route is known but the registration is gone -- it restarted, or a
+      // policy reload rebuilt its feed cache. Retrying the same URL can never
+      // fix that, so ask the owner to register the feed again (issue #243).
+      // Before this the subscription just retried forever and went quiet: the
+      // one path that re-registered was start()'s promise rejecting, which
+      // only happens before the first delivery ever arrives, so a subscription
+      // that had been running a while could never take it.
+      if (err instanceof HttpError && err.statusCode === 404) {
+        this.reregister();
+      }
     }, this.refreshIntervalSeconds);
+  }
+
+  /**
+   * Re-register this feed, at most once at a time. Every attempt in the
+   * stream's backoff loop reports the same 404, so an unguarded call here
+   * would turn one lost registration into a POST storm.
+   */
+  private reregister() {
+    if (this.reregistering || !this.reregisterFeed) {
+      return;
+    }
+    this.reregistering = true;
+    this.reregisterFeed()
+      .catch(err => {
+        Trace.warn(`Could not re-register feed ${this.feed}: ${err}`);
+      })
+      .then(() => {
+        this.reregistering = false;
+      });
   }
 }

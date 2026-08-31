@@ -256,6 +256,12 @@ export interface CachedFeeds {
 
 export class NetworkManager {
     private readonly feedsCache = new Map<string, CachedFeeds>();
+    // What each cache entry was registered from, so a feed the replicator has
+    // forgotten can be registered again (issue #243). `feedsCache` holds only
+    // the response, and the key is a hash, so neither can reproduce the
+    // `POST /feeds` that produced it.
+    private readonly feedRegistrations = new Map<string, { start: FactReference[], specification: Specification }>();
+    private readonly feedReregistrations = new Map<string, Promise<void>>();
     private readonly activeFeeds = new Map<string, Promise<void>>();
     private fetchCount = 0;
     private currentBatch: LoadBatch | null = null;
@@ -378,7 +384,8 @@ export class NetworkManager {
                         this.handleFeedData(feed);
                     }
                 };
-                subscriber = new Subscriber(feed, this.network, this.store, notify, this.feedRefreshIntervalSeconds);
+                subscriber = new Subscriber(feed, this.network, this.store, notify, this.feedRefreshIntervalSeconds,
+                    () => this.reregisterFeed(feed));
                 this.subscribers.set(feed, subscriber);
             }
             return subscriber;
@@ -431,12 +438,57 @@ export class NetworkManager {
             decisions: response.decisions ?? []
         };
         this.feedsCache.set(hash, cachedFeeds);
+        this.feedRegistrations.set(hash, { start, specification });
         return cachedFeeds;
     }
 
     private removeFeedsFromCache(start: FactReference[], specification: Specification) {
         const hash = getSpecificationHash(start, specification);
         this.feedsCache.delete(hash);
+    }
+
+    /**
+     * Register a feed with the replicator again after it reported the feed
+     * gone (issue #243).
+     *
+     * The feed hash is derived from the feed definition, so re-registering the
+     * same specification restores the very hash the running subscriber is
+     * already streaming, and the bookmark the store holds against that hash
+     * still applies: the subscription resumes where it left off rather than
+     * replaying its history.
+     *
+     * At most one re-registration per feed is in flight, because every attempt
+     * in the stream's backoff loop reports the same failure.
+     */
+    private reregisterFeed(feed: string): Promise<void> {
+        const inFlight = this.feedReregistrations.get(feed);
+        if (inFlight) {
+            return inFlight;
+        }
+        const promise = this.registerFeedAgain(feed)
+            .finally(() => {
+                this.feedReregistrations.delete(feed);
+            });
+        this.feedReregistrations.set(feed, promise);
+        return promise;
+    }
+
+    private async registerFeedAgain(feed: string): Promise<void> {
+        // One feed hash can belong to several cached specifications, so
+        // re-register every one that produced it.
+        const affected = Array.from(this.feedsCache.entries())
+            .filter(([, cached]) => cached.feeds.includes(feed))
+            .map(([hash]) => hash);
+        for (const hash of affected) {
+            const registration = this.feedRegistrations.get(hash);
+            if (!registration) {
+                continue;
+            }
+            // Drop the cached response first so getFeedsFromCache actually
+            // reaches the replicator instead of returning the stale entry.
+            this.feedsCache.delete(hash);
+            await this.getFeedsFromCache(registration.start, registration.specification);
+        }
     }
 
     private async processFeed(feed: string) {

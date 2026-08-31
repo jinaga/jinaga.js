@@ -120,6 +120,23 @@ export class FetchConnection implements HttpConnection {
         const signal = controller.signal;
         let closed = false;
 
+        // Backoff that a disconnect can cut short. Without this the loop stays
+        // parked in a timer for up to feedRefreshIntervalSeconds after the
+        // caller has already let go, which delays teardown and keeps the
+        // process alive on a pending timer that will only ever observe `closed`.
+        let wake: (() => void) | undefined;
+        const sleep = (ms: number) => new Promise<void>(resolve => {
+            const timer = setTimeout(() => {
+                wake = undefined;
+                resolve();
+            }, ms);
+            wake = () => {
+                clearTimeout(timer);
+                wake = undefined;
+                resolve();
+            };
+        });
+
         // Start a background task to read the stream.
         // This function will read one chunk and pass it to onResponse.
         // The function will then call itself to read the next chunk.
@@ -144,7 +161,18 @@ export class FetchConnection implements HttpConnection {
                     });
 
                     if (!response.ok) {
-                        throw new Error(`Unexpected status code ${response.status}: ${response.statusText}`);
+                        // Type this the way get() types its failures (issue
+                        // #234), so a caller can tell the replicator's
+                        // documented 404 `feed_not_found` -- the signal that it
+                        // no longer holds this feed registration -- from a
+                        // server that is merely unreachable. The plain Error
+                        // thrown here before carried neither status nor body,
+                        // which left the two indistinguishable (issue #243).
+                        const body = await this.readErrorBody(response);
+                        throw new HttpError(
+                            responseReason(body, response.statusText, "Unknown error"),
+                            response.status,
+                            body);
                     }
 
                     const reader = response.body?.getReader();
@@ -196,10 +224,24 @@ export class FetchConnection implements HttpConnection {
                     if (err.name === 'AbortError') {
                         return;
                     }
+                    // Report the failure before backing off (issue #243).
+                    // onError used to be reachable only from the read loop
+                    // above, which requires a connection that already opened,
+                    // so a failure to open one was invisible outside this
+                    // closure: the loop reissued the same doomed URL forever
+                    // with no signal anywhere that it would never succeed.
+                    try {
+                        onError(err as Error);
+                    } catch (handlerError) {
+                        Trace.error(handlerError);
+                    }
+                    if (closed) {
+                        return;
+                    }
                     const exponentialDelay = baseDelayMs * Math.pow(2, attempt);
                     const jitter = Math.random() * baseDelayMs;
                     const delay = Math.min(exponentialDelay + jitter, feedRefreshIntervalSeconds * 1000);
-                    await new Promise(resolve => setTimeout(resolve, delay));
+                    await sleep(delay);
                     attempt++;
                 }
             }
@@ -209,7 +251,26 @@ export class FetchConnection implements HttpConnection {
             // If the connection is closed, exit.
             closed = true;
             controller.abort();
+            if (wake) {
+                wake();
+            }
         };
+    }
+
+    /**
+     * Read a failed stream response's body for its diagnostic text, best
+     * effort. The body only enriches the error being reported; a body that
+     * cannot be read must not displace the status code that is the point of
+     * reporting it at all.
+     */
+    private async readErrorBody(response: Response): Promise<unknown> {
+        try {
+            const contentType = response.headers?.get('content-type') || '';
+            return contentType.includes(ContentTypeJson) ? await response.json() : await response.text();
+        } catch (err) {
+            Trace.warn(`Could not read the body of a failed feed stream response: ${err}`);
+            return null;
+        }
     }
 
     post(path: string, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<HttpResponse> {
