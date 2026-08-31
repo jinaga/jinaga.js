@@ -11,7 +11,11 @@ Read `CLAUDE.md` first for build commands, subsystem layout, and testing rules.
 
 ## 1. Find the queue
 
-Issues labelled `ready` are the queue. Nothing else is in scope. Do not pick up unlabelled issues, and do not add the `ready` label to anything yourself.
+**Open** issues labelled `ready` are the queue. Nothing else is in scope. Do not pick up unlabelled issues, and do not add the `ready` label to anything yourself.
+
+The `state` filter is not a nicety, so pass it explicitly (`state: OPEN` to `list_issues`) rather than filtering the results afterward. Closing an issue does not remove its labels, so a closed issue keeps `ready` indefinitely: on 2026-08-31 five of them did at once, every issue the previous two sweeps had worked. A queue that admits closed issues re-runs section 2's claim check on each of them every night, forever, to reach the conclusion their state already carried.
+
+A repository may also strip the label on close (this one does; see `.github/workflows/clear-ready-on-close.yml`). Do not rely on it. The practice tracks many repositories and that automation is one repository's, while this filter is every sweep's.
 
 ## 2. Decide what is actually available: artifacts are the state
 
