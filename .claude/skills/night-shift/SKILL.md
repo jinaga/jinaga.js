@@ -1,6 +1,6 @@
 ---
 name: night-shift
-description: Work the queue of GitHub issues labelled `ready` in jinaga/jinaga.js, unattended. Use when sweeping for ready issues, deciding which are actually available to work, ordering them, opening a fix as a stacked pull request, or recording a blocking question instead of guessing. Covers the claim rule, the stacked-PR registration step, the stop condition for PR monitoring, and how each run is recorded in the Night Shift Log so the reasoning outlives the container.
+description: Work the queue of GitHub issues labelled `ready` in jinaga/jinaga.js, unattended. Use when sweeping for ready issues, deciding which are actually available to work, ordering them, opening a fix as a stacked pull request, or recording a blocking question instead of guessing. Covers the claim rule, the stacked-PR registration step, the stop condition for PR monitoring, and how each run reads and records the Night Shift Log so the reasoning outlives the container and steers the next run.
 ---
 
 # Night shift: working `ready` issues
@@ -11,7 +11,11 @@ Read `CLAUDE.md` first for build commands, subsystem layout, and testing rules.
 
 ## 1. Find the queue
 
-Issues labelled `ready` are the queue. Nothing else is in scope. Do not pick up unlabelled issues, and do not add the `ready` label to anything yourself.
+**Open** issues labelled `ready` are the queue. Nothing else is in scope. Do not pick up unlabelled issues, and do not add the `ready` label to anything yourself.
+
+The `state` filter is not a nicety, so pass it explicitly (`state: OPEN` to `list_issues`) rather than filtering the results afterward. Closing an issue does not remove its labels, so a closed issue keeps `ready` indefinitely: on 2026-08-31 five of them did at once, every issue the previous two sweeps had worked. A queue that admits closed issues re-runs section 2's claim check on each of them every night, forever, to reach the conclusion their state already carried.
+
+A repository may also strip the label on close (this one does; see `.github/workflows/clear-ready-on-close.yml`). Do not rely on it. The practice tracks many repositories and that automation is one repository's, while this filter is every sweep's.
 
 ## 2. Decide what is actually available: artifacts are the state
 
@@ -29,6 +33,20 @@ For each `ready` issue, search pull requests that reference it (by `#<number>` i
 
 This has already caught a real case. Issue #242 carried `ready` for six days after PR #244 fixed it and merged, because merging did not clear the label. An agent trusting the label alone would have rebuilt a fix that already shipped.
 
+### Read merge state from `merged_at`, never from `merged`
+
+The table's top three rows turn on one distinction, and the field named for it does not carry it. GitHub's list-pull-requests response is a **subset** of the single-pull-request response, omitting `merged` along with `mergeable`, `merged_by` and the diff counts. `list_pull_requests` renders every row through one schema regardless, so a field the response never carried surfaces as its zero value, `false`, on every row alike. Nothing is reporting a wrong answer. A question that was never asked is showing a default.
+
+`merged_at` is in the list response, and it is populated.
+
+A merged pull request read through `merged` therefore arrives as `state: closed, merged: false`, which is the **closed, unmerged** row: *an attempt was abandoned, read it before starting.* That sends the next session to re-fix work that already shipped, which is the #242 failure above arriving through a different door.
+
+So treat a non-null `merged_at` as merged, or confirm with a per-pull-request read (`pull_request_read` with `method: "get"`). Do not branch on `merged` from a list response.
+
+Measured on 2026-08-31, and the contrast is the tell. Pull requests 253, 255, 257, 260 and 261 had all merged, and each came back `"merged": false` carrying its own `merged_at`. Pull request 247, closed without merging, came back `"merged": false` with no `merged_at` key at all. The timestamp tracks reality row by row; the boolean is constant.
+
+This is the same genus of mistake as reading a workflow run's conclusion without its `event` (section 5). A surface field that reads like an answer is not one until you know what populates it.
+
 ### When a merged pull request exists
 
 Your job changes from *fix* to *verify*, and that is a complete and valuable outcome. Do not manufacture a change to justify the session.
@@ -38,16 +56,38 @@ Your job changes from *fix* to *verify*, and that is a complete and valuable out
 3. Test each symptom against current `main` and record a verdict per item.
 4. If everything is resolved: open a pull request carrying only the regression coverage that is still missing, or open none at all if coverage is complete. Then comment on the issue with your per-symptom verdicts and evidence, and recommend closing.
 5. If part survives: fix that part, and say plainly in the pull request which symptoms the earlier fix handled and which yours addresses.
+6. If the verification is complete but the one item still open needs evidence you cannot reach — a capture from a live system, a reproduction repo, an answer from the reporter — say so in the comment and take the question swap in section 6. An issue no unattended run can advance should not sit in `ready` collecting a re-verification every night.
+
+Steps 4 and 6 differ in who is blocked. **Resolved** means recommend closing and leave the label alone; the maintainer decides. **Blocked on outside evidence** means the swap, because the queue is the wrong place for it either way.
 
 **Never close an issue yourself, and never remove the `ready` label from an issue you believe is resolved.** Recommend, and let the maintainer decide. The one label change you may make is the question swap in section 6.
 
 ## 3. Order the work
+
+### Read the log before you sequence
+
+The heuristics in this section are the ones this protocol has actually been wrong about, and the Night Shift Log is where the corrections live. Read it before sequencing anything:
+
+- `correctedVerdicts` — conclusions a later run disproved, and where the disproof came from. The application's own guidance on this view is to read it *before trusting an ordering or attribution heuristic*, which is precisely what the rest of this section is.
+- The most recent sweep's `considerationsInSweep` — what was dispatched, on what rationale, and what came of it.
+
+Section 8 has the mechanics. This is a read for **reasoning**, never for availability: GitHub remains the only authority on what is claimed, and section 2's check still runs in full against it.
+
+It has already mattered. In the sweep of 2026-08-30, issue #241 was sequenced last on the theory that it shared a root cause with #242 and might fall out of that fix. It did not. The session working it found the shape passing at `0d6c13b`, the reporter's own version, which predates the #242 fix and contains none of its logic. That correction is recorded. A run that re-derives the theory without reading the log makes the same ordering mistake and spends a session proving the same negative.
+
+### Sequencing
 
 Group the available issues by subsystem. Issues touching the same files are not independent, and running them in parallel produces conflicting patches for one root cause.
 
 Within a group, sequence by dependency: the change that others build on goes first. A foundational fix (label registration, feed decomposition) precedes the issues that may fall out of it. When one issue is plausibly a duplicate of another's root cause, put it last and have it verify before it fixes.
 
 Across groups, work in parallel freely.
+
+### How much to take
+
+There is no fixed budget, and you should not invent one silently. Take what you can carry through section 4's full bar — reproduce, fix, regression test, green build — and **say in your report, and in every skip rationale that leans on it, what budget you chose and why.**
+
+The sweep of 2026-08-31 skipped issues #250 and #252 citing "this run's two-issue budget." The skips were sound on their merits, but the budget appeared nowhere in this protocol and nowhere in the run's own report, so the record does not show whether it was a considered limit or an improvisation. A skip reason is only evidence if the constraint behind it is stated.
 
 ## 4. Work the issue
 
@@ -106,6 +146,8 @@ Until then, absent checks are expected. **Never push an empty commit, and never 
 
 Record a blocking question when proceeding either way could produce the wrong patch and you cannot settle it from the code, the tests, or the issue text. A question about a detail you can work around is not blocking: do everything that does not depend on the answer first.
 
+Record one **also** at the far end of a run, when the work is finished and the issue still is not: the shape does not reproduce anywhere you can reach, and settling it needs a capture from a live system, a reproduction repo, or an answer from the reporter. Issue #241 was in exactly that state after PR #257 measured seven shapes across two base versions and found no defect in any of them. Its one open item was the reporter's untruncated error body, which no session here can produce. Left in `ready`, an issue like that draws a fresh claim check every night, flips to verify on the merged pull request it already has, and re-derives a verification that is already complete.
+
 To record one:
 
 1. Comment on the issue. State what you found, why it blocks you, the candidate answers, and what you would do under each. Make it answerable in one reply. If a pull request already exists, post it there too and link it from the issue comment.
@@ -129,20 +171,23 @@ Until both conditions hold, schedule a check-in roughly an hour out before endin
 
 **Check-run events name a stale head.** In the first real run, two `check_suite.completed` events arrived naming commits the pull request had already moved past, and a third arrived for a head that a co-author's push had superseded seconds earlier. Acting on the SHA in the event would have declared green on a commit that was no longer current. Always re-read the pull request's own head before concluding anything about its state, and treat the event as a nudge to look rather than as a report of what is true.
 
-## 8. Record the run in the Night Shift Log
+## 8. Read and record the run in the Night Shift Log
 
-A run that leaves no trace teaches nothing. GitHub keeps the artifacts — a pull request, a comment, a label — but not the judgments: what you considered and passed over, why you ordered the work as you did, what a verdict rested on. Those die with the container unless you record them.
+A run that leaves no trace teaches nothing, and a run that reads no trace repeats. GitHub keeps the artifacts — a pull request, a comment, a label — but not the judgments: what you considered and passed over, why you ordered the work as you did, what a verdict rested on. Those die with the container unless you record them, and they help nobody unless the next run reads them.
 
 They go in the **Night Shift Log**, a Jinaga application reached through the Factual MCP server. Open a console, run `applications`, and open the one whose routing matches; its manifest carries the full action catalog with argument guidance, so read `describe` there rather than relying on this list.
 
-The shape of a run:
+This section is the mechanics. It is placed last because it is a reference, **not because the log is an epilogue** — the run opens it before section 2 and reads it before section 3.
 
-1. `practicesForAdministrator($me)` — the entry point. Find the repository whose current name matches the one you are sweeping and take its `repositoryRef`. If no practice or no matching repository exists, **stop and say so**. `createPractice` and `registerGitHubRepository` are one-time setup, and calling them speculatively mints duplicates that split the history.
+The shape of a run, in the order the run performs it:
+
+1. `practicesForAdministrator($me)` — the entry point, before section 2. Find the repository whose current name matches the one you are sweeping and take its `repositoryRef`. If no practice or no matching repository exists, **stop and say so**. `createPractice` and `registerGitHubRepository` are one-time setup, and calling them speculatively mints duplicates that split the history.
 2. `startSweep($repository, $headCommit)` once, before examining anything.
-3. Per issue: `considerIssue`, then exactly one finding action — `findOpenPullRequest`, `findMergedPullRequest`, `findClosedPullRequest`, `findBranch`, or `findNoPriorWork` — matching what section 2's claim check turned up.
-4. Then `dispatchWork` (with the ordering argument in `rationale`) or `skipIssue`. Creating the fact *is* the decision; there is no decision value to set.
-5. Per dispatch, when it finishes: `openPullRequest`, `raiseQuestion`, or `findNoChange`.
-6. Later, when a question is answered or a verdict turns out wrong: `answerQuestion`, or `correctVerdictFromWork` naming the consideration whose work produced the disproof.
+3. `correctedVerdicts`, and the previous sweep's `considerationsInSweep` by way of `sweepsInRepository`, before you sequence. This is the read half; section 3's **Read the log before you sequence** says why skipping it costs a session.
+4. Per issue: `considerIssue`, then exactly one finding action — `findOpenPullRequest`, `findMergedPullRequest`, `findClosedPullRequest`, `findBranch`, or `findNoPriorWork` — matching what section 2's claim check turned up.
+5. Then `dispatchWork` (with the ordering argument in `rationale`) or `skipIssue`. Creating the fact *is* the decision; there is no decision value to set.
+6. Per dispatch, when it finishes: `openPullRequest`, `raiseQuestion`, or `findNoChange`.
+7. Later, when a question is answered or a verdict turns out wrong: `answerQuestion`, or `correctVerdictFromWork` naming the consideration whose work produced the disproof.
 
 Two rules about what goes in:
 
