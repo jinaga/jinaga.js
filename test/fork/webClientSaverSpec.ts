@@ -23,8 +23,11 @@ class SizeLimitedConnection implements HttpConnection {
     }
 
     async post(path: string, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<HttpResponse> {
-        this.bodySizes.push(body.length);
-        if (body.length > this.maxBodyBytes) {
+        // Bytes on the wire, which is what a proxy limit counts -- not
+        // `String.length`, which is UTF-16 code units.
+        const bytes = Buffer.byteLength(body, "utf8");
+        this.bodySizes.push(bytes);
+        if (bytes > this.maxBodyBytes) {
             // 413 is not retryable, so this surfaces immediately rather than
             // spending the limited-retry budget on a request that can never fit.
             return {
@@ -207,6 +210,47 @@ describe("Save queue flush (issue #245)", () => {
         await saver(queue).save();
 
         expect(queue.envelopes.map(e => e.fact.hash)).toEqual(["unsendable", "behind"]);
+    });
+
+    it("measures the budget in UTF-8 bytes, not UTF-16 code units", async () => {
+        // A limit set just above the batch budget, the way an operator would
+        // set the budget under a known proxy limit.
+        const tightLimit = maxBatchBytes + 500;
+        const tightConnection = new SizeLimitedConnection(tightLimit);
+        const tightClient = new WebClient(tightConnection, notifier, { timeoutSeconds: 30 });
+
+        // Each of these characters is one UTF-16 code unit but three UTF-8
+        // bytes. Counting `String.length` under-reports the payload threefold
+        // and packs batches well past the limit -- and non-ASCII text is
+        // exactly the data most likely to push a payload over a limit.
+        const queue = new FakeQueue(
+            Array.from({ length: 6 }, (_, i) => ({
+                fact: {
+                    type: "Test.Fact",
+                    hash: `wide${i}`,
+                    predecessors: {},
+                    fields: { payload: "漢".repeat(400) }
+                },
+                signatures: []
+            })));
+
+        await new WebClientSaver(tightClient, queue, { maxBatchBytes }).save();
+
+        expect(queue.envelopes).toHaveLength(0);
+        expect(Math.max(...tightConnection.bodySizes)).toBeLessThanOrEqual(tightLimit);
+    });
+
+    it("falls back to the defaults for a non-positive bound", async () => {
+        // Zero would put one fact in every request, and a negative value none
+        // at all. Neither is what the option name promises, so neither is
+        // honoured.
+        const queue = new FakeQueue(
+            Array.from({ length: 4 }, (_, i) => envelope(`fact${i}`, 100)));
+
+        await new WebClientSaver(client, queue, { maxBatchBytes: 0, maxBatchCount: -1 }).save();
+
+        expect(queue.envelopes).toHaveLength(0);
+        expect(connection.bodySizes).toHaveLength(1);
     });
 
     it("makes no request for an empty queue", async () => {

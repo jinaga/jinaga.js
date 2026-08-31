@@ -26,13 +26,55 @@ export interface WebClientSaverOptions {
 }
 
 /**
+ * UTF-8 byte length of a string, which is what a request-size limit actually
+ * counts. `String.length` counts UTF-16 code units, so it under-reports every
+ * non-ASCII character -- by a factor of three for CJK text, which is exactly
+ * the data most likely to push a payload over a limit.
+ *
+ * Scanned rather than measured with `TextEncoder`, to avoid allocating a copy
+ * of every fact in the queue on each flush. A lone surrogate is counted as 4
+ * bytes where an encoder would emit a 3-byte replacement character; the budget
+ * is a bound, so erring high is the safe direction.
+ */
+function utf8ByteLength(text: string): number {
+    let bytes = 0;
+    for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        if (code < 0x80) {
+            bytes += 1;
+        }
+        else if (code < 0x800) {
+            bytes += 2;
+        }
+        else if (code >= 0xd800 && code <= 0xdbff) {
+            // High surrogate: the pair encodes to four bytes.
+            bytes += 4;
+            i++;
+        }
+        else {
+            bytes += 3;
+        }
+    }
+    return bytes;
+}
+
+/**
  * Estimate the serialized size of one envelope. This is deliberately an
  * estimate: the caller picks between the graph and JSON encodings inside
  * `saveWithRetry`, so the exact wire size is not knowable here. The batch
  * budget is a bound with headroom, not an accounting.
  */
 function estimateSize(envelope: FactEnvelope): number {
-    return JSON.stringify(envelope).length;
+    return utf8ByteLength(JSON.stringify(envelope));
+}
+
+/**
+ * Take a caller-supplied bound only when it is a positive number. Zero or a
+ * negative value would put one fact in every request, or none at all, rather
+ * than doing what the name promises.
+ */
+function positiveOr(value: number | undefined, fallback: number): number {
+    return typeof value === 'number' && value > 0 ? value : fallback;
 }
 
 /**
@@ -82,8 +124,8 @@ export class WebClientSaver implements Saver {
         private readonly queue: Queue,
         options: WebClientSaverOptions = {}
     ) {
-        this.maxBatchBytes = options.maxBatchBytes ?? DEFAULT_MAX_SAVE_BATCH_BYTES;
-        this.maxBatchCount = options.maxBatchCount ?? DEFAULT_MAX_SAVE_BATCH_COUNT;
+        this.maxBatchBytes = positiveOr(options.maxBatchBytes, DEFAULT_MAX_SAVE_BATCH_BYTES);
+        this.maxBatchCount = positiveOr(options.maxBatchCount, DEFAULT_MAX_SAVE_BATCH_COUNT);
     }
 
     /**
