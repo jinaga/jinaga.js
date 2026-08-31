@@ -1,0 +1,28 @@
+# The `ready` label queues an issue for the night shift
+# (.claude/skills/night-shift/SKILL.md). Closing an issue does not remove its
+# labels, so without this the label outlives the work and the next sweep spends
+# a claim check rediscovering that the issue is closed.
+#
+# Reopening an issue deliberately does NOT restore the label. Re-queueing is a
+# decision someone makes, not a side effect of reopening.
+name: Clear ready on close
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  clear-ready:
+    if: contains(github.event.issue.labels.*.name, 'ready')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove the ready label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --remove-label ready
