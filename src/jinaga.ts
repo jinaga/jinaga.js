@@ -4,6 +4,7 @@ import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { DistributionDeniedError, DistributionDiagnostic, isStructuralDenial, toDistributionDiagnostics } from './managers/distributionDiagnostic';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
+import { ChangeSubscription, SpecificationChangeHandlers, startChangeObserver } from './observer/change-observer';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
 import { describeSpecification } from './specification/description';
 import { FactConstructor, SpecificationOf } from './specification/model';
@@ -329,6 +330,62 @@ export class Jinaga {
 
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true,
             diagnostics => this.emitDistributionDiagnostics(diagnostics));
+    }
+
+    /**
+     * Learn which rows enter and leave a specification's result set, without
+     * the observer machinery.
+     *
+     * This is a narrow seam over the same inverse specifications that drive
+     * `watch` and `subscribe`, and it deliberately stops there. There is no
+     * projection tree, no nested `onAdded` registration, no buffering of
+     * undelivered parents, and no `loaded()` or `processed()`. It is not a
+     * replacement for `watch`/`subscribe`.
+     *
+     * Three consequences worth reading before you use it:
+     *
+     * - **Changes only.** Nothing is delivered for rows that already match.
+     *   The intended consumer sweeps its outstanding set periodically and
+     *   treats a notification as a hint that the sweep may find work.
+     * - **A notification can be dropped.** The callbacks dispatch through the
+     *   listener bound added in #249: one that exceeds `listenerTimeoutMs` is
+     *   abandoned so it cannot wedge the save. For a consumer whose source of
+     *   truth is its own sweep, a dropped notification costs latency and
+     *   nothing else.
+     * - **Local facts only.** This observes facts as they are saved into this
+     *   client's store. It opens no feed of its own; pair it with `subscribe`
+     *   or a server-side store if facts must arrive from a replicator first.
+     *
+     * `onRemoved` is not symmetry for its own sake. For a specification ending
+     * in `notExists(Completion)` — how a durable consumer expresses its
+     * outstanding work — the remove inverse fires exactly when the completion
+     * fact is saved, for exactly the row that just left the set.
+     *
+     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
+     * @param given The fact from which to begin the query
+     * @param handlers `onAdded` and/or `onRemoved`; at least one is required
+     * @returns A subscription; call stop() to release its listeners
+     */
+    observeChanges<T extends [unknown], U>(
+        specification: SpecificationOf<T, U>,
+        given: T[0],
+        handlers: SpecificationChangeHandlers
+    ): ChangeSubscription {
+        const innerSpecification = specification.specification;
+
+        if (given === undefined || given === null) {
+            throw new Error("No given fact provided.");
+        }
+        if (innerSpecification.given.length !== 1) {
+            throw new Error(`observeChanges requires a specification with exactly one given fact, but this one has ${innerSpecification.given.length}. Bind the others into the specification, or use watch.`);
+        }
+        if (!handlers || (typeof handlers.onAdded !== "function" && typeof handlers.onRemoved !== "function")) {
+            throw new Error("Provide at least one of onAdded or onRemoved.");
+        }
+
+        const reference = this.prepareFactReference(given);
+
+        return startChangeObserver(this.factManager, innerSpecification, [reference], handlers);
     }
 
     /**
