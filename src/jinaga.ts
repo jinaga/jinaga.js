@@ -4,12 +4,16 @@ import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { DistributionDeniedError, DistributionDiagnostic, isStructuralDenial, toDistributionDiagnostics } from './managers/distributionDiagnostic';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
+import { RowStream, RowStreamOptions, startRowStream } from './observer/row-stream';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
 import { describeSpecification } from './specification/description';
+import { extractResults } from './specification/results';
+import { SpecificationRow, rowIdentityLabels, toRows } from './specification/row';
 import { FactConstructor, SpecificationOf } from './specification/model';
-import { Projection } from './specification/specification';
+import { Specification } from './specification/specification';
 import { detectDisconnectedSpecification } from "./specification/UnionFind";
-import { FactEnvelope, FactReference, ProjectedResult } from './storage';
+import { FeedDecision } from './http/messages';
+import { FactEnvelope, FactReference } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
 
@@ -25,6 +29,14 @@ export type MakeObservable<T> =
     T;
 
 type WatchArgs<T extends unknown[], U> = [...T, ResultAddedFunc<MakeObservable<U>>];
+
+/**
+ * The given facts a row stream starts from, optionally followed by its
+ * options. Written as a union rather than a trailing optional so that a
+ * caller passing too few givens is a compile-time error rather than an
+ * options object in a given's place.
+ */
+type RowStreamArgs<T extends unknown[]> = T | [...T, RowStreamOptions];
 
 export type Fact = { type: string } & HashMap;
 
@@ -218,6 +230,68 @@ export class Jinaga {
     }
 
     /**
+     * Read the rows that currently match a specification, identified the same
+     * way a row stream identifies them.
+     *
+     * `query` answers "what does this specification select", which is what an
+     * application renders. A durable consumer needs one thing more: a stable
+     * identity for the row, so that the set it reads and the changes a stream
+     * delivers can be deduplicated against each other. That identity is
+     * `rowHash`, and it is the same value `watchRows` and `subscribeRows`
+     * deliver for the same row, on the add and on the remove.
+     *
+     * That pairing is what makes a periodic sweep work. A stream's
+     * notifications are a hint and can be dropped, so a durable consumer reads
+     * the outstanding set on an interval and treats what it finds as the
+     * source of truth; one row identity across both paths is what keeps the
+     * two from doing the same work twice.
+     *
+     * Like `query`, this fetches from the replicator before reading, so it is
+     * also how a consumer pulls work that has not reached this client yet. It
+     * materializes the whole matching set: bound it by the specification or by
+     * the given, not by this call.
+     *
+     * @param specification Use Model.given().match() to create a specification
+     * @param given The fact or facts from which to begin the query
+     * @returns The current rows, each carrying the projection and its row hash
+     */
+    async queryRows<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<SpecificationRow<U>[]> {
+        const innerSpecification = specification.specification;
+
+        detectDisconnectedSpecification(innerSpecification);
+
+        if (!given || given.some(g => !g)) {
+            return [];
+        }
+        if (given.length !== innerSpecification.given.length) {
+            throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
+        }
+
+        const references = given.map(g => this.prepareFactReference(g));
+        const decisions = await this.factManager.fetch(references, innerSpecification);
+        const diagnostics = toDistributionDiagnostics(
+            'query',
+            describeSpecification(innerSpecification, 0),
+            decisions
+        );
+        this.emitDistributionDiagnostics(diagnostics);
+        // Same contract as `query`: a structural denial provably never
+        // self-heals, so a silent empty result would hide the mis-authored
+        // specification or distribution rule.
+        const structural = diagnostics.filter(isStructuralDenial);
+        if (structural.length > 0) {
+            throw new DistributionDeniedError(structural);
+        }
+        const projectedResults = await this.factManager.read(references, innerSpecification);
+        const labels = rowIdentityLabels(innerSpecification);
+        const { rows, totalCount } = toRows<U>(projectedResults, innerSpecification, labels);
+        // Counts facts the way `query` does: nested collection rows included,
+        // so one read reports the same number through either surface.
+        Trace.counter("facts_loaded", totalCount);
+        return rows;
+    }
+
+    /**
      * Execute a query and return, alongside the results, the distribution
      * diagnostics correlated to this exact fetch (issue #207 W8b). This is the
      * one-shot, correlated channel deliberate callers (e.g. the factual MCP)
@@ -329,6 +403,148 @@ export class Jinaga {
 
         return this.factManager.startObserver<U>(references, innerSpecification, resultAdded, true,
             diagnostics => this.emitDistributionDiagnostics(diagnostics));
+    }
+
+    /**
+     * Watch the rows of a specification: the ones that match now, and the ones
+     * that enter or leave from here on.
+     *
+     * Like `watch`, this fetches once and then observes locally. It does not
+     * hold the specification's feed open, so facts saved elsewhere after the
+     * fetch reach it only when something else pulls them. Use `subscribeRows`
+     * when the stream should keep receiving.
+     *
+     * The rows that already match are read AFTER the listeners are installed
+     * and delivered through the same stream as every later change, so a row
+     * saved while the read is in flight is delivered rather than lost, and a
+     * consumer has one code path for a row rather than two. That ordering is
+     * not something a caller can assemble incorrectly, because there is no
+     * assembly.
+     *
+     * @param specification Use Model.given().match() to create a specification
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
+     * @returns A stream; iterate it, and call stop() when done
+     */
+    async watchRows<T extends unknown[], U>(
+        specification: SpecificationOf<T, U>,
+        ...args: RowStreamArgs<T>
+    ): Promise<RowStream<U>> {
+        return await this.startRows<U>("watchRows", specification.specification, args, { from: "current", feed: "none" });
+    }
+
+    /**
+     * Watch only the changes: nothing is delivered for a row that already
+     * matches.
+     *
+     * The right shape for a consumer that reacts to change and already holds
+     * the state (a cache invalidation, a metric). Silently the wrong shape for
+     * one that must process every row, which is why it is a different method
+     * rather than a flag on `watchRows`: the choice is a word you type, not an
+     * argument you can leave at its default.
+     *
+     * @param specification Use Model.given().match() to create a specification
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
+     * @returns A stream; iterate it, and call stop() when done
+     */
+    async watchChanges<T extends unknown[], U>(
+        specification: SpecificationOf<T, U>,
+        ...args: RowStreamArgs<T>
+    ): Promise<RowStream<U>> {
+        return await this.startRows<U>("watchChanges", specification.specification, args, { from: "now", feed: "none" });
+    }
+
+    /**
+     * Subscribe to the rows of a specification: the ones that match now, and
+     * the ones that enter or leave from here on, with the feed held open.
+     *
+     * The feed is what `subscribe` has always meant here, and it is how a
+     * caller says to keep the socket open. While this stream is running the
+     * replicator pushes matching facts to this client, they are saved, and the
+     * stream delivers them. Call `stop()` to release the feed along with the
+     * listeners.
+     *
+     * This is the method a durable consumer wants. It is `watchRows` plus the
+     * one thing that makes a server-side worker see anything at all: without a
+     * held feed and without a periodic `queryRows` sweep, a client observes
+     * only what it saved itself.
+     *
+     * @param specification Use Model.given().match() to create a specification
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
+     * @returns A stream; iterate it, and call stop() to release the feed
+     */
+    async subscribeRows<T extends unknown[], U>(
+        specification: SpecificationOf<T, U>,
+        ...args: RowStreamArgs<T>
+    ): Promise<RowStream<U>> {
+        return await this.startRows<U>("subscribeRows", specification.specification, args, { from: "current", feed: "held" });
+    }
+
+    /**
+     * Subscribe to only the changes, with the feed held open: nothing is
+     * delivered for a row that already matches.
+     *
+     * @param specification Use Model.given().match() to create a specification
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
+     * @returns A stream; iterate it, and call stop() to release the feed
+     */
+    async subscribeChanges<T extends unknown[], U>(
+        specification: SpecificationOf<T, U>,
+        ...args: RowStreamArgs<T>
+    ): Promise<RowStream<U>> {
+        return await this.startRows<U>("subscribeChanges", specification.specification, args, { from: "now", feed: "held" });
+    }
+
+    /**
+     * Split the givens from the options and start the stream.
+     *
+     * The options object is optional and trails the givens, so the two are
+     * told apart by count: one more argument than the specification has givens
+     * means the last is options. A caller who passes the wrong number of
+     * givens is already wrong, and hears about it here.
+     */
+    private async startRows<U>(
+        method: string,
+        specification: Specification,
+        args: unknown[],
+        mode: { from: "current" | "now", feed: "held" | "none" }
+    ): Promise<RowStream<U>> {
+        const expected = specification.given.length;
+        let given: unknown[];
+        let options: RowStreamOptions;
+        if (args.length === expected) {
+            given = args;
+            options = {};
+        }
+        else if (args.length === expected + 1) {
+            given = args.slice(0, expected);
+            options = (args[expected] ?? {}) as RowStreamOptions;
+        }
+        else {
+            throw new Error(`${method} expected ${expected} given facts, but received ${args.length}.`);
+        }
+        if (given.some(g => g === undefined || g === null)) {
+            throw new Error("One or more given facts are null.");
+        }
+
+        return await startRowStream<U>(this.factManager, specification,
+            given.map(g => this.prepareFactReference(g)), { ...mode, ...options },
+            decisions => this.reportStreamDecisions(specification, mode.feed, decisions));
+    }
+
+    private reportStreamDecisions(specification: Specification, feed: "held" | "none", decisions: FeedDecision[]) {
+        const diagnostics = toDistributionDiagnostics(
+            feed === "held" ? 'subscribe' : 'watch',
+            describeSpecification(specification, 0),
+            decisions
+        );
+        this.emitDistributionDiagnostics(diagnostics);
+        // Same contract as `query` and `queryRows`: a structural denial never
+        // self-heals, so a stream that could never deliver fails at its start
+        // rather than looking like an empty set forever.
+        const structural = diagnostics.filter(isStructuralDenial);
+        if (structural.length > 0) {
+            throw new DistributionDeniedError(structural);
+        }
     }
 
     /**
@@ -543,28 +759,3 @@ export class Jinaga {
     }
 }
 
-function extractResults(projectedResults: ProjectedResult[], projection: Projection) {
-    const results = [];
-    let totalCount = 0;
-    for (const projectedResult of projectedResults) {
-        let result = projectedResult.result;
-        if (projection.type === "composite") {
-            const obj: any = {};
-            for (const component of projection.components) {
-                const value = result[component.name];
-                if (component.type === "specification") {
-                    const { results: nestedResults, totalCount: nestedCount } = extractResults(value, component.projection);
-                    obj[component.name] = nestedResults;
-                    totalCount += nestedCount;
-                }
-                else {
-                    obj[component.name] = value;
-                }
-            }
-            result = obj;
-        }
-        results.push(result);
-        totalCount++;
-    }
-    return { results, totalCount };
-}
