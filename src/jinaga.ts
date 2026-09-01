@@ -8,11 +8,10 @@ import { ChangeSubscription, SpecificationChangeHandlers, startChangeObserver } 
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
 import { describeSpecification } from './specification/description';
 import { extractResults } from './specification/results';
-import { SpecificationRow, rowIdentityLabels, toRow } from './specification/row';
+import { SpecificationRow, rowIdentityLabels, toRows } from './specification/row';
 import { FactConstructor, SpecificationOf } from './specification/model';
-import { Projection } from './specification/specification';
 import { detectDisconnectedSpecification } from "./specification/UnionFind";
-import { FactEnvelope, FactReference, ProjectedResult } from './storage';
+import { FactEnvelope, FactReference } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
 
@@ -280,8 +279,10 @@ export class Jinaga {
         }
         const projectedResults = await this.factManager.read(references, innerSpecification);
         const labels = rowIdentityLabels(innerSpecification);
-        const rows = projectedResults.map(pr => toRow<U>(pr, innerSpecification, labels));
-        Trace.counter("facts_loaded", rows.length);
+        const { rows, totalCount } = toRows<U>(projectedResults, innerSpecification, labels);
+        // Counts facts the way `query` does: nested collection rows included,
+        // so one read reports the same number through either surface.
+        Trace.counter("facts_loaded", totalCount);
         return rows;
     }
 

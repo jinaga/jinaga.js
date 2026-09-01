@@ -1,4 +1,4 @@
-import { Jinaga, JinagaTest, SpecificationRow, User, buildModel } from "@src";
+import { Jinaga, JinagaTest, NoOpTracer, SpecificationRow, Trace, Tracer, User, buildModel } from "@src";
 
 // Issue #250: a durable consumer needs to learn that a specification's result
 // set changed without taking on the projection tree, nested onAdded closures,
@@ -413,6 +413,36 @@ describe("queryRows", () => {
 
         expect(rows).toHaveLength(2);
         expect(rows[0].rowHash).not.toEqual(rows[1].rowHash);
+    });
+
+    it("counts loaded facts the way query does", async () => {
+        // The counter is over facts, not rows, so a nested collection has to
+        // count. Reporting rows.length here would make one read look smaller
+        // through queryRows than through query.
+        const task = await j.fact(new Task(project, "has notes"));
+        await j.fact(new TaskNote(task, "one"));
+        await j.fact(new TaskNote(task, "two"));
+
+        const counted: number[] = [];
+        Trace.configure(new class extends NoOpTracer implements Tracer {
+            counter(name: string, value: number): void {
+                if (name === "facts_loaded") {
+                    counted.push(value);
+                }
+            }
+        }());
+        try {
+            await j.query(tasksWithNotes, project);
+            await j.queryRows(tasksWithNotes, project);
+        }
+        finally {
+            Trace.configure(new NoOpTracer());
+        }
+
+        expect(counted).toHaveLength(2);
+        expect(counted[1]).toEqual(counted[0]);
+        // One task row plus its two notes.
+        expect(counted[0]).toEqual(3);
     });
 
     it("rejects a specification with more than one given", async () => {

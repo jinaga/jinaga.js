@@ -42,3 +42,25 @@ export function toRow<U>(projectedResult: ProjectedResult, specification: Specif
         rowHash: computeTupleSubsetHash(projectedResult.tuple, labels)
     };
 }
+
+/**
+ * Rows for a whole read, with the same fact count `query` reports.
+ *
+ * The count is the one `extractResults` produces: every row plus the rows of
+ * every nested collection it carries, not the length of the array. A
+ * specification with nested components would otherwise report a smaller number
+ * here than through `query` for the same read.
+ */
+export function toRows<U>(projectedResults: ProjectedResult[], specification: Specification, labels: string[]): { rows: SpecificationRow<U>[], totalCount: number } {
+    const rows: SpecificationRow<U>[] = [];
+    let totalCount = 0;
+    for (const projectedResult of projectedResults) {
+        const { result, count } = extractResult(projectedResult.result, specification.projection);
+        rows.push({
+            result,
+            rowHash: computeTupleSubsetHash(projectedResult.tuple, labels)
+        });
+        totalCount += count;
+    }
+    return { rows, totalCount };
+}
