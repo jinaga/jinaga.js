@@ -23,7 +23,133 @@ interface InverterContext {
     projection: Projection;
 }
 
+/**
+ * How many distinct specifications the inversion cache retains by default.
+ *
+ * Inversion is a pure function of the specification, but every caller
+ * recomputed it: a production session logged 32,528 inversions for roughly 33
+ * distinct specifications, because the server inverts once per streaming
+ * subscription (issue #266). Server workloads see a small, stable set of
+ * specifications, which is the shape that caches well.
+ *
+ * The bound is what makes that safe for the other shape. A caller that
+ * generates specifications dynamically would otherwise grow the cache without
+ * limit, so entries are evicted least-recently-used once the capacity is
+ * reached.
+ */
+export const DEFAULT_INVERSE_CACHE_CAPACITY = 500;
+
+export interface InverseCacheStatistics {
+    /** Distinct specifications currently retained. */
+    size: number;
+    /** The configured bound. Zero means caching is disabled. */
+    capacity: number;
+    /** Calls served from the cache since the last `clearInverseCache`. */
+    hits: number;
+    /** Calls that had to compute an inversion since the last `clearInverseCache`. */
+    misses: number;
+}
+
+/**
+ * Insertion-ordered, so the first key is the least recently used. A hit
+ * re-inserts its key to move it to the end.
+ */
+const inverseCache = new Map<string, SpecificationInverse[]>();
+let inverseCacheCapacity = DEFAULT_INVERSE_CACHE_CAPACITY;
+let inverseCacheHits = 0;
+let inverseCacheMisses = 0;
+
+/**
+ * Bound how many distinct specifications are retained. Pass 0 to disable
+ * caching entirely, which restores the previous compute-every-time behavior.
+ * Lowering the capacity evicts the least recently used entries immediately.
+ */
+export function setInverseCacheCapacity(capacity: number): void {
+    if (!Number.isInteger(capacity) || capacity < 0) {
+        throw new Error(`Inverse cache capacity must be a non-negative integer, but received ${capacity}.`);
+    }
+    inverseCacheCapacity = capacity;
+    trimInverseCache();
+}
+
+/**
+ * Drop every retained inversion and reset the hit and miss counters. Inversion
+ * is pure, so this is never required for correctness; it exists for tests and
+ * for a host that wants to reclaim the memory.
+ */
+export function clearInverseCache(): void {
+    inverseCache.clear();
+    inverseCacheHits = 0;
+    inverseCacheMisses = 0;
+}
+
+/**
+ * Report cache occupancy and the hit and miss counts. Issue #266 could measure
+ * the redundancy but not the compute it costs; this is how a host quantifies
+ * what the cache actually saves in its own workload.
+ */
+export function inverseCacheStatistics(): InverseCacheStatistics {
+    return {
+        size: inverseCache.size,
+        capacity: inverseCacheCapacity,
+        hits: inverseCacheHits,
+        misses: inverseCacheMisses
+    };
+}
+
+function trimInverseCache(): void {
+    while (inverseCache.size > inverseCacheCapacity) {
+        const oldest = inverseCache.keys().next();
+        if (oldest.done) {
+            return;
+        }
+        inverseCache.delete(oldest.value);
+    }
+}
+
+/**
+ * Invert a specification, memoized on the specification itself.
+ *
+ * The key is the hash of the specification's description, which is already
+ * this codebase's identity for a specification: `deduplicateInverses` below
+ * dedupes on it, and `ObservableSource.addSpecificationListener` groups
+ * listeners by it. Computing the key is also strictly cheaper than the
+ * deduplication step alone, which describes every inverse it produced.
+ *
+ * A thrown inversion is not cached. `detectDisconnectedSpecification` and the
+ * infinite-loop guard in `shakeTree` reject a specification outright, so a
+ * caller that retries gets the same rejection rather than a stale success, and
+ * no failure occupies a cache slot.
+ *
+ * The returned array is a copy. The inverses inside it are shared, and callers
+ * have always treated them as read-only, but handing out the stored array
+ * would let one caller's in-place sort reorder what every later caller sees.
+ */
 export function invertSpecification(specification: Specification): SpecificationInverse[] {
+    if (inverseCacheCapacity === 0) {
+        return computeInverses(specification);
+    }
+
+    const key = computeStringHash(describeSpecification(specification, 0));
+    const cached = inverseCache.get(key);
+    if (cached !== undefined) {
+        // Re-insert to mark the entry most recently used.
+        inverseCache.delete(key);
+        inverseCache.set(key, cached);
+        inverseCacheHits++;
+        Trace.counter("invert_specification_cache_hit", 1);
+        return [...cached];
+    }
+
+    inverseCacheMisses++;
+    Trace.counter("invert_specification_cache_miss", 1);
+    const inverses = computeInverses(specification);
+    inverseCache.set(key, inverses);
+    trimInverseCache();
+    return [...inverses];
+}
+
+function computeInverses(specification: Specification): SpecificationInverse[] {
     const givenTypes = specification.given.map(g => g.label.type).join(', ');
     const givenNames = specification.given.map(g => g.label.name).join(', ');
     const matchCount = specification.matches.length;
