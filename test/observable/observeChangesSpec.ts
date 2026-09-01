@@ -5,8 +5,12 @@ import { Jinaga, JinagaTest, SpecificationChange, User, buildModel } from "@src"
 // pendingAddsByKey buffering, or processed(). These tests pin the seam's
 // contract: which rows arrive, which do not, and what identifies them.
 //
-// No timeouts anywhere. ObservableSource.notify awaits every listener before
-// save() resolves, so `await j.fact(...)` is itself the synchronization point.
+// No timeouts anywhere. ObservableSource.notify awaits every listener to a
+// CONCLUSION before save() resolves, and a conclusion is not the same as
+// completion: a listener that exceeds listenerTimeoutMs is abandoned (#246,
+// #249). So `await j.fact(...)` is a reliable synchronization point here
+// because these handlers only push onto an array, not as a general guarantee.
+// A test whose handler could take real time would need to await it directly.
 
 class Project {
     static Type = "Test.Project" as const;
