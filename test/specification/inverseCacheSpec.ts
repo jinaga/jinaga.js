@@ -216,5 +216,11 @@ describe("invertSpecification memoization", () => {
         // The rejection is stable rather than turning into a stale success.
         expect(() => invertSpecification(specification)).toThrow();
         expect(inverseCacheStatistics().size).toBe(0);
+
+        // And it is not counted as a miss. A miss means the cache had to
+        // compute AND retained the result; a rejection retains nothing, so
+        // counting it would inflate misses against a cache that was never
+        // given anything to hold.
+        expect(inverseCacheStatistics()).toMatchObject({ hits: 0, misses: 0 });
     });
 });

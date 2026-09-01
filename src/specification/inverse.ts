@@ -108,7 +108,13 @@ function trimInverseCache(): void {
 }
 
 /**
- * Invert a specification, memoized on the specification itself.
+ * Invert a specification, memoized on its STRUCTURE rather than its identity.
+ *
+ * Two distinct `Specification` objects that describe the same thing share one
+ * cache entry, and that is the point rather than a side effect: the server
+ * inverts once per subscription, and the specifications arriving are separate
+ * object graphs of a handful of shapes. Object-identity memoization would miss
+ * every one of those.
  *
  * The key is the hash of the specification's description, which is already
  * this codebase's identity for a specification: `deduplicateInverses` below
@@ -141,9 +147,13 @@ export function invertSpecification(specification: Specification): Specification
         return [...cached];
     }
 
+    // Count the miss only once the inversion has actually succeeded. A
+    // rejected specification caches nothing, so counting it here would inflate
+    // the miss total against a cache that was never given anything to hold,
+    // and understate the hit rate for a host repeatedly inverting a bad spec.
+    const inverses = computeInverses(specification);
     inverseCacheMisses++;
     Trace.counter("invert_specification_cache_miss", 1);
-    const inverses = computeInverses(specification);
     inverseCache.set(key, inverses);
     trimInverseCache();
     return [...inverses];
