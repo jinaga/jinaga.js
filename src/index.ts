@@ -57,7 +57,7 @@ export { Declaration } from './specification/declaration';
 export { describeDeclaration, describeSpecification } from './specification/description';
 export { buildFeeds } from './specification/feed-builder';
 export { FeedCache, FeedObject } from "./specification/feed-cache";
-export { invertSpecification, SpecificationInverse } from "./specification/inverse";
+export { clearInverseCache, DEFAULT_INVERSE_CACHE_CAPACITY, inverseCacheStatistics, InverseCacheStatistics, invertSpecification, setInverseCacheCapacity, SpecificationInverse } from "./specification/inverse";
 export { alphaTransform, DISTRIBUTION_USER_LABEL, intersectSpecificationWithDistributionRule, specificationHasIntersection } from "./specification/specification-intersection";
 export { buildModel, FactRepository, LabelOf, Model, ModelBuilder, ProjectionOf, SpecificationOf } from './specification/model';
 export { SpecificationRow } from './specification/row';
