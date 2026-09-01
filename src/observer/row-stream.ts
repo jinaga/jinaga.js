@@ -98,7 +98,16 @@ interface StartOptions {
 class RowQueue<U> {
     private starting: SpecificationChange<U>[] = [];
     private changes: SpecificationChange<U>[] = [];
-    private waiting: ((result: IteratorResult<SpecificationChange<U>>) => void) | null = null;
+    /**
+     * Consumers parked in `next()`, oldest first.
+     *
+     * A list rather than a single slot: the async iteration protocol allows
+     * `next()` to be called again before the previous call settles, and a
+     * single slot would overwrite the earlier resolver, leaving that consumer
+     * hung forever with no error. `for await` never does this; a hand-written
+     * consumer can.
+     */
+    private waiting: ((result: IteratorResult<SpecificationChange<U>>) => void)[] = [];
     private closed = false;
     public dropped = 0;
 
@@ -135,9 +144,9 @@ class RowQueue<U> {
     close(): void {
         this.closed = true;
         const waiting = this.waiting;
-        this.waiting = null;
-        if (waiting) {
-            waiting({ value: undefined as any, done: true });
+        this.waiting = [];
+        for (const resolve of waiting) {
+            resolve({ value: undefined as any, done: true });
         }
     }
 
@@ -150,7 +159,7 @@ class RowQueue<U> {
             return Promise.resolve({ value: undefined as any, done: true });
         }
         return new Promise(resolve => {
-            this.waiting = resolve;
+            this.waiting.push(resolve);
         });
     }
 
@@ -158,11 +167,10 @@ class RowQueue<U> {
         if (this.closed) {
             return true;
         }
-        const waiting = this.waiting;
+        const waiting = this.waiting.shift();
         if (!waiting) {
             return false;
         }
-        this.waiting = null;
         waiting({ value: change, done: false });
         return true;
     }

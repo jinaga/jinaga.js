@@ -439,6 +439,37 @@ describe("row streams", () => {
         expect(seen).toEqual(["before stop"]);
     });
 
+    it("serves concurrent next() calls in order", async () => {
+        // The async iteration protocol allows next() again before the previous
+        // call settles. A single parked resolver would be overwritten and the
+        // earlier consumer would hang forever, with no error to notice.
+        const stream = await j.watchChanges(outstandingTasks, project);
+        const changes = stream[Symbol.asyncIterator]();
+
+        const first = changes.next();
+        const second = changes.next();
+
+        await j.fact(new Task(project, "first"));
+        await j.fact(new Task(project, "second"));
+
+        expect((await first).value.result.description).toEqual("first");
+        expect((await second).value.result.description).toEqual("second");
+
+        stream.stop();
+    });
+
+    it("ends every parked next() when stopped", async () => {
+        const stream = await j.watchChanges(outstandingTasks, project);
+        const changes = stream[Symbol.asyncIterator]();
+
+        const first = changes.next();
+        const second = changes.next();
+        stream.stop();
+
+        expect((await first).done).toBe(true);
+        expect((await second).done).toBe(true);
+    });
+
     it("refuses a second consumer", async () => {
         const stream = await j.watchChanges(outstandingTasks, project);
         stream[Symbol.asyncIterator]();

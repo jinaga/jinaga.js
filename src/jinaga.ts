@@ -223,21 +223,20 @@ export class Jinaga {
 
     /**
      * Read the rows that currently match a specification, identified the same
-     * way `observeChanges` identifies them.
+     * way a row stream identifies them.
      *
      * `query` answers "what does this specification select", which is what an
      * application renders. A durable consumer needs one thing more: a stable
-     * identity for the row, so that the set it reads and the changes it is
-     * notified of can be deduplicated against each other. That identity is
-     * `rowHash`, and it is the same value `observeChanges` delivers for the
-     * same row, on the add and on the remove.
+     * identity for the row, so that the set it reads and the changes a stream
+     * delivers can be deduplicated against each other. That identity is
+     * `rowHash`, and it is the same value `watchRows` and `subscribeRows`
+     * deliver for the same row, on the add and on the remove.
      *
-     * The pairing is what makes a consumer correct. `observeChanges` delivers
-     * only changes, so a consumer registers it first and reads the current set
-     * second: a row that already matched is in this result, a row that appears
-     * after registration is notified, and a row that lands between the two is
-     * both. The overlap is absorbed by deduplicating on `rowHash`; the reverse
-     * order would drop the rows that land in the gap.
+     * That pairing is what makes a periodic sweep work. A stream's
+     * notifications are a hint and can be dropped, so a durable consumer reads
+     * the outstanding set on an interval and treats what it finds as the
+     * source of truth; one row identity across both paths is what keeps the
+     * two from doing the same work twice.
      *
      * Like `query`, this fetches from the replicator before reading, so it is
      * also how a consumer pulls work that has not reached this client yet. It
@@ -511,7 +510,11 @@ export class Jinaga {
             throw new Error("No given fact provided.");
         }
         if (innerSpecification.given.length !== 1) {
-            throw new Error(`${method} requires a specification with exactly one given fact, but this one has ${innerSpecification.given.length}. Bind the others into the specification, or use watch.`);
+            // Name the observer this caller was reaching for: `subscribe`
+            // holds a feed the way the `subscribe...` methods do, `watch` does
+            // not, and pointing at the wrong one is a second wrong turn.
+            const observer = options.feed === "held" ? "subscribe" : "watch";
+            throw new Error(`${method} requires a specification with exactly one given fact, but this one has ${innerSpecification.given.length}. Bind the others into the specification, or use ${observer}.`);
         }
 
         return await startRowStream<U>(this.factManager, innerSpecification,

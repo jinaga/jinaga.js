@@ -7,7 +7,7 @@ import { Projection } from "./specification";
  * A composite projection's nested specification components arrive from the
  * store as `ProjectedResult[]`, which is an internal shape. Extraction
  * replaces each with the array of extracted child results, so that every
- * public surface — `query`, `queryRows`, and the `observeChanges` payload —
+ * public surface — `query`, `queryRows`, and the rows a stream delivers —
  * delivers the same value for the same projection.
  */
 export function extractResult(raw: any, projection: Projection): { result: any, count: number } {
