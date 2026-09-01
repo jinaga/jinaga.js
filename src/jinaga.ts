@@ -7,6 +7,8 @@ import { User } from './model/user';
 import { ChangeSubscription, SpecificationChangeHandlers, startChangeObserver } from './observer/change-observer';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
 import { describeSpecification } from './specification/description';
+import { extractResults } from './specification/results';
+import { SpecificationRow, rowIdentityLabels, toRow } from './specification/row';
 import { FactConstructor, SpecificationOf } from './specification/model';
 import { Projection } from './specification/specification';
 import { detectDisconnectedSpecification } from "./specification/UnionFind";
@@ -219,6 +221,71 @@ export class Jinaga {
     }
 
     /**
+     * Read the rows that currently match a specification, identified the same
+     * way `observeChanges` identifies them.
+     *
+     * `query` answers "what does this specification select", which is what an
+     * application renders. A durable consumer needs one thing more: a stable
+     * identity for the row, so that the set it reads and the changes it is
+     * notified of can be deduplicated against each other. That identity is
+     * `rowHash`, and it is the same value `observeChanges` delivers for the
+     * same row, on the add and on the remove.
+     *
+     * The pairing is what makes a consumer correct. `observeChanges` delivers
+     * only changes, so a consumer registers it first and reads the current set
+     * second: a row that already matched is in this result, a row that appears
+     * after registration is notified, and a row that lands between the two is
+     * both. The overlap is absorbed by deduplicating on `rowHash`; the reverse
+     * order would drop the rows that land in the gap.
+     *
+     * Like `query`, this fetches from the replicator before reading, so it is
+     * also how a consumer pulls work that has not reached this client yet. It
+     * materializes the whole matching set: bound it by the specification or by
+     * the given, not by this call.
+     *
+     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
+     * @param given The fact from which to begin the query
+     * @returns The current rows, each carrying the projection and its row hash
+     */
+    async queryRows<T extends [unknown], U>(specification: SpecificationOf<T, U>, given: T[0]): Promise<SpecificationRow<U>[]> {
+        const innerSpecification = specification.specification;
+
+        // Checked before the structural analysis below, so that a caller who
+        // passed a multi-given specification is told that rather than whatever
+        // else is true of it.
+        if (innerSpecification.given.length !== 1) {
+            throw new Error(`queryRows requires a specification with exactly one given fact, but this one has ${innerSpecification.given.length}. Bind the others into the specification, or use query.`);
+        }
+
+        detectDisconnectedSpecification(innerSpecification);
+
+        if (given === undefined || given === null) {
+            return [];
+        }
+
+        const references = [this.prepareFactReference(given)];
+        const decisions = await this.factManager.fetch(references, innerSpecification);
+        const diagnostics = toDistributionDiagnostics(
+            'query',
+            describeSpecification(innerSpecification, 0),
+            decisions
+        );
+        this.emitDistributionDiagnostics(diagnostics);
+        // Same contract as `query`: a structural denial provably never
+        // self-heals, so a silent empty result would hide the mis-authored
+        // specification or distribution rule.
+        const structural = diagnostics.filter(isStructuralDenial);
+        if (structural.length > 0) {
+            throw new DistributionDeniedError(structural);
+        }
+        const projectedResults = await this.factManager.read(references, innerSpecification);
+        const labels = rowIdentityLabels(innerSpecification);
+        const rows = projectedResults.map(pr => toRow<U>(pr, innerSpecification, labels));
+        Trace.counter("facts_loaded", rows.length);
+        return rows;
+    }
+
+    /**
      * Execute a query and return, alongside the results, the distribution
      * diagnostics correlated to this exact fetch (issue #207 W8b). This is the
      * one-shot, correlated channel deliberate callers (e.g. the factual MCP)
@@ -342,19 +409,31 @@ export class Jinaga {
      * undelivered parents, and no `loaded()` or `processed()`. It is not a
      * replacement for `watch`/`subscribe`.
      *
-     * Three consequences worth reading before you use it:
+     * Each callback receives the specification's own projection, hydrated
+     * exactly as `query` and `queryRows` deliver it, paired with the row hash
+     * that identifies the row. A consumer acts on the value it is handed; it
+     * never has to load a fact from a reference, and if it wants a hash it
+     * projects one.
+     *
+     * Four consequences worth reading before you use it:
      *
      * - **Changes only.** Nothing is delivered for rows that already match.
-     *   The intended consumer sweeps its outstanding set periodically and
-     *   treats a notification as a hint that the sweep may find work.
+     *   Register this first and read the current set with `queryRows` second:
+     *   a row that already matched is in that result, a row that arrives later
+     *   is notified, and a row that lands between the two is both. The overlap
+     *   deduplicates on `rowHash`; the reverse order loses the gap.
+     * - **Do the work outside the callback.** These run inside the `save()`
+     *   that triggered them. A callback that queries or saves facts re-enters
+     *   `ObservableSource.notify` from inside its own notification. Enqueue
+     *   and return.
      * - **A notification can be dropped.** The callbacks dispatch through the
      *   listener bound added in #249: one that exceeds `listenerTimeoutMs` is
      *   abandoned so it cannot wedge the save. For a consumer whose source of
-     *   truth is its own sweep, a dropped notification costs latency and
-     *   nothing else.
+     *   truth is its own periodic `queryRows` sweep, a dropped notification
+     *   costs latency and nothing else.
      * - **Local facts only.** This observes facts as they are saved into this
      *   client's store. It opens no feed of its own; pair it with `subscribe`
-     *   or a server-side store if facts must arrive from a replicator first.
+     *   or a `queryRows` sweep if facts must arrive from a replicator first.
      *
      * `onRemoved` is not symmetry for its own sake. For a specification ending
      * in `notExists(Completion)` — how a durable consumer expresses its
@@ -369,7 +448,7 @@ export class Jinaga {
     observeChanges<T extends [unknown], U>(
         specification: SpecificationOf<T, U>,
         given: T[0],
-        handlers: SpecificationChangeHandlers
+        handlers: SpecificationChangeHandlers<U>
     ): ChangeSubscription {
         const innerSpecification = specification.specification;
 
@@ -600,28 +679,3 @@ export class Jinaga {
     }
 }
 
-function extractResults(projectedResults: ProjectedResult[], projection: Projection) {
-    const results = [];
-    let totalCount = 0;
-    for (const projectedResult of projectedResults) {
-        let result = projectedResult.result;
-        if (projection.type === "composite") {
-            const obj: any = {};
-            for (const component of projection.components) {
-                const value = result[component.name];
-                if (component.type === "specification") {
-                    const { results: nestedResults, totalCount: nestedCount } = extractResults(value, component.projection);
-                    obj[component.name] = nestedResults;
-                    totalCount += nestedCount;
-                }
-                else {
-                    obj[component.name] = value;
-                }
-            }
-            result = obj;
-        }
-        results.push(result);
-        totalCount++;
-    }
-    return { results, totalCount };
-}

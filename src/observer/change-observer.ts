@@ -1,36 +1,28 @@
 import { FactManager } from "../managers/factManager";
 import { SpecificationListener } from "../observable/observable";
 import { SpecificationInverse, invertSpecification } from "../specification/inverse";
+import { SpecificationRow, rowIdentityLabels, toRow } from "../specification/row";
 import { Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
 import { Trace } from "../util/trace";
 
 /**
- * One row that entered or left a specification's result set.
- *
- * `row` holds the fact references the row is made of, keyed by the label
- * names of the specification's given and its matches. `rowHash` identifies
- * the row: it is stable across the add and the remove of the same row, so a
- * consumer can pair them, deduplicate repeats, and record progress against
- * it.
- */
-export interface SpecificationChange {
-    row: ReferencesByName;
-    rowHash: string;
-}
-
-/**
  * Callbacks for {@link Jinaga.observeChanges}. Provide at least one.
+ *
+ * Each callback receives {@link SpecificationRow}s: the specification's own
+ * projection, hydrated exactly as `query` and `queryRows` deliver it, together
+ * with the row hash that identifies the row.
  *
  * Both are dispatched through `ObservableSource.notifyListener`, so they
  * inherit the bound added in #249: a callback that exceeds
- * `listenerTimeoutMs` is abandoned and the save proceeds. That is intended
- * behavior for this seam rather than a caveat — see the note on
- * `observeChanges` about a notification being a hint rather than a record.
+ * `listenerTimeoutMs` is abandoned and the save proceeds. Do the work outside
+ * the callback and return promptly. A callback that queries or saves facts
+ * re-enters `ObservableSource.notify` from inside its own notification, which
+ * is reported as `observable_notify_reentrant`.
  */
-export interface SpecificationChangeHandlers {
-    onAdded?: (changes: SpecificationChange[]) => Promise<void>;
-    onRemoved?: (changes: SpecificationChange[]) => Promise<void>;
+export interface SpecificationChangeHandlers<U> {
+    onAdded?: (rows: SpecificationRow<U>[]) => Promise<void>;
+    onRemoved?: (rows: SpecificationRow<U>[]) => Promise<void>;
 }
 
 /**
@@ -40,13 +32,7 @@ export interface ChangeSubscription {
     stop(): void;
 }
 
-class ChangeObserver implements ChangeSubscription {
-    /**
-     * The labels that identify a row: the given, then each match's unknown.
-     * Every root-path inverse carries exactly this set as its `resultSubset`,
-     * on the add and the remove side alike, which is what lets one row hash
-     * pair the two.
-     */
+class ChangeObserver<U> implements ChangeSubscription {
     private readonly rowIdentityLabels: string[];
     private readonly givenHash: string;
     private listeners: SpecificationListener[] = [];
@@ -56,12 +42,9 @@ class ChangeObserver implements ChangeSubscription {
         private readonly factManager: FactManager,
         private readonly specification: Specification,
         given: FactReference[],
-        private readonly handlers: SpecificationChangeHandlers
+        private readonly handlers: SpecificationChangeHandlers<U>
     ) {
-        this.rowIdentityLabels = [
-            ...specification.given.map(g => g.label.name),
-            ...specification.matches.map(m => m.unknown.name)
-        ];
+        this.rowIdentityLabels = rowIdentityLabels(specification);
 
         const givenSubset = specification.given.map(g => g.label.name);
         const tuple: ReferencesByName = specification.given.reduce((t, label, index) => ({
@@ -76,8 +59,7 @@ class ChangeObserver implements ChangeSubscription {
         // path belongs to a nested specification inside a projection, and this
         // seam delivers no nested rows: a change within a child collection does
         // not add or remove a row from the top-level set. Registering those
-        // would deliver rows the caller never asked for, keyed by labels it
-        // does not know.
+        // would deliver rows the caller never asked for.
         const inverses = invertSpecification(this.specification)
             .filter(inverse => inverse.path === "");
 
@@ -122,55 +104,51 @@ class ChangeObserver implements ChangeSubscription {
             return;
         }
 
-        const changes = this.toChanges(matching);
-        if (changes.length === 0) {
+        const rows = this.toRows(matching);
+        if (rows.length === 0) {
             return;
         }
 
-        Trace.info(`[ChangeObserver] ${inverse.operation.toUpperCase()} - Rows: ${changes.length}`);
-        await handler(changes);
+        Trace.info(`[ChangeObserver] ${inverse.operation.toUpperCase()} - Rows: ${rows.length}`);
+        await handler(rows);
     }
 
     /**
-     * Narrow each result to the row identity labels, dropping the projection
-     * and any extra labels the inverse carries. A remove inverse's tuple names
-     * the fact whose arrival retracted the row; that label is absent from the
-     * add side, so hashing the whole tuple would give the same row two
-     * different hashes and a consumer could never pair them.
+     * Identify each result by the row identity labels and project it exactly
+     * as `query` would.
+     *
+     * The identity is narrowed rather than taken from the whole tuple: a
+     * remove inverse's tuple names the fact whose arrival retracted the row,
+     * that label is absent from the add side, and hashing the whole tuple
+     * would therefore give one row two different hashes.
      *
      * Repeats within one batch are collapsed. Repeats ACROSS batches are not:
      * holding a delivered-row set would reintroduce exactly the unbounded
      * growth this seam exists to avoid. `rowHash` is what a consumer
      * deduplicates on, which is why it is in the payload.
      */
-    private toChanges(results: ProjectedResult[]): SpecificationChange[] {
-        const changes: SpecificationChange[] = [];
+    private toRows(results: ProjectedResult[]): SpecificationRow<U>[] {
+        const rows: SpecificationRow<U>[] = [];
         const seen = new Set<string>();
         for (const pr of results) {
-            const rowHash = computeTupleSubsetHash(pr.tuple, this.rowIdentityLabels);
-            if (seen.has(rowHash)) {
+            const row = toRow<U>(pr, this.specification, this.rowIdentityLabels);
+            if (seen.has(row.rowHash)) {
                 continue;
             }
-            seen.add(rowHash);
-            const row: ReferencesByName = {};
-            for (const label of this.rowIdentityLabels) {
-                if (pr.tuple[label] !== undefined) {
-                    row[label] = pr.tuple[label];
-                }
-            }
-            changes.push({ row, rowHash });
+            seen.add(row.rowHash);
+            rows.push(row);
         }
-        return changes;
+        return rows;
     }
 }
 
-export function startChangeObserver(
+export function startChangeObserver<U>(
     factManager: FactManager,
     specification: Specification,
     given: FactReference[],
-    handlers: SpecificationChangeHandlers
+    handlers: SpecificationChangeHandlers<U>
 ): ChangeSubscription {
-    const observer = new ChangeObserver(factManager, specification, given, handlers);
+    const observer = new ChangeObserver<U>(factManager, specification, given, handlers);
     observer.start();
     return observer;
 }
