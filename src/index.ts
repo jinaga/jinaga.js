@@ -47,7 +47,7 @@ export { QueueProcessor, Saver } from './managers/QueueProcessor';
 export { MemoryStore } from './memory/memory-store';
 export { Device, User, UserName } from "./model/user";
 export { DEFAULT_LISTENER_TIMEOUT_MS, ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
-export { ChangeOrigin, ChangeStream, ChangeSubscription, DEFAULT_STREAM_CAPACITY, ObserveChangesOptions, SpecificationChange, SpecificationChangeHandlers, StreamChangesOptions } from './observer/change-observer';
+export { DEFAULT_ROW_STREAM_CAPACITY, RowStream, RowStreamOptions, SpecificationChange } from './observer/row-stream';
 export { ObservableCollection } from './observer/observer';
 export { Subscriber } from './observer/subscriber';
 export { PurgeConditions } from './purge/purgeConditions';

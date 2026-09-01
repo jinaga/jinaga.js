@@ -4,7 +4,7 @@ import { SyncStatus, SyncStatusNotifier } from './http/web-client';
 import { DistributionDeniedError, DistributionDiagnostic, isStructuralDenial, toDistributionDiagnostics } from './managers/distributionDiagnostic';
 import { FactManager } from './managers/factManager';
 import { User } from './model/user';
-import { ChangeStream, ChangeSubscription, ObserveChangesOptions, StreamChangesOptions, startChangeObserver, startChangeStream } from './observer/change-observer';
+import { RowStream, RowStreamOptions, startRowStream } from './observer/row-stream';
 import { ObservableCollection, Observer, ResultAddedFunc } from './observer/observer';
 import { describeSpecification } from './specification/description';
 import { extractResults } from './specification/results';
@@ -403,114 +403,108 @@ export class Jinaga {
     }
 
     /**
-     * Learn which rows enter and leave a specification's result set, without
-     * the observer machinery.
+     * Watch the rows of a specification: the ones that match now, and the ones
+     * that enter or leave from here on.
      *
-     * This is a narrow seam over the same inverse specifications that drive
-     * `watch` and `subscribe`, and it deliberately stops there. There is no
-     * projection tree, no nested `onAdded` registration, no buffering of
-     * undelivered parents, and no `loaded()` or `processed()`. It is not a
-     * replacement for `watch`/`subscribe`.
+     * Like `watch`, this fetches once and then observes locally. It does not
+     * hold the specification's feed open, so facts saved elsewhere after the
+     * fetch reach it only when something else pulls them. Use `subscribeRows`
+     * when the stream should keep receiving.
      *
-     * What it does keep from them is the order. Listeners are installed before
-     * anything is read, so a row saved while the read is in flight is
-     * delivered rather than lost. A caller cannot assemble that incorrectly
-     * here, because there is no second call to put first: with
-     * `from: "current"` the rows that already match arrive through `onAdded`,
-     * the same path every later change arrives on.
-     *
-     * Each callback receives the specification's own projection, hydrated
-     * exactly as `query` and `queryRows` deliver it, paired with the row hash
-     * that identifies the row. A consumer acts on the value it is handed; it
-     * never has to load a fact from a reference, and if it wants a hash it
-     * projects one.
-     *
-     * Three consequences worth reading before you use it:
-     *
-     * - **Do the work outside the callback.** These run inside the `save()`
-     *   that triggered them. A callback that queries or saves facts re-enters
-     *   `ObservableSource.notify` from inside its own notification. Enqueue and
-     *   return, or use `streamChanges`, where that is structural.
-     * - **A notification can be dropped.** The callbacks dispatch through the
-     *   listener bound added in #249: one that exceeds `listenerTimeoutMs` is
-     *   abandoned so it cannot wedge the save. For a consumer whose source of
-     *   truth is its own periodic `queryRows` sweep, a dropped notification
-     *   costs latency and nothing else.
-     * - **Facts arrive only if something pulls them.** Pass `feed: true` to
-     *   hold the specification's feed open for the life of the subscription.
-     *   Without it, and without a `queryRows` sweep, a client observes only
-     *   what it saved itself.
-     *
-     * `onRemoved` is not symmetry for its own sake. For a specification ending
-     * in `notExists(Completion)` — how a durable consumer expresses its
-     * outstanding work — the remove inverse fires exactly when the completion
-     * fact is saved, for exactly the row that just left the set.
+     * The rows that already match are read AFTER the listeners are installed
+     * and delivered through the same stream as every later change, so a row
+     * saved while the read is in flight is delivered rather than lost, and a
+     * consumer has one code path for a row rather than two. That ordering is
+     * not something a caller can assemble incorrectly, because there is no
+     * assembly.
      *
      * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
      * @param given The fact from which to begin the query
-     * @param options `from` is required; `onAdded` and/or `onRemoved`, at least one; `feed` to hold the feed open
-     * @returns A subscription; call stop() to release its listeners and its feed
+     * @param options `capacity` sizes the queue of undelivered changes
+     * @returns A stream; iterate it, and call stop() when done
      */
-    async observeChanges<T extends [unknown], U>(
+    async watchRows<T extends [unknown], U>(
         specification: SpecificationOf<T, U>,
         given: T[0],
-        options: ObserveChangesOptions<U>
-    ): Promise<ChangeSubscription> {
-        const innerSpecification = this.validateObservation("observeChanges", specification, given, options);
-
-        if (typeof options.onAdded !== "function" && typeof options.onRemoved !== "function") {
-            throw new Error("Provide at least one of onAdded or onRemoved.");
-        }
-
-        return await startChangeObserver<U>(this.factManager, innerSpecification,
-            [this.prepareFactReference(given)], options,
-            decisions => this.reportObservationDecisions(innerSpecification, decisions));
+        options: RowStreamOptions = {}
+    ): Promise<RowStream<U>> {
+        return await this.startRows("watchRows", specification, given, { from: "current", feed: "none", ...options });
     }
 
     /**
-     * The same observation, delivered by pull instead of by callback.
+     * Watch only the changes: nothing is delivered for a row that already
+     * matches.
      *
-     * ```ts
-     * const stream = await j.streamChanges(outstanding, tenant, { from: "current", feed: true });
-     * for await (const change of stream.changes()) {
-     *     if (change.operation === "added") await handle(change.result);
-     * }
-     * ```
-     *
-     * The library owns the callback, so it does nothing but enqueue, and the
-     * consumer's work necessarily happens on its own turn. The two hazards the
-     * push form documents, working inside the notification and a handler slow
-     * enough to be abandoned, stop being things a consumer has to remember.
-     *
-     * What replaces them is a bounded queue that drops its oldest change
-     * rather than pushing back, because back pressure here would block the
-     * `save()` behind the listener. `dropped` counts what went, and a dropped
-     * notification costs latency and nothing else to a consumer whose sweep is
-     * its source of truth.
+     * The right shape for a consumer that reacts to change and already holds
+     * the state (a cache invalidation, a metric). Silently the wrong shape for
+     * one that must process every row, which is why it is a different method
+     * rather than a flag on `watchRows`: the choice is a word you type, not an
+     * argument you can leave at its default.
      *
      * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
      * @param given The fact from which to begin the query
-     * @param options `from` is required; `feed` to hold the feed open; `capacity` to size the queue
-     * @returns A stream; iterate `changes()`, and call stop() to end it
+     * @param options `capacity` sizes the queue of undelivered changes
+     * @returns A stream; iterate it, and call stop() when done
      */
-    async streamChanges<T extends [unknown], U>(
+    async watchChanges<T extends [unknown], U>(
         specification: SpecificationOf<T, U>,
         given: T[0],
-        options: StreamChangesOptions
-    ): Promise<ChangeStream<U>> {
-        const innerSpecification = this.validateObservation("streamChanges", specification, given, options);
-
-        return await startChangeStream<U>(this.factManager, innerSpecification,
-            [this.prepareFactReference(given)], options,
-            decisions => this.reportObservationDecisions(innerSpecification, decisions));
+        options: RowStreamOptions = {}
+    ): Promise<RowStream<U>> {
+        return await this.startRows("watchChanges", specification, given, { from: "now", feed: "none", ...options });
     }
 
-    private validateObservation<T extends [unknown], U>(
+    /**
+     * Subscribe to the rows of a specification: the ones that match now, and
+     * the ones that enter or leave from here on, with the feed held open.
+     *
+     * The feed is what `subscribe` has always meant here, and it is how a
+     * caller says to keep the socket open. While this stream is running the
+     * replicator pushes matching facts to this client, they are saved, and the
+     * stream delivers them. Call `stop()` to release the feed along with the
+     * listeners.
+     *
+     * This is the method a durable consumer wants. It is `watchRows` plus the
+     * one thing that makes a server-side worker see anything at all: without a
+     * held feed and without a periodic `queryRows` sweep, a client observes
+     * only what it saved itself.
+     *
+     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
+     * @param given The fact from which to begin the query
+     * @param options `capacity` sizes the queue of undelivered changes
+     * @returns A stream; iterate it, and call stop() to release the feed
+     */
+    async subscribeRows<T extends [unknown], U>(
+        specification: SpecificationOf<T, U>,
+        given: T[0],
+        options: RowStreamOptions = {}
+    ): Promise<RowStream<U>> {
+        return await this.startRows("subscribeRows", specification, given, { from: "current", feed: "held", ...options });
+    }
+
+    /**
+     * Subscribe to only the changes, with the feed held open: nothing is
+     * delivered for a row that already matches.
+     *
+     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
+     * @param given The fact from which to begin the query
+     * @param options `capacity` sizes the queue of undelivered changes
+     * @returns A stream; iterate it, and call stop() to release the feed
+     */
+    async subscribeChanges<T extends [unknown], U>(
+        specification: SpecificationOf<T, U>,
+        given: T[0],
+        options: RowStreamOptions = {}
+    ): Promise<RowStream<U>> {
+        return await this.startRows("subscribeChanges", specification, given, { from: "now", feed: "held", ...options });
+    }
+
+    private async startRows<T extends [unknown], U>(
         method: string,
         specification: SpecificationOf<T, U>,
         given: T[0],
-        options: { from?: string }
-    ): Specification {
+        options: { from: "current" | "now", feed: "held" | "none", capacity?: number }
+    ): Promise<RowStream<U>> {
         const innerSpecification = specification.specification;
 
         if (given === undefined || given === null) {
@@ -519,25 +513,22 @@ export class Jinaga {
         if (innerSpecification.given.length !== 1) {
             throw new Error(`${method} requires a specification with exactly one given fact, but this one has ${innerSpecification.given.length}. Bind the others into the specification, or use watch.`);
         }
-        // No default. "now" is right for a consumer that only reacts to change
-        // and silently wrong for one that must process every row, and the
-        // difference does not show until a backlog exists.
-        if (!options || (options.from !== "current" && options.from !== "now")) {
-            throw new Error(`${method} requires from: "current" to start from the rows that match now, or from: "now" to start from the next change.`);
-        }
-        return innerSpecification;
+
+        return await startRowStream<U>(this.factManager, innerSpecification,
+            [this.prepareFactReference(given)], options,
+            decisions => this.reportStreamDecisions(innerSpecification, options.feed, decisions));
     }
 
-    private reportObservationDecisions(specification: Specification, decisions: FeedDecision[]) {
+    private reportStreamDecisions(specification: Specification, feed: "held" | "none", decisions: FeedDecision[]) {
         const diagnostics = toDistributionDiagnostics(
-            'subscribe',
+            feed === "held" ? 'subscribe' : 'watch',
             describeSpecification(specification, 0),
             decisions
         );
         this.emitDistributionDiagnostics(diagnostics);
         // Same contract as `query` and `queryRows`: a structural denial never
-        // self-heals, so an observation that could never deliver fails at its
-        // start rather than looking like an empty set forever.
+        // self-heals, so a stream that could never deliver fails at its start
+        // rather than looking like an empty set forever.
         const structural = diagnostics.filter(isStructuralDenial);
         if (structural.length > 0) {
             throw new DistributionDeniedError(structural);
