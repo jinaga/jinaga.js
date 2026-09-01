@@ -120,7 +120,7 @@ describe("observeChanges", () => {
 
     it("delivers a row that enters the set", async () => {
         const c = collector<Task>();
-        const subscription = j.observeChanges(allTasks, project, c.handlers);
+        const subscription = await j.observeChanges(allTasks, project, { from: "now", ...c.handlers });
 
         const task = await j.fact(new Task(project, "write it down"));
 
@@ -136,12 +136,84 @@ describe("observeChanges", () => {
         subscription.stop();
     });
 
+    it("delivers the rows that already match when started from current", async () => {
+        // The library reads them after its own listeners are installed and
+        // delivers them through onAdded, the path every later change takes, so
+        // a consumer has one code path for a row rather than two.
+        const existing = await j.fact(new Task(project, "already here"));
+
+        const c = collector<Task>();
+        const subscription = await j.observeChanges(outstandingTasks, project, { from: "current", ...c.handlers });
+
+        expect(c.added).toHaveLength(1);
+        expect(Jinaga.hash(c.added[0].result)).toEqual(Jinaga.hash(existing));
+
+        subscription.stop();
+    });
+
+    it("installs its listeners before it reads", async () => {
+        // The invariant the composite exists to own. A consumer that read
+        // first would lose every row saved between the read and the
+        // registration, silently and only under load. There is no longer a
+        // second call to put in the wrong order, and this pins the order
+        // inside.
+        const lines: string[] = [];
+        Trace.configure(new class extends NoOpTracer implements Tracer {
+            info(message: string): void {
+                if (message.includes("LISTENER ADDED") || message.includes("READING CURRENT ROWS")) {
+                    lines.push(message);
+                }
+            }
+        }());
+        let subscription;
+        try {
+            subscription = await j.observeChanges(outstandingTasks, project, {
+                from: "current",
+                onAdded: async () => { }
+            });
+        }
+        finally {
+            Trace.configure(new NoOpTracer());
+        }
+
+        const registered = lines.findIndex(line => line.includes("LISTENER ADDED"));
+        const read = lines.findIndex(line => line.includes("READING CURRENT ROWS"));
+        expect(registered).toBeGreaterThanOrEqual(0);
+        expect(read).toBeGreaterThanOrEqual(0);
+        expect(registered).toBeLessThan(read);
+
+        subscription.stop();
+    });
+
+    it("delivers a row saved during startup exactly once", async () => {
+        // The window this closes: listeners are installed before the read, so
+        // the row cannot be lost, and the read's rows are suppressed against
+        // what the window already delivered, so it cannot arrive twice. When a
+        // consumer owned the ordering, the loss direction was one call swap
+        // away and showed no symptom until a backlog existed.
+        await j.fact(new Task(project, "backlog"));
+
+        const c = collector<Task>();
+        const starting = j.observeChanges(outstandingTasks, project, { from: "current", ...c.handlers });
+
+        // Saved while the fetch and read are in flight. The listeners are
+        // already registered, so this notifies into the startup window.
+        await j.fact(new Task(project, "during startup"));
+
+        const subscription = await starting;
+
+        const descriptions = c.added.map(row => row.result.description).sort();
+        expect(descriptions).toEqual(["backlog", "during startup"]);
+
+        subscription.stop();
+    });
+
     it("delivers changes only, not the rows that already match", async () => {
         // A task saved BEFORE the observation starts is already in the set.
         await j.fact(new Task(project, "already here"));
 
         const c = collector();
-        const subscription = j.observeChanges(allTasks, project, c.handlers);
+        const subscription = await j.observeChanges(allTasks, project, { from: "now", ...c.handlers });
 
         expect(c.added).toHaveLength(0);
 
@@ -154,7 +226,7 @@ describe("observeChanges", () => {
 
     it("delivers a removal when the completion fact retracts the row", async () => {
         const c = collector();
-        const subscription = j.observeChanges(outstandingTasks, project, c.handlers);
+        const subscription = await j.observeChanges(outstandingTasks, project, { from: "now", ...c.handlers });
 
         const task = await j.fact(new Task(project, "outstanding"));
         expect(c.added).toHaveLength(1);
@@ -172,7 +244,7 @@ describe("observeChanges", () => {
         // tuple has no label for, so only restricting both sides to the row
         // identity labels makes the two hashes agree.
         const c = collector();
-        const subscription = j.observeChanges(outstandingTasks, project, c.handlers);
+        const subscription = await j.observeChanges(outstandingTasks, project, { from: "now", ...c.handlers });
 
         const task = await j.fact(new Task(project, "outstanding"));
         await j.fact(new TaskCompleted(task));
@@ -186,7 +258,7 @@ describe("observeChanges", () => {
 
     it("gives different rows different rowHashes", async () => {
         const c = collector();
-        const subscription = j.observeChanges(allTasks, project, c.handlers);
+        const subscription = await j.observeChanges(allTasks, project, { from: "now", ...c.handlers });
 
         await j.fact(new Task(project, "first"));
         await j.fact(new Task(project, "second"));
@@ -202,7 +274,7 @@ describe("observeChanges", () => {
         const other = await j.fact(new Project(creator, "two"));
 
         const c = collector();
-        const subscription = j.observeChanges(allTasks, project, c.handlers);
+        const subscription = await j.observeChanges(allTasks, project, { from: "now", ...c.handlers });
 
         await j.fact(new Task(other, "not mine"));
         expect(c.added).toHaveLength(0);
@@ -217,7 +289,7 @@ describe("observeChanges", () => {
         // A note entering a task's nested collection is not a task entering the
         // set. Registering non-root inverses would deliver a row here.
         const c = collector();
-        const subscription = j.observeChanges(tasksWithNotes, project, c.handlers);
+        const subscription = await j.observeChanges(tasksWithNotes, project, { from: "now", ...c.handlers });
 
         const task = await j.fact(new Task(project, "has notes"));
         expect(c.added).toHaveLength(1);
@@ -232,7 +304,7 @@ describe("observeChanges", () => {
 
     it("stops delivering after stop()", async () => {
         const c = collector();
-        const subscription = j.observeChanges(allTasks, project, c.handlers);
+        const subscription = await j.observeChanges(allTasks, project, { from: "now", ...c.handlers });
 
         await j.fact(new Task(project, "before stop"));
         expect(c.added).toHaveLength(1);
@@ -245,14 +317,15 @@ describe("observeChanges", () => {
 
     it("tolerates stop() called twice", async () => {
         const c = collector();
-        const subscription = j.observeChanges(allTasks, project, c.handlers);
+        const subscription = await j.observeChanges(allTasks, project, { from: "now", ...c.handlers });
         subscription.stop();
         expect(() => subscription.stop()).not.toThrow();
     });
 
     it("delivers to onRemoved alone when onAdded is omitted", async () => {
         const removed: SpecificationRow<Task>[] = [];
-        const subscription = j.observeChanges(outstandingTasks, project, {
+        const subscription = await j.observeChanges(outstandingTasks, project, {
+            from: "now",
             onRemoved: async rows => { removed.push(...rows); }
         });
 
@@ -270,7 +343,7 @@ describe("observeChanges", () => {
         // notExists condition changed. A consumer that acts on a removal sees
         // the same value it saw on the add, without a second load.
         const c = collector<Task>();
-        const subscription = j.observeChanges(outstandingTasks, project, c.handlers);
+        const subscription = await j.observeChanges(outstandingTasks, project, { from: "now", ...c.handlers });
 
         const task = await j.fact(new Task(project, "outstanding"));
         await j.fact(new TaskCompleted(task));
@@ -285,7 +358,7 @@ describe("observeChanges", () => {
 
     it("delivers a projected shape, including a hash the specification asks for", async () => {
         const c = collector<{ hash: string, description: string, task: Task }>();
-        const subscription = j.observeChanges(outstandingProjected, project, c.handlers);
+        const subscription = await j.observeChanges(outstandingProjected, project, { from: "now", ...c.handlers });
 
         const task = await j.fact(new Task(project, "projected"));
 
@@ -304,7 +377,7 @@ describe("observeChanges", () => {
         await j.fact(new Task(project, "first"));
 
         const c = collector<{ description: string, all: string[] }>();
-        const subscription = j.observeChanges(tasksWithSiblings, project, c.handlers);
+        const subscription = await j.observeChanges(tasksWithSiblings, project, { from: "now", ...c.handlers });
 
         await j.fact(new Task(project, "second"));
 
@@ -319,29 +392,38 @@ describe("observeChanges", () => {
         subscription.stop();
     });
 
-    it("rejects a specification with more than one given", () => {
+    it("rejects a specification with more than one given", async () => {
         const twoGivens = model.given(User, Project).match((user, project) =>
             project.successors(Task, task => task.project)
                 .selectMany(task => user.predecessor().select(u => ({ task, u })))
         );
 
-        expect(() => j.observeChanges(
+        await expect(j.observeChanges(
             // The single-given restriction is also a compile-time error, so this
             // cast is what a JavaScript caller would reach the runtime check by.
             twoGivens as any,
             project,
-            { onAdded: async () => { } }
-        )).toThrow(/exactly one given fact/);
+            { from: "now", onAdded: async () => { } }
+        )).rejects.toThrow(/exactly one given fact/);
     });
 
-    it("rejects handlers with neither callback", () => {
-        expect(() => j.observeChanges(allTasks, project, {}))
-            .toThrow(/at least one of onAdded or onRemoved/);
+    it("rejects handlers with neither callback", async () => {
+        await expect(j.observeChanges(allTasks, project, { from: "now" }))
+            .rejects.toThrow(/at least one of onAdded or onRemoved/);
     });
 
-    it("rejects a null given", () => {
-        expect(() => j.observeChanges(allTasks, null as any, { onAdded: async () => { } }))
-            .toThrow(/No given fact provided/);
+    it("requires the caller to say where the observation starts", async () => {
+        // No default: "now" is right for a consumer that only reacts to change
+        // and silently wrong for one that must process every row.
+        await expect(j.observeChanges(allTasks, project, { onAdded: async () => { } } as any))
+            .rejects.toThrow(/from: "current"/);
+        await expect(j.streamChanges(allTasks, project, {} as any))
+            .rejects.toThrow(/from: "current"/);
+    });
+
+    it("rejects a null given", async () => {
+        await expect(j.observeChanges(allTasks, null as any, { from: "now", onAdded: async () => { } }))
+            .rejects.toThrow(/No given fact provided/);
     });
 });
 
@@ -359,7 +441,7 @@ describe("queryRows", () => {
         const task = await j.fact(new Task(project, "already here"));
 
         const c = collector<Task>();
-        const subscription = j.observeChanges(outstandingTasks, project, c.handlers);
+        const subscription = await j.observeChanges(outstandingTasks, project, { from: "now", ...c.handlers });
 
         // The seam is silent about a row that predates it.
         expect(c.added).toHaveLength(0);
@@ -376,7 +458,7 @@ describe("queryRows", () => {
         // reads second; a row that lands in the gap is discovered twice, and
         // only one key makes that a duplicate rather than double work.
         const c = collector<Task>();
-        const subscription = j.observeChanges(outstandingTasks, project, c.handlers);
+        const subscription = await j.observeChanges(outstandingTasks, project, { from: "now", ...c.handlers });
 
         await j.fact(new Task(project, "in the gap"));
         const rows = await j.queryRows(outstandingTasks, project);
@@ -460,9 +542,113 @@ describe("queryRows", () => {
     });
 });
 
+describe("streamChanges", () => {
+    let j: Jinaga;
+    let project: Project;
+
+    beforeEach(async () => {
+        j = JinagaTest.create({ model });
+        const creator = await j.fact(new User("--- CREATOR ---"));
+        project = await j.fact(new Project(creator, "one"));
+    });
+
+    it("yields each change with the operation and the row identity", async () => {
+        const stream = await j.streamChanges(outstandingTasks, project, { from: "current" });
+        const changes = stream.changes();
+
+        const task = await j.fact(new Task(project, "outstanding"));
+        const added = await changes.next();
+        expect(added.value.operation).toEqual("added");
+        expect(Jinaga.hash(added.value.result)).toEqual(Jinaga.hash(task));
+
+        await j.fact(new TaskCompleted(task));
+        const removed = await changes.next();
+        expect(removed.value.operation).toEqual("removed");
+        expect(removed.value.rowHash).toEqual(added.value.rowHash);
+
+        stream.stop();
+    });
+
+    it("yields the rows that already match when started from current", async () => {
+        const task = await j.fact(new Task(project, "backlog"));
+
+        const stream = await j.streamChanges(outstandingTasks, project, { from: "current" });
+        const first = await stream.changes().next();
+
+        expect(first.value.operation).toEqual("added");
+        expect(Jinaga.hash(first.value.result)).toEqual(Jinaga.hash(task));
+
+        stream.stop();
+    });
+
+    it("does not make the save wait for the consumer", async () => {
+        // This is what the pull form buys. The library owns the callback, so
+        // it only enqueues; the consumer's work cannot sit inside the
+        // notification, and cannot be abandoned for exceeding the listener
+        // bound, because it is not running there at all.
+        const stream = await j.streamChanges(outstandingTasks, project, { from: "now" });
+
+        await j.fact(new Task(project, "nobody is reading yet"));
+
+        // Nothing has consumed anything, and the save resolved regardless.
+        expect(stream.dropped).toEqual(0);
+
+        const first = await stream.changes().next();
+        expect(first.value.result.description).toEqual("nobody is reading yet");
+
+        stream.stop();
+    });
+
+    it("drops the oldest change beyond capacity and counts it", async () => {
+        // Back pressure is not an option: it would block the listener, and a
+        // blocked listener blocks the save behind it. Dropping is safe because
+        // the consumer's queryRows sweep is the source of truth.
+        const stream = await j.streamChanges(outstandingTasks, project, { from: "now", capacity: 2 });
+
+        await j.fact(new Task(project, "first"));
+        await j.fact(new Task(project, "second"));
+        await j.fact(new Task(project, "third"));
+
+        expect(stream.dropped).toEqual(1);
+
+        const changes = stream.changes();
+        const descriptions = [
+            (await changes.next()).value.result.description,
+            (await changes.next()).value.result.description
+        ];
+        expect(descriptions).toEqual(["second", "third"]);
+
+        stream.stop();
+    });
+
+    it("ends the iteration when stopped", async () => {
+        const stream = await j.streamChanges(outstandingTasks, project, { from: "now" });
+        const seen: string[] = [];
+        const consumer = (async () => {
+            for await (const change of stream.changes()) {
+                seen.push(change.result.description);
+            }
+        })();
+
+        await j.fact(new Task(project, "before stop"));
+        stream.stop();
+        await consumer;
+
+        expect(seen).toEqual(["before stop"]);
+    });
+
+    it("refuses a second consumer", async () => {
+        const stream = await j.streamChanges(outstandingTasks, project, { from: "now" });
+        stream.changes();
+        expect(() => stream.changes()).toThrow(/one consumer/);
+        stream.stop();
+    });
+});
+
 describe("the worker recipe", () => {
-    // The shape issue #251 prescribes, end to end: register the seam, read the
-    // outstanding set, process each row once, and record completion as a fact.
+    // What issue #251 prescribes, once the ordering belongs to the library:
+    // one call, one loop, and a completion fact. There is no second call to
+    // put in the wrong order, and no callback to do the work in.
     it("processes the backlog and the new arrivals exactly once", async () => {
         const j = JinagaTest.create({ model });
         const creator = await j.fact(new User("--- CREATOR ---"));
@@ -472,56 +658,41 @@ describe("the worker recipe", () => {
         await j.fact(new Task(project, "backlog one"));
         await j.fact(new Task(project, "backlog two"));
 
-        const queue: SpecificationRow<Task>[] = [];
-        const cancelled = new Set<string>();
+        const stream = await j.streamChanges<[Project], Task>(outstandingTasks, project, { from: "current" });
+
         const handled: string[] = [];
-
-        // 1. Listen first. The callback only enqueues: the work happens on the
-        //    worker's own turn, never inside the notification.
-        const subscription = j.observeChanges(outstandingTasks, project, {
-            onAdded: async rows => { queue.push(...rows); },
-            onRemoved: async rows => { for (const row of rows) cancelled.add(row.rowHash); }
-        });
-
-        // 2. Read the current set second. Everything that already matched is
-        //    here; anything that arrives from now on is notified.
-        queue.push(...await j.queryRows(outstandingTasks, project));
-
-        // A row that lands while the worker is starting up is discovered by
-        // both paths, and the row hash is what makes that harmless.
-        await j.fact(new Task(project, "arrived during startup"));
-        queue.push(...await j.queryRows(outstandingTasks, project));
-
-        const drain = async () => {
-            const seen = new Set<string>();
-            while (queue.length > 0) {
-                const row = queue.shift()!;
-                if (seen.has(row.rowHash) || cancelled.has(row.rowHash)) {
+        const cancelled = new Set<string>();
+        const seen = new Set<string>();
+        const worker = (async () => {
+            for await (const change of stream.changes()) {
+                if (change.operation === "removed") {
+                    cancelled.add(change.rowHash);
                     continue;
                 }
-                seen.add(row.rowHash);
-                handled.push(row.result.description);
+                if (seen.has(change.rowHash) || cancelled.has(change.rowHash)) {
+                    continue;
+                }
+                seen.add(change.rowHash);
+                handled.push(change.result.description);
                 // The completion fact is the record of processing, and writing
                 // it is what takes the row out of the set.
-                await j.fact(new TaskCompleted(row.result));
+                await j.fact(new TaskCompleted(change.result));
+                if (handled.length === 3) {
+                    break;
+                }
             }
-        };
-        await drain();
+        })();
+
+        await j.fact(new Task(project, "arrived later"));
+        await worker;
 
         expect(handled.slice().sort()).toEqual([
-            "arrived during startup",
+            "arrived later",
             "backlog one",
             "backlog two"
         ]);
         expect(await j.queryRows(outstandingTasks, project)).toHaveLength(0);
 
-        // 3. Steady state: a later arrival is discovered by notification alone.
-        await j.fact(new Task(project, "steady state"));
-        await drain();
-
-        expect(handled).toContain("steady state");
-        expect(await j.queryRows(outstandingTasks, project)).toHaveLength(0);
-
-        subscription.stop();
+        stream.stop();
     });
 });
