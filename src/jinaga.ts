@@ -30,6 +30,14 @@ export type MakeObservable<T> =
 
 type WatchArgs<T extends unknown[], U> = [...T, ResultAddedFunc<MakeObservable<U>>];
 
+/**
+ * The given facts a row stream starts from, optionally followed by its
+ * options. Written as a union rather than a trailing optional so that a
+ * caller passing too few givens is a compile-time error rather than an
+ * options object in a given's place.
+ */
+type RowStreamArgs<T extends unknown[]> = T | [...T, RowStreamOptions];
+
 export type Fact = { type: string } & HashMap;
 
 export class Jinaga {
@@ -243,27 +251,23 @@ export class Jinaga {
      * materializes the whole matching set: bound it by the specification or by
      * the given, not by this call.
      *
-     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
-     * @param given The fact from which to begin the query
+     * @param specification Use Model.given().match() to create a specification
+     * @param given The fact or facts from which to begin the query
      * @returns The current rows, each carrying the projection and its row hash
      */
-    async queryRows<T extends [unknown], U>(specification: SpecificationOf<T, U>, given: T[0]): Promise<SpecificationRow<U>[]> {
+    async queryRows<T extends unknown[], U>(specification: SpecificationOf<T, U>, ...given: T): Promise<SpecificationRow<U>[]> {
         const innerSpecification = specification.specification;
-
-        // Checked before the structural analysis below, so that a caller who
-        // passed a multi-given specification is told that rather than whatever
-        // else is true of it.
-        if (innerSpecification.given.length !== 1) {
-            throw new Error(`queryRows requires a specification with exactly one given fact, but this one has ${innerSpecification.given.length}. Bind the others into the specification, or use query.`);
-        }
 
         detectDisconnectedSpecification(innerSpecification);
 
-        if (given === undefined || given === null) {
+        if (!given || given.some(g => !g)) {
             return [];
         }
+        if (given.length !== innerSpecification.given.length) {
+            throw new Error(`Expected ${innerSpecification.given.length} given facts, but received ${given.length}.`);
+        }
 
-        const references = [this.prepareFactReference(given)];
+        const references = given.map(g => this.prepareFactReference(g));
         const decisions = await this.factManager.fetch(references, innerSpecification);
         const diagnostics = toDistributionDiagnostics(
             'query',
@@ -417,17 +421,15 @@ export class Jinaga {
      * not something a caller can assemble incorrectly, because there is no
      * assembly.
      *
-     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
-     * @param given The fact from which to begin the query
-     * @param options `capacity` sizes the queue of undelivered changes
+     * @param specification Use Model.given().match() to create a specification
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
      * @returns A stream; iterate it, and call stop() when done
      */
-    async watchRows<T extends [unknown], U>(
+    async watchRows<T extends unknown[], U>(
         specification: SpecificationOf<T, U>,
-        given: T[0],
-        options: RowStreamOptions = {}
+        ...args: RowStreamArgs<T>
     ): Promise<RowStream<U>> {
-        return await this.startRows("watchRows", specification, given, { from: "current", feed: "none", ...options });
+        return await this.startRows<U>("watchRows", specification.specification, args, { from: "current", feed: "none" });
     }
 
     /**
@@ -440,17 +442,15 @@ export class Jinaga {
      * rather than a flag on `watchRows`: the choice is a word you type, not an
      * argument you can leave at its default.
      *
-     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
-     * @param given The fact from which to begin the query
-     * @param options `capacity` sizes the queue of undelivered changes
+     * @param specification Use Model.given().match() to create a specification
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
      * @returns A stream; iterate it, and call stop() when done
      */
-    async watchChanges<T extends [unknown], U>(
+    async watchChanges<T extends unknown[], U>(
         specification: SpecificationOf<T, U>,
-        given: T[0],
-        options: RowStreamOptions = {}
+        ...args: RowStreamArgs<T>
     ): Promise<RowStream<U>> {
-        return await this.startRows("watchChanges", specification, given, { from: "now", feed: "none", ...options });
+        return await this.startRows<U>("watchChanges", specification.specification, args, { from: "now", feed: "none" });
     }
 
     /**
@@ -468,58 +468,67 @@ export class Jinaga {
      * held feed and without a periodic `queryRows` sweep, a client observes
      * only what it saved itself.
      *
-     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
-     * @param given The fact from which to begin the query
-     * @param options `capacity` sizes the queue of undelivered changes
+     * @param specification Use Model.given().match() to create a specification
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
      * @returns A stream; iterate it, and call stop() to release the feed
      */
-    async subscribeRows<T extends [unknown], U>(
+    async subscribeRows<T extends unknown[], U>(
         specification: SpecificationOf<T, U>,
-        given: T[0],
-        options: RowStreamOptions = {}
+        ...args: RowStreamArgs<T>
     ): Promise<RowStream<U>> {
-        return await this.startRows("subscribeRows", specification, given, { from: "current", feed: "held", ...options });
+        return await this.startRows<U>("subscribeRows", specification.specification, args, { from: "current", feed: "held" });
     }
 
     /**
      * Subscribe to only the changes, with the feed held open: nothing is
      * delivered for a row that already matches.
      *
-     * @param specification Use Model.given().match() to create a specification. It must have exactly one given.
-     * @param given The fact from which to begin the query
-     * @param options `capacity` sizes the queue of undelivered changes
+     * @param specification Use Model.given().match() to create a specification
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
      * @returns A stream; iterate it, and call stop() to release the feed
      */
-    async subscribeChanges<T extends [unknown], U>(
+    async subscribeChanges<T extends unknown[], U>(
         specification: SpecificationOf<T, U>,
-        given: T[0],
-        options: RowStreamOptions = {}
+        ...args: RowStreamArgs<T>
     ): Promise<RowStream<U>> {
-        return await this.startRows("subscribeChanges", specification, given, { from: "now", feed: "held", ...options });
+        return await this.startRows<U>("subscribeChanges", specification.specification, args, { from: "now", feed: "held" });
     }
 
-    private async startRows<T extends [unknown], U>(
+    /**
+     * Split the givens from the options and start the stream.
+     *
+     * The options object is optional and trails the givens, so the two are
+     * told apart by count: one more argument than the specification has givens
+     * means the last is options. A caller who passes the wrong number of
+     * givens is already wrong, and hears about it here.
+     */
+    private async startRows<U>(
         method: string,
-        specification: SpecificationOf<T, U>,
-        given: T[0],
-        options: { from: "current" | "now", feed: "held" | "none", capacity?: number }
+        specification: Specification,
+        args: unknown[],
+        mode: { from: "current" | "now", feed: "held" | "none" }
     ): Promise<RowStream<U>> {
-        const innerSpecification = specification.specification;
-
-        if (given === undefined || given === null) {
-            throw new Error("No given fact provided.");
+        const expected = specification.given.length;
+        let given: unknown[];
+        let options: RowStreamOptions;
+        if (args.length === expected) {
+            given = args;
+            options = {};
         }
-        if (innerSpecification.given.length !== 1) {
-            // Name the observer this caller was reaching for: `subscribe`
-            // holds a feed the way the `subscribe...` methods do, `watch` does
-            // not, and pointing at the wrong one is a second wrong turn.
-            const observer = options.feed === "held" ? "subscribe" : "watch";
-            throw new Error(`${method} requires a specification with exactly one given fact, but this one has ${innerSpecification.given.length}. Bind the others into the specification, or use ${observer}.`);
+        else if (args.length === expected + 1) {
+            given = args.slice(0, expected);
+            options = (args[expected] ?? {}) as RowStreamOptions;
+        }
+        else {
+            throw new Error(`${method} expected ${expected} given facts, but received ${args.length}.`);
+        }
+        if (given.some(g => g === undefined || g === null)) {
+            throw new Error("One or more given facts are null.");
         }
 
-        return await startRowStream<U>(this.factManager, innerSpecification,
-            [this.prepareFactReference(given)], options,
-            decisions => this.reportStreamDecisions(innerSpecification, options.feed, decisions));
+        return await startRowStream<U>(this.factManager, specification,
+            given.map(g => this.prepareFactReference(g)), { ...mode, ...options },
+            decisions => this.reportStreamDecisions(specification, mode.feed, decisions));
     }
 
     private reportStreamDecisions(specification: Specification, feed: "held" | "none", decisions: FeedDecision[]) {

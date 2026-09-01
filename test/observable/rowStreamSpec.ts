@@ -97,6 +97,17 @@ const tasksWithSiblings = model.given(Project).match(project =>
         }))
 );
 
+// Two givens, connected: the outstanding tasks of a project, restricted to
+// projects this user created. The stream machinery never required one given;
+// only the inverse specifications do, and invertSpecification always builds
+// those with exactly one.
+const outstandingForCreator = model.given(User, Project).match((user, project, facts) =>
+    facts.ofType(Task)
+        .join(task => task.project, project)
+        .join(task => task.project.creator, user)
+        .notExists(task => facts.ofType(TaskCompleted).join(completed => completed.task, task))
+);
+
 describe("watchRows", () => {
     let j: Jinaga;
     let project: Project;
@@ -310,21 +321,16 @@ describe("watchRows", () => {
         expect(() => stream.stop()).not.toThrow();
     });
 
-    it("rejects a specification with more than one given", async () => {
-        const twoGivens = model.given(User, Project).match((user, project) =>
-            project.successors(Task, task => task.project)
-                .selectMany(task => user.predecessor().select(u => ({ task, u })))
-        );
-
-        // The single-given restriction is also a compile-time error, so this
-        // cast is what a JavaScript caller would reach the runtime check by.
-        await expect(j.watchRows(twoGivens as any, project))
-            .rejects.toThrow(/exactly one given fact/);
+    it("rejects the wrong number of givens", async () => {
+        // Arity is a compile-time error for a typed caller, so this is the
+        // route a JavaScript caller reaches the runtime guard by.
+        await expect((j.watchRows as any)(outstandingForCreator, project))
+            .rejects.toThrow(/expected 2 given facts, but received 1/);
     });
 
     it("rejects a null given", async () => {
         await expect(j.watchRows(allTasks, null as any))
-            .rejects.toThrow(/No given fact provided/);
+            .rejects.toThrow(/One or more given facts are null/);
     });
 });
 
@@ -657,14 +663,9 @@ describe("queryRows", () => {
         expect(counted[0]).toEqual(3);
     });
 
-    it("rejects a specification with more than one given", async () => {
-        const twoGivens = model.given(User, Project).match((user, project) =>
-            project.successors(Task, task => task.project)
-                .selectMany(task => user.predecessor().select(u => ({ task, u })))
-        );
-
-        await expect(j.queryRows(twoGivens as any, project))
-            .rejects.toThrow(/exactly one given fact/);
+    it("rejects the wrong number of givens", async () => {
+        await expect((j.queryRows as any)(outstandingForCreator, project))
+            .rejects.toThrow(/Expected 2 given facts, but received 1/);
     });
 
     it("returns nothing for a null given", async () => {
@@ -718,6 +719,84 @@ describe("the worker recipe", () => {
             "backlog two"
         ]);
         expect(await j.queryRows(outstandingTasks, project)).toHaveLength(0);
+
+        stream.stop();
+    });
+});
+
+describe("several givens", () => {
+    let j: Jinaga;
+    let creator: User;
+    let project: Project;
+
+    beforeEach(async () => {
+        j = JinagaTest.create({ model });
+        creator = await j.fact(new User("--- CREATOR ---"));
+        project = await j.fact(new Project(creator, "one"));
+    });
+
+    it("delivers the current rows, the later ones, and their removals", async () => {
+        const backlog = await j.fact(new Task(project, "backlog"));
+
+        const stream = await j.watchRows(outstandingForCreator, creator, project);
+        const changes = stream[Symbol.asyncIterator]();
+
+        const first = await changes.next();
+        expect(first.value.operation).toEqual("added");
+        expect(Jinaga.hash(first.value.result)).toEqual(Jinaga.hash(backlog));
+
+        const later = await j.fact(new Task(project, "later"));
+        const second = await changes.next();
+        expect(second.value.result.description).toEqual("later");
+
+        await j.fact(new TaskCompleted(later));
+        const third = await changes.next();
+        expect(third.value.operation).toEqual("removed");
+        expect(third.value.rowHash).toEqual(second.value.rowHash);
+
+        stream.stop();
+    });
+
+    it("does not deliver rows belonging to a different pair of givens", async () => {
+        const other = await j.fact(new User("--- OTHER ---"));
+        const otherProject = await j.fact(new Project(other, "two"));
+
+        const stream = await j.watchChanges(outstandingForCreator, creator, project);
+        const otherStream = await j.watchChanges(outstandingForCreator, other, otherProject);
+
+        await j.fact(new Task(project, "mine"));
+
+        expect(stream.pending).toEqual(1);
+        expect(otherStream.pending).toEqual(0);
+
+        stream.stop();
+        otherStream.stop();
+    });
+
+    it("gives queryRows and the stream the same rowHash", async () => {
+        const stream = await j.watchChanges(outstandingForCreator, creator, project);
+        const changes = stream[Symbol.asyncIterator]();
+
+        await j.fact(new Task(project, "outstanding"));
+        const added = await changes.next();
+        const rows = await j.queryRows(outstandingForCreator, creator, project);
+
+        expect(rows).toHaveLength(1);
+        expect(rows[0].rowHash).toEqual(added.value.rowHash);
+
+        stream.stop();
+    });
+
+    it("still takes options after the givens", async () => {
+        // The options object trails the givens and is told apart by count, so
+        // adding a given does not cost the caller its capacity.
+        const stream = await j.watchChanges(outstandingForCreator, creator, project, { capacity: 1 });
+
+        await j.fact(new Task(project, "first"));
+        await j.fact(new Task(project, "second"));
+
+        expect(stream.dropped).toEqual(1);
+        expect(stream.pending).toEqual(1);
 
         stream.stop();
     });
