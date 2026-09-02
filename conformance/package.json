@@ -1,0 +1,7 @@
+{
+  "name": "jinaga/conformance",
+  "description": "Subpath entry point for the Jinaga storage conformance kit. Lets an implementation import `jinaga/conformance` without an exports map, which would restrict the deep imports consumers already rely on.",
+  "main": "../dist/conformance/index.js",
+  "types": "../dist/conformance/index.d.ts",
+  "sideEffects": false
+}

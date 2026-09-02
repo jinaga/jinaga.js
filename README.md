@@ -112,6 +112,31 @@ function assignmentUser(assignment) {
 }
 ```
 
+## Storage conformance kit
+
+`MemoryStore.read` answers a specification by interpreting it, and that interpreter is
+the reference semantics for the whole model. A SQL-backed store does not interpret, it
+compiles, and a compiler that disagrees with the interpreter does not fail loudly — it
+returns subtly wrong result sets.
+
+So the semantics are published as a suite parameterized on a store factory, rather than
+on a concrete store. Import it from the `jinaga/conformance` subpath, which is separate
+from the main entry point so that it never reaches a runtime bundle:
+
+```ts
+import { describeStorageConformance } from "jinaga/conformance";
+import { MyStore } from "./my-store";
+
+describeStorageConformance("MyStore", () => new MyStore(), store => store.close());
+```
+
+The factory is called once per test and must return a store containing no facts; the
+optional teardown releases it afterward. The suite saves its own fixture graph and
+asserts what `read` returns across the given-condition surface.
+
+`MemoryStore` and `IndexedDBStore` are both validated by this suite in
+`test/specification/`.
+
 ## Build
 
 To build Jinaga.JS, you will need Node 16.
