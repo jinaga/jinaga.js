@@ -102,11 +102,20 @@ export function describeStorageConformance(
     teardown?: StorageTeardown
 ): void {
     describe(`storage conformance: ${name}`, () => {
-        let store: Storage;
+        let store: Storage | undefined;
         let fixture: ReturnType<typeof buildFixture>;
 
         beforeEach(async () => {
+            // Clear first. A failing `createStore` would otherwise leave the
+            // previous test's store in scope, and `afterEach` would tear that
+            // one down a second time — closing a closed store, or deleting the
+            // database the failed factory had already named. An implementation
+            // whose factory throws is exactly the case this kit exists to
+            // catch, so it has to survive one.
+            store = undefined;
             fixture = buildFixture();
+            // Assigned before `save`, so a store that fails to accept the
+            // fixture is still released rather than leaked.
             store = await createStore();
             await store.save(fixture.envelopes);
         });
@@ -118,6 +127,10 @@ export function describeStorageConformance(
         });
 
         async function parseAndExecute(specText: string, given: HashMap[]): Promise<ProjectedResult[]> {
+            if (!store) {
+                throw new Error("No store under test: `createStore` did not return one.");
+            }
+
             const parser = new SpecificationParser(specText);
             parser.skipWhitespace();
             const specification = parser.parseSpecification();

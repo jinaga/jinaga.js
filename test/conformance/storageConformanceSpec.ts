@@ -7,9 +7,12 @@ import { Storage } from "../../src/storage";
 // promise: a kit that quietly reused one store across tests would let a store
 // pass on state left behind by an earlier case. These counters pin the promise.
 //
-// Jest registers `describe` bodies in source order and runs them in that same
-// order, so the assertions below observe the counters after the suite above has
-// finished. No timing dependency is involved.
+// The counters are checked in a file-level `afterAll` rather than in an `it`.
+// An `it` in a later sibling `describe` would only observe a finished suite
+// because Jest happens to run top-level blocks in source order, and that
+// ordering is scheduling behaviour rather than a contract. `afterAll` runs
+// after every test in the file by definition, so the check does not depend on
+// it.
 
 const createdStores: Storage[] = [];
 const releasedStores: Storage[] = [];
@@ -26,19 +29,14 @@ describeStorageConformance("MemoryStore (kit self-test)", () => {
 // and running the suite without one must work; these cases passing is the proof.
 describeStorageConformance("MemoryStore (no teardown)", () => new MemoryStore());
 
-describe("storage conformance kit", () => {
-    it("builds one store per test and releases each one", () => {
-        // The suite above registered more than one case.
-        expect(createdStores.length).toBeGreaterThan(1);
-        expect(releasedStores.length).toBe(createdStores.length);
-    });
+afterAll(() => {
+    // The suite registered more than one case, and each one got its own store.
+    expect(createdStores.length).toBeGreaterThan(1);
 
-    it("never hands the same store to two tests", () => {
-        const distinct = new Set(createdStores);
-        expect(distinct.size).toBe(createdStores.length);
-    });
+    // Never the same instance twice, so no test can observe another's writes.
+    const distinct = new Set(createdStores);
+    expect(distinct.size).toBe(createdStores.length);
 
-    it("releases the same store instance it created", () => {
-        expect(releasedStores).toEqual(createdStores);
-    });
+    // Every store created was released, and it was the one that was released.
+    expect(releasedStores).toEqual(createdStores);
 });
