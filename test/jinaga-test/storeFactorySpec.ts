@@ -55,6 +55,16 @@ class DeferredSaveStore extends MemoryStore {
     }
 }
 
+/**
+ * A store whose `save` throws before returning a promise, standing in for any
+ * failure that reaches `saveInitialState` synchronously.
+ */
+class ThrowingSaveStore extends MemoryStore {
+    save(): Promise<FactEnvelope[]> {
+        throw new Error("save failed synchronously");
+    }
+}
+
 // Yields to the macrotask queue. Everything already resolvable has resolved by
 // the time this returns, so a `createAsync` that failed to await its save would
 // have settled. This is a scheduling boundary rather than an arbitrary delay:
@@ -119,6 +129,32 @@ describe("JinagaTest store factory", () => {
 
         const result = await j.query(openOffices, company);
         expect(result.length).toBe(2);
+    });
+
+    it("should propagate a synchronous save failure out of create", () => {
+        const { initialState } = buildInitialState();
+
+        // `create` does not await `saveInitialState`, so making that method
+        // `async` would convert this throw into a rejected promise that
+        // `create` drops — an unhandled rejection in place of a failure the
+        // caller can see. The same conversion would swallow a throw from
+        // `dehydrate` on malformed initial state, which is the default
+        // MemoryStore path rather than an edge of the new factory.
+        expect(() => JinagaTest.create({
+            initialState,
+            store: () => new ThrowingSaveStore()
+        })).toThrow("save failed synchronously");
+    });
+
+    it("should reject createAsync when the save fails synchronously", async () => {
+        const { initialState } = buildInitialState();
+
+        // The same failure through the async entry point is a rejection, not a
+        // synchronous throw: `createAsync` awaits the save.
+        await expect(JinagaTest.createAsync({
+            initialState,
+            store: () => new ThrowingSaveStore()
+        })).rejects.toThrow("save failed synchronously");
     });
 
     it("should agree with MemoryStore when backed by IndexedDBStore", async () => {

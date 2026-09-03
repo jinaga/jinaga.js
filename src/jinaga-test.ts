@@ -88,18 +88,23 @@ export class JinagaTest {
     return new Jinaga(authentication, factManager, syncStatusNotifier);
   }
 
-  static async saveInitialState(config: JinagaTestConfig, store: Storage): Promise<void> {
+  // Deliberately not `async`. `create` calls this without awaiting, so an
+  // async body would convert every synchronous throw in it — a malformed fact
+  // out of `dehydrate`, or a store whose `save` throws before returning —
+  // into a rejected promise that `create` drops. That would turn a clear
+  // synchronous failure into an unhandled rejection, on the default
+  // `MemoryStore` path as much as any other. Returning the promise instead
+  // keeps those throws propagating out of `create` as they always have.
+  static saveInitialState(config: JinagaTestConfig, store: Storage): Promise<void> {
     if (config.initialState) {
       const dehydrate = new Dehydration();
       config.initialState.forEach(obj => dehydrate.dehydrate(obj));
-      // `save` is still invoked synchronously — an async function body runs up
-      // to its first await — so `create` is unchanged for a store that applies
-      // writes synchronously.
-      await store.save(dehydrate.factRecords().map(f => <FactEnvelope>{
+      return store.save(dehydrate.factRecords().map(f => <FactEnvelope>{
         fact: f,
         signatures: []
-      }));
+      })).then(() => { });
     }
+    return Promise.resolve();
   }
 
   static createAuthentication(config: JinagaTestConfig, store: Storage): Authentication {
