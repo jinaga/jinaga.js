@@ -126,11 +126,27 @@ export class IndexedDBStore implements Storage {
               .map(edge => keyToReference(edge.successor))
               .filter(reference => reference.type === successorType);
           },
-          findFact(reference) {
-            return execRequest<FactRecord>(factObjectStore.get(factKey(reference)));
+          async findFact(reference) {
+            // `FactSource.findFact` reports a fact the store does not hold as
+            // `null`, and the runner tests for exactly that before reading
+            // through a given. `get` yields `undefined` for a missing key, and
+            // `execRequest<FactRecord>` asserted the difference away, so the
+            // runner's short circuit never fired for this store: a read whose
+            // given was never saved carried on into `hydrate` instead of
+            // returning no results (issue #252).
+            const fact = await execRequest<FactRecord | undefined>(factObjectStore.get(factKey(reference)));
+            return fact ?? null;
           },
           async hydrate(reference) {
-            const allAncestors = await execRequest<string[]>(ancestorObjectStore.get(factKey(reference)));
+            // A reference the store has never seen has no ancestor entry, and
+            // `get` answers that with `undefined`. The reference semantics
+            // return no fact for it, as `MemoryStore.hydrate` does; reading
+            // through it produced a TypeError instead, which surfaced as a
+            // failed read for a given that was never saved (issue #252).
+            const allAncestors = await execRequest<string[] | undefined>(ancestorObjectStore.get(factKey(reference)));
+            if (!allAncestors) {
+              return undefined;
+            }
             const distinctAncestors = allAncestors.filter(distinct);
             const factRecords = await Promise.all(distinctAncestors.map(key =>
               execRequest<FactRecord>(factObjectStore.get(key))));
