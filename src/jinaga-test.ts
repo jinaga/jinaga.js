@@ -15,6 +15,7 @@ import { PurgeConditions } from "./purge/purgeConditions";
 import { Model } from './specification/model';
 import { Specification } from "./specification/specification";
 import { FactEnvelope, Storage } from './storage';
+import { Trace } from './util/trace';
 
 export type JinagaTestConfig = {
   model?: Model,
@@ -37,9 +38,11 @@ export type JinagaTestConfig = {
    * another implementation of `Storage`, the way the storage conformance kit
    * runs one suite against several stores (issue #252).
    *
-   * A store whose writes complete asynchronously — `IndexedDBStore`, or a
-   * SQL-backed one — must be paired with `createAsync`, because `create`
-   * cannot await the initial state.
+   * Supplying this together with a non-empty `initialState` requires
+   * `createAsync`, because `create` cannot await the save; `create` refuses
+   * the combination rather than dropping the result (issue #274). `create`
+   * still accepts the factory on its own, for a suite that seeds its facts
+   * through the instance.
    *
    * The factory itself is synchronous, unlike the conformance kit's
    * `StorageFactory`, because `create` is synchronous and both entry points
@@ -52,11 +55,28 @@ export type JinagaTestConfig = {
 
 export class JinagaTest {
   static create(config: JinagaTestConfig) {
+    // `create` cannot await the save, so a supplied store carrying initial
+    // state is a misuse (issue #274): a store whose writes complete
+    // asynchronously returns an instance that does not hold the state yet, and
+    // a save that fails is detached from this call site — an unhandled
+    // rejection, or a failure Jest attributes to whichever test the microtask
+    // lands in. Refuse it here, where the caller can see it. The factory is
+    // opt-in as of issue #252, so no caller predating it is affected.
+    if (config.store && config.initialState && config.initialState.length > 0) {
+      throw new Error("JinagaTest.create cannot save initial state into a store from the `store` factory, because it does not await the save. Use JinagaTest.createAsync instead.");
+    }
     const store = this.createStore(config);
     // The initial state is saved without awaiting, so it is readable on return
     // only for a store that applies writes synchronously, as `MemoryStore`
     // does. `createAsync` is the entry point for any store that does not.
-    this.saveInitialState(config, store);
+    //
+    // What reaches the save from here is the default `MemoryStore`, or a
+    // supplied store with an empty `initialState`. A rejection from either
+    // should not happen, but must not escape as an unhandled rejection, so
+    // report it. A *synchronous* throw is untouched: `saveInitialState` is not
+    // `async`, so it propagates out of `create` before there is a promise to
+    // attach this handler to.
+    this.saveInitialState(config, store).catch(error => Trace.error(error));
     return this.assemble(config, store);
   }
 
