@@ -1,11 +1,14 @@
-import { Jinaga, JinagaTest, User } from '@src';
+import { Jinaga, User } from '@src';
 import { Company, model } from '../companyModel';
+import { describeAcrossStores } from '../utils/store-factories';
 
-describe('factReference with company model', () => {
+// A fact reference stands for a fact the store holds, so what a read makes of
+// one is a semantic every store has to share (issue #252, step 3).
+describeAcrossStores('factReference with company model', (createInstance) => {
     let j: Jinaga;
 
     beforeEach(async () => {
-        j = JinagaTest.create({});
+        j = await createInstance({});
     });
 
     it('should work with real company model facts', async () => {

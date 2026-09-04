@@ -34,9 +34,16 @@ function openDatabase(indexName: string): Promise<IDBDatabase> {
 
 export async function withDatabase<T>(indexName: string, action: (db: IDBDatabase) => Promise<T>) {
   const db = await openDatabase(indexName);
-  const result = await action(db);
-  db.close();
-  return result;
+  // Closed even when the action fails. A connection left open outlives the
+  // operation that opened it, and the next attempt to delete or upgrade the
+  // database blocks on it — so a read that merely failed took the whole
+  // database down with it (issue #252).
+  try {
+    return await action(db);
+  }
+  finally {
+    db.close();
+  }
 }
 
 export async function withTransaction<T>(db: IDBDatabase, storeNames: string[], mode: IDBTransactionMode, action: (transaction: IDBTransaction) => Promise<T>) {

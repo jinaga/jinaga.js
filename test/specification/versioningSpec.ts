@@ -1,4 +1,5 @@
-import { JinagaTest, buildModel } from "@src";
+import { buildModel } from "@src";
+import { describeAcrossStores } from "../utils/store-factories";
 
 class Parent {
   static Type = "Parent";
@@ -56,9 +57,12 @@ const childrenOfParentWithFields = model.given(Parent).match((parent, facts) =>
     }))
 );
 
-describe("versioning", () => {
+// Reading a fact written under an earlier version of its type is a read
+// semantic, so it runs against every store rather than only the `MemoryStore`
+// that `JinagaTest.create` used to construct for itself (issue #252, step 3).
+describeAcrossStores("versioning", (createInstance) => {
   it("should read version 1 into version 2", async () => {
-    const j = JinagaTest.create({
+    const j = await createInstance({
       model,
       initialState: [
         new Parent("parent"),
@@ -75,7 +79,7 @@ describe("versioning", () => {
   });
 
   it("should have the same hash", async () => {
-    const j = JinagaTest.create({
+    const j = await createInstance({
       model,
       initialState: [
         new Parent("parent"),
