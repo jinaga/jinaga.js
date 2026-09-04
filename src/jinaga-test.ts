@@ -30,13 +30,52 @@ export type JinagaTestConfig = {
    * settle before continuing without it (issue #246). Set to 0 to wait
    * indefinitely. Defaults to `DEFAULT_LISTENER_TIMEOUT_MS`.
    */
-  listenerTimeoutMs?: number
+  listenerTimeoutMs?: number,
+  /**
+   * Produces the store that backs the test instance. Defaults to a new
+   * `MemoryStore`. Supply a factory to run a `JinagaTest`-based suite against
+   * another implementation of `Storage`, the way the storage conformance kit
+   * runs one suite against several stores (issue #252).
+   *
+   * A store whose writes complete asynchronously — `IndexedDBStore`, or a
+   * SQL-backed one — must be paired with `createAsync`, because `create`
+   * cannot await the initial state.
+   *
+   * The factory itself is synchronous, unlike the conformance kit's
+   * `StorageFactory`, because `create` is synchronous and both entry points
+   * read this one field. Asynchronous *construction* is not the same thing as
+   * asynchronous writes: `MemoryStore` and `IndexedDBStore` are both built
+   * synchronously and defer their work to their methods.
+   */
+  store?: () => Storage
 }
 
 export class JinagaTest {
   static create(config: JinagaTestConfig) {
-    const store = new MemoryStore();
+    const store = this.createStore(config);
+    // The initial state is saved without awaiting, so it is readable on return
+    // only for a store that applies writes synchronously, as `MemoryStore`
+    // does. `createAsync` is the entry point for any store that does not.
     this.saveInitialState(config, store);
+    return this.assemble(config, store);
+  }
+
+  /**
+   * Creates a test instance, awaiting the initial state before returning.
+   * Use this whenever `config.store` produces a store whose `save` completes
+   * asynchronously.
+   */
+  static async createAsync(config: JinagaTestConfig): Promise<Jinaga> {
+    const store = this.createStore(config);
+    await this.saveInitialState(config, store);
+    return this.assemble(config, store);
+  }
+
+  private static createStore(config: JinagaTestConfig): Storage {
+    return config.store ? config.store() : new MemoryStore();
+  }
+
+  private static assemble(config: JinagaTestConfig, store: Storage) {
     const observableSource = new ObservableSource(store, {
       listenerTimeoutMs: config.listenerTimeoutMs
     });
@@ -49,15 +88,23 @@ export class JinagaTest {
     return new Jinaga(authentication, factManager, syncStatusNotifier);
   }
 
-  static saveInitialState(config: JinagaTestConfig, store: MemoryStore) {
+  // Deliberately not `async`. `create` calls this without awaiting, so an
+  // async body would convert every synchronous throw in it — a malformed fact
+  // out of `dehydrate`, or a store whose `save` throws before returning —
+  // into a rejected promise that `create` drops. That would turn a clear
+  // synchronous failure into an unhandled rejection, on the default
+  // `MemoryStore` path as much as any other. Returning the promise instead
+  // keeps those throws propagating out of `create` as they always have.
+  static saveInitialState(config: JinagaTestConfig, store: Storage): Promise<void> {
     if (config.initialState) {
       const dehydrate = new Dehydration();
       config.initialState.forEach(obj => dehydrate.dehydrate(obj));
-      store.save(dehydrate.factRecords().map(f => <FactEnvelope>{
+      return store.save(dehydrate.factRecords().map(f => <FactEnvelope>{
         fact: f,
         signatures: []
-      }));
+      })).then(() => { });
     }
+    return Promise.resolve();
   }
 
   static createAuthentication(config: JinagaTestConfig, store: Storage): Authentication {
@@ -69,7 +116,7 @@ export class JinagaTest {
     return new AuthenticationTest(store, authorizationRules, userFact, deviceFact);
   }
 
-  static createNetwork(config: JinagaTestConfig, store: MemoryStore): Network {
+  static createNetwork(config: JinagaTestConfig, store: Storage): Network {
     if (config.distribution) {
       const distributionRules = config.distribution(new DistributionRules([]));
       const distributionEngine = new DistributionEngine(distributionRules, store, true);
