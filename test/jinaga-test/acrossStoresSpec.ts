@@ -1,6 +1,6 @@
 import { Jinaga, User } from "@src";
 import { Company, Office, model } from "../companyModel";
-import { describeAcrossStores } from "../utils/store-factories";
+import { databaseDeletionsSettled, databasesAllocatedHere, describeAcrossStores } from "../utils/store-factories";
 
 // `describeAcrossStores` is what lifts a read-semantics suite off the
 // `MemoryStore` that `JinagaTest.create` used to construct for itself (issue
@@ -68,6 +68,27 @@ describeAcrossStores("describeAcrossStores", (createInstance) => {
         const result = await j.query(officesInCompany, company);
         expect(result.map(o => o.identifier)).toEqual(["TestOffice"]);
     });
+
+    it("releases the store of a test that ends with an observer's tail in flight", async () => {
+        recordRun("observer tail");
+        const { company, initialState } = buildInitialState();
+
+        const j = await createInstance({ initialState });
+        const observed: string[] = [];
+        const observer = j.watch(officesInCompany, company, office => {
+            observed.push(office.identifier);
+        });
+
+        await observer.loaded();
+        observer.stop();
+        expect(observed).toEqual(["TestOffice"]);
+
+        // `Observer.start` issues `setMruDate` after resolving `loaded()`, so
+        // this test ends with a write still in flight and nothing to await it
+        // by. The store is released anyway, and the `afterAll` below is where
+        // that release is checked: the deletion its teardown could not
+        // complete is still queued, and completes when the write does.
+    });
 });
 
 afterAll(async () => {
@@ -80,10 +101,25 @@ afterAll(async () => {
         expect(runs.filter(name => name.includes("IndexedDBStore")).length).toBe(1);
         expect(caseName).toBeTruthy();
     }
-    expect(runsByCase.size).toBe(3);
+    expect(runsByCase.size).toBe(4);
 
-    // The databases the IndexedDB runs allocated were deleted by teardown. A
-    // helper that dropped its stores on the floor would leave one per case.
+    // Every database this file's runs allocated is gone: the ones teardown
+    // deleted outright, and the one whose deletion was blocked by the observer
+    // tail above and completed when that write closed its connection. A helper
+    // that dropped its stores on the floor would leave one per case.
+    //
+    // Checked against the names this file allocated rather than against every
+    // database present, because Jest can run several test files in one worker
+    // process and `indexedDB` is shared across them.
+    const allocated = new Set(databasesAllocatedHere());
+    expect(allocated.size).toBeGreaterThan(0);
+
+    // Awaited rather than assumed: a deletion blocked at teardown finishes when
+    // the connection blocking it closes, and that is later than the test that
+    // held it. A deletion that never finishes leaves this pending until the
+    // hook times out, which is the report a real leak should produce.
+    await databaseDeletionsSettled();
+
     const databases = await indexedDB.databases();
-    expect(databases.filter(database => database.name?.startsWith("test-across-stores-"))).toEqual([]);
+    expect(databases.filter(database => database.name && allocated.has(database.name))).toEqual([]);
 });

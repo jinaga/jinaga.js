@@ -19,20 +19,76 @@ interface StoreUnderTest {
     teardown: (store: Storage) => Promise<void>;
 }
 
-let databaseCount = 0;
+// Names every IndexedDB database this file's suites have allocated. Jest gives
+// each test file its own module registry but can run several files in one
+// worker process, and `indexedDB` is per process — so the names are drawn with
+// a random component to keep two files apart, and a check on what survives has
+// to be made against this list rather than against every database in sight.
+const allocatedDatabaseNames: string[] = [];
+
+/**
+ * The IndexedDB databases the suites in this file have allocated, in the order
+ * they were created. Exposed so `acrossStoresSpec` can check that none of them
+ * outlives the file.
+ */
+export function databasesAllocatedHere(): readonly string[] {
+    return allocatedDatabaseNames;
+}
+
+function allocateDatabaseName(): string {
+    const name = `test-across-stores-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    allocatedDatabaseNames.push(name);
+    return name;
+}
+
+// One entry per deletion this file has started, each settling when that
+// deletion actually finishes — which is later than teardown for a deletion that
+// was blocked. `databaseDeletionsSettled` is how a suite waits for all of them.
+const deletionsFinished: Promise<void>[] = [];
+
+/**
+ * Resolves when every database deletion started by this file's suites has
+ * finished, including one that was blocked at teardown and completed later.
+ * Rejects if any of them failed.
+ *
+ * A deletion whose connection never closes leaves this pending, so a suite that
+ * awaits it fails on the hook timeout rather than passing over a leak.
+ */
+export function databaseDeletionsSettled(): Promise<void> {
+    return Promise.all(deletionsFinished).then(() => { });
+}
 
 function deleteDatabase(name: string): Promise<void> {
     const request = indexedDB.deleteDatabase(name);
+    let finish: () => void;
+    let fail: (error: unknown) => void;
+    const finished = new Promise<void>((resolveFinished, rejectFinished) => {
+        finish = resolveFinished;
+        fail = rejectFinished;
+    });
+    // Held so a failure that nothing awaits before `databaseDeletionsSettled`
+    // does not surface as an unhandled rejection. The rejection is still there
+    // for whoever does await it.
+    finished.catch(() => { });
+    deletionsFinished.push(finished);
+
     return new Promise<void>((resolve, reject) => {
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-        // A test that leaves an observer running — `watch` without awaiting
-        // `loaded()` — still has a connection open when its store is released,
-        // and the deletion blocks on it. Waiting for that connection would hang
-        // the run, and failing would report a teardown detail as a test
-        // failure. Each store here is given a database name of its own, so one
-        // left undeleted is unreachable by any later test either way; the
-        // deletion stays queued and completes when the connection closes.
+        request.onsuccess = () => { finish(); resolve(); };
+        request.onerror = () => { fail(request.error); reject(request.error); };
+        // Blocked means a connection is still open, and for an observer that
+        // is not something the test can wait out: `Observer.start` issues
+        // `setMruDate` *after* resolving `loaded()`, so a test that awaits
+        // `loaded()` and stops the observer still leaves that write in flight,
+        // with no public signal to await. Measured against a store that counts
+        // its operations: `["read start", "read end", "setMruDate start"]`,
+        // one outstanding, at the moment `stop()` returns.
+        //
+        // So failing here would report the observer's own tail as a failure of
+        // whichever test used `watch`. Resolving does not lose the deletion:
+        // the request stays queued and completes when that write closes its
+        // connection, which `acrossStoresSpec` asserts at the end of its file.
+        // Each store is given a database name of its own, so a deletion still
+        // outstanding is unreachable by any later test in the meantime.
         request.onblocked = () => resolve();
     });
 }
@@ -57,7 +113,7 @@ function storesUnderTest(): StoreUnderTest[] {
         {
             name: "IndexedDBStore",
             createStore: () => {
-                const databaseName = `test-across-stores-${process.pid}-${databaseCount++}`;
+                const databaseName = allocateDatabaseName();
                 const store = new IndexedDBStore(databaseName);
                 databaseNames.set(store, databaseName);
                 return store;

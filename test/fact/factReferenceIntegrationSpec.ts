@@ -136,7 +136,12 @@ describeAcrossStores('factReference integration', (createInstance) => {
         // The main test is that watch doesn't crash with a factReference
         expect(observer).toBeDefined();
         expect(typeof observer.stop).toBe('function');
-        
+
+        // Awaited before stopping, so the observer's initial read has finished
+        // rather than being abandoned mid-flight. Against a store that reads
+        // from a database, an abandoned read holds a connection open past the
+        // end of the test that started it.
+        await observer.loaded();
         observer.stop();
     });
 

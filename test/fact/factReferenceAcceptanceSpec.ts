@@ -58,9 +58,13 @@ describeAcrossStores('factReference acceptance criteria', (createInstance) => {
             company => { /* callback */ }
         );
         expect(observer).toBeDefined();
+        // Awaited before stopping, so the initial read has finished rather than
+        // being abandoned mid-flight, which against a store that reads from a
+        // database would hold a connection open past the end of this test.
+        await observer.loaded();
         observer.stop();
-        
-        // Test subscribe API (setup only)  
+
+        // Test subscribe API (setup only)
         const subscription = j.subscribe(
             model.given(User).match((u, facts) =>
                 facts.ofType(Company).join(c => c.creator, u)
@@ -69,6 +73,7 @@ describeAcrossStores('factReference acceptance criteria', (createInstance) => {
             company => { /* callback */ }
         );
         expect(subscription).toBeDefined();
+        await subscription.loaded();
         subscription.stop();
     });
 
