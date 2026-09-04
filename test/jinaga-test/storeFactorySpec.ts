@@ -77,9 +77,9 @@ class RejectingSaveStore extends MemoryStore {
 }
 
 /**
- * Captures what `Trace.error` is handed. Restores the default tracer on
- * `stop`, so a failing assertion cannot leave tracing configured for the rest
- * of the suite.
+ * Captures what `Trace.error` is handed. Restores whatever tracer was
+ * configured before, rather than forcing the default, so a failing assertion
+ * cannot leave tracing altered for the rest of the suite.
  */
 function captureTraceErrors() {
     const errors: any[] = [];
@@ -91,10 +91,11 @@ function captureTraceErrors() {
         metric: () => { },
         counter: () => { }
     };
+    const originalTracer = Trace.getTracer();
     Trace.configure(tracer);
     return {
         errors,
-        stop: () => Trace.off()
+        stop: () => Trace.configure(originalTracer)
     };
 }
 
