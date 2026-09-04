@@ -1,17 +1,22 @@
-import { Jinaga, JinagaTest, User } from "@src";
+import { Jinaga, User } from "@src";
 import { Company, Office, model } from "../companyModel";
+import { describeAcrossStores } from "../utils/store-factories";
 
-describe("missing fact handling", () => {
+// What a read returns for a given that the store has never seen is a semantic
+// every implementation has to agree on, so these cases run against each one
+// rather than against the `MemoryStore` that `JinagaTest.create` used to
+// construct for itself (issue #252, step 3).
+describeAcrossStores("missing fact handling", (createInstance) => {
     let creator: User;
     let company: Company;
     let office: Office;
     let j: Jinaga;
-    
-    beforeEach(() => {
+
+    beforeEach(async () => {
         creator = new User("--- PUBLIC KEY GOES HERE ---");
         company = new Company(creator, "TestCo");
         office = new Office(company, "TestOffice");
-        j = JinagaTest.create({
+        j = await createInstance({
             initialState: [
                 creator,
                 company,

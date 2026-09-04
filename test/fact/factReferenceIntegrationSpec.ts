@@ -1,4 +1,5 @@
-import { buildModel, Jinaga, JinagaTest, User } from '@src';
+import { buildModel, Jinaga, User } from '@src';
+import { describeAcrossStores } from '../utils/store-factories';
 
 class Task {
     static Type = "IntegrationTest.Task" as const;
@@ -31,11 +32,13 @@ const model = buildModel(b => b
     )
 );
 
-describe('factReference integration', () => {
+// Reads that start from a fact reference rather than a fact object exercise
+// the same read surface, so they run against every store (issue #252, step 3).
+describeAcrossStores('factReference integration', (createInstance) => {
     let j: Jinaga;
 
     beforeEach(async () => {
-        j = JinagaTest.create({});
+        j = await createInstance({});
     });
 
     it('should work with query API using fact reference', async () => {

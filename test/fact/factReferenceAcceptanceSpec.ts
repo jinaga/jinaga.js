@@ -1,11 +1,14 @@
-import { Jinaga, JinagaTest, User } from '@src';
+import { Jinaga, User } from '@src';
 import { Company, model } from '../companyModel';
+import { describeAcrossStores } from '../utils/store-factories';
 
-describe('factReference acceptance criteria', () => {
+// The acceptance criteria describe what a read returns for a reference, which
+// is a semantic no one store owns (issue #252, step 3).
+describeAcrossStores('factReference acceptance criteria', (createInstance) => {
     let j: Jinaga;
 
     beforeEach(async () => {
-        j = JinagaTest.create({});
+        j = await createInstance({});
     });
 
     it('✅ Developers can call the helper with a fact class and a hash, and receive a strongly-typed reference object', () => {
