@@ -7,11 +7,19 @@
 # sufficient: until the chain is registered as a stack, GitHub treats the PRs as
 # ordinary PRs with unusual bases.
 #
-# What registration buys here is branch protections, required checks and
-# CODEOWNERS evaluated against `main`, a stack map for reviewers, and bottom-up
-# atomic merge. It is NOT what makes CI run. .github/workflows/main.yml triggers
-# on a `pull_request:` with no `branches:` filter, so every layer gets check runs
-# from its own pull request event whether or not the chain is registered.
+# Registration is what holds every layer to the same bar. GitHub evaluates a
+# stacked PR against the base of the stack rather than the branch it targets, so
+# branch protections, required checks and CODEOWNERS all resolve against `main`,
+# and the chain merges bottom-up as one atomic operation. Reviewers get a stack
+# map as well.
+#
+# Register the moment the upper layer's PR exists. The Stacks API takes PR
+# numbers, so the upper PR opens first and joins a stack second. Until you
+# register it, it is an ordinary PR with an unusual base, and a workflow triggers
+# only on `opened`, `synchronize` and `reopened`. Joining a stack fires none of
+# the three, so the layer keeps whatever checks its `opened` event produced. Here
+# that is a full set, because .github/workflows/main.yml carries no `branches:`
+# filter. Registration then decides the merge gate.
 #
 # There is no MCP tool for the Stacks API, which is why this script exists: it
 # gives automated sessions one narrow, allowlistable entry point instead of a

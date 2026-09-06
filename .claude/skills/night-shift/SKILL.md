@@ -128,7 +128,7 @@ A dispatch names the **issue** you stack on, never the branch, because the branc
 
 Setting base branches is necessary but not sufficient: until the chain is registered as a stack, GitHub treats the pull requests as ordinary ones with unusual bases.
 
-Registration gives branch protections, required checks and CODEOWNERS evaluated against `main`, a stack map for reviewers, and bottom-up atomic merge. It is **not** what makes CI run. `.github/workflows/main.yml` triggers on a `pull_request:` with no `branches:` filter, so every layer gets a run from its own pull request event whether or not the chain is registered.
+Registration is what holds every layer to the same bar. GitHub evaluates a stacked pull request against the base of the stack rather than the branch it targets, so branch protections, required checks and CODEOWNERS all resolve against `main`, and the chain merges bottom-up as one atomic operation. Reviewers get a stack map as well.
 
 There is no MCP tool for the Stacks API. Use the committed script, which is pre-approved for this repository:
 
@@ -138,7 +138,9 @@ There is no MCP tool for the Stacks API. Use the committed script, which is pre-
 ./scripts/register-stack.sh add <stack-number> <pr>              # append above the current top
 ```
 
-Register as soon as the second pull request in a chain exists. Use `create` when yours is the second layer and no stack exists, and `add` when a stack already holds your base's pull request. Run it once and report its exact output and HTTP status. Never retry.
+**Register the moment the upper layer's pull request exists.** The Stacks API takes pull request numbers, so the upper pull request opens first and joins a stack second. Until you register it, it is an ordinary pull request with an unusual base, and a workflow triggers only on `opened`, `synchronize` and `reopened`. Joining a stack fires none of the three, so the layer keeps whatever checks its `opened` event produced. `.github/workflows/main.yml` runs on a bare `pull_request:`, so that event produces a full set. Registration then decides the merge gate.
+
+Use `create` when yours is the second layer and no stack exists. Use `add` when a stack already holds your base's pull request. Run it once and report its exact output and HTTP status. Never retry.
 
 ### Confirm a run happened, by its `event`
 
