@@ -7,9 +7,9 @@ on:
   # Pushes to main, and every pull request whatever its base.
   push:
     branches: [ main ]
-  # No `branches:` filter. That filter matches a pull request's BASE, so a
-  # stacked layer based on the branch below it would get zero check runs
-  # rather than failing ones. Every layer gets a run from its own event.
+  # A stacked layer joins its stack after it opens, and joining fires no
+  # workflow trigger, so the run from its own `opened` event is the only one it
+  # is guaranteed. Leave `pull_request` unfiltered by base so that run happens.
   pull_request:
 
   # The escape hatch for a stacked pull request whose checks never fired.
