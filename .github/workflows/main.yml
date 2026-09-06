@@ -7,10 +7,12 @@ on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
     branches: [ main ]
+  # No `branches:` filter. That filter matches a pull request's BASE, so a
+  # stacked layer based on the branch below it would get zero check runs
+  # rather than failing ones. Every layer gets a run from its own event.
   pull_request:
-    branches: [ main ]
 
-  # Allows you to run this workflow manually from the Actions tab
+  # The escape hatch for a stacked pull request whose checks never fired.
   workflow_dispatch:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
