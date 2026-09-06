@@ -144,14 +144,21 @@ Register as soon as the second pull request in a chain exists. Use `create` when
 
 Read each layer's run through its `event` field, not its conclusion. A green check says a run passed. It does not say which trigger produced it, and a layer whose only run came from a manual dispatch is not being checked by its own pull request. This is the same genus of mistake as reading `merged` without `merged_at` (section 2): a surface field that reads like an answer is not one until you know what populates it.
 
-Scope the lookup to one commit and one workflow. Listing a workflow's recent runs returns tens of kilobytes and will overflow a tool result; ask for the one head you care about instead:
+Scope the lookup to one workflow and one branch. Listing a workflow's recent runs returns tens of kilobytes and will overflow a tool result. `gh` is absent from the night-shift container, so ask the MCP server:
+
+```
+mcp__github__actions_list, method list_workflow_runs, resource_id "main.yml",
+workflow_runs_filter { branch: "<your branch>" }
+```
+
+The filter takes a **branch**. Match `head_sha` yourself against the rows it returns, rather than asking the filter for a SHA. In a local session with `gh`, the same question is one call:
 
 ```
 gh api "repos/jinaga/jinaga.js/actions/workflows/main.yml/runs?head_sha=<sha>" \
   --jq '.workflow_runs[] | "\(.event)/\(.conclusion)"'
 ```
 
-Address the workflow by its **file**, not by matching a display name. This repository runs ten workflows, so an unscoped `actions/runs?head_sha=` returns several rows per commit, and a run's `name` is the *run* name, which a workflow can override with `run-name:`. A name filter that stops matching returns nothing, which reads exactly like "CI never ran."
+Address the workflow by its **file** (`resource_id: "main.yml"`), not by matching a display name. This repository runs ten workflows, so an unscoped listing returns several rows per commit, and a run's `name` is the *run* name, which a workflow can override with `run-name:`. A name filter that stops matching returns nothing, which reads exactly like "CI never ran."
 
 Only if a layer shows no run at all, dispatch `main.yml` yourself and **report that as a finding** rather than as routine. **Never push an empty commit, and never close and reopen a pull request, to provoke a run.**
 
