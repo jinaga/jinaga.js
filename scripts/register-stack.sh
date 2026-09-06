@@ -3,16 +3,28 @@
 # Register a chain of pull requests as a GitHub stack, or append to an existing one.
 #
 # GitHub's stacked pull requests are in public preview and are enabled on this
-# repository. Setting each PR's base to the branch below it is necessary but NOT
+# repository. Setting each PR's base to the branch below it is necessary but not
 # sufficient: until the chain is registered as a stack, GitHub treats the PRs as
-# ordinary PRs with unusual bases. In particular .github/workflows/main.yml runs
-# `on: pull_request: branches: [main]`, and that filter matches the PR's BASE, so
-# an unregistered upper layer gets zero check runs. Once registered, GitHub
-# triggers workflows as if every PR in the stack targets the stack base (main).
+# ordinary PRs with unusual bases.
+#
+# Registration is what holds every layer to the same bar. GitHub evaluates a
+# stacked PR against the base of the stack rather than the branch it targets, so
+# branch protections, required checks and CODEOWNERS all resolve against `main`,
+# and the chain merges bottom-up as one atomic operation. Reviewers get a stack
+# map as well.
+#
+# Register the moment the upper layer's PR exists. The Stacks API takes PR
+# numbers, so the upper PR opens first and joins a stack second. Until you
+# register it, it is an ordinary PR with an unusual base, and a workflow triggers
+# only on `opened`, `synchronize` and `reopened`. Joining a stack fires none of
+# the three, so the layer keeps whatever checks its `opened` event produced. Here
+# that is a full set, because .github/workflows/main.yml carries no `branches:`
+# filter. Registration then decides the merge gate.
 #
 # There is no MCP tool for the Stacks API, which is why this script exists: it
 # gives automated sessions one narrow, allowlistable entry point instead of a
-# general-purpose HTTP client.
+# general-purpose HTTP client. It talks to the API over curl, for containers
+# where `gh` is absent — the night-shift worker is the caller it exists for.
 #
 # Usage:
 #   scripts/register-stack.sh list

@@ -4,13 +4,15 @@ name: CI
 
 # Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the main branch
+  # Pushes to main, and every pull request whatever its base.
   push:
     branches: [ main ]
+  # A stacked layer joins its stack after it opens, and joining fires no
+  # workflow trigger, so the run from its own `opened` event is the only one it
+  # is guaranteed. Leave `pull_request` unfiltered by base so that run happens.
   pull_request:
-    branches: [ main ]
 
-  # Allows you to run this workflow manually from the Actions tab
+  # The escape hatch for a stacked pull request whose checks never fired.
   workflow_dispatch:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
