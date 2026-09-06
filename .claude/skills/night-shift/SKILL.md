@@ -1,6 +1,6 @@
 ---
 name: night-shift
-description: Work the queue of GitHub issues labelled `ready` in jinaga/jinaga.js, unattended. Use when sweeping for ready issues, deciding which are actually available to work, ordering them, opening a fix as a stacked pull request, or recording a blocking question instead of guessing. Covers the claim rule, the stacked-PR registration step, the stop condition for PR monitoring, and how each run reads and records the Night Shift Log so the reasoning outlives the container and steers the next run.
+description: Work the queue of GitHub issues labelled `ready` in jinaga/jinaga.js, unattended. Use when sweeping for ready issues, deciding which are actually available to work, ordering them into chains, opening a fix as a stacked pull request, waiting for a lower layer's branch, or recording a blocking question instead of guessing. Covers the claim rule, the stacked-PR registration step, the stop condition for PR monitoring, and how each run reads and records the Night Shift Log so the reasoning outlives the container and steers the next run.
 ---
 
 # Night shift: working `ready` issues
@@ -32,6 +32,10 @@ For each `ready` issue, search pull requests that reference it (by `#<number>` i
 | Nothing | Genuinely available | Work it. |
 
 This has already caught a real case. Issue #242 carried `ready` for six days after PR #244 fixed it and merged, because merging did not clear the label. An agent trusting the label alone would have rebuilt a fix that already shipped.
+
+### Fetch before you look
+
+Every check in this section reads the remote. A container may hand you a working tree whose `origin/*` refs are older than the tree itself, and a stale ref answers "no branch matches" for a branch that has been on `origin` for two days. Run `git fetch origin` before the first lookup, and again before section 5 resolves a base branch. Read branches through `mcp__github__list_branches` when you want the authority rather than the cache.
 
 ### Read merge state from `merged_at`, never from `merged`
 
@@ -73,15 +77,21 @@ The heuristics in this section are the ones this protocol has actually been wron
 
 Section 8 has the mechanics. This is a read for **reasoning**, never for availability: GitHub remains the only authority on what is claimed, and section 2's check still runs in full against it.
 
+A rationale in the log is the record of what a run decided. It is not a citation of this document. When a log entry quotes a rule, check the rule here before you rely on it.
+
 It has already mattered. In the sweep of 2026-08-30, issue #241 was sequenced last on the theory that it shared a root cause with #242 and might fall out of that fix. It did not. The session working it found the shape passing at `0d6c13b`, the reporter's own version, which predates the #242 fix and contains none of its logic. That correction is recorded. A run that re-derives the theory without reading the log makes the same ordering mistake and spends a session proving the same negative.
 
 ### Sequencing
 
-Group the available issues by subsystem. Issues touching the same files are not independent, and running them in parallel produces conflicting patches for one root cause.
+Group the available issues by subsystem. Issues touching the same files are not independent, and running them in parallel from `main` produces conflicting patches for one root cause.
 
-Within a group, sequence by dependency: the change that others build on goes first. A foundational fix (label registration, feed decomposition) precedes the issues that may fall out of it. When one issue is plausibly a duplicate of another's root cause, put it last and have it verify before it fixes.
+**A group is a chain, not a reason to skip.** Sequence by dependency, the change that others build on going first, and stack each layer on the one below. A foundational fix (label registration, feed decomposition) precedes the issues that may fall out of it. Where two or more issues must land before a third, they do not block it: a pull request has one base, so put all of them in one chain in any order where none reads another's code, and stack the third on the topmost. A chain is a linearization of the dependency graph.
+
+When one issue is plausibly a duplicate of another's root cause, put it last and have it verify before it fixes.
 
 Across groups, work in parallel freely.
+
+Depth is not a budget. A layer whose base branch does not exist yet waits for it (section 5), and idle worker time is acceptable. Do not defer a layer to the next sweep to avoid waiting.
 
 ### How much to take
 
@@ -103,44 +113,47 @@ Branch name: `claude/issue-<number>-<slug>`.
 
 When your issue is sequenced behind another in the same subsystem, branch from **that issue's branch**, not from `main`, and open your pull request with its base set to that branch. This is a stacked pull request. It lets the chain proceed without waiting for anything to merge, and GitHub retargets each pull request to `main` automatically as the bases land.
 
-### Registering the stack is required, not cosmetic
+### Resolving a base branch that does not exist yet
 
-Setting base branches is necessary but not sufficient. `.github/workflows/main.yml` triggers on `pull_request` with `branches: [main]`, and that filter matches the pull request's **base**. An unregistered upper layer therefore gets **zero check runs**, not failing ones.
+A dispatch names the **issue** you stack on, never the branch, because the branch carries a slug only its own worker chooses. Resolve it by pattern, and expect to wait:
 
-Registering the chain as a GitHub stack makes Actions fire as if every pull request in it targets `main`, and it also gives branch protections, required checks and CODEOWNERS evaluation against `main`, a stack map for reviewers, and bottom-up atomic merge.
+1. `git fetch origin`, then match `origin/claude/issue-<M>-*`. Confirm against `mcp__github__list_branches` rather than a cached ref.
+2. No match means the lower worker has not pushed yet. Its session is running concurrently with yours. Re-check every 5 minutes for up to 90 minutes, re-arming a check-in rather than blocking.
+3. Once it matches, branch from it and set it as your pull request base.
+4. If it never appears, report that issue #M produced no branch, and **open no pull request**.
+
+**Never fall back to `main`.** Branching from `main` while the lower layer's work is absent renders that work as deletions in your diff, which reads as a revert and passes review by looking small.
+
+### Registering the stack
+
+Setting base branches is necessary but not sufficient: until the chain is registered as a stack, GitHub treats the pull requests as ordinary ones with unusual bases.
+
+Registration gives branch protections, required checks and CODEOWNERS evaluated against `main`, a stack map for reviewers, and bottom-up atomic merge. It is **not** what makes CI run. `.github/workflows/main.yml` triggers on a `pull_request:` with no `branches:` filter, so every layer gets a run from its own pull request event whether or not the chain is registered.
 
 There is no MCP tool for the Stacks API. Use the committed script, which is pre-approved for this repository:
 
 ```
-./scripts/register-stack.sh list                       # inspect existing stacks
+./scripts/register-stack.sh list                                 # inspect existing stacks
 ./scripts/register-stack.sh create <lower-pr> <upper-pr> [...]   # bottom to top, min 2
-./scripts/register-stack.sh add <stack-number> <pr>    # append above the current top
+./scripts/register-stack.sh add <stack-number> <pr>              # append above the current top
 ```
 
-Register as soon as the second pull request in a chain exists. **Registration does not, by itself, start a check run on a layer whose pull request already exists.** It changes how *future* `pull_request` events on that layer are evaluated; it does not reach back and trigger a run for an event that already fired. A pull request is created before it joins a stack, so its `opened` event carried no stack information, and `stacked` is not among the workflow's default `pull_request` types.
+Register as soon as the second pull request in a chain exists. Use `create` when yours is the second layer and no stack exists, and `add` when a stack already holds your base's pull request. Run it once and report its exact output and HTTP status. Never retry.
 
-Measured on the first real stack (`main` ← #253 ← #255 ← #257), by reading the `event` field of each workflow run rather than only its conclusion:
+### Confirm a run happened, by its `event`
 
-| head | layer | how CI actually ran |
-|---|---|---|
-| `f3af791` | #253, base `main` | `pull_request` |
-| `699c705` | #255, base = #253's branch | `workflow_dispatch` |
-| `aadee42` | #257, base = #255's branch | `workflow_dispatch` |
+Read each layer's run through its `event` field, not its conclusion. A green check says a run passed. It does not say which trigger produced it, and a layer whose only run came from a manual dispatch is not being checked by its own pull request. This is the same genus of mistake as reading `merged` without `merged_at` (section 2): a surface field that reads like an answer is not one until you know what populates it.
 
-Only the bottom layer ran from its own pull request event. Both upper layers were green because a session dispatched the workflow by hand. An earlier revision of this section claimed registration alone had been enough, because whoever wrote it saw green checks and never looked at what triggered them. Check the `event`, not just the conclusion.
-
-Scope that lookup to one commit and one workflow. Listing a workflow's recent runs returns tens of kilobytes and will overflow a tool result; ask for the one head you care about instead:
+Scope the lookup to one commit and one workflow. Listing a workflow's recent runs returns tens of kilobytes and will overflow a tool result; ask for the one head you care about instead:
 
 ```
 gh api "repos/jinaga/jinaga.js/actions/workflows/main.yml/runs?head_sha=<sha>" \
   --jq '.workflow_runs[] | "\(.event)/\(.conclusion)"'
 ```
 
-Address the workflow by its **file**, not by matching a display name. This repository runs ten workflows, so an unscoped `actions/runs?head_sha=` returns several rows per commit — and a run's `name` is the *run* name, which a workflow can override with `run-name:`. A name filter that stops matching returns nothing, which reads exactly like "CI never ran." Getting that backwards is the failure this whole section exists to prevent.
+Address the workflow by its **file**, not by matching a display name. This repository runs ten workflows, so an unscoped `actions/runs?head_sha=` returns several rows per commit, and a run's `name` is the *run* name, which a workflow can override with `run-name:`. A name filter that stops matching returns nothing, which reads exactly like "CI never ran."
 
-So an upper layer's first run arrives on its **next push**, or you trigger it yourself. `main.yml` declares `workflow_dispatch` for exactly that, and using it is the sanctioned move here rather than a workaround — say in your report that you dispatched it.
-
-Until then, absent checks are expected. **Never push an empty commit, and never close and reopen a pull request, to provoke a run.**
+Only if a layer shows no run at all, dispatch `main.yml` yourself and **report that as a finding** rather than as routine. **Never push an empty commit, and never close and reopen a pull request, to provoke a run.**
 
 ## 6. When to stop and ask instead
 
@@ -164,6 +177,8 @@ After opening a pull request:
 2. Request a GitHub Copilot review.
 3. Drive CI to green. A red check on your own pull request is work now, at every wake: diagnose, fix, push. Never skip, disable, or quarantine a test to get green. If a failure is genuinely not yours, meaning it is red on the base branch too, say so in one comment rather than going silent.
 4. Complete **one round** with Copilot. Address every suggestion with a pushed commit, or reply on the thread explaining why it is wrong or out of scope. Resolve the threads you addressed.
+
+A review comment is a claim, not a verdict. Verify it against the repository before you act on it, and check your `origin/*` refs are current before you conclude that something a reviewer named is missing. Reply with what you found either way.
 
 **Stop when CI is green on the current head and that one Copilot round is complete**, either because Copilot left no suggested changes or because you have addressed all of them. Then unsubscribe. Do not cycle into further rounds.
 
@@ -189,10 +204,11 @@ The shape of a run, in the order the run performs it:
 6. Per dispatch, when it finishes: `openPullRequest`, `raiseQuestion`, or `findNoChange`.
 7. Later, when a question is answered or a verdict turns out wrong: `answerQuestion`, or `correctVerdictFromWork` naming the consideration whose work produced the disproof.
 
-Two rules about what goes in:
+Three rules about what goes in:
 
 - **Record what you skipped, not just what you worked.** A skip with its reason is the evidence the claim rule is working, and it is the only record that an issue was looked at at all.
 - **Never record availability.** GitHub is the queue and the only authority on what is currently ready. The log holds what was observed and decided, and when. Storing "issue 242 is available" would create a second source of truth that can go stale, which is the exact failure the claim rule exists to catch.
+- **Write a rationale you can support.** A rationale is your own account, so quote a rule only after reading it, and name the file it comes from. A confident paraphrase of a rule that does not exist reads as evidence to every later sweep.
 
 If the Factual server is unreachable, do the GitHub work anyway and say in your final report that the run went unrecorded. A missing log entry is a gap; a blocked run is a worse one.
 
