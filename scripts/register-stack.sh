@@ -3,16 +3,20 @@
 # Register a chain of pull requests as a GitHub stack, or append to an existing one.
 #
 # GitHub's stacked pull requests are in public preview and are enabled on this
-# repository. Setting each PR's base to the branch below it is necessary but NOT
+# repository. Setting each PR's base to the branch below it is necessary but not
 # sufficient: until the chain is registered as a stack, GitHub treats the PRs as
-# ordinary PRs with unusual bases. In particular .github/workflows/main.yml runs
-# `on: pull_request: branches: [main]`, and that filter matches the PR's BASE, so
-# an unregistered upper layer gets zero check runs. Once registered, GitHub
-# triggers workflows as if every PR in the stack targets the stack base (main).
+# ordinary PRs with unusual bases.
+#
+# What registration buys here is branch protections, required checks and
+# CODEOWNERS evaluated against `main`, a stack map for reviewers, and bottom-up
+# atomic merge. It is NOT what makes CI run. .github/workflows/main.yml triggers
+# on a `pull_request:` with no `branches:` filter, so every layer gets check runs
+# from its own pull request event whether or not the chain is registered.
 #
 # There is no MCP tool for the Stacks API, which is why this script exists: it
 # gives automated sessions one narrow, allowlistable entry point instead of a
-# general-purpose HTTP client.
+# general-purpose HTTP client. It talks to the API over curl, for containers
+# where `gh` is absent — the night-shift worker is the caller it exists for.
 #
 # Usage:
 #   scripts/register-stack.sh list
