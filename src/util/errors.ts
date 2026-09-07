@@ -15,3 +15,21 @@ export class ValidationError extends Error {
         Object.setPrototypeOf(this, ValidationError.prototype);
     }
 }
+
+/**
+ * Thrown when a caller's opt-in bound on a feed's first response expires
+ * (issue #280). A replicator that accepts the connection and never answers
+ * leaves a subscription's start pending forever, which puts a service that
+ * awaits it during boot behind a machine it may never hear from.
+ *
+ * It is a distinct type rather than a `ValidationError` because it says
+ * nothing about the request: the same call may well succeed on the next
+ * attempt. Callers retry on this and give up on that.
+ */
+export class FeedTimeoutError extends Error {
+    constructor(message: string, public readonly timeoutMs: number) {
+        super(message);
+        this.name = 'FeedTimeoutError';
+        Object.setPrototypeOf(this, FeedTimeoutError.prototype);
+    }
+}

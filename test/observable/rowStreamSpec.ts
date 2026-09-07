@@ -1,7 +1,7 @@
 import {
-    AuthenticationNoOp, FactEnvelope, FactManager, FactReference, FeedResponse, FeedsResponse,
-    Jinaga, JinagaTest, MemoryStore, NoOpTracer, ObservableSource, PassThroughFork, Specification,
-    SyncStatusNotifier, Trace, Tracer, User, buildModel
+    AuthenticationNoOp, FactEnvelope, FactManager, FactReference, FeedResponse, FeedTimeoutError,
+    FeedsResponse, Jinaga, JinagaTest, MemoryStore, NoOpTracer, ObservableSource, PassThroughFork,
+    Specification, SyncStatusNotifier, Trace, Tracer, User, ValidationError, buildModel
 } from "@src";
 import { Network } from "@src";
 
@@ -568,6 +568,198 @@ describe("subscribeRows", () => {
         expect(network.opened).toEqual(["feed-one"]);
         expect(stream.pending).toEqual(0);
 
+        stream.stop();
+        expect(network.closed).toEqual(["feed-one"]);
+    });
+});
+
+describe("subscribeRows start-up bound", () => {
+    // Issue #280: subscribeRows awaits the feed's first response, so a
+    // replicator that accepts the connection and never answers holds the
+    // caller's boot path open with nothing it can set and no signal that
+    // anything is wrong. feedTimeoutMs is that bound, and it is opt-in
+    // because a cold start can legitimately take minutes.
+
+    /**
+     * A replicator that answers only when the test says so.
+     *
+     * `answer()` is what the real one does when it has nothing new. Until it
+     * is called the connection is open and silent, which is the shape the
+     * issue reports.
+     */
+    class SilentNetwork implements Network {
+        public opened: string[] = [];
+        public closed: string[] = [];
+        private responders: (() => void)[] = [];
+
+        constructor(public feedsAnswer: Promise<FeedsResponse> = Promise.resolve({ feeds: ["feed-one"] })) { }
+
+        feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
+            return this.feedsAnswer;
+        }
+
+        fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
+            return Promise.resolve({ references: [], bookmark });
+        }
+
+        streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>, onError: (err: Error) => void): () => void {
+            this.opened.push(feed);
+            this.responders.push(() => { void onResponse([], bookmark); });
+            return () => { this.closed.push(feed); };
+        }
+
+        answer(): void {
+            const responders = this.responders;
+            this.responders = [];
+            for (const respond of responders) {
+                respond();
+            }
+        }
+
+        load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
+            return Promise.resolve([]);
+        }
+
+        async intersectForSubscribe(start: FactReference[], specification: Specification) {
+            return [{ start, specification }];
+        }
+    }
+
+    function createWithNetwork(network: Network) {
+        const store = new MemoryStore();
+        const observableSource = new ObservableSource(store);
+        const factManager = new FactManager(new PassThroughFork(store), observableSource, store, network, []);
+        return new Jinaga(new AuthenticationNoOp(), factManager, new SyncStatusNotifier());
+    }
+
+    async function projectOn(j: Jinaga) {
+        const creator = await j.fact(new User("--- CREATOR ---"));
+        return await j.fact(new Project(creator, "one"));
+    }
+
+    // Yield to the macrotask queue, which drains every microtask behind it.
+    // Not a wait for async work: nothing here is scheduled on a timer, so a
+    // subscription that has settled has settled by the time this returns.
+    const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+
+    it("fails the start when the replicator does not answer within the bound", async () => {
+        const network = new SilentNetwork();
+        const j = createWithNetwork(network);
+        const project = await projectOn(j);
+
+        // A real timer, because the timer is the feature. 50 ms is long enough
+        // that the connection is open before it fires and short enough to fail
+        // fast; the assertion is on which error arrives, not on when.
+        const start = j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: 50 });
+
+        await expect(start).rejects.toThrow(FeedTimeoutError);
+        await expect(start).rejects.toThrow(/50 ms/);
+    });
+
+    it("releases the subscription when the bound expires", async () => {
+        const network = new SilentNetwork();
+        const j = createWithNetwork(network);
+        const project = await projectOn(j);
+
+        await expect(j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: 50 }))
+            .rejects.toThrow(FeedTimeoutError);
+
+        // The connection the abandoned await left behind is closed rather than
+        // held open by a reference nobody has.
+        expect(network.opened).toEqual(["feed-one"]);
+        expect(network.closed).toEqual(["feed-one"]);
+    });
+
+    it("subscribes again after a bound expires", async () => {
+        const network = new SilentNetwork();
+        const j = createWithNetwork(network);
+        const project = await projectOn(j);
+        await j.fact(new Task(project, "backlog"));
+
+        await expect(j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: 50 }))
+            .rejects.toThrow(FeedTimeoutError);
+
+        // The feed left the cache and the subscriber was released, so a retry
+        // registers from scratch rather than joining the abandoned one.
+        const retry = j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: 50 });
+        await flush();
+        network.answer();
+        const stream = await retry;
+
+        expect(network.opened).toEqual(["feed-one", "feed-one"]);
+        const changes = stream[Symbol.asyncIterator]();
+        expect((await changes.next()).value.result.description).toEqual("backlog");
+
+        stream.stop();
+    });
+
+    it("bounds the feed registration, not only its first response", async () => {
+        // POST /feeds is the other half of the round trip a caller cannot
+        // bound. A replicator silent here never reaches streamFeed at all.
+        const network = new SilentNetwork(new Promise<FeedsResponse>(() => { }));
+        const j = createWithNetwork(network);
+        const project = await projectOn(j);
+
+        await expect(j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: 50 }))
+            .rejects.toThrow(FeedTimeoutError);
+        expect(network.opened).toEqual([]);
+    });
+
+    it("refuses a bound that is not a positive, finite number", async () => {
+        const network = new SilentNetwork();
+        const j = createWithNetwork(network);
+        const project = await projectOn(j);
+
+        // NaN and Infinity reach `withTimeout`, which reads a non-finite bound
+        // as no bound at all. Accepting either would silently restore the
+        // unbounded wait in the one case where the caller believes they set a
+        // bound, so they are refused where a malformed argument is refused.
+        for (const bad of [NaN, Infinity, 0, -1]) {
+            await expect(j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: bad }))
+                .rejects.toThrow(ValidationError);
+        }
+        expect(network.opened).toEqual([]);
+    });
+
+    it("leaves a slow feed alone when the caller sets no bound", async () => {
+        const network = new SilentNetwork();
+        const j = createWithNetwork(network);
+        const project = await projectOn(j);
+        await j.fact(new Task(project, "backlog"));
+
+        let settled = false;
+        const start = j.subscribeRows(outstandingTasks, project);
+        void start.then(() => { settled = true; }, () => { settled = true; });
+
+        await flush();
+        expect(settled).toBe(false);
+
+        // The default is no bound at all, so the slow start succeeds rather
+        // than becoming a retry loop.
+        network.answer();
+        const stream = await start;
+        const changes = stream[Symbol.asyncIterator]();
+        expect((await changes.next()).value.result.description).toEqual("backlog");
+
+        stream.stop();
+    });
+
+    it("does not disturb a feed that answers within the bound", async () => {
+        const network = new SilentNetwork();
+        const j = createWithNetwork(network);
+        const project = await projectOn(j);
+        await j.fact(new Task(project, "backlog"));
+
+        const start = j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: 60_000 });
+        await flush();
+        network.answer();
+        const stream = await start;
+
+        const changes = stream[Symbol.asyncIterator]();
+        expect((await changes.next()).value.result.description).toEqual("backlog");
+
+        // A bound that did not fire leaves nothing behind: the feed is open,
+        // and stop() releases it as it does without one.
         stream.stop();
         expect(network.closed).toEqual(["feed-one"]);
     });

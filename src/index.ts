@@ -68,7 +68,7 @@ export { validateSpecification, validateSpecificationOrThrow } from './specifica
 export { detectDisconnectedSpecification, DisconnectedSpecificationError } from "./specification/UnionFind";
 export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, uniqueFactReferences, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
-export { ValidationError } from './util/errors';
+export { FeedTimeoutError, ValidationError } from './util/errors';
 export { delay } from './util/promise';
 export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
 

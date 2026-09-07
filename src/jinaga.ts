@@ -468,8 +468,14 @@ export class Jinaga {
      * held feed and without a periodic `queryRows` sweep, a client observes
      * only what it saved itself.
      *
+     * This awaits the replicator -- registering the feeds, then their first
+     * response -- so a caller on a boot path should bound it with
+     * `feedTimeoutMs` or start it without awaiting. Unbounded, a replicator
+     * that accepts the connection and never answers holds the boot path open
+     * with no signal that anything is wrong (issue #280).
+     *
      * @param specification Use Model.given().match() to create a specification
-     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes, and `feedTimeoutMs` bounds the wait for the replicator, covering feed registration and the first response together
      * @returns A stream; iterate it, and call stop() to release the feed
      */
     async subscribeRows<T extends unknown[], U>(
@@ -483,8 +489,11 @@ export class Jinaga {
      * Subscribe to only the changes, with the feed held open: nothing is
      * delivered for a row that already matches.
      *
+     * Like `subscribeRows`, this awaits the replicator, and `feedTimeoutMs`
+     * bounds that wait.
+     *
      * @param specification Use Model.given().match() to create a specification
-     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes
+     * @param args The fact or facts from which to begin, optionally followed by options; `capacity` sizes the queue of undelivered changes, and `feedTimeoutMs` bounds the wait for the replicator, covering feed registration and the first response together
      * @returns A stream; iterate it, and call stop() to release the feed
      */
     async subscribeChanges<T extends unknown[], U>(
