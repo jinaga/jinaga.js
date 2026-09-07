@@ -1,7 +1,7 @@
 import {
     AuthenticationNoOp, FactEnvelope, FactManager, FactReference, FeedResponse, FeedTimeoutError,
     FeedsResponse, Jinaga, JinagaTest, MemoryStore, NoOpTracer, ObservableSource, PassThroughFork,
-    Specification, SyncStatusNotifier, Trace, Tracer, User, buildModel
+    Specification, SyncStatusNotifier, Trace, Tracer, User, ValidationError, buildModel
 } from "@src";
 import { Network } from "@src";
 
@@ -702,6 +702,22 @@ describe("subscribeRows start-up bound", () => {
 
         await expect(j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: 50 }))
             .rejects.toThrow(FeedTimeoutError);
+        expect(network.opened).toEqual([]);
+    });
+
+    it("refuses a bound that is not a positive, finite number", async () => {
+        const network = new SilentNetwork();
+        const j = createWithNetwork(network);
+        const project = await projectOn(j);
+
+        // NaN and Infinity reach `withTimeout`, which reads a non-finite bound
+        // as no bound at all. Accepting either would silently restore the
+        // unbounded wait in the one case where the caller believes they set a
+        // bound, so they are refused where a malformed argument is refused.
+        for (const bad of [NaN, Infinity, 0, -1]) {
+            await expect(j.subscribeRows(outstandingTasks, project, { feedTimeoutMs: bad }))
+                .rejects.toThrow(ValidationError);
+        }
         expect(network.opened).toEqual([]);
     });
 

@@ -35,8 +35,15 @@ export interface RowStreamOptions {
     capacity?: number;
 
     /**
-     * Milliseconds to wait for the feed's first response before giving up,
-     * failing the start with a `FeedTimeoutError`.
+     * Milliseconds to wait for the replicator before giving up, failing the
+     * start with a `FeedTimeoutError`.
+     *
+     * It bounds the whole exchange the start waits on, not only its second
+     * half: registering the specification's feeds and then receiving the first
+     * response on each. A silent replicator hangs at either, and one budget
+     * covers both, so the bound is what the caller asked for rather than twice
+     * it. Must be a positive, finite number; anything else is refused rather
+     * than quietly ignored.
      *
      * Opt-in, and deliberately without a default (issue #280). A cold start on
      * a large candidate set can legitimately take minutes, so a default bound
@@ -46,9 +53,9 @@ export interface RowStreamOptions {
      * never answers leaves the returned promise pending, and a service that
      * awaits `subscribeRows` during boot never reaches its listener.
      *
-     * Set it when a caller has somewhere better to be than the replicator's
-     * first response: a boot path, a health check, a supervisor that retries.
-     * Size it against a cold start rather than a warm one.
+     * Set it when a caller has somewhere better to be than the replicator: a
+     * boot path, a health check, a supervisor that retries. Size it against a
+     * cold start rather than a warm one.
      *
      * It bounds the feed, so it applies to `subscribeRows` and
      * `subscribeChanges`. `watchRows` and `watchChanges` hold no feed and
@@ -368,11 +375,11 @@ class RowObserver<U> {
      * Hold each branch's feed open for the life of the stream, so facts arrive
      * from the replicator rather than only from this client's own writes.
      *
-     * `feedTimeoutMs` bounds the wait for the replicator's first response
-     * (issue #280). It is the caller's, and there is no default: see
-     * `RowStreamOptions.feedTimeoutMs`. Every branch is given the same bound
-     * and they run concurrently, so it bounds the start rather than each
-     * branch in turn. On expiry the subscriptions are released before the
+     * `feedTimeoutMs` bounds the wait for the replicator, registration and
+     * first response together (issue #280). It is the caller's, and there is
+     * no default: see `RowStreamOptions.feedTimeoutMs`. Every branch is given
+     * the same bound and they run concurrently, so it bounds the start rather
+     * than each branch in turn. On expiry the subscriptions are released before the
      * error propagates, so nothing is left holding a connection: the ones that
      * timed out by the cleanup inside `subscribe`, and any branch that answers
      * afterwards by the `stopped` check below.

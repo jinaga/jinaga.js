@@ -7,7 +7,7 @@ import { FeedCache } from "../specification/feed-cache";
 import { Specification, reduceSpecification } from "../specification/specification";
 import { FactEnvelope, FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { computeStringHash } from "../util/encoding";
-import { FeedTimeoutError } from "../util/errors";
+import { FeedTimeoutError, ValidationError } from "../util/errors";
 import { TIMED_OUT, withTimeout } from "../util/promise";
 import { Trace } from "../util/trace";
 
@@ -404,8 +404,18 @@ export class NetworkManager {
      * cache and the subscribers are released. Without that, the subscriber
      * created a moment ago would keep its connection open with a reference
      * nobody holds, which is the leak an abandoned `await` hides.
+     *
+     * A bound that is not a positive, finite number is refused rather than
+     * ignored. `NaN` and `Infinity` both arrive at `withTimeout`, which reads a
+     * non-finite bound as no bound at all, so accepting them would silently
+     * restore the unbounded wait this option exists to prevent -- in the one
+     * case where the caller believes they set a bound.
      */
     async subscribe(start: FactReference[], specification: Specification, feedTimeoutMs?: number): Promise<CachedFeeds> {
+        if (feedTimeoutMs !== undefined && !(Number.isFinite(feedTimeoutMs) && feedTimeoutMs > 0)) {
+            throw new ValidationError(
+                `A feed timeout must be a positive, finite number of milliseconds, but received ${feedTimeoutMs}.`);
+        }
         const reducedSpecification = reduceSpecification(specification);
         const deadline: FeedDeadline | undefined = feedTimeoutMs === undefined
             ? undefined
