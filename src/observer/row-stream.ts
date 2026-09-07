@@ -176,11 +176,23 @@ class RowQueue<U> {
     }
 }
 
+/**
+ * One distribution-rule intersection of the stream's specification.
+ *
+ * A stream that holds a feed open has one branch per rule that authorizes it,
+ * exactly as `ObserverImpl` does, and one passthrough branch carrying the
+ * caller's own specification when no intersection occurred.
+ */
+interface RowBranch {
+    specification: Specification;
+    listeners: SpecificationListener[];
+    feeds: string[];
+}
+
 class RowObserver<U> {
     private readonly rowIdentityLabels: string[];
-    private readonly givenHash: string;
-    private listeners: SpecificationListener[] = [];
-    private feeds: string[] = [];
+    private givenHash: string;
+    private branches: RowBranch[];
     private stopped = false;
 
     /**
@@ -197,18 +209,30 @@ class RowObserver<U> {
     constructor(
         private readonly factManager: FactManager,
         private readonly specification: Specification,
-        private readonly given: FactReference[],
+        private given: FactReference[],
         private readonly queue: RowQueue<U>,
         private readonly onFeedDecisions: (decisions: FeedDecision[]) => void
     ) {
+        // Row identity stays pre-intersection. An intersected branch keeps the
+        // caller's given labels, match unknowns and projection, and only adds
+        // the synthetic auth labels ahead of them, so this subset identifies
+        // the same row on every branch and matches what `queryRows` produces.
         this.rowIdentityLabels = rowIdentityLabels(specification);
 
+        // A single passthrough branch until `applySubscribeIntersection`
+        // replaces it with one branch per authorizing distribution rule.
+        this.branches = [{ specification, listeners: [], feeds: [] }];
+
+        this.givenHash = this.computeGivenHash(specification);
+    }
+
+    private computeGivenHash(specification: Specification): string {
         const givenSubset = specification.given.map(g => g.label.name);
         const tuple: ReferencesByName = specification.given.reduce((t, label, index) => ({
             ...t,
-            [label.label.name]: given[index]
+            [label.label.name]: this.given[index]
         }), {} as ReferencesByName);
-        this.givenHash = computeTupleSubsetHash(tuple, givenSubset);
+        return computeTupleSubsetHash(tuple, givenSubset);
     }
 
     /**
@@ -222,18 +246,35 @@ class RowObserver<U> {
      * produced one. There is no longer an assembly to get wrong.
      */
     public async start(options: StartOptions): Promise<void> {
-        const inverses = invertSpecification(this.specification)
-            .filter(inverse => inverse.path === "");
+        // Intersect before the listeners are installed, so they are built from
+        // the branch specifications the feed will actually carry. The
+        // intersection itself reads nothing and notifies nothing, so it does
+        // not reopen the window the listener ordering below closes.
+        if (options.feed === "held") {
+            await this.applySubscribeIntersection();
+            if (this.stopped) {
+                return;
+            }
+        }
 
-        Trace.info(`[RowStream] START - From: ${options.from}, Feed: ${options.feed}, Root inverses: ${inverses.length}, Given hash: ${this.givenHash.substring(0, 8)}...`);
+        const rootInverses = this.branches.map(branch => ({
+            branch,
+            inverses: invertSpecification(branch.specification)
+                .filter(inverse => inverse.path === "")
+        }));
+        const inverseCount = rootInverses.reduce((sum, b) => sum + b.inverses.length, 0);
 
-        this.listeners = inverses.map(inverse => this.factManager.addSpecificationListener(
-            inverse.inverseSpecification,
-            results => this.onResult(inverse, results)
-        ));
+        Trace.info(`[RowStream] START - From: ${options.from}, Feed: ${options.feed}, Branches: ${this.branches.length}, Root inverses: ${inverseCount}, Given hash: ${this.givenHash.substring(0, 8)}...`);
+
+        for (const { branch, inverses } of rootInverses) {
+            branch.listeners = inverses.map(inverse => this.factManager.addSpecificationListener(
+                inverse.inverseSpecification,
+                results => this.onResult(inverse, results)
+            ));
+        }
 
         if (options.feed === "held") {
-            await this.openFeed();
+            await this.openFeeds();
         }
         if (options.from === "current") {
             await this.deliverStartingRows(options.feed);
@@ -246,13 +287,15 @@ class RowObserver<U> {
             return;
         }
         this.stopped = true;
-        for (const listener of this.listeners) {
-            this.factManager.removeSpecificationListener(listener);
-        }
-        this.listeners = [];
-        if (this.feeds.length > 0) {
-            this.factManager.unsubscribe(this.feeds);
-            this.feeds = [];
+        for (const branch of this.branches) {
+            for (const listener of branch.listeners) {
+                this.factManager.removeSpecificationListener(listener);
+            }
+            branch.listeners = [];
+            if (branch.feeds.length > 0) {
+                this.factManager.unsubscribe(branch.feeds);
+                branch.feeds = [];
+            }
         }
         this.startupBuffer = null;
         this.startingRowHashes = null;
@@ -261,26 +304,62 @@ class RowObserver<U> {
     }
 
     /**
-     * Hold the specification's feed open for the life of the stream, so facts
-     * arrive from the replicator rather than only from this client's own
-     * writes.
+     * Compose the specification with any distribution rule that authorizes it,
+     * exactly as `ObserverImpl` does before it subscribes.
      *
-     * KNOWN GAP: this does not apply the distribution-rule intersection that
-     * `j.subscribe` performs, so a specification authorized only through an
-     * intersected rule reports `reactive` and delivers nothing. That surfaces
-     * through the diagnostics rather than silently, and closing it means
-     * lifting the branch fan-out out of `ObserverImpl`.
+     * Without this a specification authorized only through an intersected rule
+     * reports `reactive` and delivers nothing (issue #279), or is refused
+     * outright by the in-process engine. With it the authorization pattern
+     * becomes part of the specification, so the stream starts empty and the
+     * inverse engine delivers the backlog when the authorizing fact arrives.
+     *
+     * Each rule that applies becomes its own branch, and the branches are ORed:
+     * a row authorized by any of them is delivered. A row authorized by more
+     * than one arrives once per branch; the stream's contract already has the
+     * consumer deduplicating on `rowHash`, which is stable across branches.
      */
-    private async openFeed(): Promise<void> {
-        const { feeds, decisions } = await this.factManager.subscribe(this.given, this.specification);
-        if (this.stopped) {
-            // stop() ran while we were awaiting; do not leak the subscriber.
-            if (feeds.length > 0) {
-                this.factManager.unsubscribe(feeds);
-            }
+    private async applySubscribeIntersection(): Promise<void> {
+        const branches = await this.factManager.intersectForSubscribe(this.given, this.specification);
+        const passthrough = branches.length === 1
+            && branches[0].specification === this.specification
+            && branches[0].start === this.given;
+        if (passthrough) {
             return;
         }
-        this.feeds = feeds;
+        // Every branch's intersected spec appends the same synthetic
+        // `distributionUser` given, bound to the same user, so one
+        // observer-level `given` and `givenHash` covers them all.
+        this.given = branches[0].start;
+        this.givenHash = this.computeGivenHash(branches[0].specification);
+        this.branches = branches.map(b => ({
+            specification: b.specification,
+            listeners: [],
+            feeds: []
+        }));
+        Trace.info(`[RowStream] INTERSECTED - Branches: ${this.branches.length}, Given hash: ${this.givenHash.substring(0, 8)}...`);
+    }
+
+    /**
+     * Hold each branch's feed open for the life of the stream, so facts arrive
+     * from the replicator rather than only from this client's own writes.
+     */
+    private async openFeeds(): Promise<void> {
+        const decisions: FeedDecision[] = [];
+        await Promise.all(this.branches.map(async branch => {
+            const { feeds, decisions: branchDecisions } = await this.factManager.subscribe(this.given, branch.specification);
+            if (this.stopped) {
+                // stop() ran while we were awaiting; do not leak the subscriber.
+                if (feeds.length > 0) {
+                    this.factManager.unsubscribe(feeds);
+                }
+                return;
+            }
+            branch.feeds = feeds;
+            decisions.push(...branchDecisions);
+        }));
+        if (this.stopped) {
+            return;
+        }
         this.onFeedDecisions(decisions);
     }
 
@@ -305,13 +384,27 @@ class RowObserver<U> {
         if (this.stopped) {
             return;
         }
-        const projectedResults = await this.factManager.read(this.given, this.specification);
+        // One read per branch: each authorizes an independently filtered set,
+        // and a row that more than one branch authorizes is delivered once.
+        const branchResults = await Promise.all(this.branches.map(branch =>
+            this.factManager.read(this.given, branch.specification)));
         if (this.stopped) {
             return;
         }
-        const { rows, totalCount } = toRows<U>(projectedResults, this.specification, this.rowIdentityLabels);
-        Trace.counter("facts_loaded", totalCount);
-        this.startingRowHashes = new Set(rows.map(row => row.rowHash));
+        const rows: SpecificationRow<U>[] = [];
+        const rowHashes = new Set<string>();
+        for (const projectedResults of branchResults) {
+            const branchRows = toRows<U>(projectedResults, this.specification, this.rowIdentityLabels);
+            Trace.counter("facts_loaded", branchRows.totalCount);
+            for (const row of branchRows.rows) {
+                if (rowHashes.has(row.rowHash)) {
+                    continue;
+                }
+                rowHashes.add(row.rowHash);
+                rows.push(row);
+            }
+        }
+        this.startingRowHashes = rowHashes;
         Trace.info(`[RowStream] STARTING ROWS - Rows: ${rows.length}`);
         this.queue.pushStarting(rows);
     }
