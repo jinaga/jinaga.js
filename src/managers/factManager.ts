@@ -122,9 +122,13 @@ export class FactManager {
         return await this.networkManager.fetch(start, specification);
     }
 
-    async subscribe(start: FactReference[], specification: Specification): Promise<CachedFeeds> {
+    /**
+     * Hold the specification's feeds open. `feedTimeoutMs`, when given, bounds
+     * the wait for the replicator's first response (issue #280).
+     */
+    async subscribe(start: FactReference[], specification: Specification, feedTimeoutMs?: number): Promise<CachedFeeds> {
         this.purgeManager.checkCompliance(specification);
-        return await this.networkManager.subscribe(start, specification);
+        return await this.networkManager.subscribe(start, specification, feedTimeoutMs);
     }
 
     async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {

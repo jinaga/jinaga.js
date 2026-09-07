@@ -7,6 +7,8 @@ import { FeedCache } from "../specification/feed-cache";
 import { Specification, reduceSpecification } from "../specification/specification";
 import { FactEnvelope, FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
 import { computeStringHash } from "../util/encoding";
+import { FeedTimeoutError } from "../util/errors";
+import { TIMED_OUT, withTimeout } from "../util/promise";
 import { Trace } from "../util/trace";
 
 export interface Network {
@@ -266,6 +268,17 @@ interface CachedFeedRegistration {
     specification: Specification;
 }
 
+/**
+ * One caller's bound on a subscription's start, carried as an absolute instant
+ * so the two round trips it covers share a budget rather than each taking the
+ * whole of it. `timeoutMs` rides along for the message and the error, which
+ * report what the caller asked for rather than what was left at that moment.
+ */
+interface FeedDeadline {
+    readonly at: number;
+    readonly timeoutMs: number;
+}
+
 export class NetworkManager {
     // Each entry carries the response *and* what it was registered from, so a
     // feed the replicator has forgotten can be registered again (issue #243).
@@ -377,9 +390,29 @@ export class NetworkManager {
         return [{ start, specification }];
     }
 
-    async subscribe(start: FactReference[], specification: Specification): Promise<CachedFeeds> {
+    /**
+     * Register the specification's feeds and hold them open, resolving when
+     * each has answered once.
+     *
+     * `feedTimeoutMs` bounds that wait (issue #280). It is opt-in because a
+     * cold start on a large candidate set can legitimately take minutes, and a
+     * default would turn a slow success into a retry loop. One deadline spans
+     * both round trips rather than one per phase, so a caller asking for five
+     * seconds waits five seconds rather than ten.
+     *
+     * Expiry takes the same cleanup path a failure takes: the feeds leave the
+     * cache and the subscribers are released. Without that, the subscriber
+     * created a moment ago would keep its connection open with a reference
+     * nobody holds, which is the leak an abandoned `await` hides.
+     */
+    async subscribe(start: FactReference[], specification: Specification, feedTimeoutMs?: number): Promise<CachedFeeds> {
         const reducedSpecification = reduceSpecification(specification);
-        const { feeds, decisions } = await this.getFeedsFromCache(start, reducedSpecification);
+        const deadline: FeedDeadline | undefined = feedTimeoutMs === undefined
+            ? undefined
+            : { at: Date.now() + feedTimeoutMs, timeoutMs: feedTimeoutMs };
+        const { feeds, decisions } = await this.withDeadline(
+            this.getFeedsFromCache(start, reducedSpecification), deadline,
+            "register the feeds for a subscription");
 
         const subscribers = feeds.map(feed => {
             let subscriber = this.subscribers.get(feed);
@@ -409,7 +442,8 @@ export class NetworkManager {
         });
 
         try {
-            await Promise.all(promises);
+            await this.withDeadline(Promise.all(promises), deadline,
+                "receive the first response from a subscribed feed");
         }
         catch (e) {
             // If any feed fails, then remove the specification from the cache.
@@ -421,6 +455,31 @@ export class NetworkManager {
         // can surface diagnostics (issue #207 W5/W6) while still using `feeds`
         // for its keep-alive/unsubscribe bookkeeping.
         return { feeds, decisions };
+    }
+
+    /**
+     * Await `promise` until the deadline, or without a bound when there is
+     * none. `action` completes "waiting to ...", so the message names the
+     * round trip that did not answer rather than the method that gave up.
+     */
+    private async withDeadline<T>(promise: Promise<T>, deadline: FeedDeadline | undefined, action: string): Promise<T> {
+        if (deadline === undefined) {
+            return await promise;
+        }
+        const remaining = deadline.at - Date.now();
+        const expired = () => new FeedTimeoutError(
+            `Timed out after ${deadline.timeoutMs} ms waiting to ${action}.`, deadline.timeoutMs);
+        // A budget the earlier phase already spent has to be reported here:
+        // withTimeout reads a non-positive bound as no bound at all, so racing
+        // on it would wait forever, which is what the caller asked not to do.
+        if (remaining <= 0) {
+            throw expired();
+        }
+        const result = await withTimeout(promise, remaining);
+        if (result === TIMED_OUT) {
+            throw expired();
+        }
+        return result as T;
     }
 
     unsubscribe(feeds: string[]) {
