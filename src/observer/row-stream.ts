@@ -214,9 +214,11 @@ class RowObserver<U> {
         private readonly onFeedDecisions: (decisions: FeedDecision[]) => void
     ) {
         // Row identity stays pre-intersection. An intersected branch keeps the
-        // caller's given labels, match unknowns and projection, and only adds
-        // the synthetic auth labels ahead of them, so this subset identifies
-        // the same row on every branch and matches what `queryRows` produces.
+        // caller's given labels, match unknowns and projection, and adds only
+        // the synthetic auth labels: the `distributionUser` given appended
+        // after the caller's givens, and the lifted auth matches prepended
+        // before the caller's matches. So this subset identifies the same row
+        // on every branch, and matches what `queryRows` produces.
         this.rowIdentityLabels = rowIdentityLabels(specification);
 
         // A single passthrough branch until `applySubscribeIntersection`
