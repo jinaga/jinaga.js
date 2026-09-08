@@ -35,7 +35,7 @@ Task Progress:
 - [ ] Read .night-shift/config.md and the files its `## Read first` names
 - [ ] Check for an open pull request already referencing this issue
 - [ ] Open the Night Shift Log and resolve this repository
-- [ ] Reproduce, or verify a merged fix
+- [ ] Establish the work is warranted, per the config's `## Before you fix`
 - [ ] Fix with a regression test that fails before and passes after
 - [ ] Run every command under `## Verification commands` green
 - [ ] Resolve the base branch, push, open the pull request
@@ -51,7 +51,9 @@ The container may hand you a working tree whose `origin/*` refs are older than t
 
 ## Work the issue
 
-Reproduce first, as `## Before you fix` in the config directs. An issue's repro may have been reconstructed rather than verified by its reporter, so a repro that fails is a finding, not a failure. Report it and open no pull request.
+**Establish that the work is warranted, exactly as `## Before you fix` in the config directs.** That heading is where a repository says what counts, and repositories differ. One asks you to reproduce a defect. Another has no defect to reproduce, because its issues are slices of an accepted specification, and points you at a spec section and the issue's conformance criteria instead. Do not assume the first: where a repository says there is nothing to reproduce, a missing repro is not a finding.
+
+Where the config does ask for a repro and it fails, that is a finding rather than a failure. An issue's repro may have been reconstructed rather than verified by its reporter. Report it and open no pull request.
 
 Then fix, with a regression test that fails before and passes after. Keep the change minimal. Record anything you notice beyond the issue's scope as a note in the pull request rather than widening the diff.
 

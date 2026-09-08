@@ -40,7 +40,7 @@ Stacked pull requests are enabled per repository, so run `list` once before you 
 3. Say in the pull request body that the chain is correctly based but unregistered, and name the layer below.
 4. Continue to CI and the review round as normal.
 
-Exit 1 is a usage or precondition error and needs fixing before you proceed. Exit 0 is success.
+Exit 1 is a usage or precondition error and needs fixing before you proceed. **A wrong stack number is exit 1, not exit 3**: `add` distinguishes them by probing the collection, so a 404 that means *this number does not exist* does not get read as *this repository cannot stack*. Check the number with `list` and run `add` again. Exit 0 is success.
 
 ## Confirm a run happened, by its `event`
 

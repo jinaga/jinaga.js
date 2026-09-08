@@ -17,7 +17,8 @@
 #
 # Exit status:
 #   0  success
-#   1  usage or precondition error (bad argument, no token, no repository)
+#   1  usage or precondition error (bad argument, no token, no repository,
+#      or a stack number that does not exist)
 #   3  stacked pull requests are not enabled for the repository
 #
 # Requires `curl` and `git`, both of which are present in a standard Claude Code
@@ -147,8 +148,24 @@ case "$cmd" in
     stack="$1"; shift
     require_number "$stack"
     require_numbers "$@"
-    report "$(call POST "/stacks/${stack}/add" "{\"pull_requests\":$(json_numbers "$@")}")" "200" \
-      "${NOT_ENABLED}, or stack ${stack} does not exist"
+    add_response="$(call POST "/stacks/${stack}/add" "{\"pull_requests\":$(json_numbers "$@")}")"
+    if [ "${add_response##*$'\n'}" = "404" ]; then
+      # A 404 from /stacks/<n>/add is ambiguous, and the two meanings need
+      # opposite responses: a disabled feature means carry on with an
+      # unregistered chain, while a wrong stack number means fix the number.
+      # Probing the collection tells them apart. This is a GET, so it is a read
+      # in a fallback position rather than a mutating call in one, and the POST
+      # above is never repeated.
+      probe="$(call GET /stacks)"
+      printf '%s\n' "${add_response%$'\n'*}"
+      printf 'HTTP 404\n' >&2
+      if [ "${probe##*$'\n'}" = "404" ]; then
+        printf 'register-stack: %s\n' "$NOT_ENABLED" >&2
+        exit 3
+      fi
+      die "stack ${stack} does not exist in ${REPO}; stacks are enabled here, so check the number with 'list'"
+    fi
+    report "$add_response" "200" "$NOT_ENABLED"
     ;;
   *)
     die "unknown command '$cmd' (expected list, create, or add)"
