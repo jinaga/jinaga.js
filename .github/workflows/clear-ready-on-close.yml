@@ -1,5 +1,5 @@
 # The `ready` label queues an issue for the night shift
-# (.claude/skills/night-shift/SKILL.md). Closing an issue does not remove its
+# (.claude/skills/night-shift-worker/SKILL.md). Closing an issue does not remove its
 # labels, so without this the label outlives the work and the next sweep spends
 # a claim check rediscovering that the issue is closed.
 #

@@ -5,7 +5,7 @@
       "Bash(npm run build)",
       "Bash(npm test)",
       "Bash(npx tsc --noEmit --project tsconfig.test.json)",
-      "Bash(./scripts/register-stack.sh:*)",
+      "Bash(bash .claude/skills/night-shift-worker/scripts/register-stack.sh:*)",
       "mcp__github__get_me",
       "mcp__github__issue_read",
       "mcp__github__list_issues",
