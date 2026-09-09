@@ -20,6 +20,18 @@ Your dispatch names an **issue**, and optionally a lower issue to stack on. If i
 
 ---
 
+## What these instructions serve
+
+Two purposes stand behind every rule in this skill and behind the dispatch that sent you.
+
+**Progress.** The run exists to move the repository forward. Ambiguity that has an obvious resolution is not a reason to stall.
+
+**Truthfulness.** What a run writes is checked against the real, current artifacts rather than assumed from prior wording. Read the released package, the merged diff, or the running system.
+
+**Where an instruction's literal wording would violate the purpose it was written to serve, follow the purpose.** Then say so plainly in the pull request, under its own heading, as a factual report rather than an apology. A deviation you reported is a finding the maintainer needs. A deviation you buried is a defect.
+
+---
+
 ## Before you start
 
 Read `.night-shift/config.md` at the repository root. It carries everything about this repository that the protocol does not fix: what to read first, how to reproduce, which commands must be green, which workflow gates the merge, and what happens after the pull request opens.
@@ -79,7 +91,15 @@ Record a blocking question when proceeding either way could produce the wrong pa
 
 Record one **also** at the far end of a run, when the work is finished and the issue still is not: the shape does not reproduce anywhere you can reach, and settling it needs a capture from a live system, a reproduction repo, or an answer from the reporter. Left in the queue, an issue like that draws a fresh claim check every night and re-derives a verification that is already complete.
 
-To record one:
+**A gap and a stale instruction are not the same thing, and only one of them is a question.**
+
+A **genuine gap** is something nobody has decided yet. The issue does not say, the code does not settle it, and either choice could be the wrong patch. Raise it here and do not resolve it alone.
+
+A **stale instruction** is something already decided, where the ground has since moved. A release now ships what the wording assumed absent, a dependency merged, or a measured fact changed. That is not a gap, and it does not need a maintainer to decide it again. Carry the decision out against current reality, and report the deviation from the literal wording in the pull request.
+
+What separates them is what you would be deciding. Reading a settled decision against today's artifacts is your job. Changing what was decided is the maintainer's, and where the config forbids a change outright, that prohibition holds and the question is the only move.
+
+To record a question:
 
 1. Comment on the issue. State what you found, why it blocks you, the candidate answers, and what you would do under each. Make it answerable in one reply. If a pull request already exists, post it there too and link it from the issue comment.
 2. Remove the queue label and add `question`.
