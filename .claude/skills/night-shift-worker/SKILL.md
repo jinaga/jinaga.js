@@ -89,7 +89,7 @@ With no stacking clause, branch from `origin/main` after fetching. When the disp
 
 A pull request body is read long after it is written, and other pull requests merge in between. **Do not write a value into prose that another change can silently falsify.** A number that was accurate when you wrote it goes stale with nothing to detect it, and a reader has no way to tell which of your sentences still hold.
 
-- **Report verification as what ran and what held.** "`npm ci && npm test` green from a clean checkout", not a total or a pass ratio.
+- **Report verification as what ran and what held.** Name the commands the config lists under `## Verification commands` and say they ran green from a clean checkout. Copy them from the config rather than from memory, because the set differs by repository and a remembered one misreports what ran. A total or a pass ratio is not verification.
 - **Name a test by its description**, which survives a test inserted above it. Never cite a test by its position.
 - **Do not state test totals or before-and-after counts.** The diff already shows what you added, and it cannot go stale.
 - **Where a number genuinely carries the argument, pin it to what it measured**: a commit, a CI run id. A rate measured in one named run stays true of that run.

@@ -8,7 +8,7 @@ run wakes.
 
 | Skill | Upstream commit |
 |---|---|
-| `night-shift-worker` | `75ba7e655b714c4a1c9a704c7236cab4bf205c1d` |
+| `night-shift-worker` | `2df152b781af4fc15ece091bc2346b0fdb59a4da` |
 
 To take an upstream change, re-copy the skill directory, update the commit
 above, and read the diff before you push. Local edits to an installed skill
