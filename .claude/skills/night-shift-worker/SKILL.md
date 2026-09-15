@@ -77,11 +77,24 @@ When a merged pull request already covers the issue, your job changes from fix t
 
 ## Open the pull request, stacked
 
-Branch name: `claude/issue-<number>-<slug>`, unless the config's optional `## Branch prefix` says otherwise.
+Branch name: `claude/issue-<number>-<slug>`, unless the config's optional `## Branch prefix` says otherwise. The session harness may assign a branch of its own. Create this one instead and push only this one, because stacking and the claim check find a worker's branch by its issue number and a harness name carries none. Following this name is the protocol, so the pull request does not report it as a deviation.
 
 With no stacking clause, branch from `origin/main` after fetching. When the dispatch names a lower issue, branch from **that issue's branch** and set it as your pull request base. Read **[stacking.md](stacking.md)** for how to resolve a branch that does not exist yet, how to register the chain, and how to confirm CI actually ran on your layer.
 
 **Never fall back to `main`** when a lower layer's branch is absent. Branching from `main` while that work is missing renders it as deletions in your diff, which reads as a revert and passes review by looking small.
+
+---
+
+## Write what stays true
+
+A pull request body is read long after it is written, and other pull requests merge in between. **Do not write a value into prose that another change can silently falsify.** A number that was accurate when you wrote it goes stale with nothing to detect it, and a reader has no way to tell which of your sentences still hold.
+
+- **Report verification as what ran and what held.** Name the commands the config lists under `## Verification commands` and say they ran green from a clean checkout. Copy them from the config rather than from memory, because the set differs by repository and a remembered one misreports what ran. A total or a pass ratio is not verification.
+- **Name a test by its description**, which survives a test inserted above it. Never cite a test by its position.
+- **Do not state test totals or before-and-after counts.** The diff already shows what you added, and it cannot go stale.
+- **Where a number genuinely carries the argument, pin it to what it measured**: a commit, a CI run id. A rate measured in one named run stays true of that run.
+
+This holds for everything the run writes: the pull request body, a comment on the issue, a recorded question, and the log summary.
 
 ---
 

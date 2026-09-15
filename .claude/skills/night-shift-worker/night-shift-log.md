@@ -40,10 +40,11 @@ let { $pullRequest as $pr } = call openPullRequest($dispatch, 123, "Bounded the 
 
 **Every variable carries `$`,** including the bound name and a specification's own variables. One statement per line; `;` only joins two on one line.
 
-## Three rules about what goes in
+## Four rules about what goes in
 
 - **Never record availability.** The hosting platform is the queue and the only authority on what is currently ready. The log holds what was observed and decided, and when. Storing "this issue is available" would create a second source of truth that can go stale, which is the exact failure the claim rule exists to catch.
 - **Write a rationale you can support.** A rationale is your own account, so quote a rule only after reading it, and name the file it comes from. A confident paraphrase of a rule that does not exist reads as evidence to every later run.
+- **Summarize the change, not its evidence.** The `openPullRequest` summary says what changed and why, as the example above does. Restating the pull request's evidence makes a second copy that drifts from the first, and one run's pull request body and log summary disagreed on a single count before anyone read either. Anything evidential that does appear follows *Write what stays true* in `SKILL.md`.
 - **If the server is unreachable, do the hosting-platform work anyway** and say in your final report that the run went unrecorded. A missing log entry is a gap; a blocked run is a worse one.
 
 ## Nothing to fix is a result
