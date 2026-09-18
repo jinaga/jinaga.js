@@ -28,9 +28,6 @@ describeAcrossStores('factReference with company model', (createInstance) => {
             userRef
         );
         
-        console.log('Real user result:', realUserResult);
-        console.log('Ref user result:', refUserResult);
-        
         // Both should return the same user
         expect(realUserResult).toHaveLength(1);
         expect(refUserResult).toHaveLength(1);
