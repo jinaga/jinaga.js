@@ -29,6 +29,8 @@ CI (`.github/workflows/main.yml`) runs `npm ci && npm run build && npm test` on 
 
 `docs/analysis/` holds deep write-ups produced while fixing hard bugs. `specification-invariants.md` in particular records the invariants the feed builder and skeleton must preserve. Read it before changing `src/specification/feed-builder.ts` or `src/specification/skeleton.ts`.
 
+`docs/constitution/degrees-of-freedom-constitution.md` is the standard a design is scored against. An issue's conformance criteria cite its articles.
+
 ## The specification and distribution subsystem
 
 Most of the hard bugs in this repository concentrate here, and they interact:
@@ -48,6 +50,8 @@ Full guidance is in `contributing.md`. The rule that matters most:
 Timeouts are acceptable only when testing a race condition deliberately, polling an external system with no event notification, or simulating a user delay for a buffering test. Document why in a comment when you do.
 
 Every bug fix needs a regression test that fails before the change and passes after. State both results in the pull request body.
+
+**A test earns its place when it can fail for a reason other than an edit to the text it asserts on.** An assertion that the README, a doc comment, or a `docs/` page holds a given phrase restates that text in a second file, so it fails when an author rewords it and passes when it is wrong. Test documentation by compiling its examples or by deriving the expectation from the code it documents. Where nothing derives, the documentation stands on review, and no test is added.
 
 ## Working from issues
 
