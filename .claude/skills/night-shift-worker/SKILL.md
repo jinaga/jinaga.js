@@ -48,7 +48,7 @@ Task Progress:
 - [ ] Check for an open pull request already referencing this issue
 - [ ] Open the Night Shift Log and resolve this repository
 - [ ] Establish the work is warranted, per the config's `## Before you fix`
-- [ ] Fix with a regression test that can fail for a reason other than itself
+- [ ] Fix with a regression test that fails before, passes after, and can fail for a reason other than itself
 - [ ] Run every command under `## Verification commands` green
 - [ ] Resolve the base branch, push, open the pull request
 - [ ] Register the stack, or record that registration is unavailable
