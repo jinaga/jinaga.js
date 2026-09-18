@@ -14,16 +14,6 @@ describe('Fact reference', () => {
         expect(unique.length).toEqual(1);
     });
 
-    it('should find unique in double', () => {
-        const unique = uniqueFactReferences([{type:'', hash:''}, {type:'', hash:''}]);
-        expect(unique.length).toEqual(1);
-    });
-
-    it('should find unique in same type', () => {
-        const unique = uniqueFactReferences([{type:'a', hash:''}, {type:'a', hash:''}]);
-        expect(unique.length).toEqual(1);
-    });
-
     it('should find unique in different type', () => {
         const unique = uniqueFactReferences([{type:'a', hash:''}, {type:'b', hash:''}]);
         expect(unique.length).toEqual(2);

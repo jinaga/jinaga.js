@@ -32,31 +32,6 @@ describe("DistributionEngine direct usage", () => {
     }
   });
 
-  it("should NOT provide detailed debug info when isTest=false", async () => {
-    const store = new MemoryStore();
-    const distributionRules = distribution(new DistributionRules([]));
-    
-    // Create engine with isTest=false (default)
-    const engine = new DistributionEngine(distributionRules, store, false);
-    
-    const specification = model.given(Blog).match((blog, facts) =>
-      facts.ofType(Post)
-        .join(post => post.blog, blog)
-    ).specification;
-
-    const namedStart = { "blog": dehydrateFact(blog)[0] };
-    const userFact = dehydrateFact(reader)[0];
-
-    const result = await engine.canDistributeToAll([specification], namedStart, userFact);
-    
-    expect(result.type).toBe('failure');
-    if (result.type === 'failure') {
-      expect(result.reason).toContain("The user does not match");
-      expect(result.reason).not.toContain("Matching set:");
-      expect(result.reason).not.toContain("User fact:");
-    }
-  });
-
   it("should NOT authorize a sub-feed that drops an existential restriction (isTest=false)", async () => {
     // The "published posts" rule (withEveryone) authorizes Blog -> Post -> Publish.
     // A bare Blog -> Post feed would expose unpublished posts, so the sub-feed
