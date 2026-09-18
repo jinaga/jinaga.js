@@ -29,7 +29,7 @@ CI (`.github/workflows/main.yml`) runs `npm ci && npm run build && npm test` on 
 
 `docs/analysis/` holds deep write-ups produced while fixing hard bugs. `specification-invariants.md` in particular records the invariants the feed builder and skeleton must preserve. Read it before changing `src/specification/feed-builder.ts` or `src/specification/skeleton.ts`.
 
-`docs/constitution/degrees-of-freedom-constitution.md` is the standard a design is scored against. An issue's conformance criteria cite its articles.
+`.claude/skills/degrees-of-freedom/degrees-of-freedom-constitution.md`, installed from `michaellperry/skills`, is the standard a design is scored against. An issue's conformance criteria cite its articles.
 
 ## The specification and distribution subsystem
 

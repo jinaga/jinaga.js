@@ -24,8 +24,8 @@ private, so never carry its contents into an issue or pull request in this one.
 
 ## Authority
 
-- `docs/constitution/degrees-of-freedom-constitution.md` — the principles a
-  design answers to. An issue's **Conformance** section cites the article each
+- `.claude/skills/degrees-of-freedom/degrees-of-freedom-constitution.md` — the
+  principles a design answers to. An issue's **Conformance** section cites the article each
   criterion answers to. An amendment to it is the maintainer's decision and
   never lands in an implementation slice.
 
