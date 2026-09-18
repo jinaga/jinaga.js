@@ -1,10 +1,10 @@
 # Night shift configuration
 
-The `night-shift-worker` and `night-shift-coordinator` skills read this file.
-Every `##` heading below except `## Branch prefix` is required. A missing
-heading is an error, not a default: stop and name the heading you could not
-find. Anything that is not one of these headings is protocol, and protocol
-lives in the skill.
+The `night-shift-worker`, `night-shift-coordinator`, and `refining-issues`
+skills read this file. Every `##` heading below except `## Branch prefix` is
+required. A missing heading is an error, not a default: stop and name the
+heading you could not find. Anything that is not one of these headings is
+protocol, and protocol lives in the skill.
 
 ## Visibility
 
@@ -20,6 +20,14 @@ private, so never carry its contents into an issue or pull request in this one.
 ## Read first
 
 - `CLAUDE.md` — layout, conventions, and how this library is built and tested.
+- The documents under `## Authority`, at the articles the issue cites.
+
+## Authority
+
+- `docs/constitution/degrees-of-freedom-constitution.md` — the principles a
+  design answers to. An issue's **Conformance** section cites the article each
+  criterion answers to. An amendment to it is the maintainer's decision and
+  never lands in an implementation slice.
 
 ## Before you fix
 
