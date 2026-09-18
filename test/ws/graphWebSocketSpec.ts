@@ -213,8 +213,5 @@ describe('WebSocket Graph E2E', () => {
     // The key achievement is that JinagaBrowser.create() now integrates the observer bridge
     // when creating a FactManager with a WsGraphNetwork that has setFactsAddedListener
     expect(() => JinagaBrowser.create(config)).not.toThrow();
-    
-    // Phase 4 & 5 Complete: JinagaBrowser now connects WebSocket facts to observers
-    expect(true).toBe(true);
   });
 });

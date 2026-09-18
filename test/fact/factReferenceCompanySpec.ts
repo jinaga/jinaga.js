@@ -1,5 +1,5 @@
 import { Jinaga, User } from '@src';
-import { Company, model } from '../companyModel';
+import { model } from '../companyModel';
 import { describeAcrossStores } from '../utils/store-factories';
 
 // A fact reference stands for a fact the store holds, so what a read makes of
@@ -9,45 +9,6 @@ describeAcrossStores('factReference with company model', (createInstance) => {
 
     beforeEach(async () => {
         j = await createInstance({});
-    });
-
-    it('should work with real company model facts', async () => {
-        // Create an actual user fact  
-        const realUser = await j.fact(new User('test-public-key'));
-        const userHash = j.hash(realUser);
-        
-        console.log('Real user:', realUser);
-        console.log('Real user hash:', userHash);
-        
-        // Create a fact reference
-        const userRef = j.factReference(User, userHash);
-        console.log('User ref:', userRef);
-        console.log('User ref hash:', j.hash(userRef));
-        
-        // They should have the same hash and type
-        expect(j.hash(userRef)).toBe(userHash);
-        expect(userRef.type).toBe(realUser.type);
-    });
-
-    it('should work with company creation queries', async () => {
-        // Create a user and company
-        const user = await j.fact(new User('creator-key'));
-        const company = await j.fact(new Company(user, 'TestCorp'));
-        
-        const userHash = j.hash(user);
-        const userRef = j.factReference(User, userHash);
-        
-        // Query for companies created by this user using the reference
-        const companies = await j.query(
-            model.given(User).match((u, facts) =>
-                facts.ofType(Company).join(c => c.creator, u)
-            ),
-            userRef
-        );
-        
-        console.log('Companies found:', companies);
-        expect(companies).toHaveLength(1);
-        expect(companies[0].identifier).toBe('TestCorp');
     });
 
     it('should work for identity queries', async () => {

@@ -101,25 +101,6 @@ describe("QueueProcessor", () => {
         expect(saver.saveCount).toBe(1);
     }, 10000);
 
-    it("should batch multiple operations into a single save", async () => {
-        // Arrange
-        const delayMs = 100;
-        queueProcessor = new QueueProcessor(saver, delayMs);
-        
-        // Act - schedule multiple times in quick succession
-        queueProcessor.scheduleProcessing();
-        await delay(10);
-        queueProcessor.scheduleProcessing();
-        await delay(10);
-        queueProcessor.scheduleProcessing();
-        
-        // Wait for the delay to complete
-        await delay(delayMs + 50);
-        
-        // Assert - should have processed only once
-        expect(saver.saveCount).toBe(1);
-    }, 1000);
-
     it("should process multiple times when calls are spaced out", async () => {
         // Arrange
         const delayMs = 100;

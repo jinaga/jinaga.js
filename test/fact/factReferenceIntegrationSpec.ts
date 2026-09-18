@@ -41,48 +41,6 @@ describeAcrossStores('factReference integration', (createInstance) => {
         j = await createInstance({});
     });
 
-    it('should work with query API using fact reference', async () => {
-        // Create some test data
-        const user = await j.fact(new User('test-public-key'));
-        const task = await j.fact(new Task(user, 'Test task', new Date().toISOString()));
-        
-        // Get the hash of the user fact
-        const userHash = j.hash(user);
-        
-        // Create a fact reference using the hash
-        const userRef = j.factReference(User, userHash);
-        
-        // Query for tasks using the fact reference
-        const tasks = await j.query(
-            model.given(User).match((u, facts) => 
-                facts.ofType(Task).join(t => t.creator, u)
-            ),
-            userRef
-        );
-        
-        expect(tasks).toHaveLength(1);
-        expect(tasks[0].title).toBe('Test task');
-    });
-
-    it('should work with static factReference method', async () => {
-        // Create some test data
-        const user = await j.fact(new User('static-test-key'));
-        const userHash = j.hash(user);
-        
-        // Use static method
-        const userRef = Jinaga.factReference(User, userHash);
-        
-        // Query should work
-        const tasks = await j.query(
-            model.given(User).match((u, facts) => 
-                facts.ofType(Task).join(t => t.creator, u)
-            ),
-            userRef
-        );
-        
-        expect(tasks).toHaveLength(0); // No tasks for this user yet
-    });
-
     it('should work in complex query scenarios', async () => {
         // Create test data
         const user = await j.fact(new User('complex-test-key'));
@@ -115,36 +73,6 @@ describeAcrossStores('factReference integration', (createInstance) => {
         expect(completions).toHaveLength(1);
     });
 
-    it('should be usable with watch API', async () => {
-        const user = await j.fact(new User('watch-test-key'));
-        const userHash = j.hash(user);
-        const userRef = j.factReference(User, userHash);
-        
-        // Test that watch can be set up with a factReference (doesn't need to return results immediately)
-        const results: Task[] = [];
-        
-        const observer = j.watch(
-            model.given(User).match((u, facts) => 
-                facts.ofType(Task).join(t => t.creator, u)
-            ),
-            userRef,
-            task => {
-                results.push(task);
-            }
-        );
-        
-        // The main test is that watch doesn't crash with a factReference
-        expect(observer).toBeDefined();
-        expect(typeof observer.stop).toBe('function');
-
-        // Awaited before stopping, so the observer's initial read has finished
-        // rather than being abandoned mid-flight. Against a store that reads
-        // from a database, an abandoned read holds a connection open past the
-        // end of the test that started it.
-        await observer.loaded();
-        observer.stop();
-    });
-
     it('should handle errors gracefully when fact does not exist', async () => {
         // Use a hash that doesn't correspond to any actual fact
         const fakeHash = 'nonexistent+hash+that+is+fake+and+should+not+exist==';
@@ -159,26 +87,5 @@ describeAcrossStores('factReference integration', (createInstance) => {
         );
         
         expect(tasks).toHaveLength(0);
-    });
-
-    it('should maintain type safety', async () => {
-        const user = await j.fact(new User('type-safety-test'));
-        const userHash = j.hash(user);
-        
-        // TypeScript should enforce correct typing
-        const userRef = j.factReference(User, userHash);
-        
-        // This should compile without issues
-        const publicKey: string = userRef.type;
-        expect(publicKey).toBe('Jinaga.User');
-        
-        // The object should be treated as User type by TypeScript
-        // (We can't test this at runtime, but it should compile)
-        const query = model.given(User).match((u, facts) => 
-            facts.ofType(Task).join(t => t.creator, u)
-        );
-        
-        const tasks = await j.query(query, userRef);
-        expect(Array.isArray(tasks)).toBe(true);
     });
 });

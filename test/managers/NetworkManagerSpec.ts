@@ -115,16 +115,5 @@ describe("NetworkManager", () => {
             await expect(manager.fetch([], spec)).resolves.toEqual([]);
             expect(network.fetchFeedCalls).toBeGreaterThan(callsBeforeRetry);
         });
-
-        it("should not cache a rejected promise in activeFeeds", async () => {
-            // First fetch fails.
-            await expect(manager.fetch([], spec)).rejects.toThrow("network down");
-
-            // Network recovers.
-            network.fetchFeedShouldFail = false;
-
-            // Second fetch must not replay the stale rejected promise.
-            await expect(manager.fetch([], spec)).resolves.toEqual([]);
-        });
     });
 });

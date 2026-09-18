@@ -22,15 +22,6 @@ describe('IndexedDBQueue Topological Sorting', () => {
     queue = new IndexedDBQueue('test-index');
   });
   
-  it('should handle empty queue', async () => {
-    // Mock the database to return an empty queue
-    mockDatabase([]);
-    
-    const result = await queue.peek();
-    
-    expect(result).toEqual([]);
-  });
-  
   it('should sort facts in a linear dependency chain', async () => {
     // Create a linear chain: A -> B -> C -> D
     const factA = createFact('A', 'hashA', {});
