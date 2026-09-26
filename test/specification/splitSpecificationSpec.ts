@@ -1,5 +1,5 @@
 import { Specification, User, describeSpecification, splitBeforeFirstSuccessor } from "@src";
-import { Post, model as blogModel } from "../blogModel";
+import { Comment, Post, model as blogModel } from "../blogModel";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
 
 describe('Split specification', () => {
@@ -24,6 +24,46 @@ describe('Split specification', () => {
         expect(tail).toBeUndefined();
         expect(head).toBeDefined();
         expect(describeSpecification(head as Specification, 0)).toEqual(describeSpecification(specification.specification, 0));
+    });
+
+    it('should put all in head if a match joins several predecessors', () => {
+        const specification = blogModel.given(Comment).match((comment, facts) =>
+            facts.ofType(User)
+                .join(user => user, comment.author)
+                .join(user => user, comment.post.blog.creator)
+        );
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(tail).toBeUndefined();
+        expect(head).toBeDefined();
+        expect(describeSpecification(head as Specification, 0)).toEqual(describeSpecification(specification.specification, 0));
+    });
+
+    it('should split after a match that joins several predecessors', () => {
+        const specification = blogModel.given(Comment).match((comment, facts) =>
+            facts.ofType(User)
+                .join(user => user, comment.author)
+                .join(user => user, comment.post.blog.creator)
+                .selectMany(user => facts.ofType(Post)
+                    .join(post => post.author, user))
+        );
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Comment) {
+                u1: Jinaga.User [
+                    u1 = p1->author: Jinaga.User
+                    u1 = p1->post: Post->blog: Blog->creator: Jinaga.User
+                ]
+            } => u1`);
+        expect(tail).toBeDefined();
+        expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
+            (u1: Jinaga.User) {
+                u2: Post [
+                    u2->author: Jinaga.User = u1
+                ]
+            } => u2`);
     });
 
     it('should put all in tail if only successor joins', () => {
