@@ -1,4 +1,4 @@
-import { Specification, User, describeSpecification, splitBeforeFirstSuccessor } from "@src";
+import { Specification, SpecificationParser, User, describeSpecification, splitBeforeFirstSuccessor } from "@src";
 import { Comment, Post, model as blogModel } from "../blogModel";
 import { Item, Link, Owner, Workspace, model as linkModel } from "../linkModel";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
@@ -310,7 +310,50 @@ describe('Split specification', () => {
                 ]
             } => u3`);
     });
+
+    it('should not name a split label after one that a given condition declares', () => {
+        // Existential conditions on a given declare labels in the same scope as
+        // the rest of the specification, so a split label must avoid them too.
+        // Only the parser produces such a given; the model builder does not.
+        const specification = parseSpecification(`
+            (p1: Link [
+                !E {
+                    s1: Revoked [
+                        s1->link: Link = p1
+                    ]
+                }
+            ]) {
+                u1: Owner [
+                    u1->workspace: Workspace = p1->item: Item->workspace: Workspace
+                ]
+            } => u1`);
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Link [
+                !E {
+                    s1: Revoked [
+                        s1->link: Link = p1
+                    ]
+                }
+            ]) {
+                s2: Workspace [
+                    s2 = p1->item: Item->workspace: Workspace
+                ]
+            } => s2`);
+        expect(tail).toBeDefined();
+        expect((tail as Specification).given.map(given => given.label)).toEqual([
+            { name: 's2', type: 'Workspace' }
+        ]);
+    });
 });
+
+function parseSpecification(input: string): Specification {
+    const parser = new SpecificationParser(input);
+    parser.skipWhitespace();
+    return parser.parseSpecification();
+}
 
 function fixWhitespace(s: string): string {
     return '\n' + s.trimEnd();

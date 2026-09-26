@@ -380,8 +380,18 @@ function allocateLabels(specification: Specification, count: number): string[] {
 
 function declaredLabels(specification: Specification): string[] {
     return specification.given.map(given => given.label.name)
+        .concat(declaredLabelsInGivens(specification.given))
         .concat(declaredLabelsInMatches(specification.matches))
         .concat(declaredLabelsInProjection(specification.projection));
+}
+
+// A given can carry existential conditions of its own, and the matches within
+// them declare labels in the same scope as the rest of the specification.
+function declaredLabelsInGivens(given: SpecificationGiven[]): string[] {
+    return given.map(g => declaredLabelsInMatches(
+        g.conditions.map(condition => condition.matches)
+            .reduce((acc, val) => acc.concat(val), [])))
+        .reduce((acc, val) => acc.concat(val), []);
 }
 
 function declaredLabelsInMatches(matches: Match[]): string[] {
