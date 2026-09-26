@@ -27,15 +27,14 @@ class FactGraph {
         return record.fields[name];
     }
 
-    async executeSpecification(givenName: string, matches: Match[], label: string, fact: FactRecord): Promise<FactReference[]> {
+    async executeSpecification(givenName: string, matches: Match[], fact: FactRecord): Promise<ReferencesByName[]> {
         const references: ReferencesByName = {
             [givenName]: {
                 type: fact.type,
                 hash: fact.hash
             }
         };
-        const results = await this.executeMatches(references, matches);
-        return results.map(result => result[label]);
+        return await this.executeMatches(references, matches);
     }
 
     private async executeMatches(references: ReferencesByName, matches: Match[]): Promise<ReferencesByName[]> {
@@ -183,6 +182,18 @@ class FactGraph {
     }
 }
 
+function referenceOfLabel(tuple: ReferencesByName, label: string): FactReference {
+    if (!tuple.hasOwnProperty(label)) {
+        throw new AuthorizationRuleError(`The label ${label} is not defined.`);
+    }
+    return tuple[label];
+}
+
+function startReferences(tuple: ReferencesByName, tail: Specification): FactReference[] {
+    // Start the tail with one reference per given, in the order the tail declares them.
+    return tail.given.map(given => referenceOfLabel(tuple, given.label.name));
+}
+
 interface AuthorizationRule {
     describe(type: string): string;
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
@@ -263,27 +274,24 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
             throw new AuthorizationRuleError('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
         }
 
-        // Execute the head on the graph.
-        if (head.projection.type !== 'fact') {
-            throw new AuthorizationRuleError('The head of the specification must project a fact.');
-        }
-        let results = await graph.executeSpecification(
+        // Execute the head on the graph, producing one tuple per solution.
+        const tuples = await graph.executeSpecification(
             head.given[0].label.name,
             head.matches,
-            head.projection.label,
             fact);
 
-        // If there is a tail, execute it on the store.
+        // If there is a tail, execute it on the store, once per head tuple.
+        let results: FactReference[];
         if (tail !== undefined) {
-            if (tail.given.length !== 1) {
-                throw new AuthorizationRuleError('The tail of the specification must be given a single fact.');
-            }
             const tailResults: FactReference[] = [];
-            for (const result of results) {
-                const users = await store.read([result], tail);
+            for (const tuple of tuples) {
+                const users = await store.read(startReferences(tuple, tail), tail);
                 tailResults.push(...users.map(user => user.tuple[label]));
             }
             results = tailResults;
+        }
+        else {
+            results = tuples.map(tuple => referenceOfLabel(tuple, label));
         }
 
         // If any of the results match the user, then the user is authorized.
@@ -308,6 +316,7 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         if (this.specification.projection.type !== 'fact') {
             throw new AuthorizationRuleError('The projection must be a singular label.');
         }
+        const label = this.specification.projection.label;
 
         // Split the specification.
         // The head is deterministic, and can be run on the graph.
@@ -319,30 +328,23 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
             throw new AuthorizationRuleError('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
         }
 
-        // Execute the head on the graph.
-        if (head.projection.type !== 'fact') {
-            throw new AuthorizationRuleError('The head of the specification must project a fact.');
-        }
-        const results = await graph.executeSpecification(
+        // Execute the head on the graph, producing one tuple per solution.
+        const tuples = await graph.executeSpecification(
             head.given[0].label.name,
             head.matches,
-            head.projection.label,
             envelope.fact);
 
         const publicKeys: string[] = [];
-        // If there is a tail, execute it on the store.
+        // If there is a tail, execute it on the store, once per head tuple.
         if (tail !== undefined) {
-            if (tail.given.length !== 1) {
-                throw new AuthorizationRuleError('The tail of the specification must be given a single fact.');
-            }
-            for (const result of results) {
-                const users = await store.read([result], tail);
+            for (const tuple of tuples) {
+                const users = await store.read(startReferences(tuple, tail), tail);
                 publicKeys.push(...users.map(user => user.result.publicKey));
             }
         }
         else {
-            for (const result of results) {
-                publicKeys.push(await graph.getField(result, 'publicKey'));
+            for (const tuple of tuples) {
+                publicKeys.push(await graph.getField(referenceOfLabel(tuple, label), 'publicKey'));
             }
         }
 
@@ -588,4 +590,4 @@ export class AuthorizationRules {
 export function describeAuthorizationRules(model: Model, authorization: (a: AuthorizationRules) => AuthorizationRules) {
     const rules = authorization(new AuthorizationRules(model));
     return rules.saveToDescription();
-}
+}

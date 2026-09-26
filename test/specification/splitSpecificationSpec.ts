@@ -1,4 +1,5 @@
-import { Specification, describeSpecification, splitBeforeFirstSuccessor } from "@src";
+import { Specification, User, describeSpecification, splitBeforeFirstSuccessor } from "@src";
+import { Post, model as blogModel } from "../blogModel";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
 
 describe('Split specification', () => {
@@ -141,6 +142,45 @@ describe('Split specification', () => {
                     }
                 ]
             } => u2`);
+    });
+
+    it('should carry a projected head label into the tail givens', () => {
+        // The rule binds the blog's creator before the first successor join, and
+        // projects it. The creator is therefore a given of the tail, alongside
+        // the split label the successor join walks from.
+        const specification = blogModel.given(Post).match((p, facts) =>
+            facts.ofType(User)
+                .join(user => user, p.blog.creator)
+                .selectMany(creator => facts.ofType(Post)
+                    .join(other => other.blog, p.blog)
+                    .select(other => creator)));
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Post) {
+                u1: Jinaga.User [
+                    u1 = p1->blog: Blog->creator: Jinaga.User
+                ]
+                s1: Blog [
+                    s1 = p1->blog: Blog
+                ]
+            } => {
+                s1 = s1
+                u1 = u1
+            }`);
+        expect(tail).toBeDefined();
+        expect((tail as Specification).given.map(given => given.label)).toEqual([
+            { name: 'u1', type: 'Jinaga.User' },
+            { name: 's1', type: 'Blog' }
+        ]);
+        expect((tail as Specification).projection).toEqual({ type: 'fact', label: 'u1' });
+        expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
+            (u1: Jinaga.User, s1: Blog) {
+                u2: Post [
+                    u2->blog: Blog = s1
+                ]
+            } => u1`);
     });
 });
 
