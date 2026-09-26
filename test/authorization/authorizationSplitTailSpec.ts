@@ -1,4 +1,4 @@
-import { AuthorizationRuleError, AuthorizationRules, FactEnvelope, FactRecord, FactRepository, Forbidden, Jinaga, JinagaTest, LabelOf, MemoryStore, Specification, User, buildModel, dehydrateFact, splitBeforeFirstSuccessor } from "@src";
+import { AuthorizationRules, FactEnvelope, FactRecord, FactRepository, Forbidden, Jinaga, JinagaTest, LabelOf, MemoryStore, Specification, User, buildModel, dehydrateFact, splitBeforeFirstSuccessor } from "@src";
 import { Blog, Post, model as blogModel } from "../blogModel";
 
 // A rule that binds a label before its first successor join and projects it.
@@ -138,12 +138,19 @@ describe("Authorization rule whose tail has several givens", () => {
             ]);
         });
 
-        it("should evaluate the rule rather than raising AuthorizationRuleError", async () => {
+        it("should refuse the Link with Forbidden rather than raising AuthorizationRuleError", async () => {
             // Before this fix the composite head projection was refused outright,
-            // so every write of a Link raised AuthorizationRuleError. The rule now
-            // evaluates. A live write is still refused, because the tail is given
-            // the Link and the store cannot read a fact that has not been saved
-            // yet; that is recorded on issue #297.
+            // so every write of a Link raised AuthorizationRuleError, an authoring
+            // mistake. The rule now evaluates and reaches an authorization
+            // decision, so the refusal arrives as Forbidden. Asserting that class
+            // rather than merely "not AuthorizationRuleError" also rules out a
+            // refusal from some unrelated runtime failure.
+            //
+            // The decision itself is still the wrong one: alice owns both
+            // endpoints' workspace, so this write should be admitted. The tail is
+            // given the Link, and the store cannot read a fact that has not been
+            // saved yet, which is the open question recorded on issue #297. When
+            // that is settled this expectation becomes `resolves`.
             const j = JinagaTest.create({
                 model: linkModel,
                 authorization: linkAuthorization,
@@ -153,7 +160,7 @@ describe("Authorization rule whose tail has several givens", () => {
 
             const promise = j.fact(new Link(aliceOtherItem, aliceItem));
 
-            await expect(promise).rejects.not.toBeInstanceOf(AuthorizationRuleError);
+            await expect(promise).rejects.toBeInstanceOf(Forbidden);
         });
 
         it("should return alice's key from getAuthorizedPopulation when both endpoints are hers", async () => {
