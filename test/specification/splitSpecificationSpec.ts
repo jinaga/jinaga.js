@@ -1,5 +1,6 @@
 import { Specification, User, describeSpecification, splitBeforeFirstSuccessor } from "@src";
 import { Comment, Post, model as blogModel } from "../blogModel";
+import { Item, Link, Owner, Workspace, model as linkModel } from "../linkModel";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
 
 describe('Split specification', () => {
@@ -221,6 +222,93 @@ describe('Split specification', () => {
                     u2->blog: Blog = s1
                 ]
             } => u1`);
+    });
+
+    it('should give each of the pivot\'s predecessor paths its own head label', () => {
+        // Formulation A of issue #231: one Owner joined to the workspace of both
+        // endpoints of a Link. Each condition walks predecessors of the given and
+        // then successors, so each contributes a head match of its own.
+        const specification = linkModel.given(Link).match((link, facts) =>
+            facts.ofType(Owner)
+                .join(o => o.workspace, link.item.workspace)
+                .join(o => o.workspace, link.parent.workspace)
+                .selectMany(o => facts.ofType(User)
+                    .join(u => u, o.user)));
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Link) {
+                s1: Workspace [
+                    s1 = p1->item: Item->workspace: Workspace
+                ]
+                s2: Workspace [
+                    s2 = p1->parent: Item->workspace: Workspace
+                ]
+            } => {
+                s1 = s1
+                s2 = s2
+            }`);
+        expect(tail).toBeDefined();
+        expect((tail as Specification).given.map(given => given.label)).toEqual([
+            { name: 's1', type: 'Workspace' },
+            { name: 's2', type: 'Workspace' }
+        ]);
+        expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
+            (s1: Workspace, s2: Workspace) {
+                u1: Owner [
+                    u1->workspace: Workspace = s1
+                    u1->workspace: Workspace = s2
+                ]
+                u2: Jinaga.User [
+                    u2 = u1->user: Jinaga.User
+                ]
+            } => u2`);
+    });
+
+    it('should reuse a head label that the pivot already joins to', () => {
+        // Formulation C of issue #231: one endpoint's workspace is walked by an
+        // earlier match, and the pivot joins to it directly. That condition walks
+        // no predecessors, so it needs no split label of its own; only the
+        // condition that reaches the other endpoint gets one.
+        const specification = linkModel.given(Link).match((link, facts) =>
+            facts.ofType(Workspace)
+                .join(w => w, link.item.workspace)
+                .selectMany(w => facts.ofType(Owner)
+                    .join(o => o.workspace, w)
+                    .join(o => o.workspace, link.parent.workspace)
+                    .selectMany(o => facts.ofType(User)
+                        .join(u => u, o.user))));
+
+        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Link) {
+                u1: Workspace [
+                    u1 = p1->item: Item->workspace: Workspace
+                ]
+                s1: Workspace [
+                    s1 = p1->parent: Item->workspace: Workspace
+                ]
+            } => {
+                s1 = s1
+                u1 = u1
+            }`);
+        expect(tail).toBeDefined();
+        expect((tail as Specification).given.map(given => given.label)).toEqual([
+            { name: 'u1', type: 'Workspace' },
+            { name: 's1', type: 'Workspace' }
+        ]);
+        expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
+            (u1: Workspace, s1: Workspace) {
+                u2: Owner [
+                    u2->workspace: Workspace = u1
+                    u2->workspace: Workspace = s1
+                ]
+                u3: Jinaga.User [
+                    u3 = u2->user: Jinaga.User
+                ]
+            } => u3`);
     });
 });
 

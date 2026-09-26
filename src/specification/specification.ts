@@ -260,135 +260,149 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
             tail: undefined
         };
     }
-    else {
-        // If there is only a single path condition, then split that path.
-        const pivot = specification.matches[firstMatchWithSuccessor];
-        const pathConditions = pivot.conditions.filter(isPathCondition);
-        if (pathConditions.length !== 1) {
-            // Fall back to running the entire specification in the tail
-            return {
-                head: undefined,
-                tail: specification
-            };
-        }
 
-        const existentialConditions = pivot.conditions.filter(isExistentialCondition);
-        const condition = pathConditions[0];
+    // Split the pivot -- the first match the graph cannot run -- condition by
+    // condition. Each of its path conditions walks predecessors of a label the
+    // head can reach, and then successors that only the store can follow. The
+    // predecessor walk becomes a head match binding a split label, and the
+    // condition is rewritten in the tail to join to that label instead.
+    const pivot = specification.matches[firstMatchWithSuccessor];
+    const pathConditions = pivot.conditions.filter(isPathCondition);
+    const existentialConditions = pivot.conditions.filter(isExistentialCondition);
+    const splitLabelNames = allocateLabels(specification, pathConditions.filter(
+        condition => condition.rolesRight.length > 0).length);
 
+    const splitMatches: Match[] = [];
+    const tailConditions: Condition[] = [];
+    for (const condition of pathConditions) {
         if (condition.rolesRight.length === 0) {
-            // The path contains only successor joins.
-            // Put the entire match in the tail.
-            if (firstMatchWithSuccessor === 0) {
-                // There is nothing to put in the head
-                return {
-                    head: undefined,
-                    tail: specification
-                };
-            }
-            else {
-                // Split the matches between the head and tail
-                const headMatches = specification.matches.slice(0, firstMatchWithSuccessor);
-                const tailMatches = specification.matches.slice(firstMatchWithSuccessor);
-
-                // Compute the givens of the tail.
-                // They are the labels that the tail uses but does not define,
-                // including the labels of its projection.
-                const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({ 
-                    label: { name: match.unknown.name, type: match.unknown.type },
-                    conditions: []
-                }));
-                const allLabels: SpecificationGiven[] = specification.given.concat(unknownAsGiven);
-                const tailGiven = referencedLabels(tailMatches, allLabels, specification.projection);
-
-                // Project the tail givens
-                const headProjection: Projection = projectLabels(tailGiven);
-
-                // Compute the givens of the head.
-                // The head projects the tail's givens, so its own projection
-                // takes part in the derivation.
-                const headGiven = referencedLabels(headMatches, specification.given, headProjection);
-                const head: Specification = {
-                    given: headGiven,
-                    matches: headMatches,
-                    projection: headProjection
-                };
-                const tail: Specification = {
-                    given: tailGiven,
-                    matches: tailMatches,
-                    projection: specification.projection
-                };
-                return {
-                    head,
-                    tail
-                };
-            }
+            // The condition walks no predecessors, so the label it joins to is
+            // already one the head binds. The tail joins to it directly.
+            tailConditions.push(condition);
+            continue;
         }
-        else {
-            // The path contains both predecessor and successor joins.
-            // Split the path into two paths.
-            const splitLabel: Label = {
-                name: 's1',
-                type: condition.rolesRight[condition.rolesRight.length - 1].predecessorType
-            };
-            const headCondition: Condition = {
-                type: "path",
-                labelRight: condition.labelRight,
-                rolesLeft: [],
-                rolesRight: condition.rolesRight
-            };
-            const headMatch: Match = {
-                unknown: splitLabel,
-                conditions: [headCondition]
-            }
-            const tailCondition: Condition = {
-                type: "path",
-                labelRight: splitLabel.name,
-                rolesLeft: condition.rolesLeft,
-                rolesRight: []
-            };
-            const tailMatch: Match = {
-                unknown: pivot.unknown,
-                conditions: [tailCondition, ...existentialConditions]
-            };
+        const splitLabel: Label = {
+            name: splitLabelNames[splitMatches.length],
+            type: condition.rolesRight[condition.rolesRight.length - 1].predecessorType
+        };
+        splitMatches.push({
+            unknown: splitLabel,
+            conditions: [
+                <PathCondition>{
+                    type: "path",
+                    labelRight: condition.labelRight,
+                    rolesLeft: [],
+                    rolesRight: condition.rolesRight
+                }
+            ]
+        });
+        tailConditions.push(<PathCondition>{
+            type: "path",
+            labelRight: splitLabel.name,
+            rolesLeft: condition.rolesLeft,
+            rolesRight: []
+        });
+    }
 
-            // Assemble the head and tail matches
-            const headMatches = specification.matches.slice(0, firstMatchWithSuccessor).concat(headMatch);
-            const tailMatches = [tailMatch].concat(specification.matches.slice(firstMatchWithSuccessor + 1));
+    const headMatches = specification.matches.slice(0, firstMatchWithSuccessor).concat(splitMatches);
+    if (headMatches.length === 0) {
+        // Nothing precedes the pivot and none of its conditions walks a
+        // predecessor, so there is nothing for the graph to run.
+        return {
+            head: undefined,
+            tail: specification
+        };
+    }
 
-            // Compute the givens of the tail.
-            // They are the labels that the tail uses but does not define,
-            // including the labels of its projection.
-            const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({ 
-                label: { name: match.unknown.name, type: match.unknown.type },
-                conditions: []
-            }));
-            const allLabels: SpecificationGiven[] = specification.given
-                .concat(unknownAsGiven)
-                .concat([{ label: { name: splitLabel.name, type: splitLabel.type }, conditions: [] }]);
-            const tailGiven = referencedLabels(tailMatches, allLabels, specification.projection);
+    // Assemble the tail matches. Existential conditions stay with the pivot,
+    // which the tail runs. A valid match begins with a path condition, so
+    // collecting the paths first preserves the order the pivot declared.
+    const tailMatch: Match = {
+        unknown: pivot.unknown,
+        conditions: [...tailConditions, ...existentialConditions]
+    };
+    const tailMatches = [tailMatch].concat(specification.matches.slice(firstMatchWithSuccessor + 1));
 
-            // Project the tail givens
-            const headProjection: Projection = projectLabels(tailGiven);
+    // Compute the givens of the tail.
+    // They are the labels that the tail uses but does not define,
+    // including the labels of its projection.
+    const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({
+        label: { name: match.unknown.name, type: match.unknown.type },
+        conditions: []
+    }));
+    const allLabels: SpecificationGiven[] = specification.given
+        .concat(unknownAsGiven)
+        .concat(splitMatches.map(match => ({
+            label: { name: match.unknown.name, type: match.unknown.type },
+            conditions: []
+        })));
+    const tailGiven = referencedLabels(tailMatches, allLabels, specification.projection);
 
-            // Compute the givens of the head.
-            // The head projects the tail's givens, so its own projection
-            // takes part in the derivation.
-            const headGiven = referencedLabels(headMatches, specification.given, headProjection);
-            const head: Specification = {
-                given: headGiven,
-                matches: headMatches,
-                projection: headProjection
-            };
-            const tail: Specification = {
-                given: tailGiven,
-                matches: tailMatches,
-                projection: specification.projection
-            };
-            return {
-                head,
-                tail
-            };
+    // Project the tail givens
+    const headProjection: Projection = projectLabels(tailGiven);
+
+    // Compute the givens of the head.
+    // The head projects the tail's givens, so its own projection
+    // takes part in the derivation.
+    const headGiven = referencedLabels(headMatches, specification.given, headProjection);
+    const head: Specification = {
+        given: headGiven,
+        matches: headMatches,
+        projection: headProjection
+    };
+    const tail: Specification = {
+        given: tailGiven,
+        matches: tailMatches,
+        projection: specification.projection
+    };
+    return {
+        head,
+        tail
+    };
+}
+
+// Name the labels that the split introduces. Each must differ from the others
+// and from every label already in the specification, so that the head and tail
+// can both refer to it unambiguously.
+function allocateLabels(specification: Specification, count: number): string[] {
+    const taken = declaredLabels(specification);
+    const names: string[] = [];
+    let ordinal = 1;
+    while (names.length < count) {
+        const name = `s${ordinal}`;
+        if (taken.indexOf(name) === -1) {
+            names.push(name);
         }
+        ordinal++;
+    }
+    return names;
+}
+
+function declaredLabels(specification: Specification): string[] {
+    return specification.given.map(given => given.label.name)
+        .concat(declaredLabelsInMatches(specification.matches))
+        .concat(declaredLabelsInProjection(specification.projection));
+}
+
+function declaredLabelsInMatches(matches: Match[]): string[] {
+    return matches.map(match => [ match.unknown.name ].concat(
+        match.conditions.map(condition => condition.type === "existential" ?
+            declaredLabelsInMatches(condition.matches) : [])
+            .reduce((acc, val) => acc.concat(val), [])))
+        .reduce((acc, val) => acc.concat(val), []);
+}
+
+function declaredLabelsInProjection(projection: Projection | ComponentProjection): string[] {
+    if (projection.type === "composite") {
+        return projection.components.map(declaredLabelsInProjection)
+            .reduce((acc, val) => acc.concat(val), []);
+    }
+    else if (projection.type === "specification") {
+        return declaredLabelsInMatches(projection.matches)
+            .concat(declaredLabelsInProjection(projection.projection));
+    }
+    else {
+        return [];
     }
 }
 
