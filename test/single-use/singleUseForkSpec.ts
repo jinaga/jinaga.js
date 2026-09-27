@@ -9,6 +9,11 @@ class FakeFork implements Fork {
         return Promise.resolve();
     }
 
+    onProgress(listener: (count: number) => void): () => void {
+        // This fake never queues, so there is nothing to report.
+        return () => { };
+    }
+
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
         return Promise.resolve([]);
     }

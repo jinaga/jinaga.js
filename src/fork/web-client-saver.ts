@@ -122,7 +122,14 @@ export class WebClientSaver implements Saver {
     constructor(
         private readonly client: WebClient,
         private readonly queue: Queue,
-        options: WebClientSaverOptions = {}
+        options: WebClientSaverOptions = {},
+        /**
+         * Called after each batch leaves the queue, so the owner can report how
+         * many facts are still waiting to be sent (issue #306). Awaited, because
+         * reading the queue's length is asynchronous and a report that races the
+         * next batch would arrive out of order.
+         */
+        private readonly onQueueChanged: () => Promise<void> = () => Promise.resolve()
     ) {
         this.maxBatchBytes = positiveOr(options.maxBatchBytes, DEFAULT_MAX_SAVE_BATCH_BYTES);
         this.maxBatchCount = positiveOr(options.maxBatchCount, DEFAULT_MAX_SAVE_BATCH_COUNT);
@@ -165,6 +172,7 @@ export class WebClientSaver implements Saver {
                 await this.client.saveWithRetry(batch);
                 await this.queue.dequeue(batch);
                 sent += batch.length;
+                await this.onQueueChanged();
             }
             catch (error) {
                 Trace.error(error);

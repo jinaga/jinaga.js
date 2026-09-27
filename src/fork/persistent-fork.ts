@@ -4,11 +4,13 @@ import { QueueProcessor } from '../managers/QueueProcessor';
 import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Queue, Storage } from '../storage';
 import { Trace } from "../util/trace";
 import { Fork } from "./fork";
+import { ProgressNotifier } from './progress';
 import { serializeLoad } from './serialize';
 import { WebClientSaver, WebClientSaverOptions } from './web-client-saver';
 
 export class PersistentFork implements Fork {
     private queueProcessor: QueueProcessor;
+    private readonly progress = new ProgressNotifier();
 
     constructor(
         private storage: Storage,
@@ -17,7 +19,11 @@ export class PersistentFork implements Fork {
         private delayMilliseconds: number,
         saverOptions: WebClientSaverOptions = {}
     ) {
-        const saver = new WebClientSaver(client, queue, saverOptions);
+        // The saver reports after each batch leaves the queue, so the count an
+        // application sees follows the queue down as it drains rather than only
+        // at the end of a flush (issue #306).
+        const saver = new WebClientSaver(client, queue, saverOptions,
+            () => this.reportQueueLength());
         this.queueProcessor = new QueueProcessor(saver, delayMilliseconds);
     }
 
@@ -38,7 +44,25 @@ export class PersistentFork implements Fork {
     }
     async save(envelopes: FactEnvelope[]): Promise<void> {
         await this.queue.enqueue(envelopes);
+        await this.reportQueueLength();
         this.queueProcessor.scheduleProcessing();
+    }
+
+    onProgress(listener: (count: number) => void): () => void {
+        return this.progress.onProgress(listener);
+    }
+
+    /**
+     * Report how many facts are waiting to be sent, read from the queue rather
+     * than counted alongside it: the queue keys facts by identity, so a fact
+     * queued twice is one fact waiting, and only the queue knows that.
+     */
+    private async reportQueueLength(): Promise<void> {
+        if (!this.progress.listening) {
+            return;
+        }
+        const envelopes = await this.queue.peek();
+        this.progress.notify(envelopes.length);
     }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
