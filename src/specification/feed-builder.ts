@@ -1,4 +1,4 @@
-import { ComponentProjection, ExistentialCondition, Label, Match, Specification, SpecificationGiven, emptySpecification, isExistentialCondition, isPathCondition, specificationIsNotDeterministic } from "./specification";
+import { ComponentProjection, ExistentialCondition, Label, Match, Specification, SpecificationGiven, emptySpecification, isExistentialCondition, isPathCondition } from "./specification";
 
 /**
  * What a feed continues with once the match list it is following runs out.
@@ -25,7 +25,29 @@ export function buildFeeds(specification: Specification): Specification[] {
         ? specification.projection.components
         : [];
     const { specifications } = addMatches(emptySpecification, specification.given.map(g => g.label), specification.matches, projectionComponents, 0, null);
-    return specifications.filter(specificationIsNotDeterministic);
+    return specifications.filter(traversesSuccessors);
+}
+
+/**
+ * Whether a feed walks at least one successor edge.
+ *
+ * A feed whose every join walks predecessors delivers nothing: a fact travels
+ * with its predecessors, so the subscriber already holds every result. Those
+ * feeds are dropped.
+ *
+ * This asks a narrower question than `specificationIsNotDeterministic`, which
+ * asks whether the graph can run a specification without the store and answers
+ * no to any existential condition. An existential condition here says nothing
+ * about what this feed delivers, because its own matches travel in a feed of
+ * their own, so only the path conditions of this feed's matches decide.
+ */
+function traversesSuccessors(specification: Specification): boolean {
+    return specification.matches.some(match =>
+        match.conditions.some(condition =>
+            condition.type === "path" &&
+            condition.rolesLeft.length > 0
+        )
+    );
 }
 
 function addMatches(specification: Specification, unusedGivens: Label[], matches: Match[], projectionComponents: ComponentProjection[], parity: number, continuation: Continuation | null): { specifications: Specification[]; unusedGivens: Label[]; } {

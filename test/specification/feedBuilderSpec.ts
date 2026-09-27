@@ -144,6 +144,31 @@ describe("feed generator", () => {
         expect(feeds).toEqual(expectedFeeds);
     });
 
+    it("should produce no feeds for a predecessor walk carrying an existential condition", () => {
+        // A feed is dropped when every one of its joins walks predecessors,
+        // because the subscriber already holds every result. An existential
+        // condition on such a match does not change that: the condition's own
+        // matches travel in a feed of their own. Guards the filter in
+        // `buildFeeds` against being widened to "the graph cannot run this",
+        // which would emit a feed here and cost the whole specification its
+        // distribution.
+        const feeds = getFeeds(`
+            (child: Child) {
+                root: Root [
+                    root = child->root: Root
+                    !E {
+                        project: MyApp.Project [
+                            project = root->project: MyApp.Project
+                        ]
+                    }
+                ]
+            }`);
+
+        const expectedFeeds: string[] = [ ];
+
+        expect(feeds).toEqual(expectedFeeds);
+    });
+
     it("should attach a sibling negative existential to its own match after a positive existential", () => {
         // Regression for jinaga/jinaga-replicator#52: a match carrying a
         // positive existential (which is flattened into top-level matches)

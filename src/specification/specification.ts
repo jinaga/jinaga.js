@@ -244,29 +244,25 @@ function getAllRolesFromComponents(labels: TypeByLabel, components: ComponentPro
     return roles;
 }
 
-export function specificationIsDeterministic(specification: Specification): boolean {
-    return specification.matches.every(match =>
-        match.conditions.every(condition =>
-            condition.type === "path" &&
-            condition.rolesLeft.length === 0
-        )
+export function matchIsDeterministic(match: Match): boolean {
+    return match.conditions.every(condition =>
+        condition.type === "path" &&
+        condition.rolesLeft.length === 0
     );
+}
+
+export function specificationIsDeterministic(specification: Specification): boolean {
+    return specification.matches.every(matchIsDeterministic);
 }
 
 export function specificationIsNotDeterministic(specification: Specification): boolean {
-    return specification.matches.some(match =>
-        match.conditions.some(condition =>
-            condition.type === "path" &&
-            condition.rolesLeft.length > 0
-        )
-    );
+    return specification.matches.some(match => !matchIsDeterministic(match));
 }
 
 export function splitBeforeFirstSuccessor(specification: WellFormedSpecification): { head: Specification | undefined, tail: Specification | undefined } {
-    // Find the first match (if any) that seeks successors or has an existential condition
-    const firstMatchWithSuccessor = specification.matches.findIndex(match =>
-        match.conditions.length !== 1 || match.conditions.some(condition =>
-            condition.type !== "path" || condition.rolesLeft.length > 0));
+    // Find the first match (if any) that the graph cannot run: one that seeks
+    // successors or has an existential condition.
+    const firstMatchWithSuccessor = specification.matches.findIndex(match => !matchIsDeterministic(match));
 
     if (firstMatchWithSuccessor === -1) {
         // No match seeks successors, so the whole specification is deterministic
