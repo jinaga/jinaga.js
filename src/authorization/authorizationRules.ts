@@ -258,14 +258,18 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
 
         // The tail runs on the store, and a rule runs only while its fact is
         // being authorized, before that fact is saved. A tail given that fact
-        // would read nothing and refuse every write. Refuse the rule instead,
-        // where it is written.
+        // would read nothing and refuse every write. The split moves every
+        // predecessor walk from the fact into the head where it soundly can, so
+        // what remains is a successor walk from the fact, or a predecessor walk
+        // beneath a negative existential condition. Refuse the rule where it is
+        // written.
         const given = specification.given[0].label;
         if (this.tail !== undefined && this.tail.given.some(g => g.label.name === given.name)) {
             throw new AuthorizationRuleError(
-                `The specification of an authorization rule for ${given.type} uses '${given.name}' after its first successor join. ` +
+                `The specification of an authorization rule for ${given.type} reads '${given.name}' from the store: ` +
+                `it seeks successors of '${given.name}', or walks its predecessors inside a negative existential condition. ` +
                 `'${given.name}' is the ${given.type} being authorized, which is not yet in the store when the rule runs, so the rule could never admit anyone. ` +
-                `Walk the predecessors of '${given.name}' before the first successor join, and join only to those.`);
+                `Reach what the rule needs by walking predecessors of '${given.name}' outside any negative existential condition.`);
         }
     }
 

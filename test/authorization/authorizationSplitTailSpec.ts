@@ -81,13 +81,13 @@ describe("Authorization rule whose tail has several givens", () => {
         });
     });
 
-    describe("an existential condition that reads the given", () => {
-        // Formulation D of issue #231. The head walks link.item.workspace. The
-        // tail matches Owner against it, and its existential condition walks
-        // link.parent.workspace, so the tail is given both the head's Workspace
-        // and the Link under authorization. A rule runs while its fact is being
-        // authorized, before the fact is saved, so that tail reads nothing and
-        // the rule admits nobody. It is refused where it is written.
+    describe("an existential condition that reads a predecessor of the given", () => {
+        // Formulation D of issue #231. The pivot joins Owner to
+        // link.item.workspace, and its existential condition walks
+        // link.parent.workspace. The split moves that walk out of the positive
+        // existential condition and into the head, so the tail is given the two
+        // workspaces rather than the Link, which is not in the store while it
+        // is being authorized.
         const linkRule = (link: LabelOf<Link>, facts: FactRepository) =>
             facts.ofType(Owner)
                 .join(o => o.workspace, link.item.workspace)
@@ -103,12 +103,114 @@ describe("Authorization rule whose tail has several givens", () => {
             .any(Item)
             .type(Link, linkRule);
 
-        it("should make the Link under authorization a given of the tail", () => {
+        let alice: User;
+        let bob: User;
+        let aliceWorkspace: Workspace;
+        let bobWorkspace: Workspace;
+        let aliceOwns: Owner;
+        let bobOwns: Owner;
+        let aliceItem: Item;
+        let aliceOtherItem: Item;
+        let bobItem: Item;
+        let initialState: {}[];
+
+        beforeEach(() => {
+            alice = new User("alice");
+            bob = new User("bob");
+            aliceWorkspace = new Workspace(alice, "alice workspace");
+            bobWorkspace = new Workspace(bob, "bob workspace");
+            aliceOwns = new Owner(aliceWorkspace, alice);
+            bobOwns = new Owner(bobWorkspace, bob);
+            aliceItem = new Item(aliceWorkspace, "first");
+            aliceOtherItem = new Item(aliceWorkspace, "second");
+            bobItem = new Item(bobWorkspace, "bob item");
+            initialState = [alice, bob, aliceWorkspace, bobWorkspace, aliceOwns,
+                bobOwns, aliceItem, aliceOtherItem, bobItem];
+        });
+
+        it("should walk both endpoints' workspaces in the head", () => {
             const specification = linkModel.given(Link).match(linkRule);
 
             const { head, tail } = splitBeforeFirstSuccessor(assertWellFormed(specification.specification, "The specification"));
 
-            expect(head).toBeDefined();
+            expect(head.matches.map(match => match.unknown)).toEqual([
+                { name: "__s0", type: "Workspace" },
+                { name: "__s1", type: "Workspace" }
+            ]);
+            expect((tail as Specification).given.map(given => given.label)).toEqual([
+                { name: "__s0", type: "Workspace" },
+                { name: "__s1", type: "Workspace" }
+            ]);
+        });
+
+        it("should admit a link whose endpoints are both in alice's workspace", async () => {
+            const j = JinagaTest.create({ model: linkModel, authorization: linkAuthorization, user: alice, initialState });
+
+            const link = await j.fact(new Link(aliceOtherItem, aliceItem));
+
+            expect(j.hash(link.parent)).toEqual(j.hash(aliceItem));
+        });
+
+        it("should refuse with Forbidden a link whose parent is in bob's workspace", async () => {
+            const j = JinagaTest.create({ model: linkModel, authorization: linkAuthorization, user: alice, initialState });
+
+            const promise = j.fact(new Link(aliceOtherItem, bobItem));
+
+            await expect(promise).rejects.toBeInstanceOf(Forbidden);
+        });
+
+        it("should return alice's key from getAuthorizedPopulation when both endpoints are hers", async () => {
+            const population = await whenAuthorizeLink(aliceOtherItem, aliceItem);
+
+            expect(population).toEqual({
+                quantifier: "some",
+                authorizedKeys: ["alice"]
+            });
+        });
+
+        it("should return no keys from getAuthorizedPopulation when the parent is in another workspace", async () => {
+            const population = await whenAuthorizeLink(aliceOtherItem, bobItem);
+
+            expect(population).toEqual({ quantifier: "none" });
+        });
+
+        async function whenAuthorizeLink(item: Item, parent: Item) {
+            // The Link is under authorization, so it is in the batch and not in
+            // the store, as it is during a live write.
+            const stored: FactEnvelope[] = initialState
+                .flatMap(fact => dehydrateFact(fact))
+                .map(fact => ({ fact, signatures: [] }));
+            const store = new MemoryStore();
+            await store.save(stored);
+            const linkRecords = dehydrateFact(new Link(item, parent));
+            const envelope: FactEnvelope = { fact: lastOf(linkRecords), signatures: [] };
+            const rules = linkAuthorization(new AuthorizationRules(linkModel));
+
+            return await rules.getAuthorizedPopulationForEnvelope(
+                ["alice", "bob"], envelope, stored.concat(linkRecords.map(fact => ({ fact, signatures: [] }))), store);
+        }
+    });
+
+    describe("a negative existential condition that reads a predecessor of the given", () => {
+        // Only an owner of the item's workspace may link it, unless the
+        // parent's workspace is archived. The walk to the parent's workspace
+        // sits beneath a negative existential condition, where the split must
+        // not move it into the head: if the parent role named several items,
+        // the tail would test their workspaces one at a time, and an unarchived
+        // one would admit a link that an archived one should refuse. The tail
+        // therefore reads the Link, and the rule is refused where it is written.
+        const archivedRule = (link: LabelOf<Link>, facts: FactRepository) =>
+            facts.ofType(Owner)
+                .join(o => o.workspace, link.item.workspace)
+                .notExists(o => facts.ofType(Archive)
+                    .join(a => a.workspace, link.parent.workspace))
+                .selectMany(o => facts.ofType(User).join(u => u, o.user));
+
+        it("should leave the walk beneath the negation in the tail", () => {
+            const specification = linkModel.given(Link).match(archivedRule);
+
+            const { tail } = splitBeforeFirstSuccessor(assertWellFormed(specification.specification, "The specification"));
+
             expect((tail as Specification).given.map(given => given.label)).toEqual([
                 { name: "p1", type: "Link" },
                 { name: "__s0", type: "Workspace" }
@@ -116,16 +218,10 @@ describe("Authorization rule whose tail has several givens", () => {
         });
 
         it("should refuse the rule where it is written", () => {
-            // Before #308 every write of a Link raised AuthorizationRuleError
-            // from the evaluator. After it, every write was refused with
-            // Forbidden, which looked like enforcement. The rule now fails at
-            // the point it is written, naming the label the tail cannot read.
-            // Admitting the write alice is entitled to needs the tail to see the
-            // Link's predecessors, which is the open question on issue #297.
-            expect(() => linkAuthorization(new AuthorizationRules(linkModel)))
+            expect(() => new AuthorizationRules(linkModel).type(Link, archivedRule))
                 .toThrow(AuthorizationRuleError);
-            expect(() => linkAuthorization(new AuthorizationRules(linkModel)))
-                .toThrow(/uses 'p1' after its first successor join/);
+            expect(() => new AuthorizationRules(linkModel).type(Link, archivedRule))
+                .toThrow(/reads 'p1' from the store/);
         });
     });
 });
@@ -166,6 +262,14 @@ class Link {
     ) { }
 }
 
+class Archive {
+    static Type = "Archive" as const;
+    type = Archive.Type;
+    constructor(
+        public workspace: Workspace
+    ) { }
+}
+
 const linkModel = buildModel(b => b
     .type(User)
     .type(Workspace, x => x
@@ -181,6 +285,9 @@ const linkModel = buildModel(b => b
     .type(Link, x => x
         .predecessor("item", Item)
         .predecessor("parent", Item)
+    )
+    .type(Archive, x => x
+        .predecessor("workspace", Workspace)
     )
 );
 
