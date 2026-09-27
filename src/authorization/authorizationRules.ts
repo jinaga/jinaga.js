@@ -255,6 +255,18 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         // The head is deterministic, and can be run on the graph.
         // The tail is non-deterministic, and must be run on the store.
         ({ head: this.head, tail: this.tail } = splitBeforeFirstSuccessor(this.specification));
+
+        // The tail runs on the store, and a rule runs only while its fact is
+        // being authorized, before that fact is saved. A tail given that fact
+        // would read nothing and refuse every write. Refuse the rule instead,
+        // where it is written.
+        const given = specification.given[0].label;
+        if (this.tail !== undefined && this.tail.given.some(g => g.label.name === given.name)) {
+            throw new AuthorizationRuleError(
+                `The specification of an authorization rule for ${given.type} uses '${given.name}' after its first successor join. ` +
+                `'${given.name}' is the ${given.type} being authorized, which is not yet in the store when the rule runs, so the rule could never admit anyone. ` +
+                `Walk the predecessors of '${given.name}' before the first successor join, and join only to those.`);
+        }
     }
 
     describe(type: string): string {

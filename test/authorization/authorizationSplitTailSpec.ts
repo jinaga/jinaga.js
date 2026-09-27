@@ -1,4 +1,4 @@
-import { AuthorizationRules, FactEnvelope, FactRecord, FactRepository, Forbidden, Jinaga, JinagaTest, LabelOf, MemoryStore, Specification, User, buildModel, assertWellFormed, dehydrateFact, splitBeforeFirstSuccessor } from "@src";
+import { AuthorizationRuleError, AuthorizationRules, FactEnvelope, FactRecord, FactRepository, Forbidden, Jinaga, JinagaTest, LabelOf, MemoryStore, Specification, User, buildModel, assertWellFormed, dehydrateFact, splitBeforeFirstSuccessor } from "@src";
 import { Blog, Post, model as blogModel } from "../blogModel";
 
 // A rule that binds a label before its first successor join and projects it.
@@ -85,7 +85,9 @@ describe("Authorization rule whose tail has several givens", () => {
         // Formulation D of issue #231. The head walks link.item.workspace. The
         // tail matches Owner against it, and its existential condition walks
         // link.parent.workspace, so the tail is given both the head's Workspace
-        // and the Link under authorization.
+        // and the Link under authorization. A rule runs while its fact is being
+        // authorized, before the fact is saved, so that tail reads nothing and
+        // the rule admits nobody. It is refused where it is written.
         const linkRule = (link: LabelOf<Link>, facts: FactRepository) =>
             facts.ofType(Owner)
                 .join(o => o.workspace, link.item.workspace)
@@ -101,31 +103,6 @@ describe("Authorization rule whose tail has several givens", () => {
             .any(Item)
             .type(Link, linkRule);
 
-        let alice: User;
-        let bob: User;
-        let aliceWorkspace: Workspace;
-        let bobWorkspace: Workspace;
-        let aliceOwns: Owner;
-        let bobOwns: Owner;
-        let aliceItem: Item;
-        let aliceOtherItem: Item;
-        let bobItem: Item;
-        let initialState: {}[];
-
-        beforeEach(() => {
-            alice = new User("alice");
-            bob = new User("bob");
-            aliceWorkspace = new Workspace(alice, "alice workspace");
-            bobWorkspace = new Workspace(bob, "bob workspace");
-            aliceOwns = new Owner(aliceWorkspace, alice);
-            bobOwns = new Owner(bobWorkspace, bob);
-            aliceItem = new Item(aliceWorkspace, "first");
-            aliceOtherItem = new Item(aliceWorkspace, "second");
-            bobItem = new Item(bobWorkspace, "bob item");
-            initialState = [alice, bob, aliceWorkspace, bobWorkspace, aliceOwns,
-                bobOwns, aliceItem, aliceOtherItem, bobItem];
-        });
-
         it("should make the Link under authorization a given of the tail", () => {
             const specification = linkModel.given(Link).match(linkRule);
 
@@ -138,71 +115,18 @@ describe("Authorization rule whose tail has several givens", () => {
             ]);
         });
 
-        it("should refuse the Link with Forbidden rather than raising AuthorizationRuleError", async () => {
-            // Before this fix the composite head projection was refused outright,
-            // so every write of a Link raised AuthorizationRuleError, an authoring
-            // mistake. The rule now evaluates and reaches an authorization
-            // decision, so the refusal arrives as Forbidden. Asserting that class
-            // rather than merely "not AuthorizationRuleError" also rules out a
-            // refusal from some unrelated runtime failure.
-            //
-            // The decision itself is still the wrong one: alice owns both
-            // endpoints' workspace, so this write should be admitted. The tail is
-            // given the Link, and the store cannot read a fact that has not been
-            // saved yet, which is the open question recorded on issue #297. When
-            // that is settled this expectation becomes `resolves`.
-            const j = JinagaTest.create({
-                model: linkModel,
-                authorization: linkAuthorization,
-                user: alice,
-                initialState
-            });
-
-            const promise = j.fact(new Link(aliceOtherItem, aliceItem));
-
-            await expect(promise).rejects.toBeInstanceOf(Forbidden);
+        it("should refuse the rule where it is written", () => {
+            // Before #308 every write of a Link raised AuthorizationRuleError
+            // from the evaluator. After it, every write was refused with
+            // Forbidden, which looked like enforcement. The rule now fails at
+            // the point it is written, naming the label the tail cannot read.
+            // Admitting the write alice is entitled to needs the tail to see the
+            // Link's predecessors, which is the open question on issue #297.
+            expect(() => linkAuthorization(new AuthorizationRules(linkModel)))
+                .toThrow(AuthorizationRuleError);
+            expect(() => linkAuthorization(new AuthorizationRules(linkModel)))
+                .toThrow(/uses 'p1' after its first successor join/);
         });
-
-        it("should return alice's key from getAuthorizedPopulation when both endpoints are hers", async () => {
-            const { population } = await whenAuthorizeLink(aliceOtherItem, aliceItem);
-
-            expect(population).toEqual({
-                quantifier: "some",
-                authorizedKeys: ["alice"]
-            });
-        });
-
-        it("should return no keys from getAuthorizedPopulation when the parent is in another workspace", async () => {
-            const { population } = await whenAuthorizeLink(aliceOtherItem, bobItem);
-
-            expect(population).toEqual({ quantifier: "none" });
-        });
-
-        async function whenAuthorizeLink(item: Item, parent: Item) {
-            // The tail is given the Link, so the store must be able to read it.
-            const link = new Link(item, parent);
-            const records = [
-                ...dehydrateFact(alice),
-                ...dehydrateFact(bob),
-                ...dehydrateFact(aliceWorkspace),
-                ...dehydrateFact(bobWorkspace),
-                ...dehydrateFact(aliceOwns),
-                ...dehydrateFact(bobOwns),
-                ...dehydrateFact(aliceItem),
-                ...dehydrateFact(aliceOtherItem),
-                ...dehydrateFact(bobItem),
-                ...dehydrateFact(link)
-            ];
-            const envelopes: FactEnvelope[] = records.map(fact => ({ fact, signatures: [] }));
-            const store = new MemoryStore();
-            await store.save(envelopes);
-            const envelope: FactEnvelope = { fact: lastOf(dehydrateFact(link)), signatures: [] };
-            const rules = linkAuthorization(new AuthorizationRules(linkModel));
-
-            const population = await rules.getAuthorizedPopulationForEnvelope(
-                ["alice", "bob"], envelope, envelopes, store);
-            return { population };
-        }
     });
 });
 
