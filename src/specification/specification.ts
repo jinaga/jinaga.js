@@ -95,6 +95,17 @@ export interface Specification {
     projection: Projection;
 }
 
+declare const wellFormed: unique symbol;
+
+/**
+ * A specification that `assertWellFormed` accepted: every label a path condition
+ * names is in scope, no match declares a label already in scope, and the
+ * projection names only labels the specification declares. Only that function
+ * makes one, so a function that takes one relies on those properties and does
+ * not check them.
+ */
+export type WellFormedSpecification = Specification & { readonly [wellFormed]: true };
+
 export const emptySpecification: Specification = {
     given: [],
     matches: [],
@@ -251,7 +262,7 @@ export function specificationIsNotDeterministic(specification: Specification): b
     );
 }
 
-export function splitBeforeFirstSuccessor(specification: Specification): { head: Specification | undefined, tail: Specification | undefined } {
+export function splitBeforeFirstSuccessor(specification: WellFormedSpecification): { head: Specification | undefined, tail: Specification | undefined } {
     // Find the first match (if any) that seeks successors or has an existential condition
     const firstMatchWithSuccessor = specification.matches.findIndex(match =>
         match.conditions.length !== 1 || match.conditions.some(condition =>

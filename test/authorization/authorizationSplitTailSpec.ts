@@ -1,4 +1,4 @@
-import { AuthorizationRules, FactEnvelope, FactRecord, FactRepository, Forbidden, Jinaga, JinagaTest, LabelOf, MemoryStore, Specification, User, buildModel, dehydrateFact, splitBeforeFirstSuccessor } from "@src";
+import { AuthorizationRules, FactEnvelope, FactRecord, FactRepository, Forbidden, Jinaga, JinagaTest, LabelOf, MemoryStore, Specification, User, buildModel, assertWellFormed, dehydrateFact, splitBeforeFirstSuccessor } from "@src";
 import { Blog, Post, model as blogModel } from "../blogModel";
 
 // A rule that binds a label before its first successor join and projects it.
@@ -129,7 +129,7 @@ describe("Authorization rule whose tail has several givens", () => {
         it("should make the Link under authorization a given of the tail", () => {
             const specification = linkModel.given(Link).match(linkRule);
 
-            const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+            const { head, tail } = splitBeforeFirstSuccessor(assertWellFormed(specification.specification, "The specification"));
 
             expect(head).toBeDefined();
             expect((tail as Specification).given.map(given => given.label)).toEqual([
