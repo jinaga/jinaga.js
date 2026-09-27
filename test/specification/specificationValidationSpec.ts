@@ -1,4 +1,4 @@
-import { DistributionRules, Match, Specification, SpecificationParser, buildFeeds, skeletonOfSpecification, validateSpecification } from "@src";
+import { DistributionRules, Match, Specification, SpecificationParser, assertWellFormed, buildFeeds, skeletonOfSpecification, splitBeforeFirstSuccessor, validateSpecification, wellFormedErrors } from "@src";
 import { AuthorizationRuleSpecification } from "../../src/authorization/authorizationRules";
 
 // Issue #226: a match whose only condition is a positive existential parses, but
@@ -244,5 +244,74 @@ describe("rules that carry a specification", () => {
     it("refuses to build an authorization rule that cannot be run", () => {
         expect(() => new AuthorizationRuleSpecification(unbuildableSpecification))
             .toThrow(/The specification of an authorization rule is not valid/);
+    });
+});
+
+// The split runs a head on the graph and a tail on the store, and it relies on
+// its input naming only labels that are in scope, declaring none twice, and
+// projecting only labels it declares. `assertWellFormed` checks that once, where a
+// rule enters the library, and hands back the type the split takes.
+describe("well-formedness", () => {
+    const post = (projection: string) => `(p1: Employee) {
+    u1: Office [ u1 = p1->office: Office ]
+} => ${projection}`;
+
+    it("finds nothing wrong with a well-formed specification", () => {
+        expect(wellFormedErrors(parse(post("u1")))).toEqual([]);
+    });
+
+    it("reports a projection that names a label nothing declares", () => {
+        // The parser accepts this, and so does validateSpecification.
+        const specification = parse(post("nosuchlabel"));
+        expect(validateSpecification(specification)).toEqual([]);
+        expect(wellFormedErrors(specification)).toEqual(["The projection names the label 'nosuchlabel', which has not been defined."]);
+    });
+
+    it("reports a composite projection that names a label nothing declares", () => {
+        const specification = parse(post("{ office = u1 other = nosuchlabel }"));
+        expect(wellFormedErrors(specification)).toEqual(["The projection names the label 'nosuchlabel', which has not been defined."]);
+    });
+
+    it("reports a path condition that joins a label nothing declares, in a specification that did not come from the parser", () => {
+        const specification = parse(post("u1"));
+        (specification.matches[0].conditions[0] as any).labelRight = "nosuchlabel";
+        expect(wellFormedErrors(specification)).toEqual(["The label 'nosuchlabel' has not been defined."]);
+    });
+
+    it("reports a match that joins its own unknown", () => {
+        const specification = parse(post("u1"));
+        (specification.matches[0].conditions[0] as any).labelRight = "u1";
+        expect(wellFormedErrors(specification)).toEqual(["The label 'u1' has not been defined."]);
+    });
+
+    it("reports a match that declares a label already in scope", () => {
+        const specification = parse(post("u1"));
+        specification.matches[0].unknown.name = "p1";
+        (specification.matches[0].conditions[0] as any).labelRight = "p1";
+        (specification.projection as any).label = "p1";
+        expect(wellFormedErrors(specification)).toEqual(["The name 'p1' has already been used."]);
+    });
+
+    it("lets sibling existential conditions reuse a name", () => {
+        const specification = parse(`(p1: Employee) {
+    u1: Office [
+        u1 = p1->office: Office
+        !E { e: Revoked [ e->office: Office = u1 ] }
+        !E { e: Revoked [ e->office: Office = u1 ] }
+    ]
+} => u1`);
+        expect(wellFormedErrors(specification)).toEqual([]);
+    });
+
+    it("refuses to build an authorization rule whose projection names no declared label", () => {
+        expect(() => new AuthorizationRuleSpecification(parse(post("nosuchlabel"))))
+            .toThrow(/The specification of an authorization rule is not valid. The projection names the label 'nosuchlabel'/);
+    });
+
+    it("cannot split a specification that has not been checked", () => {
+        const specification = parse(post("u1"));
+        // @ts-expect-error A specification must be checked before it is split.
+        splitBeforeFirstSuccessor(specification);
+        expect(splitBeforeFirstSuccessor(assertWellFormed(specification, "The specification")).head).toBeDefined();
     });
 });

@@ -1,4 +1,5 @@
-import { Specification, describeSpecification, splitBeforeFirstSuccessor } from "@src";
+import { Specification, User, assertWellFormed, describeSpecification, splitBeforeFirstSuccessor } from "@src";
+import { Post, model as blogModel } from "../blogModel";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
 
 describe('Split specification', () => {
@@ -7,7 +8,7 @@ describe('Split specification', () => {
             company
         );
 
-        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        const { head, tail } = split(specification.specification);
         expect(tail).toBeUndefined();
         expect(head).toBeDefined();
         expect(describeSpecification(head as Specification, 0)).toEqual(describeSpecification(specification.specification, 0));
@@ -19,7 +20,7 @@ describe('Split specification', () => {
                 .join(company => company, office.company)
         );
 
-        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        const { head, tail } = split(specification.specification);
         expect(tail).toBeUndefined();
         expect(head).toBeDefined();
         expect(describeSpecification(head as Specification, 0)).toEqual(describeSpecification(specification.specification, 0));
@@ -31,7 +32,7 @@ describe('Split specification', () => {
                 .join(office => office.company, company)
         );
 
-        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        const { head, tail } = split(specification.specification);
         expect(head).toBeUndefined();
         expect(tail).toBeDefined();
         expect(describeSpecification(tail as Specification, 0)).toEqual(describeSpecification(specification.specification, 0));
@@ -44,7 +45,7 @@ describe('Split specification', () => {
                 .selectMany(office => facts.ofType(President)
                     .join(president => president.office, office)));
 
-        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        const { head, tail } = split(specification.specification);
         expect(head).toBeDefined();
         expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
             (p1: Employee) {
@@ -66,7 +67,7 @@ describe('Split specification', () => {
             facts.ofType(President)
                 .join(president => president.office, employee.office));
 
-        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        const { head, tail } = split(specification.specification);
         expect(head).toBeDefined();
         expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
             (p1: Employee) {
@@ -90,7 +91,7 @@ describe('Split specification', () => {
                 .notExists(admin2 => facts.ofType(AdministratorRevoked)
                     .join(revoked => revoked.administrator, admin2)));
 
-        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        const { head, tail } = split(specification.specification);
         expect(head).toBeDefined();
         expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
             (p1: Administrator) {
@@ -121,7 +122,7 @@ describe('Split specification', () => {
                     .notExists(admin2 => facts.ofType(AdministratorRevoked)
                         .join(revoked => revoked.administrator, admin2))));
 
-        const { head, tail } = splitBeforeFirstSuccessor(specification.specification);
+        const { head, tail } = split(specification.specification);
         expect(head).toBeDefined();
         expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
             (p1: Administrator) {
@@ -142,7 +143,50 @@ describe('Split specification', () => {
                 ]
             } => u2`);
     });
+
+    it('should carry a projected head label into the tail givens', () => {
+        // The rule binds the blog's creator before the first successor join, and
+        // projects it. The creator is therefore a given of the tail, alongside
+        // the split label the successor join walks from.
+        const specification = blogModel.given(Post).match((p, facts) =>
+            facts.ofType(User)
+                .join(user => user, p.blog.creator)
+                .selectMany(creator => facts.ofType(Post)
+                    .join(other => other.blog, p.blog)
+                    .select(other => creator)));
+
+        const { head, tail } = split(specification.specification);
+        expect(head).toBeDefined();
+        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
+            (p1: Post) {
+                u1: Jinaga.User [
+                    u1 = p1->blog: Blog->creator: Jinaga.User
+                ]
+                s1: Blog [
+                    s1 = p1->blog: Blog
+                ]
+            } => {
+                s1 = s1
+                u1 = u1
+            }`);
+        expect(tail).toBeDefined();
+        expect((tail as Specification).given.map(given => given.label)).toEqual([
+            { name: 'u1', type: 'Jinaga.User' },
+            { name: 's1', type: 'Blog' }
+        ]);
+        expect((tail as Specification).projection).toEqual({ type: 'fact', label: 'u1' });
+        expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
+            (u1: Jinaga.User, s1: Blog) {
+                u2: Post [
+                    u2->blog: Blog = s1
+                ]
+            } => u1`);
+    });
 });
+
+function split(specification: Specification) {
+    return splitBeforeFirstSuccessor(assertWellFormed(specification, "The specification"));
+}
 
 function fixWhitespace(s: string): string {
     return '\n' + s.trimEnd();

@@ -95,6 +95,17 @@ export interface Specification {
     projection: Projection;
 }
 
+declare const wellFormed: unique symbol;
+
+/**
+ * A specification that `assertWellFormed` accepted: every label a path condition
+ * names is in scope, no match declares a label already in scope, and the
+ * projection names only labels the specification declares. Only that function
+ * makes one, so a function that takes one relies on those properties and does
+ * not check them.
+ */
+export type WellFormedSpecification = Specification & { readonly [wellFormed]: true };
+
 export const emptySpecification: Specification = {
     given: [],
     matches: [],
@@ -251,7 +262,7 @@ export function specificationIsNotDeterministic(specification: Specification): b
     );
 }
 
-export function splitBeforeFirstSuccessor(specification: Specification): { head: Specification | undefined, tail: Specification | undefined } {
+export function splitBeforeFirstSuccessor(specification: WellFormedSpecification): { head: Specification | undefined, tail: Specification | undefined } {
     // Find the first match (if any) that seeks successors or has an existential condition
     const firstMatchWithSuccessor = specification.matches.findIndex(match =>
         match.conditions.length !== 1 || match.conditions.some(condition =>
@@ -294,23 +305,23 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
                 const headMatches = specification.matches.slice(0, firstMatchWithSuccessor);
                 const tailMatches = specification.matches.slice(firstMatchWithSuccessor);
 
-                // Compute the givens of the head and tail
-                const headGiven = referencedLabels(headMatches, specification.given);
+                // Compute the givens of the tail.
+                // They are the labels that the tail uses but does not define,
+                // including the labels of its projection.
                 const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({ 
                     label: { name: match.unknown.name, type: match.unknown.type },
                     conditions: []
                 }));
                 const allLabels: SpecificationGiven[] = specification.given.concat(unknownAsGiven);
-                const tailGiven = referencedLabels(tailMatches, allLabels);
+                const tailGiven = referencedLabels(tailMatches, allLabels, specification.projection);
 
                 // Project the tail givens
-                const headProjection: Projection = tailGiven.length === 1 ?
-                    <FactProjection>{ type: "fact", label: tailGiven[0].label.name } :
-                    <CompositeProjection>{ type: "composite", components: tailGiven.map(given => (<NamedComponentProjection>{
-                        type: "fact", 
-                        name: given.label.name,
-                        label: given.label.name 
-                    })) };
+                const headProjection: Projection = projectLabels(tailGiven);
+
+                // Compute the givens of the head.
+                // The head projects the tail's givens, so its own projection
+                // takes part in the derivation.
+                const headGiven = referencedLabels(headMatches, specification.given, headProjection);
                 const head: Specification = {
                     given: headGiven,
                     matches: headMatches,
@@ -359,8 +370,9 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
             const headMatches = specification.matches.slice(0, firstMatchWithSuccessor).concat(headMatch);
             const tailMatches = [tailMatch].concat(specification.matches.slice(firstMatchWithSuccessor + 1));
 
-            // Compute the givens of the head and tail
-            const headGiven = referencedLabels(headMatches, specification.given);
+            // Compute the givens of the tail.
+            // They are the labels that the tail uses but does not define,
+            // including the labels of its projection.
             const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({ 
                 label: { name: match.unknown.name, type: match.unknown.type },
                 conditions: []
@@ -368,16 +380,15 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
             const allLabels: SpecificationGiven[] = specification.given
                 .concat(unknownAsGiven)
                 .concat([{ label: { name: splitLabel.name, type: splitLabel.type }, conditions: [] }]);
-            const tailGiven = referencedLabels(tailMatches, allLabels);
+            const tailGiven = referencedLabels(tailMatches, allLabels, specification.projection);
 
             // Project the tail givens
-            const headProjection: Projection = tailGiven.length === 1 ?
-                <FactProjection>{ type: "fact", label: tailGiven[0].label.name } :
-                <CompositeProjection>{ type: "composite", components: tailGiven.map(given => (<NamedComponentProjection>{
-                    type: "fact", 
-                    name: given.label.name,
-                    label: given.label.name 
-                })) };
+            const headProjection: Projection = projectLabels(tailGiven);
+
+            // Compute the givens of the head.
+            // The head projects the tail's givens, so its own projection
+            // takes part in the derivation.
+            const headGiven = referencedLabels(headMatches, specification.given, headProjection);
             const head: Specification = {
                 given: headGiven,
                 matches: headMatches,
@@ -396,17 +407,47 @@ export function splitBeforeFirstSuccessor(specification: Specification): { head:
     }
 }
 
-function referencedLabels(matches: Match[], labels: SpecificationGiven[]): SpecificationGiven[] {
-    // Find all labels referenced in the matches
-    const definedLabels = matches.map(match => match.unknown.name);
-    const referencedLabels = matches.map(labelsInMatch).reduce((acc, val) => acc.concat(val), [])
-        .filter(label => definedLabels.indexOf(label) === -1);
+function projectLabels(given: SpecificationGiven[]): Projection {
+    return given.length === 1 ?
+        <FactProjection>{ type: "fact", label: given[0].label.name } :
+        <CompositeProjection>{ type: "composite", components: given.map(g => (<NamedComponentProjection>{
+            type: "fact",
+            name: g.label.name,
+            label: g.label.name
+        })) };
+}
+
+function referencedLabels(matches: Match[], labels: SpecificationGiven[], projection?: Projection): SpecificationGiven[] {
+    // Find all labels that the matches and the projection use but the matches do not define
+    const free = freeLabels(matches, projection);
     return labels
-        .filter(given => referencedLabels.indexOf(given.label.name) !== -1);
+        .filter(given => free.indexOf(given.label.name) !== -1);
+}
+
+function freeLabels(matches: Match[], projection: Projection | ComponentProjection | undefined): string[] {
+    const definedLabels = matches.map(match => match.unknown.name);
+    const usedLabels = matches.map(labelsInMatch).reduce((acc, val) => acc.concat(val), [])
+        .concat(projection === undefined ? [] : labelsInProjection(projection));
+    return usedLabels
+        .filter(label => definedLabels.indexOf(label) === -1);
 }
 
 function labelsInMatch(match: Match): string[] {
     return match.conditions.map(labelsInCondition).reduce((acc, val) => acc.concat(val), []);
+}
+
+function labelsInProjection(projection: Projection | ComponentProjection): string[] {
+    if (projection.type === "composite") {
+        return projection.components.map(labelsInProjection).reduce((acc, val) => acc.concat(val), []);
+    }
+    else if (projection.type === "specification") {
+        // A nested specification defines its own labels, so only its free labels escape.
+        return freeLabels(projection.matches, projection.projection);
+    }
+    else {
+        // Fact, field, hash and time projections each name a single label.
+        return [ projection.label ];
+    }
 }
 
 function labelsInCondition(condition: Condition): string[] {

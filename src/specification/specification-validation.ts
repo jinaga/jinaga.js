@@ -1,4 +1,4 @@
-import { Match, Projection, Specification, isPathCondition } from "./specification";
+import { Match, Projection, Specification, WellFormedSpecification, isPathCondition } from "./specification";
 
 /**
  * A match must begin with a path condition. That is the condition that roots the
@@ -69,10 +69,78 @@ export function validateSpecification(specification: Specification): string[] {
  * @param description Names the specification in the error message.
  */
 export function validateSpecificationOrThrow(specification: Specification, description: string): void {
-    const errors = validateSpecification(specification);
+    throwIfInvalid(validateSpecification(specification), description);
+}
+
+/**
+ * Report where a specification names a label that is not in scope, declares a
+ * label that already is, or projects a label it does not declare.
+ *
+ * A match sees the givens, the matches before it, and, inside its own
+ * existential conditions, its own unknown. Scope is lexical, so sibling
+ * existential conditions may reuse a name. `SpecificationParser` enforces the
+ * first two while it reads text. This checks specifications from any source,
+ * and also the third, which the parser does not.
+ *
+ * @param specification The specification to check.
+ * @returns One message per defect, or an empty array if the specification is well formed.
+ */
+export function wellFormedErrors(specification: Specification): string[] {
+    const errors: string[] = [];
+    const givens = specification.given.map(g => g.label.name);
+    checkScope(givens, specification.matches, errors);
+    const declared = givens.concat(specification.matches.map(m => m.unknown.name));
+    for (const label of projectedLabels(specification.projection)) {
+        if (!declared.includes(label)) {
+            errors.push(`The projection names the label '${label}', which has not been defined.`);
+        }
+    }
+    return errors;
+}
+
+/**
+ * Check a specification, and vouch for it: the result is the type that
+ * functions relying on a well-formed specification take. Do this once, where a
+ * specification enters the library.
+ *
+ * @param specification The specification to check.
+ * @param description Names the specification in the error message.
+ */
+export function assertWellFormed(specification: Specification, description: string): WellFormedSpecification {
+    throwIfInvalid(validateSpecification(specification).concat(wellFormedErrors(specification)), description);
+    return specification as WellFormedSpecification;
+}
+
+function throwIfInvalid(errors: string[], description: string) {
     if (errors.length > 0) {
         throw new Error(`${description} is not valid. ${errors.join(" ")}`);
     }
+}
+
+function checkScope(scope: string[], matches: Match[], errors: string[]) {
+    for (const match of matches) {
+        const name = match.unknown.name;
+        if (scope.includes(name)) {
+            errors.push(`The name '${name}' has already been used.`);
+        }
+        for (const condition of match.conditions) {
+            if (condition.type === "path") {
+                if (!scope.includes(condition.labelRight)) {
+                    errors.push(`The label '${condition.labelRight}' has not been defined.`);
+                }
+            }
+            else {
+                checkScope([name, ...scope], condition.matches, errors);
+            }
+        }
+        scope = [name, ...scope];
+    }
+}
+
+function projectedLabels(projection: Projection): string[] {
+    return projection.type === "composite"
+        ? projection.components.flatMap(c => c.type === "specification" ? [] : [c.label])
+        : [projection.label];
 }
 
 function validateMatches(matches: Match[], errors: string[]) {
