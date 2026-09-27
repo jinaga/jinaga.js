@@ -61,8 +61,19 @@ export class PersistentFork implements Fork {
         if (!this.progress.listening) {
             return;
         }
-        const envelopes = await this.queue.peek();
-        this.progress.notify(envelopes.length);
+        try {
+            const envelopes = await this.queue.peek();
+            this.progress.notify(envelopes.length);
+        }
+        catch (error) {
+            // Reporting must not change what a save does. The facts are queued
+            // by the time this runs, so a queue that cannot be read has nothing
+            // to say about whether the save succeeded: `save` would reject a
+            // `fact()` whose facts are safely queued, and the saver's flush loop
+            // would read a failed read of the queue as a batch that failed to
+            // send and stop there.
+            Trace.error(error);
+        }
     }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {

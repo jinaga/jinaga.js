@@ -160,6 +160,26 @@ class FakeQueue implements Queue {
     }
 }
 
+/**
+ * A queue that cannot be read. A progress report reads the queue, and a queue
+ * that fails to answer must not turn a save that already queued its facts into
+ * a save that failed.
+ */
+class UnreadableQueue implements Queue {
+    public readonly enqueued: FactEnvelope[] = [];
+
+    async peek(): Promise<FactEnvelope[]> {
+        throw new Error("the queue cannot be read");
+    }
+
+    async enqueue(envelopes: FactEnvelope[]): Promise<void> {
+        this.enqueued.push(...envelopes);
+    }
+
+    async dequeue(_envelopes: FactEnvelope[]): Promise<void> {
+    }
+}
+
 class Root {
     static Type = "Status.Root" as const;
     type = Root.Type;
@@ -262,5 +282,24 @@ describe("client status reporting (issue #306)", () => {
 
         expect(progress[progress.length - 1]).toBe(0);
         expect(await queue.peek()).toHaveLength(0);
+    });
+
+    it("saves the fact even when the queue cannot be read for a progress report", async () => {
+        const store = new MemoryStore();
+        const queue = new UnreadableQueue();
+        const connection = new GatedConnection();
+        const webClient = new WebClient(connection, new SyncStatusNotifier(), { timeoutSeconds: 30 });
+        const fork = new PersistentFork(store, queue, webClient, 0);
+        const factManager = new FactManager(fork, new ObservableSource(store), store, new GatedNetwork(), []);
+        const j = new Jinaga(new AuthenticationNoOp(), factManager, null);
+
+        const progress: number[] = [];
+        j.onProgress(count => progress.push(count));
+
+        const fact = await j.fact(new Root("first"));
+
+        expect(fact.identifier).toBe("first");
+        expect(queue.enqueued).toHaveLength(1);
+        expect(progress).toEqual([]);
     });
 });
