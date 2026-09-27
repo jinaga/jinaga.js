@@ -138,6 +138,22 @@ describe("Specification idiom helpers", () => {
         expect(identifiers).toEqual(["dallas"]);
     });
 
+    it("refuses a traversal whose input is a projected field rather than a label", () => {
+        // The helpers hide the `.successors` call that `notExists` would
+        // otherwise expose, so without a `this` constraint they would be
+        // callable on the `Traversal<string>` that `.select` produces and
+        // would fail only at run time. The `@ts-expect-error` below is the
+        // compile-time half of the assertion: `tsc` reports an unused
+        // directive, and `npm test` fails, if the signature ever loosens
+        // enough to accept this receiver.
+        expect(() => model.given(Manager).match(manager => {
+            const projected = manager.successors(ManagerName, name => name.manager)
+                .select(name => name.value);
+            // @ts-expect-error a projected field is not a label
+            return projected.whereCurrent(ManagerName, next => next.value);
+        })).toThrow(/You cannot operate on a field within a specification/);
+    });
+
     it("excludes an entity deleted again after a restoration", async () => {
         const j = JinagaTest.create({ model });
         const creator = await j.fact(new User("---CREATOR---"));
