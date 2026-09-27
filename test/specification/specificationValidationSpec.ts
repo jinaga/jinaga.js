@@ -303,6 +303,26 @@ describe("well-formedness", () => {
         expect(wellFormedErrors(specification)).toEqual([]);
     });
 
+    it("reserves the labels that the split names for itself", () => {
+        const specification = parse(`(p1: Employee) {
+    __s0: Office [ __s0 = p1->office: Office ]
+} => __s0`);
+        expect(wellFormedErrors(specification)).toEqual(["The name '__s0' is reserved: labels that begin with '__' belong to the split."]);
+    });
+
+    it("reserves them for a given too, and inside an existential condition", () => {
+        const specification = parse(`(__p: Employee) {
+    u1: Office [
+        u1 = __p->office: Office
+        !E { __e: Revoked [ __e->office: Office = u1 ] }
+    ]
+} => u1`);
+        expect(wellFormedErrors(specification)).toEqual([
+            "The name '__p' is reserved: labels that begin with '__' belong to the split.",
+            "The name '__e' is reserved: labels that begin with '__' belong to the split."
+        ]);
+    });
+
     it("refuses to build an authorization rule whose projection names no declared label", () => {
         expect(() => new AuthorizationRuleSpecification(parse(post("nosuchlabel"))))
             .toThrow(/The specification of an authorization rule is not valid. The projection names the label 'nosuchlabel'/);

@@ -99,8 +99,8 @@ declare const wellFormed: unique symbol;
 
 /**
  * A specification that `assertWellFormed` accepted: every label a path condition
- * names is in scope, no match declares a label already in scope, and the
- * projection names only labels the specification declares. Only that function
+ * names is in scope, no match declares a label already in scope or one reserved
+ * for the split, and the projection names only labels the specification declares. Only that function
  * makes one, so a function that takes one relies on those properties and does
  * not check them.
  */
@@ -259,206 +259,95 @@ export function specificationIsNotDeterministic(specification: Specification): b
     return specification.matches.some(match => !matchIsDeterministic(match));
 }
 
-export function splitBeforeFirstSuccessor(specification: WellFormedSpecification): { head: Specification | undefined, tail: Specification | undefined } {
+export function splitBeforeFirstSuccessor(specification: WellFormedSpecification): { head: Specification, tail: Specification | undefined } {
     // Find the first match (if any) that the graph cannot run: one that seeks
     // successors or has an existential condition.
-    const firstMatchWithSuccessor = specification.matches.findIndex(match => !matchIsDeterministic(match));
-
-    if (firstMatchWithSuccessor === -1) {
-        // No match seeks successors, so the whole specification is deterministic
-        return {
-            head: specification,
-            tail: undefined
-        };
+    const pivotIndex = specification.matches.findIndex(match => !matchIsDeterministic(match));
+    if (pivotIndex === -1) {
+        // No match seeks successors, so the whole specification is the head.
+        return { head: specification, tail: undefined };
     }
-    else {
-        // If there is only a single path condition, then split that path.
-        const pivot = specification.matches[firstMatchWithSuccessor];
-        const pathConditions = pivot.conditions.filter(isPathCondition);
-        if (pathConditions.length !== 1) {
-            // Fall back to running the entire specification in the tail
-            return {
-                head: undefined,
-                tail: specification
-            };
-        }
 
-        const existentialConditions = pivot.conditions.filter(isExistentialCondition);
-        const condition = pathConditions[0];
+    // Split the pivot condition by condition. Each of its path conditions walks
+    // predecessors of a label the head can reach, and then successors that only
+    // the store can follow. The predecessor walk becomes a head match binding a
+    // split label, and the condition is rewritten in the tail to join to that
+    // label instead. A condition that walks no predecessors already names a
+    // label the head binds, so the tail joins to it directly.
+    const pivot = specification.matches[pivotIndex];
+    const pathConditions = pivot.conditions.filter(isPathCondition);
+    const splitMatches = pathConditions.flatMap((condition, i) => condition.rolesRight.length === 0 ? [] : [<Match>{
+        unknown: { name: splitLabel(i), type: condition.rolesRight[condition.rolesRight.length - 1].predecessorType },
+        conditions: [{ type: "path", labelRight: condition.labelRight, rolesLeft: [], rolesRight: condition.rolesRight }]
+    }]);
+    const tailPaths = pathConditions.map((condition, i) => condition.rolesRight.length === 0 ? condition : <PathCondition>{
+        type: "path", labelRight: splitLabel(i), rolesLeft: condition.rolesLeft, rolesRight: []
+    });
+    const headMatches = specification.matches.slice(0, pivotIndex).concat(splitMatches);
 
-        if (condition.rolesRight.length === 0) {
-            // The path contains only successor joins.
-            // Put the entire match in the tail.
-            if (firstMatchWithSuccessor === 0) {
-                // There is nothing to put in the head
-                return {
-                    head: undefined,
-                    tail: specification
-                };
+    // Existential conditions stay with the pivot, which the tail runs.
+    const tailMatches: Match[] = [
+        { unknown: pivot.unknown, conditions: [...tailPaths, ...pivot.conditions.filter(isExistentialCondition)] },
+        ...specification.matches.slice(pivotIndex + 1)
+    ];
+
+    // The tail is given the labels in scope at the pivot that it uses,
+    // and the head projects them.
+    const inScope: SpecificationGiven[] = specification.given.concat(headMatches.map(match => ({ label: match.unknown, conditions: [] })));
+    const tailGiven = referencedLabels(tailMatches, inScope, specification.projection);
+    return {
+        head: {
+            given: specification.given,
+            matches: headMatches,
+            projection: {
+                type: "composite",
+                components: tailGiven.map(given => ({ type: "fact", name: given.label.name, label: given.label.name }))
             }
-            else {
-                // Split the matches between the head and tail
-                const headMatches = specification.matches.slice(0, firstMatchWithSuccessor);
-                const tailMatches = specification.matches.slice(firstMatchWithSuccessor);
-
-                // Compute the givens of the tail.
-                // They are the labels that the tail uses but does not define,
-                // including the labels of its projection.
-                const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({ 
-                    label: { name: match.unknown.name, type: match.unknown.type },
-                    conditions: []
-                }));
-                const allLabels: SpecificationGiven[] = specification.given.concat(unknownAsGiven);
-                const tailGiven = referencedLabels(tailMatches, allLabels, specification.projection);
-
-                // Project the tail givens
-                const headProjection: Projection = projectLabels(tailGiven);
-
-                // Compute the givens of the head.
-                // The head projects the tail's givens, so its own projection
-                // takes part in the derivation.
-                const headGiven = referencedLabels(headMatches, specification.given, headProjection);
-                const head: Specification = {
-                    given: headGiven,
-                    matches: headMatches,
-                    projection: headProjection
-                };
-                const tail: Specification = {
-                    given: tailGiven,
-                    matches: tailMatches,
-                    projection: specification.projection
-                };
-                return {
-                    head,
-                    tail
-                };
-            }
-        }
-        else {
-            // The path contains both predecessor and successor joins.
-            // Split the path into two paths.
-            const splitLabel: Label = {
-                name: 's1',
-                type: condition.rolesRight[condition.rolesRight.length - 1].predecessorType
-            };
-            const headCondition: Condition = {
-                type: "path",
-                labelRight: condition.labelRight,
-                rolesLeft: [],
-                rolesRight: condition.rolesRight
-            };
-            const headMatch: Match = {
-                unknown: splitLabel,
-                conditions: [headCondition]
-            }
-            const tailCondition: Condition = {
-                type: "path",
-                labelRight: splitLabel.name,
-                rolesLeft: condition.rolesLeft,
-                rolesRight: []
-            };
-            const tailMatch: Match = {
-                unknown: pivot.unknown,
-                conditions: [tailCondition, ...existentialConditions]
-            };
-
-            // Assemble the head and tail matches
-            const headMatches = specification.matches.slice(0, firstMatchWithSuccessor).concat(headMatch);
-            const tailMatches = [tailMatch].concat(specification.matches.slice(firstMatchWithSuccessor + 1));
-
-            // Compute the givens of the tail.
-            // They are the labels that the tail uses but does not define,
-            // including the labels of its projection.
-            const unknownAsGiven: SpecificationGiven[] = specification.matches.map(match => ({ 
-                label: { name: match.unknown.name, type: match.unknown.type },
-                conditions: []
-            }));
-            const allLabels: SpecificationGiven[] = specification.given
-                .concat(unknownAsGiven)
-                .concat([{ label: { name: splitLabel.name, type: splitLabel.type }, conditions: [] }]);
-            const tailGiven = referencedLabels(tailMatches, allLabels, specification.projection);
-
-            // Project the tail givens
-            const headProjection: Projection = projectLabels(tailGiven);
-
-            // Compute the givens of the head.
-            // The head projects the tail's givens, so its own projection
-            // takes part in the derivation.
-            const headGiven = referencedLabels(headMatches, specification.given, headProjection);
-            const head: Specification = {
-                given: headGiven,
-                matches: headMatches,
-                projection: headProjection
-            };
-            const tail: Specification = {
-                given: tailGiven,
-                matches: tailMatches,
-                projection: specification.projection
-            };
-            return {
-                head,
-                tail
-            };
-        }
-    }
+        },
+        tail: { given: tailGiven, matches: tailMatches, projection: specification.projection }
+    };
 }
 
-function projectLabels(given: SpecificationGiven[]): Projection {
-    return given.length === 1 ?
-        <FactProjection>{ type: "fact", label: given[0].label.name } :
-        <CompositeProjection>{ type: "composite", components: given.map(g => (<NamedComponentProjection>{
-            type: "fact",
-            name: g.label.name,
-            label: g.label.name
-        })) };
+/**
+ * The label the split gives the fact that the head walks to for the `index`th
+ * path condition of the pivot. It begins with the reserved prefix, so it cannot
+ * collide with a label a well-formed specification declares.
+ */
+function splitLabel(index: number): string {
+    return `${reservedLabelPrefix}s${index}`;
 }
 
-function referencedLabels(matches: Match[], labels: SpecificationGiven[], projection?: Projection): SpecificationGiven[] {
-    // Find all labels that the matches and the projection use but the matches do not define
-    const free = freeLabels(matches, projection);
-    return labels
-        .filter(given => free.indexOf(given.label.name) !== -1);
-}
+export const reservedLabelPrefix = "__";
 
-function freeLabels(matches: Match[], projection: Projection | ComponentProjection | undefined): string[] {
-    const definedLabels = matches.map(match => match.unknown.name);
-    const usedLabels = matches.map(labelsInMatch).reduce((acc, val) => acc.concat(val), [])
-        .concat(projection === undefined ? [] : labelsInProjection(projection));
-    return usedLabels
-        .filter(label => definedLabels.indexOf(label) === -1);
+// The labels, in scope order, that the matches and the projection use. A nested
+// specification's own labels are included, which is harmless: `labels` holds
+// only labels declared outside it, and a well-formed specification does not
+// declare the same label twice.
+function referencedLabels(matches: Match[], labels: SpecificationGiven[], projection: Projection): SpecificationGiven[] {
+    const used = matches.flatMap(labelsInMatch).concat(labelsInProjection(projection));
+    return labels.filter(given => used.includes(given.label.name));
 }
 
 function labelsInMatch(match: Match): string[] {
-    return match.conditions.map(labelsInCondition).reduce((acc, val) => acc.concat(val), []);
+    return match.conditions.flatMap(labelsInCondition);
+}
+
+function labelsInCondition(condition: Condition): string[] {
+    return condition.type === "path" ? [condition.labelRight] : condition.matches.flatMap(labelsInMatch);
 }
 
 function labelsInProjection(projection: Projection | ComponentProjection): string[] {
     if (projection.type === "composite") {
-        return projection.components.map(labelsInProjection).reduce((acc, val) => acc.concat(val), []);
+        return projection.components.flatMap(labelsInProjection);
     }
     else if (projection.type === "specification") {
-        // A nested specification defines its own labels, so only its free labels escape.
-        return freeLabels(projection.matches, projection.projection);
+        return projection.matches.flatMap(labelsInMatch).concat(labelsInProjection(projection.projection));
     }
     else {
         // Fact, field, hash and time projections each name a single label.
         return [ projection.label ];
     }
 }
-
-function labelsInCondition(condition: Condition): string[] {
-    if (condition.type === "path") {
-        return [ condition.labelRight ];
-    }
-    else if (condition.type === "existential") {
-        return condition.matches.map(labelsInMatch).reduce((acc, val) => acc.concat(val), []);
-    }
-    else {
-        const _exhaustiveCheck: never = condition;
-        throw new Error(`Unexpected condition type ${(_exhaustiveCheck as any).type}`);
-    }
-}
-
 
 export function specificationIsIdentity(specification: Specification) {
     return specification.matches.every(match =>

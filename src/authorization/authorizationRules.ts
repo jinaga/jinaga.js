@@ -236,7 +236,7 @@ export class AuthorizationRuleNone implements AuthorizationRule {
 export class AuthorizationRuleSpecification implements AuthorizationRule {
     private readonly specification: WellFormedSpecification;
     private readonly label: string;
-    private readonly head: Specification | undefined;
+    private readonly head: Specification;
     private readonly tail: Specification | undefined;
 
     constructor(specification: Specification) {
@@ -304,11 +304,6 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
 
     // The facts the rule projects, one per solution.
     private async solve(fact: FactRecord, graph: FactGraph, store: Storage): Promise<FactReference[]> {
-        // If there is no head, then the specification is unsatisfiable.
-        if (this.head === undefined) {
-            throw new AuthorizationRuleError('The specification must start with a predecessor join. Otherwise, it is unsatisfiable.');
-        }
-
         // Execute the head on the graph, producing one tuple per solution.
         const tuples = await graph.executeSpecification(this.head.given[0].label.name, this.head.matches, fact);
         if (this.tail === undefined) {
