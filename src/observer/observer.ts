@@ -38,6 +38,27 @@ export interface Observer<T> {
     processed(): Promise<void>;
     stop(): void;
     /**
+     * Fetch this observer's feeds once more, from the bookmarks they have
+     * already reached, and resolve when that fetch completes (issue #303).
+     * Facts that arrive reach the handlers through the same inverse path a
+     * local save takes, so a row the handler already holds is not delivered
+     * again.
+     *
+     * This is what a pull-to-refresh gesture, a window regaining focus, or a
+     * push notification that says "something changed" calls. A `watch` fetches
+     * only at start, so without this the only way to pick facts up on demand
+     * is to `stop()` the observer and create another one, which re-delivers
+     * every current row to a handler that has already seen it.
+     *
+     * A refresh during the initial load *is* the initial load: it issues no
+     * second fetch and resolves when `loaded()` does, rejecting with it if the
+     * load fails. A refresh after `stop()` resolves and fetches nothing.
+     *
+     * A `subscribe` observer already holds its feeds open, and refreshes all
+     * the same: the fetch is harmless there, and one method covers both.
+     */
+    refresh(): Promise<void>;
+    /**
      * The distribution diagnostics (issue #207 W6) captured for this observer's
      * feeds while loading. This is where a developer holding the observer handle
      * looks to learn that a feed is `denied` or `reactive`.
@@ -150,6 +171,18 @@ export class ObserverImpl<T> implements Observer<T> {
     private listenersAdded: boolean = false;
     private loadResolve: (() => void) | undefined;
     /**
+     * Whether `loadedPromise` has settled. `refresh()` reads it to tell a
+     * refresh that arrived during the initial load -- which is the initial
+     * load, and issues no fetch of its own -- from one that arrived after it.
+     */
+    private loadSettled: boolean = false;
+    /**
+     * The `keepAlive` this observer was started with. `refresh()` fetches
+     * either way; this only names the operation its diagnostics are reported
+     * under, so a `subscribe` observer's refresh does not report as a watch.
+     */
+    private keepAlive: boolean = false;
+    /**
      * Tracks all pending notification promises to enable waiting for processing completion.
      */
     private pendingNotifications: Set<Promise<void>> = new Set();
@@ -250,12 +283,20 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     public start(keepAlive: boolean) {
+        this.keepAlive = keepAlive;
         const givenTypes = this.given.map(g => g.type).join(', ');
         Trace.info(`[Observer] START - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Given types: [${givenTypes}], KeepAlive: ${keepAlive}`);
 
         this.cachedPromise = new Promise((cacheResolve, _) => {
             this.loadedPromise = new Promise(async (loadResolve, loadReject) => {
-                this.loadResolve = loadResolve;
+                // Resolve through one function so every path that settles the
+                // load -- both branches below and `stop()` -- also records that
+                // it settled, which is what `refresh()` reads.
+                const settleLoad = () => {
+                    this.loadSettled = true;
+                    loadResolve();
+                };
+                this.loadResolve = settleLoad;
                 try {
                     // Phase 3 of j.subscribe trust release: intersect with any
                     // applicable distribution rule before installing listeners
@@ -279,7 +320,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         await this.fetch(keepAlive);
                         if (this.stopped) return;
                         await this.read();
-                        loadResolve();
+                        settleLoad();
                     }
                     else {
                         Trace.info(`[Observer] Cached (MRU: ${mruDate.toISOString()}) - Spec hash: ${this.specificationHash.substring(0, 8)}..., will read then fetch`);
@@ -289,7 +330,7 @@ export class ObserverImpl<T> implements Observer<T> {
                         // Then fetch from the server to update the cache.
                         await this.fetch(keepAlive);
                         if (this.stopped) return;
-                        loadResolve();
+                        settleLoad();
                     }
                     await this.factManager.setMruDate(this.specificationHash, new Date());
                     Trace.info(`[Observer] COMPLETE - Spec hash: ${this.specificationHash.substring(0, 8)}...`);
@@ -297,6 +338,7 @@ export class ObserverImpl<T> implements Observer<T> {
                 }
                 catch (e) {
                     Trace.error(`[Observer] ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`);
+                    this.loadSettled = true;
                     this.loadResolve = undefined;
                     cacheResolve(false);
                     loadReject(e);
@@ -363,6 +405,25 @@ export class ObserverImpl<T> implements Observer<T> {
             // Check if new notifications were added while we were waiting
             // If so, loop again to wait for those too
         }
+    }
+
+    /**
+     * See `Observer.refresh`. Three cases, in the order they are tested:
+     * stopped (nothing to fetch into), still loading (the fetch it would
+     * issue is already in flight), and loaded (fetch once more).
+     */
+    public async refresh(): Promise<void> {
+        if (this.loadedPromise === undefined) {
+            throw new Error("The observer has not been started.");
+        }
+        if (this.stopped) {
+            return;
+        }
+        if (!this.loadSettled) {
+            await this.loadedPromise;
+            return;
+        }
+        await this.fetchOnce();
     }
 
     public stop() {
@@ -446,34 +507,46 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private async fetch(keepAlive: boolean) {
+        if (!keepAlive) {
+            await this.fetchOnce();
+            return;
+        }
         // Collect the per-feed decisions across all branches so they can be
         // surfaced as diagnostics (issue #207 W5/W6). Array.push from the
         // concurrent branch callbacks is safe on JS's single thread.
         const decisions: FeedDecision[] = [];
-        if (keepAlive) {
-            await Promise.all(this.branches.map(async branch => {
-                const { feeds, decisions: branchDecisions } = await this.factManager.subscribe(this.given, branch.specification);
-                if (this.stopped) {
-                    // If stop() was called while we were awaiting subscribe(),
-                    // clean up the feeds that were just registered so the
-                    // subscriber is not leaked.
-                    if (feeds.length > 0) {
-                        this.factManager.unsubscribe(feeds);
-                    }
-                    return;
+        await Promise.all(this.branches.map(async branch => {
+            const { feeds, decisions: branchDecisions } = await this.factManager.subscribe(this.given, branch.specification);
+            if (this.stopped) {
+                // If stop() was called while we were awaiting subscribe(),
+                // clean up the feeds that were just registered so the
+                // subscriber is not leaked.
+                if (feeds.length > 0) {
+                    this.factManager.unsubscribe(feeds);
                 }
-                branch.feeds = feeds;
-                decisions.push(...branchDecisions);
-                this.registerClearingListeners(feeds, branchDecisions);
-            }));
-        }
-        else {
-            await Promise.all(this.branches.map(async branch => {
-                const branchDecisions = await this.factManager.fetch(this.given, branch.specification);
-                decisions.push(...branchDecisions);
-            }));
-        }
-        this.captureDiagnostics(keepAlive ? 'subscribe' : 'watch', decisions);
+                return;
+            }
+            branch.feeds = feeds;
+            decisions.push(...branchDecisions);
+            this.registerClearingListeners(feeds, branchDecisions);
+        }));
+        this.captureDiagnostics('subscribe', decisions);
+    }
+
+    /**
+     * One pass over every branch's feeds, from wherever their bookmarks stand,
+     * without holding them open. The initial load of a `watch` takes this path,
+     * and so does every `refresh()` -- of a watch or of a subscription. Facts it
+     * brings in are delivered by the inverse listeners, exactly as a local save
+     * is, so a row already delivered is not delivered twice.
+     */
+    private async fetchOnce() {
+        const decisions: FeedDecision[] = [];
+        await Promise.all(this.branches.map(async branch => {
+            const branchDecisions = await this.factManager.fetch(this.given, branch.specification);
+            decisions.push(...branchDecisions);
+        }));
+        this.captureDiagnostics(this.keepAlive ? 'subscribe' : 'watch', decisions);
     }
 
     /**
