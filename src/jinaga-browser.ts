@@ -9,6 +9,7 @@ import { TransientFork } from "./fork/transient-fork";
 import { AuthenticationProvider } from "./http/authenticationProvider";
 import { FetchConnection } from "./http/fetch";
 import { HttpNetwork } from "./http/httpNetwork";
+import { RetryOptions } from "./http/retry";
 import { SyncStatusNotifier, WebClient } from "./http/web-client";
 import { IndexedDBLoginStore } from "./indexeddb/indexeddb-login-store";
 import { IndexedDBQueue } from "./indexeddb/indexeddb-queue";
@@ -77,7 +78,21 @@ export type JinagaBrowserConfig = {
      * Maximum number of facts in one `POST /save` request. Defaults to
      * `DEFAULT_MAX_SAVE_BATCH_COUNT`.
      */
-    saveBatchCount?: number
+    saveBatchCount?: number,
+    /**
+     * How long a failed request waits before it is retried, and how long the
+     * retrying may go on (issue #305). One schedule governs both the retried
+     * `POST` and the feed stream's reconnect backoff, so a deployment states
+     * its tolerance for waiting once.
+     *
+     * `httpTimeoutSeconds` is a different bound: it caps one request, while this
+     * caps the sequence of them. Leave this unset for the schedule the client
+     * has always used -- waits of 1s, 2s and 4s, then a throw. Set
+     * `timeoutMs: 0` to retry until the request succeeds, which is what a save
+     * that must eventually land wants; set `initialDelayMs: 0, maxDelayMs: 0` to
+     * retry with no delay at all.
+     */
+    retry?: RetryOptions
 }
 
 export class JinagaBrowser {
@@ -134,10 +149,11 @@ function createWebClient(
         const reauthenticate = provider
             ? () => provider.reauthenticate()
             : () => Promise.resolve(false);
-        const httpConnection = new FetchConnection(config.httpEndpoint, getHeaders, reauthenticate);
+        const httpConnection = new FetchConnection(config.httpEndpoint, getHeaders, reauthenticate, config.retry);
         const httpTimeoutSeconds = config.httpTimeoutSeconds || 30;
         const webClient = new WebClient(httpConnection, syncStatusNotifier, {
-            timeoutSeconds: httpTimeoutSeconds
+            timeoutSeconds: httpTimeoutSeconds,
+            retry: config.retry
         });
         return webClient;
     }
