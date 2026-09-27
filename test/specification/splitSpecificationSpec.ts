@@ -1,4 +1,4 @@
-import { Specification, User, assertWellFormed, describeSpecification, splitBeforeFirstSuccessor } from "@src";
+import { Specification, SpecificationParser, User, assertWellFormed, describeSpecification, splitBeforeFirstSuccessor } from "@src";
 import { Comment, Post, model as blogModel } from "../blogModel";
 import { Item, Link, Owner, Workspace, model as linkModel } from "../linkModel";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
@@ -281,7 +281,8 @@ describe('Split specification', () => {
         // Formulation C of issue #231: one endpoint's workspace is walked by an
         // earlier match, and the pivot joins to it directly. That condition walks
         // no predecessors, so it needs no split label of its own; only the
-        // condition that reaches the other endpoint gets one.
+        // condition that reaches the other endpoint gets one, and so it is the
+        // first split label.
         const specification = linkModel.given(Link).match((link, facts) =>
             facts.ofType(Workspace)
                 .join(w => w, link.item.workspace)
@@ -298,23 +299,23 @@ describe('Split specification', () => {
                 u1: Workspace [
                     u1 = p1->item: Item->workspace: Workspace
                 ]
-                __s1: Workspace [
-                    __s1 = p1->parent: Item->workspace: Workspace
+                __s0: Workspace [
+                    __s0 = p1->parent: Item->workspace: Workspace
                 ]
             } => {
-                __s1 = __s1
+                __s0 = __s0
                 u1 = u1
             }`);
         expect(tail).toBeDefined();
         expect((tail as Specification).given.map(given => given.label)).toEqual([
             { name: 'u1', type: 'Workspace' },
-            { name: '__s1', type: 'Workspace' }
+            { name: '__s0', type: 'Workspace' }
         ]);
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
-            (u1: Workspace, __s1: Workspace) {
+            (u1: Workspace, __s0: Workspace) {
                 u2: Owner [
                     u2->workspace: Workspace = u1
-                    u2->workspace: Workspace = __s1
+                    u2->workspace: Workspace = __s0
                 ]
                 u3: Jinaga.User [
                     u3 = u2->user: Jinaga.User
@@ -322,8 +323,44 @@ describe('Split specification', () => {
             } => u3`);
     });
 
+    it('should not hoist a walk from beneath two nested negative existential conditions', () => {
+        // Two negations do not cancel. Beneath the inner one, a walk from p1
+        // hoisted into the head would be tried one reached fact at a time, and
+        // the outer negation would then ask for every archive whether some
+        // fact rescues it, where the specification asks whether one fact
+        // rescues them all. So the walk stays in the tail, which reads p1.
+        const specification = parse(`(p1: Link) {
+    u1: Owner [
+        u1->workspace: Workspace = p1->item: Item->workspace: Workspace
+        !E {
+            u2: Archive [
+                u2->workspace: Workspace = u1->workspace: Workspace
+                !E {
+                    u3: Restore [
+                        u3->archive: Archive = u2
+                        u3->workspace: Workspace = p1->parent: Item->workspace: Workspace
+                    ]
+                }
+            ]
+        }
+    ]
+} => u1`);
+
+        const { tail } = split(specification);
+        expect((tail as Specification).given.map(given => given.label)).toEqual([
+            { name: 'p1', type: 'Link' },
+            { name: '__s0', type: 'Workspace' }
+        ]);
+    });
+
 });
 
+
+function parse(text: string): Specification {
+    const parser = new SpecificationParser(text);
+    parser.skipWhitespace();
+    return parser.parseSpecification();
+}
 
 function split(specification: Specification) {
     return splitBeforeFirstSuccessor(assertWellFormed(specification, "The specification"));

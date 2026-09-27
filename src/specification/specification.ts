@@ -268,28 +268,21 @@ export function splitBeforeFirstSuccessor(specification: WellFormedSpecification
         return { head: specification, tail: undefined };
     }
 
-    // Split the pivot condition by condition. Each of its path conditions walks
-    // predecessors of a label the head can reach, and then successors that only
-    // the store can follow. The predecessor walk becomes a head match binding a
-    // split label, and the condition is rewritten in the tail to join to that
-    // label instead. A condition that walks no predecessors already names a
-    // label the head binds, so the tail joins to it directly.
-    const pivot = specification.matches[pivotIndex];
-    const pathConditions = pivot.conditions.filter(isPathCondition);
-    const splitMatches = pathConditions.flatMap((condition, i) => condition.rolesRight.length === 0 ? [] : [<Match>{
-        unknown: { name: splitLabel(i), type: condition.rolesRight[condition.rolesRight.length - 1].predecessorType },
-        conditions: [{ type: "path", labelRight: condition.labelRight, rolesLeft: [], rolesRight: condition.rolesRight }]
-    }]);
-    const tailPaths = pathConditions.map((condition, i) => condition.rolesRight.length === 0 ? condition : <PathCondition>{
-        type: "path", labelRight: splitLabel(i), rolesLeft: condition.rolesLeft, rolesRight: []
-    });
-    const headMatches = specification.matches.slice(0, pivotIndex).concat(splitMatches);
-
-    // Existential conditions stay with the pivot, which the tail runs.
-    const tailMatches: Match[] = [
-        { unknown: pivot.unknown, conditions: [...tailPaths, ...pivot.conditions.filter(isExistentialCondition)] },
-        ...specification.matches.slice(pivotIndex + 1)
-    ];
+    // The head runs the matches before the pivot. It also walks, on the tail's
+    // behalf, every predecessor path that the tail takes from a label in scope
+    // at the pivot: a given, or an unknown of a match before it. Each such walk
+    // becomes a head match binding a split label, and the tail joins to that
+    // label instead. The walk may sit in the pivot, in a later match, or in an
+    // existential condition at any depth, but not beneath a negative
+    // existential condition. There the tail would test the facts the walk
+    // reaches one at a time, and a solution that one of them excludes would
+    // still be admitted by another. See `hoist` and `hoist_correct` in
+    // https://github.com/jinaga/jinaga-spec.
+    const before = specification.matches.slice(0, pivotIndex);
+    const scope = specification.given.map(given => given.label.name).concat(before.map(match => match.unknown.name));
+    const hoisted: Match[] = [];
+    const tailMatches = hoistMatches(specification.matches.slice(pivotIndex), true, scope, hoisted);
+    const headMatches = before.concat(hoisted);
 
     // The tail is given the labels in scope at the pivot that it uses,
     // and the head projects them.
@@ -308,10 +301,35 @@ export function splitBeforeFirstSuccessor(specification: WellFormedSpecification
     };
 }
 
+// Rewrite the matches for the tail, moving each predecessor walk that the head
+// can take into `hoisted`. `positive` is false beneath a negative existential
+// condition, and stays false however many conditions are nested inside it.
+function hoistMatches(matches: Match[], positive: boolean, scope: string[], hoisted: Match[]): Match[] {
+    return matches.map(match => ({
+        unknown: match.unknown,
+        conditions: match.conditions.map(condition => hoistCondition(condition, positive, scope, hoisted))
+    }));
+}
+
+function hoistCondition(condition: Condition, positive: boolean, scope: string[], hoisted: Match[]): Condition {
+    if (condition.type === "existential") {
+        return { type: "existential", exists: condition.exists, matches: hoistMatches(condition.matches, positive && condition.exists, scope, hoisted) };
+    }
+    if (!positive || condition.rolesRight.length === 0 || !scope.includes(condition.labelRight)) {
+        return condition;
+    }
+    const label = splitLabel(hoisted.length);
+    hoisted.push({
+        unknown: { name: label, type: condition.rolesRight[condition.rolesRight.length - 1].predecessorType },
+        conditions: [{ type: "path", labelRight: condition.labelRight, rolesLeft: [], rolesRight: condition.rolesRight }]
+    });
+    return { type: "path", labelRight: label, rolesLeft: condition.rolesLeft, rolesRight: [] };
+}
+
 /**
  * The label the split gives the fact that the head walks to for the `index`th
- * path condition of the pivot. It begins with the reserved prefix, so it cannot
- * collide with a label a well-formed specification declares.
+ * predecessor walk it takes on the tail's behalf. It begins with the reserved
+ * prefix, so it cannot collide with a label a well-formed specification declares.
  */
 function splitLabel(index: number): string {
     return `${reservedLabelPrefix}s${index}`;

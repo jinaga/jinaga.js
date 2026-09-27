@@ -24,7 +24,7 @@ describe("Authorization of a rule whose first match seeks successors of the give
         expect(() => authorization(new AuthorizationRules(linkModel)))
             .toThrow(AuthorizationRuleError);
         expect(() => authorization(new AuthorizationRules(linkModel)))
-            .toThrow(/uses 'p1' after its first successor join/);
+            .toThrow(/reads 'p1' from the store: it seeks successors of 'p1'/);
     });
 
     it("should refuse the same rule loaded from a description", () => {
