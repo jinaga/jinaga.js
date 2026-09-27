@@ -1,13 +1,12 @@
-import { AuthorizationRules, FactEnvelope, FactRepository, Forbidden, JinagaTest, LabelOf, MemoryStore, User, dehydrateFact } from "@src";
+import { AuthorizationRuleError, AuthorizationRules, FactRepository, LabelOf, User, describeAuthorizationRules } from "@src";
 import { Owner, Workspace, model as linkModel } from "../linkModel";
 
 // A rule whose first match seeks successors of the given: only an owner of the
 // workspace may author it. Nothing precedes that match and it walks no
-// predecessor, so the head has no matches, and the whole rule runs in the tail.
-// Such a rule used to throw `AuthorizationRuleError` on every write. It is a
-// rule like any other: it admits the users it names, when the given can be read.
-
-const ALICE_KEY = "alice-public-key";
+// predecessor, so the head has no matches, and the tail is given the
+// workspace itself. A rule runs while its fact is being authorized, before the
+// fact is saved, so that tail reads nothing and the rule admits nobody. It is
+// refused where it is written rather than silently refusing every write.
 
 const rule = (workspace: LabelOf<Workspace>, facts: FactRepository) =>
     facts.ofType(Owner)
@@ -21,37 +20,40 @@ const authorization = (a: AuthorizationRules) => a
     .type(Workspace, rule);
 
 describe("Authorization of a rule whose first match seeks successors of the given", () => {
-    const alice = new User(ALICE_KEY);
-    const workspace = new Workspace(alice, "w1");
-    const owner = new Owner(workspace, alice);
-
-    it("should refuse a new workspace with Forbidden rather than AuthorizationRuleError", async () => {
-        // The workspace is being authorized, so the store cannot yet be read for it.
-        const j = JinagaTest.create({
-            model: linkModel,
-            authorization,
-            user: alice,
-            initialState: [alice]
-        });
-
-        await expect(j.fact(new Workspace(alice, "new"))).rejects.toBeInstanceOf(Forbidden);
+    it("should refuse the rule where it is written", () => {
+        expect(() => authorization(new AuthorizationRules(linkModel)))
+            .toThrow(AuthorizationRuleError);
+        expect(() => authorization(new AuthorizationRules(linkModel)))
+            .toThrow(/uses 'p1' after its first successor join/);
     });
 
-    it("should name the owner when the workspace is in the store", async () => {
-        const closure: FactEnvelope[] = [alice, workspace, owner]
-            .flatMap(fact => dehydrateFact(fact))
-            .map(fact => ({ fact, signatures: [] }));
-        const workspaceRecords = dehydrateFact(workspace);
-        const envelope: FactEnvelope = {
-            fact: workspaceRecords[workspaceRecords.length - 1],
-            signatures: []
-        };
-        const store = new MemoryStore();
-        await store.save(closure);
-        const rules = authorization(new AuthorizationRules(linkModel));
+    it("should refuse the same rule loaded from a description", () => {
+        // The description is built without constructing the rule, and parsed
+        // back through the third place a rule is built.
+        const description = `authorization {
+    any Jinaga.User
+    any Owner
+    (p1: Workspace) {
+        u1: Owner [
+            u1->workspace: Workspace = p1
+        ]
+        u2: Jinaga.User [
+            u2 = u1->user: Jinaga.User
+        ]
+    } => u2
+}
+`;
 
-        const population = await rules.getAuthorizedPopulationForEnvelope([ALICE_KEY], envelope, closure, store);
+        expect(() => AuthorizationRules.loadFromDescription(description))
+            .toThrow(AuthorizationRuleError);
+    });
 
-        expect(population).toEqual({ quantifier: "some", authorizedKeys: [ALICE_KEY] });
+    it("should accept a rule that walks only predecessors of the given", () => {
+        // The same intent, written against the creator instead of the owners,
+        // has no tail and is accepted.
+        const rules = describeAuthorizationRules(linkModel, a => a
+            .type(Workspace, workspace => workspace.creator));
+
+        expect(rules).toContain("(p1: Workspace)");
     });
 });
