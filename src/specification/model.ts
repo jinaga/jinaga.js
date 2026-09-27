@@ -189,6 +189,30 @@ export class Traversal<T> {
         return this.existentialCondition<U>(tupleDefinition, true);
     }
 
+    whereCurrent<U>(successorType: FactConstructor<U>, prior: (successor: LabelOf<U>) => T): Traversal<T> {
+        return this.whereNoSuccessor<U>(successorType, prior);
+    }
+
+    whereNotDeleted<D>(deletion: FactConstructor<D>, entity: (deletion: LabelOf<D>) => T): Traversal<T> {
+        return this.whereNoSuccessor<D>(deletion, entity);
+    }
+
+    whereNotDeletedOrRestored<D, R>(
+        deletion: FactConstructor<D>,
+        entity: (deletion: LabelOf<D>) => T,
+        restoration: FactConstructor<R>,
+        deleted: (restoration: LabelOf<R>) => LabelOf<D>
+    ): Traversal<T> {
+        return this.notExists<LabelOf<D>>(input =>
+            successorsOf<D>(input, deletion, entity)
+                .notExists<LabelOf<R>>(d => d.successors(restoration, deleted)));
+    }
+
+    private whereNoSuccessor<U>(successorType: FactConstructor<U>, role: (successor: LabelOf<U>) => T): Traversal<T> {
+        return this.notExists<LabelOf<U>>(input =>
+            successorsOf<U>(input, successorType, role));
+    }
+
     private existentialCondition<U>(tupleDefinition: (proxy: T) => Traversal<U>, exists: boolean) {
         const result = tupleDefinition(this.input);
         const existentialCondition: ExistentialCondition = {
@@ -234,6 +258,19 @@ export class Traversal<T> {
         const projection = traversal.projection;
         return new Traversal<U>(traversal.input, matches, projection);
     }
+}
+
+// A Traversal's input is the label of its last unknown, but the class is
+// generic over that label rather than over the fact type behind it. The
+// idiom helpers above need to walk successors off that label, so they narrow
+// it here in one place instead of at each call.
+function successorsOf<U>(
+    label: unknown,
+    successorType: FactConstructor<U>,
+    selector: (successor: LabelOf<U>) => unknown
+): Traversal<LabelOf<U>> {
+    const methods = label as LabelMethods<unknown>;
+    return methods.successors(successorType, selector as (successor: LabelOf<U>) => LabelOf<unknown>);
 }
 
 export class FactRepository {
