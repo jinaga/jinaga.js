@@ -134,7 +134,7 @@ describe("Authorization rule whose tail has several givens", () => {
             expect(head).toBeDefined();
             expect((tail as Specification).given.map(given => given.label)).toEqual([
                 { name: "p1", type: "Link" },
-                { name: "s1", type: "Workspace" }
+                { name: "__s0", type: "Workspace" }
             ]);
         });
 

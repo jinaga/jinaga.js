@@ -1,4 +1,4 @@
-import { Specification, SpecificationParser, User, assertWellFormed, describeSpecification, splitBeforeFirstSuccessor } from "@src";
+import { Specification, User, assertWellFormed, describeSpecification, splitBeforeFirstSuccessor } from "@src";
 import { Comment, Post, model as blogModel } from "../blogModel";
 import { Item, Link, Owner, Workspace, model as linkModel } from "../linkModel";
 import { Administrator, AdministratorRevoked, Company, Employee, Office, President, model } from "../companyModel";
@@ -57,7 +57,9 @@ describe('Split specification', () => {
                     u1 = p1->author: Jinaga.User
                     u1 = p1->post: Post->blog: Blog->creator: Jinaga.User
                 ]
-            } => u1`);
+            } => {
+                u1 = u1
+            }`);
         expect(tail).toBeDefined();
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
             (u1: Jinaga.User) {
@@ -67,14 +69,15 @@ describe('Split specification', () => {
             } => u2`);
     });
 
-    it('should put all in tail if only successor joins', () => {
+    it('should run the whole specification in the tail if only successor joins', () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
                 .join(office => office.company, company)
         );
 
         const { head, tail } = split(specification.specification);
-        expect(head).toBeUndefined();
+        // The head has no matches. It projects the given, which the tail needs.
+        expect(head.matches).toEqual([]);
         expect(tail).toBeDefined();
         expect(describeSpecification(tail as Specification, 0)).toEqual(describeSpecification(specification.specification, 0));
     });
@@ -93,7 +96,9 @@ describe('Split specification', () => {
                 u1: Office [
                     u1 = p1->office: Office
                 ]
-            } => u1`);
+            } => {
+                u1 = u1
+            }`);
         expect(tail).toBeDefined();
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
             (u1: Office) {
@@ -112,15 +117,17 @@ describe('Split specification', () => {
         expect(head).toBeDefined();
         expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
             (p1: Employee) {
-                s1: Office [
-                    s1 = p1->office: Office
+                __s0: Office [
+                    __s0 = p1->office: Office
                 ]
-            } => s1`);
+            } => {
+                __s0 = __s0
+            }`);
         expect(tail).toBeDefined();
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
-            (s1: Office) {
+            (__s0: Office) {
                 u1: President [
-                    u1->office: Office = s1
+                    u1->office: Office = __s0
                 ]
             } => u1`);
     });
@@ -136,15 +143,17 @@ describe('Split specification', () => {
         expect(head).toBeDefined();
         expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
             (p1: Administrator) {
-                s1: Company [
-                    s1 = p1->company: Company
+                __s0: Company [
+                    __s0 = p1->company: Company
                 ]
-            } => s1`);
+            } => {
+                __s0 = __s0
+            }`);
         expect(tail).toBeDefined();
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
-            (s1: Company) {
+            (__s0: Company) {
                 u1: Administrator [
-                    u1->company: Company = s1
+                    u1->company: Company = __s0
                     !E {
                         u2: Administrator.Revoked [
                             u2->administrator: Administrator = u1
@@ -170,7 +179,9 @@ describe('Split specification', () => {
                 u1: Company [
                     u1 = p1->company: Company
                 ]
-            } => u1`);
+            } => {
+                u1 = u1
+            }`);
         expect(tail).toBeDefined();
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
             (u1: Company) {
@@ -203,23 +214,23 @@ describe('Split specification', () => {
                 u1: Jinaga.User [
                     u1 = p1->blog: Blog->creator: Jinaga.User
                 ]
-                s1: Blog [
-                    s1 = p1->blog: Blog
+                __s0: Blog [
+                    __s0 = p1->blog: Blog
                 ]
             } => {
-                s1 = s1
+                __s0 = __s0
                 u1 = u1
             }`);
         expect(tail).toBeDefined();
         expect((tail as Specification).given.map(given => given.label)).toEqual([
             { name: 'u1', type: 'Jinaga.User' },
-            { name: 's1', type: 'Blog' }
+            { name: '__s0', type: 'Blog' }
         ]);
         expect((tail as Specification).projection).toEqual({ type: 'fact', label: 'u1' });
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
-            (u1: Jinaga.User, s1: Blog) {
+            (u1: Jinaga.User, __s0: Blog) {
                 u2: Post [
-                    u2->blog: Blog = s1
+                    u2->blog: Blog = __s0
                 ]
             } => u1`);
     });
@@ -239,26 +250,26 @@ describe('Split specification', () => {
         expect(head).toBeDefined();
         expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
             (p1: Link) {
-                s1: Workspace [
-                    s1 = p1->item: Item->workspace: Workspace
+                __s0: Workspace [
+                    __s0 = p1->item: Item->workspace: Workspace
                 ]
-                s2: Workspace [
-                    s2 = p1->parent: Item->workspace: Workspace
+                __s1: Workspace [
+                    __s1 = p1->parent: Item->workspace: Workspace
                 ]
             } => {
-                s1 = s1
-                s2 = s2
+                __s0 = __s0
+                __s1 = __s1
             }`);
         expect(tail).toBeDefined();
         expect((tail as Specification).given.map(given => given.label)).toEqual([
-            { name: 's1', type: 'Workspace' },
-            { name: 's2', type: 'Workspace' }
+            { name: '__s0', type: 'Workspace' },
+            { name: '__s1', type: 'Workspace' }
         ]);
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
-            (s1: Workspace, s2: Workspace) {
+            (__s0: Workspace, __s1: Workspace) {
                 u1: Owner [
-                    u1->workspace: Workspace = s1
-                    u1->workspace: Workspace = s2
+                    u1->workspace: Workspace = __s0
+                    u1->workspace: Workspace = __s1
                 ]
                 u2: Jinaga.User [
                     u2 = u1->user: Jinaga.User
@@ -287,23 +298,23 @@ describe('Split specification', () => {
                 u1: Workspace [
                     u1 = p1->item: Item->workspace: Workspace
                 ]
-                s1: Workspace [
-                    s1 = p1->parent: Item->workspace: Workspace
+                __s1: Workspace [
+                    __s1 = p1->parent: Item->workspace: Workspace
                 ]
             } => {
-                s1 = s1
+                __s1 = __s1
                 u1 = u1
             }`);
         expect(tail).toBeDefined();
         expect((tail as Specification).given.map(given => given.label)).toEqual([
             { name: 'u1', type: 'Workspace' },
-            { name: 's1', type: 'Workspace' }
+            { name: '__s1', type: 'Workspace' }
         ]);
         expect(fixWhitespace(describeSpecification(tail as Specification, 3))).toBe(`
-            (u1: Workspace, s1: Workspace) {
+            (u1: Workspace, __s1: Workspace) {
                 u2: Owner [
                     u2->workspace: Workspace = u1
-                    u2->workspace: Workspace = s1
+                    u2->workspace: Workspace = __s1
                 ]
                 u3: Jinaga.User [
                     u3 = u2->user: Jinaga.User
@@ -311,49 +322,8 @@ describe('Split specification', () => {
             } => u3`);
     });
 
-    it('should not name a split label after one that a given condition declares', () => {
-        // Existential conditions on a given declare labels in the same scope as
-        // the rest of the specification, so a split label must avoid them too.
-        // Only the parser produces such a given; the model builder does not.
-        const specification = parseSpecification(`
-            (p1: Link [
-                !E {
-                    s1: Revoked [
-                        s1->link: Link = p1
-                    ]
-                }
-            ]) {
-                u1: Owner [
-                    u1->workspace: Workspace = p1->item: Item->workspace: Workspace
-                ]
-            } => u1`);
-
-        const { head, tail } = split(specification);
-        expect(head).toBeDefined();
-        expect(fixWhitespace(describeSpecification(head as Specification, 3))).toBe(`
-            (p1: Link [
-                !E {
-                    s1: Revoked [
-                        s1->link: Link = p1
-                    ]
-                }
-            ]) {
-                s2: Workspace [
-                    s2 = p1->item: Item->workspace: Workspace
-                ]
-            } => s2`);
-        expect(tail).toBeDefined();
-        expect((tail as Specification).given.map(given => given.label)).toEqual([
-            { name: 's2', type: 'Workspace' }
-        ]);
-    });
 });
 
-function parseSpecification(input: string): Specification {
-    const parser = new SpecificationParser(input);
-    parser.skipWhitespace();
-    return parser.parseSpecification();
-}
 
 function split(specification: Specification) {
     return splitBeforeFirstSuccessor(assertWellFormed(specification, "The specification"));

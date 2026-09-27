@@ -1,4 +1,4 @@
-import { Match, Projection, Specification, WellFormedSpecification, isPathCondition } from "./specification";
+import { Match, Projection, Specification, WellFormedSpecification, isPathCondition, reservedLabelPrefix } from "./specification";
 
 /**
  * A match must begin with a path condition. That is the condition that roots the
@@ -74,13 +74,14 @@ export function validateSpecificationOrThrow(specification: Specification, descr
 
 /**
  * Report where a specification names a label that is not in scope, declares a
- * label that already is, or projects a label it does not declare.
+ * label that already is, declares one reserved for the split, or projects a
+ * label it does not declare.
  *
  * A match sees the givens, the matches before it, and, inside its own
  * existential conditions, its own unknown. Scope is lexical, so sibling
  * existential conditions may reuse a name. `SpecificationParser` enforces the
  * first two while it reads text. This checks specifications from any source,
- * and also the third, which the parser does not.
+ * and also the others, which the parser does not.
  *
  * @param specification The specification to check.
  * @returns One message per defect, or an empty array if the specification is well formed.
@@ -88,6 +89,7 @@ export function validateSpecificationOrThrow(specification: Specification, descr
 export function wellFormedErrors(specification: Specification): string[] {
     const errors: string[] = [];
     const givens = specification.given.map(g => g.label.name);
+    givens.forEach(name => checkNotReserved(name, errors));
     checkScope(givens, specification.matches, errors);
     const declared = givens.concat(specification.matches.map(m => m.unknown.name));
     for (const label of projectedLabels(specification.projection)) {
@@ -117,12 +119,19 @@ function throwIfInvalid(errors: string[], description: string) {
     }
 }
 
+function checkNotReserved(name: string, errors: string[]) {
+    if (name.startsWith(reservedLabelPrefix)) {
+        errors.push(`The name '${name}' is reserved: labels that begin with '${reservedLabelPrefix}' belong to the split.`);
+    }
+}
+
 function checkScope(scope: string[], matches: Match[], errors: string[]) {
     for (const match of matches) {
         const name = match.unknown.name;
         if (scope.includes(name)) {
             errors.push(`The name '${name}' has already been used.`);
         }
+        checkNotReserved(name, errors);
         for (const condition of match.conditions) {
             if (condition.type === "path") {
                 if (!scope.includes(condition.labelRight)) {
