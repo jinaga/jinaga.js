@@ -2,6 +2,7 @@ import { Trace } from "../util/trace";
 import { HttpHeaders } from "./authenticationProvider";
 import { PostAccept, PostContentType, ContentTypeJson } from "./ContentType";
 import { ForbiddenError, forbiddenReason, HttpError, responseReason } from "./errors";
+import { RetryOptions, RetryWaits, resolveRetrySchedule } from "./retry";
 import { HttpConnection, HttpResponse } from "./web-client";
 
 interface FetchHttpResponse {
@@ -26,7 +27,15 @@ export class FetchConnection implements HttpConnection {
     constructor(
         private url: string,
         private getHeaders: () => Promise<HttpHeaders>,
-        private reauthenticate: () => Promise<boolean>
+        private reauthenticate: () => Promise<boolean>,
+        /**
+         * The schedule the feed stream backs off on when it cannot connect
+         * (issue #305). It is the same schedule `WebClient` retries a POST on,
+         * so a deployment tunes both at once. Where it is unset, the stream
+         * keeps the ceiling it has always had, `feedRefreshIntervalSeconds`, and
+         * keeps reconnecting without a time limit.
+         */
+        private retry?: RetryOptions
     ) {}
 
     get(path: string): Promise<object> {
@@ -141,9 +150,15 @@ export class FetchConnection implements HttpConnection {
         // This function will read one chunk and pass it to onResponse.
         // The function will then call itself to read the next chunk.
         // If an error occurs, it will retry after a delay.
+        // The stream reconnects for as long as the caller holds it, so its
+        // default budget is unbounded and its default ceiling is the feed
+        // refresh interval. A configured schedule overrides both.
+        const waits = new RetryWaits(resolveRetrySchedule(this.retry, {
+            maxDelayMs: feedRefreshIntervalSeconds * 1000,
+            timeoutMs: 0
+        }));
+
         (async () => {
-            let attempt = 0;
-            const baseDelayMs = 1000;
             while (!closed) {
                 try {
                     const headers = await this.getHeaders();
@@ -238,11 +253,13 @@ export class FetchConnection implements HttpConnection {
                     if (closed) {
                         return;
                     }
-                    const exponentialDelay = baseDelayMs * Math.pow(2, attempt);
-                    const jitter = Math.random() * baseDelayMs;
-                    const delay = Math.min(exponentialDelay + jitter, feedRefreshIntervalSeconds * 1000);
+                    const delay = waits.next();
+                    if (delay === null) {
+                        // A finite retry window has elapsed. The failure was
+                        // already reported through onError above.
+                        return;
+                    }
                     await sleep(delay);
-                    attempt++;
                 }
             }
         })();

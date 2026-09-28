@@ -5,6 +5,7 @@ import { ContentTypeGraph, ContentTypeJson, ContentTypeText, PostAccept, PostCon
 import { HttpError } from "./errors";
 import { parseFeedsResponse } from "./messageParsers";
 import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse } from "./messages";
+import { RetryOptions, RetrySchedule, RetryWaits, resolveRetrySchedule } from "./retry";
 import { serializeGraph } from "./serializer";
 
 export type SyncStatus = {
@@ -72,23 +73,31 @@ function httpError(response: HttpFailure | HttpRetry): Error {
         : new HttpError(response.error, response.statusCode, response.body);
 }
 
-function delay(timeSeconds: number): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-        setTimeout(resolve, timeSeconds * 1000);
+function delay(timeMs: number): Promise<void> {
+    return new Promise<void>(resolve => {
+        setTimeout(resolve, timeMs);
     });
 }
 
 export interface WebClientConfig {
     timeoutSeconds: number;
+    /**
+     * How long a failed request waits before it is retried, and how long the
+     * retrying may go on (issue #305). Defaults reproduce the schedule the
+     * client used when it was fixed: four attempts over roughly seven seconds.
+     */
+    retry?: RetryOptions;
 }
 
 export class WebClient {
     private saveContentTypes: string[] | null = null;
+    private readonly retrySchedule: RetrySchedule;
 
     constructor(
         private httpConnection: HttpConnection,
         private syncStatusNotifier: SyncStatusNotifier,
         private config: WebClientConfig) {
+        this.retrySchedule = resolveRetrySchedule(config.retry);
     }
 
     async login() {
@@ -160,9 +169,13 @@ export class WebClient {
         }
     }
 
+    /**
+     * Post, retrying a response the connection reported as transient. The
+     * waits, and the point at which the retrying gives up, come from the
+     * configured schedule rather than from constants here (issue #305).
+     */
     private async postWithLimitedRetry(path: string, contentType: PostContentType, accept: PostAccept, body: string) {
-        let timeoutSeconds = this.config.timeoutSeconds;
-        let retrySeconds = 1;
+        const waits = new RetryWaits(this.retrySchedule);
 
         while (true) {
             const response = await this.httpConnection.post(path, contentType, accept, body, this.config.timeoutSeconds);
@@ -173,15 +186,12 @@ export class WebClient {
                 throw httpError(response);
             }
             else {
-                if (retrySeconds <= 4) {
-                    Trace.warn(`Retrying in ${retrySeconds} seconds: ${response.error}`);
-                    await delay(retrySeconds + Math.random());
-                    timeoutSeconds = Math.min(timeoutSeconds * 2, 60);
-                    retrySeconds = retrySeconds * 2;
-                }
-                else {
+                const waitMs = waits.next();
+                if (waitMs === null) {
                     throw httpError(response);
                 }
+                Trace.warn(`Retrying in ${waitMs / 1000} seconds: ${response.error}`);
+                await delay(waitMs);
             }
         }
     }

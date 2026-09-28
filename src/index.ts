@@ -35,7 +35,16 @@ export {
   SaveMessage
 } from './http/messages';
 export { GraphSerializer, serializeGraph } from "./http/serializer";
-export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient } from "./http/web-client";
+export {
+  DEFAULT_RETRY_BACKOFF_MULTIPLIER,
+  DEFAULT_RETRY_INITIAL_DELAY_MS,
+  DEFAULT_RETRY_MAX_DELAY_MS,
+  DEFAULT_RETRY_TIMEOUT_MS,
+  RetryOptions,
+  RetrySchedule,
+  resolveRetrySchedule
+} from "./http/retry";
+export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient, WebClientConfig } from "./http/web-client";
 export * as driver from './indexeddb/driver';
 export { IndexedDBQueue } from './indexeddb/indexeddb-queue';
 export { DistributionDeniedError, DistributionDiagnostic, Fact, Jinaga, MakeObservable, Profile } from './jinaga';
