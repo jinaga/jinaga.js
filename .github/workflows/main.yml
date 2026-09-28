@@ -44,6 +44,8 @@ jobs:
   # build only when the pin moves; see "Conformance vectors" in CLAUDE.md.
   conformance:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/checkout@v7
