@@ -53,6 +53,20 @@ Every bug fix needs a regression test that fails before the change and passes af
 
 **A test earns its place when it can fail for a reason other than an edit to the text it asserts on.** An assertion that the README, a doc comment, or a `docs/` page holds a given phrase restates that text in a second file, so it fails when an author rewords it and passes when it is wrong. Test documentation by compiling its examples or by deriving the expectation from the code it documents. Where nothing derives, the documentation stands on review, and no test is added.
 
+## Conformance vectors
+
+[jinaga-spec](https://github.com/jinaga/jinaga-spec) states the well-formedness check and `splitBeforeFirstSuccessor` in Lean, proves them, and generates conformance vectors from the definitions. The `conformance` job in `main.yml` runs that repository's `ports/typescript/run-vectors.ts` against this checkout at a pinned jinaga-spec commit. The runner compares the split's head and tail, checks that `AuthorizationRules` refuses a rule exactly when its tail reads the given, and compares `wellFormedErrors` against each well-formedness vector.
+
+To run it locally, from a jinaga-spec checkout at the pinned commit, with `npm ci` done in this repository:
+
+```
+cd ports/typescript
+npm ci
+JINAGA_JS=/path/to/jinaga.js npm run vectors
+```
+
+To move the pin, replace the `ref` in `main.yml` with the new jinaga-spec commit and run the vectors locally at it. A failing vector means this library and the specification disagree: change the library, or report the disagreement against jinaga-spec. Never edit a vector to match.
+
 ## Working from issues
 
 Issues labelled `ready` are queued for automated work. `.claude/skills/night-shift-worker/SKILL.md` documents that protocol: how to tell whether an issue is already claimed or already fixed, how ordering is decided, when to stop and ask a question instead of guessing, how stacked pull requests are opened and registered, and how each run is recorded so the reasoning survives the container.

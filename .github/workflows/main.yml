@@ -37,3 +37,26 @@ jobs:
           npm ci
           npm run build
           npm test
+  # Runs jinaga-spec's conformance vectors against this checkout: the split
+  # (head, tail and the tailReadsGiven refusal) and the well-formedness check.
+  # jinaga-spec does not check out jinaga.js, so this job is the only automated
+  # check that the two agree. The spec is pinned so that its changes reach this
+  # build only when the pin moves; see "Conformance vectors" in CLAUDE.md.
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: jinaga/jinaga-spec
+          ref: b952bda09a635d90ae4e178dd82d6cf61859d937
+          path: jinaga-spec
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+      - name: Run conformance vectors
+        run: |
+          npm ci
+          cd jinaga-spec/ports/typescript
+          npm ci
+          JINAGA_JS="$GITHUB_WORKSPACE" npm run vectors
