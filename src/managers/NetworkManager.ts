@@ -298,6 +298,13 @@ export class NetworkManager {
     // reactive diagnostic when the feed's race resolves.
     private readonly feedsDelivered = new Set<string>();
     private readonly feedDataListeners = new Map<string, Set<() => void>>();
+    // Loading is reported from the set of load operations in flight, never from
+    // a flag kept beside them (issue #306): `true` on the transition from none
+    // to one, `false` on the return to none, so overlapping fetches produce one
+    // of each rather than one pair apiece.
+    private inFlightLoads = 0;
+    private readonly loadingListeners = new Set<(loading: boolean) => void>();
+    private readonly loadErrorListeners = new Set<(error: any) => void>();
 
     constructor(
         private readonly network: Network,
@@ -306,6 +313,79 @@ export class NetworkManager {
         feedRefreshIntervalSeconds?: number
     ) {
         this.feedRefreshIntervalSeconds = feedRefreshIntervalSeconds || 90; // Default to 90 seconds
+    }
+
+    /**
+     * Register a listener for the loading state (issue #306). It fires with
+     * `true` when the first load operation goes in flight and `false` when the
+     * last one settles, whether it succeeded or failed. Returns an unregister
+     * function.
+     */
+    onLoading(listener: (loading: boolean) => void): () => void {
+        this.loadingListeners.add(listener);
+        return () => {
+            this.loadingListeners.delete(listener);
+        };
+    }
+
+    /**
+     * Register a listener for a failed load (issue #306). The failure still
+     * propagates to the caller that asked for the load; this channel is what
+     * lets an application report it without wrapping every call site. Returns
+     * an unregister function.
+     */
+    onLoadError(listener: (error: any) => void): () => void {
+        this.loadErrorListeners.add(listener);
+        return () => {
+            this.loadErrorListeners.delete(listener);
+        };
+    }
+
+    /**
+     * Run `operation` as one load, so the loading state and a load failure are
+     * both reported from the operation itself rather than from bookkeeping a
+     * caller has to remember to keep.
+     */
+    private async trackLoad<T>(operation: () => Promise<T>): Promise<T> {
+        this.beginLoad();
+        try {
+            return await operation();
+        }
+        catch (e) {
+            this.notifyLoadError(e);
+            throw e;
+        }
+        finally {
+            this.endLoad();
+        }
+    }
+
+    private beginLoad() {
+        this.inFlightLoads++;
+        if (this.inFlightLoads === 1) {
+            this.notifyLoading(true);
+        }
+    }
+
+    private endLoad() {
+        this.inFlightLoads--;
+        if (this.inFlightLoads === 0) {
+            this.notifyLoading(false);
+        }
+    }
+
+    private notifyLoading(loading: boolean) {
+        // A throwing listener must not abort delivery to the others, nor bubble
+        // into the load it is reporting on.
+        for (const listener of this.loadingListeners) {
+            try { listener(loading); } catch (e) { Trace.error(e); }
+        }
+    }
+
+    private notifyLoadError(error: any) {
+        for (const listener of this.loadErrorListeners) {
+            try { listener(error); } catch (e) { Trace.error(e); }
+        }
     }
 
     /**
@@ -358,6 +438,10 @@ export class NetworkManager {
      * return value; `queryWithDiagnostics` (W8b) maps it to diagnostics.
      */
     async fetch(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
+        return await this.trackLoad(() => this.fetchFeeds(start, specification));
+    }
+
+    private async fetchFeeds(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
         const reducedSpecification = reduceSpecification(specification);
         const { feeds, decisions } = await this.getFeedsFromCache(start, reducedSpecification);
 
@@ -412,10 +496,17 @@ export class NetworkManager {
      * case where the caller believes they set a bound.
      */
     async subscribe(start: FactReference[], specification: Specification, feedTimeoutMs?: number): Promise<CachedFeeds> {
+        // A bound that is not a bound at all is the caller's mistake rather than
+        // a failed load, so it is refused before the load begins and reaches
+        // neither the loading state nor the load-error channel.
         if (feedTimeoutMs !== undefined && !(Number.isFinite(feedTimeoutMs) && feedTimeoutMs > 0)) {
             throw new ValidationError(
                 `A feed timeout must be a positive, finite number of milliseconds, but received ${feedTimeoutMs}.`);
         }
+        return await this.trackLoad(() => this.subscribeToFeeds(start, specification, feedTimeoutMs));
+    }
+
+    private async subscribeToFeeds(start: FactReference[], specification: Specification, feedTimeoutMs?: number): Promise<CachedFeeds> {
         const reducedSpecification = reduceSpecification(specification);
         const deadline: FeedDeadline | undefined = feedTimeoutMs === undefined
             ? undefined

@@ -148,6 +148,30 @@ export class FactManager {
         return this.networkManager.onFeedData(feed, listener);
     }
 
+    /**
+     * Register a listener for the loading state (issue #306). Returns an
+     * unregister function.
+     */
+    onLoading(listener: (loading: boolean) => void): () => void {
+        return this.networkManager.onLoading(listener);
+    }
+
+    /**
+     * Register a listener for a failed load (issue #306). Returns an unregister
+     * function.
+     */
+    onLoadError(listener: (error: any) => void): () => void {
+        return this.networkManager.onLoadError(listener);
+    }
+
+    /**
+     * Register a listener for the number of facts waiting to be sent (issue
+     * #306). Returns an unregister function.
+     */
+    onProgress(listener: (count: number) => void): () => void {
+        return this.fork.onProgress(listener);
+    }
+
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
         const loaded = await this.fork.load(references);
         Trace.counter("facts_loaded", loaded.length);

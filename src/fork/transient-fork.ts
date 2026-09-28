@@ -3,9 +3,12 @@ import { WebClient } from '../http/web-client';
 import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Storage } from '../storage';
 import { Trace } from "../util/trace";
 import { Fork } from "./fork";
+import { ProgressNotifier } from './progress';
 import { serializeLoad } from './serialize';
 
 export class TransientFork implements Fork {
+    private readonly progress = new ProgressNotifier();
+
     constructor(
         private storage: Storage,
         private client: WebClient
@@ -19,6 +22,13 @@ export class TransientFork implements Fork {
 
     async save(envelopes: FactEnvelope[]): Promise<void> {
         await this.client.save(envelopes);
+        // This fork holds no queue, so once a save returns nothing is waiting
+        // (issue #306).
+        this.progress.notify(0);
+    }
+
+    onProgress(listener: (count: number) => void): () => void {
+        return this.progress.onProgress(listener);
     }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {

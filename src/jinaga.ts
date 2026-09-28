@@ -42,15 +42,19 @@ export type Fact = { type: string } & HashMap;
 
 export class Jinaga {
     private errorHandlers: ((message: string) => void)[] = [];
-    private loadingHandlers: ((loading: boolean) => void)[] = [];
-    private progressHandlers: ((count: number) => void)[] = [];
     private distributionDiagnosticHandlers: ((diagnostic: DistributionDiagnostic) => void)[] = [];
 
     constructor(
         private authentication: Authentication,
         private factManager: FactManager,
         private syncStatusNotifier: SyncStatusNotifier | null
-    ) { }
+    ) {
+        // A load that fails reaches the same channel a failed `fact()` reaches
+        // (issue #306). The failure still propagates to whoever asked for the
+        // load; this is how an application hears about it without wrapping every
+        // query.
+        this.factManager.onLoadError(error => this.error(error));
+    }
 
     /**
      * Register an callback to receive error messages.
@@ -63,21 +67,32 @@ export class Jinaga {
 
     /**
      * Register a callback to receive loading state notifications.
-     * 
+     *
+     * The handler receives `true` when the first fetch of a feed goes in flight
+     * and `false` when the last one settles, whether it succeeded or failed, so
+     * overlapping fetches produce one `true` and one `false` rather than a pair
+     * apiece. A failed load also reaches {@link onError}.
+     *
      * @param handler A function to receive loading state
      */
     onLoading(handler: (loading: boolean) => void) {
-        this.loadingHandlers.push(handler);
+        this.factManager.onLoading(handler);
     }
 
     /**
      * Register a callback to receive outgoing fact count.
      * A count greater than 0 is an indication to the user that the application is saving.
-     * 
+     *
+     * The handler receives the length of the outgoing queue, read from the queue
+     * each time it changes: after facts are queued, and after a batch has been
+     * sent and removed. A client with no queue -- one saving straight through to
+     * the replicator, or one with no replicator at all -- reports 0 once each
+     * save completes.
+     *
      * @param handler A function to receive the number of facts in the queue
      */
     onProgress(handler: (queueCount: number) => void) {
-        this.progressHandlers.push(handler);
+        this.factManager.onProgress(handler);
     }
 
     onSyncStatus(handler: (status: SyncStatus) => void) {
