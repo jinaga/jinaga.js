@@ -189,6 +189,43 @@ export class Traversal<T> {
         return this.existentialCondition<U>(tupleDefinition, true);
     }
 
+    whereCurrent<U>(
+        this: Traversal<LabelOf<U>>,
+        successorType: FactConstructor<U>,
+        prior: (successor: LabelOf<U>) => LabelOf<U>
+    ): Traversal<LabelOf<U>> {
+        return this.whereNoSuccessor<U, U>(successorType, prior);
+    }
+
+    whereNotDeleted<E, D>(
+        this: Traversal<LabelOf<E>>,
+        deletion: FactConstructor<D>,
+        entity: (deletion: LabelOf<D>) => LabelOf<E>
+    ): Traversal<LabelOf<E>> {
+        return this.whereNoSuccessor<D, E>(deletion, entity);
+    }
+
+    whereNotDeletedOrRestored<E, D, R>(
+        this: Traversal<LabelOf<E>>,
+        deletion: FactConstructor<D>,
+        entity: (deletion: LabelOf<D>) => LabelOf<E>,
+        restoration: FactConstructor<R>,
+        deleted: (restoration: LabelOf<R>) => LabelOf<D>
+    ): Traversal<LabelOf<E>> {
+        return this.notExists<LabelOf<D>>(input =>
+            input.successors(deletion, entity)
+                .notExists<LabelOf<R>>(d => d.successors(restoration, deleted)));
+    }
+
+    private whereNoSuccessor<U, V>(
+        this: Traversal<LabelOf<V>>,
+        successorType: FactConstructor<U>,
+        role: (successor: LabelOf<U>) => LabelOf<V>
+    ): Traversal<LabelOf<V>> {
+        return this.notExists<LabelOf<U>>(input =>
+            input.successors(successorType, role));
+    }
+
     private existentialCondition<U>(tupleDefinition: (proxy: T) => Traversal<U>, exists: boolean) {
         const result = tupleDefinition(this.input);
         const existentialCondition: ExistentialCondition = {
