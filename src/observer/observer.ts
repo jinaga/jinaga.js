@@ -118,6 +118,23 @@ export class ObserverImpl<T> implements Observer<T> {
         tupleHash: string;
         path: string;
         handler: ResultAddedFunc<any>;
+        /**
+         * The rows whose projections this handler lives inside, root first,
+         * each as a `path|tupleHash` row key. The last entry is the row whose
+         * projection registered the handler, so a handler's lifetime is that
+         * row's lifetime and the entries before it are that row's ancestors.
+         *
+         * A handler is reachable only through the projection object the caller
+         * was handed, so when any row on this chain is removed the caller has
+         * torn that object down and the handler is dead. `notifyRemoved`
+         * withdraws it by testing this chain for membership, which reaches a
+         * descendant at any depth in one pass and needs no row identity
+         * beyond the `path|tupleHash` key the delivery path already computes.
+         *
+         * Empty for the root handler, which the observer itself owns and which
+         * therefore outlives every row.
+         */
+        ownerChain: string[];
     }[] = [];
     private specificationHash: string;
     /**
@@ -219,7 +236,8 @@ export class ObserverImpl<T> implements Observer<T> {
         this.addedHandlers.push({
             path: "",
             tupleHash: this.givenHash,
-            handler: resultAdded
+            handler: resultAdded,
+            ownerChain: []
         });
 
         // Identify the specification by its hash.
@@ -670,7 +688,6 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private async notifyAddedRow(pr: ProjectedResult, projection: Projection, path: string, displayPath: string, parentSubset: string[], resultSubset: string[], branch: ObserverBranch) {
-        const result: any = await this.injectObservers(pr, projection, path, resultSubset);
         // Identify the parent row by `parentSubset` (its result subset).
         // This must equal the `tupleHash` under which the parent's
         // injectObservers registered this path's handler — both hash the
@@ -680,6 +697,11 @@ export class ObserverImpl<T> implements Observer<T> {
 
         Trace.info(`[Observer] Processing result - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., Vote id: ${voteId.substring(0, 8)}..., Parent tuple hash: ${parentTupleHash.substring(0, 8)}...`);
 
+        // The lookup comes before injectObservers because the handler it finds
+        // carries the parent row's owner chain, which the handlers this row's
+        // own projection registers extend. It is a pure read, so hoisting it
+        // above the await only spares the buffering paths below the work of
+        // building a projection they discard.
         const addedHandler = this.addedHandlers.find(h => h.tupleHash === parentTupleHash && h.path === path);
         const resultAdded = addedHandler?.handler;
 
@@ -700,6 +722,12 @@ export class ObserverImpl<T> implements Observer<T> {
         } else {
             Trace.info(`[Observer] Handler found - Path: ${displayPath}`);
         }
+
+        // This row's own key, and the chain a handler registered by its
+        // projection belongs to: the parent row's chain with this row appended.
+        const rowProjectionHash = computeTupleSubsetHash(pr.tuple, resultSubset);
+        const rowChain = [...addedHandler.ownerChain, this.rowProjectionKey(path, rowProjectionHash)];
+        const result: any = await this.injectObservers(pr, projection, path, resultSubset, rowChain);
 
         // Cast the vote. First vote into an empty set means this is
         // the first time the user sees this row; subsequent votes
@@ -733,23 +761,27 @@ export class ObserverImpl<T> implements Observer<T> {
                 this.addsInFlight.add(rowHash);
                 try {
                     const functionMaybe = await promiseMaybe;
+                    // A remove notification that arrived while we were awaiting
+                    // the add handler withdrew this row's last vote. Clear the
+                    // marker either way, so it does not linger and incorrectly
+                    // affect a future re-add of the same row.
+                    const diedWhileInFlight = this.pendingRemovals.delete(rowHash);
                     if (functionMaybe instanceof Function) {
-                        if (this.pendingRemovals.delete(rowHash)) {
-                            // A remove notification arrived while we were
-                            // awaiting the add handler. Invoke the removal
-                            // immediately rather than storing it, so the item
-                            // is not permanently retained in the observed set.
+                        if (diedWhileInFlight) {
+                            // Invoke the removal immediately rather than storing
+                            // it, so the item is not permanently retained in the
+                            // observed set.
                             Trace.info(`[Observer] PENDING REMOVAL FOUND - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}..., invoking removal immediately`);
                             await functionMaybe();
                         } else {
                             this.removalsByRow.set(rowHash, functionMaybe);
                         }
-                    } else {
-                        // The handler returned no removal function (resolved to void).
-                        // A concurrent remove may still have set pendingRemovals during
-                        // the await. Clear the marker so it does not linger and
-                        // incorrectly affect a future re-add of the same row.
-                        this.pendingRemovals.delete(rowHash);
+                    }
+                    if (diedWhileInFlight) {
+                        // notifyRemoved could not withdraw this row's handlers
+                        // when it fired: the add handler that registers them
+                        // had not returned yet. Withdraw them now.
+                        this.tearDownRowHandlers(path, rowProjectionHash);
                     }
                 } finally {
                     // Whether the await resolved or rejected, this row is no
@@ -816,6 +848,10 @@ export class ObserverImpl<T> implements Observer<T> {
             const removal = this.removalsByRow.get(rowHash);
             this.votesByRow.delete(rowHash);
             this.removalsByRow.delete(rowHash);
+            // Withdraw the row's handlers before the removal callback runs, so
+            // that an add arriving while an asynchronous removal is in flight
+            // cannot still reach the projection that is being torn down.
+            this.tearDownRowHandlers(inverse.path, computeTupleSubsetHash(pr.tuple, inverse.resultSubset));
             if (removal !== undefined) {
                 Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, firing removal`);
                 await removal();
@@ -857,7 +893,53 @@ export class ObserverImpl<T> implements Observer<T> {
         }
     }
 
-    private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string, resultSubset: string[]): Promise<any> {
+    /**
+     * The key identifying one delivered row: the path it sits at, and the hash
+     * `injectObservers` computes for it over its `resultSubset`. Used to record
+     * which rows a handler's lifetime depends on; it is the same hash the
+     * delivery path already computes, not a second identity for a row.
+     */
+    private rowProjectionKey(path: string, projectionHash: string): string {
+        return `${path}|${projectionHash}`;
+    }
+
+    /**
+     * Withdraw everything registered by the projection of a row that has just
+     * been removed, at any depth. The caller has torn that projection down, so
+     * a handler it registered has no one to deliver to; leaving it in place
+     * makes `notifyAddedRow`'s `find` return it ahead of the handler a later
+     * delivery of the same row registers, and the child reaches the discarded
+     * projection while the live one never sees it.
+     *
+     * Descendants come out in the same pass: every handler carries the chain of
+     * rows whose projections enclose it, so membership of this row's key in
+     * that chain is the whole test.
+     */
+    private tearDownRowHandlers(path: string, projectionHash: string): void {
+        const rowKey = this.rowProjectionKey(path, projectionHash);
+        const dead = this.addedHandlers.filter(h => h.ownerChain.includes(rowKey));
+        if (dead.length > 0) {
+            this.addedHandlers = this.addedHandlers.filter(h => !h.ownerChain.includes(rowKey));
+            Trace.info(`[Observer] HANDLERS WITHDRAWN - Row: ${path || "(root)"}, Hash: ${projectionHash.substring(0, 8)}..., Withdrawn: ${dead.length}, Remaining: ${this.addedHandlers.length}`);
+        }
+
+        // Adds buffered for a handler that has just been withdrawn would
+        // otherwise replay into whatever registers at that key next.
+        for (const h of dead) {
+            this.pendingAddsByKey.delete(`${h.path}|${h.tupleHash}`);
+        }
+        // And adds buffered beneath this row whose handler never registered at
+        // all, which leave no entry above to find them by.
+        const childPrefix = path + ".";
+        for (const key of Array.from(this.pendingAddsByKey.keys())) {
+            const separator = key.lastIndexOf("|");
+            if (key.substring(separator + 1) === projectionHash && key.substring(0, separator).startsWith(childPrefix)) {
+                this.pendingAddsByKey.delete(key);
+            }
+        }
+    }
+
+    private async injectObservers(pr: ProjectedResult, projection: Projection, parentPath: string, resultSubset: string[], ownerChain: string[]): Promise<any> {
         const displayPath = parentPath || "(root)";
 
         if (projection.type === "composite") {
@@ -879,7 +961,8 @@ export class ObserverImpl<T> implements Observer<T> {
                             this.addedHandlers.push({
                                 tupleHash: tupleHash,
                                 path: path,
-                                handler: handler
+                                handler: handler,
+                                ownerChain: ownerChain
                             });
                             Trace.info(`[Observer] HANDLER REGISTERED - Path: ${path}, Tuple hash: ${tupleHash.substring(0, 8)}..., Total handlers: ${this.addedHandlers.length}`);
 

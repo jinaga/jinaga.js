@@ -233,6 +233,110 @@ describe("specification watch", () => {
         expect(offices).toEqual([j.hash(office), j.hash(closedOffice)]);
     });
 
+    it("delivers a child added to a reopened office on the live projection", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                        .notExists(officeClosed =>
+                            facts.ofType(OfficeReopened)
+                                .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                        )
+                )
+                .select(office => ({
+                    office,
+                    presidents: facts.ofType(President)
+                        .join(president => president.office, office)
+                }))
+        );
+
+        // One list per delivery of the office row. A row that is removed and
+        // delivered again produces a second list, and only that second list
+        // is still held by the caller.
+        const deliveries: string[][] = [];
+        const officeObserver = j.watch(specification, company, office => {
+            const presidents: string[] = [];
+            deliveries.push(presidents);
+            office.presidents.onAdded(president => {
+                presidents.push(j.hash(president));
+            });
+            return () => {};
+        });
+
+        await officeObserver.loaded();
+        expect(deliveries.length).toBe(1);
+
+        const officeClosed = await j.fact(new OfficeClosed(office, new Date()));
+        await j.fact(new OfficeReopened(officeClosed));
+        expect(deliveries.length).toBe(2);
+
+        const president = await j.fact(new President(office, new User("president")));
+
+        officeObserver.stop();
+
+        expect({ first: deliveries[0], second: deliveries[1] })
+            .toEqual({ first: [], second: [j.hash(president)] });
+    });
+
+    it("does not deliver to a nested handler of a removed office at any depth", async () => {
+        const specification = model.given(Company).match((company, facts) =>
+            facts.ofType(Office)
+                .join(office => office.company, company)
+                .notExists(office =>
+                    facts.ofType(OfficeClosed)
+                        .join(officeClosed => officeClosed.office, office)
+                        .notExists(officeClosed =>
+                            facts.ofType(OfficeReopened)
+                                .join(officeReopened => officeReopened.officeClosed, officeClosed)
+                        )
+                )
+                .select(office => ({
+                    office,
+                    managers: facts.ofType(Manager)
+                        .join(manager => manager.office, office)
+                        .select(manager => ({
+                            manager,
+                            names: facts.ofType(ManagerName)
+                                .join(managerName => managerName.manager, manager)
+                        }))
+                }))
+        );
+
+        const manager = await j.fact(new Manager(office, 1));
+
+        // Which delivery of the office row each manager name reached. The
+        // handler that receives it was registered two levels down, inside the
+        // manager projection of one particular office delivery.
+        const namesByDelivery: { delivery: number, value: string }[] = [];
+        let deliveries = 0;
+        const officeObserver = j.watch(specification, company, office => {
+            const delivery = ++deliveries;
+            office.managers.onAdded(managerProjection => {
+                managerProjection.names.onAdded(managerName => {
+                    namesByDelivery.push({ delivery, value: managerName.value });
+                });
+            });
+        });
+
+        await officeObserver.loaded();
+        expect(deliveries).toBe(1);
+
+        const officeClosed = await j.fact(new OfficeClosed(office, new Date()));
+        await j.fact(new OfficeReopened(officeClosed));
+        expect(deliveries).toBe(2);
+
+        await j.fact(new ManagerName(manager, "Ada", []));
+        await officeObserver.processed();
+
+        officeObserver.stop();
+
+        // The first delivery's projection was discarded when the office was
+        // closed, so nothing registered under it may be invoked afterwards.
+        expect(namesByDelivery.filter(n => n.delivery === 1)).toEqual([]);
+    });
+
     it("should notify child results when added", async () => {
         const specification = model.given(Company).match((company, facts) =>
             facts.ofType(Office)
