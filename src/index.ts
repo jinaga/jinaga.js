@@ -79,7 +79,7 @@ export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, Fac
 export { UserIdentity } from './user-identity';
 export { FeedTimeoutError, ValidationError } from './util/errors';
 export { delay } from './util/promise';
-export { ConsoleTracer, NoOpTracer, Trace, Tracer } from './util/trace';
+export { ConsoleTracer, NoOpTracer, Trace, TraceLevel, Tracer } from './util/trace';
 
 // Optional WebSocket graph client and network
 export { WsGraphNetwork } from './ws/wsGraphNetwork';

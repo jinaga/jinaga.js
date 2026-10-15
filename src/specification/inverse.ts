@@ -164,7 +164,7 @@ function computeInverses(specification: Specification): SpecificationInverse[] {
     const givenNames = specification.given.map(g => g.label.name).join(', ');
     const matchCount = specification.matches.length;
     
-    Trace.info(`[InvertSpec] START - Given types: [${givenTypes}], Given names: [${givenNames}], Matches: ${matchCount}`);
+    Trace.debug(`[InvertSpec] START - Given types: [${givenTypes}], Given names: [${givenNames}], Matches: ${matchCount}`);
     
     // Detect disconnected specifications before inversion
     detectDisconnectedSpecification(specification);
@@ -188,19 +188,19 @@ function computeInverses(specification: Specification): SpecificationInverse[] {
         projection: specification.projection
     };
     
-    Trace.info(`[InvertSpec] Inverting matches - Labels: ${labels.length}, Context path: "${context.path}"`);
+    Trace.debug(`[InvertSpec] Inverting matches - Labels: ${labels.length}, Context path: "${context.path}"`);
     const inverses: SpecificationInverse[] = invertMatches(matches, labels, context);
-    Trace.info(`[InvertSpec] Match inverses generated: ${inverses.length}`);
+    Trace.debug(`[InvertSpec] Match inverses generated: ${inverses.length}`);
     
-    Trace.info(`[InvertSpec] Inverting projection - Projection type: ${specification.projection.type}`);
+    Trace.debug(`[InvertSpec] Inverting projection - Projection type: ${specification.projection.type}`);
     const projectionInverses: SpecificationInverse[] = invertProjection(matches, context);
-    Trace.info(`[InvertSpec] Projection inverses generated: ${projectionInverses.length}`);
+    Trace.debug(`[InvertSpec] Projection inverses generated: ${projectionInverses.length}`);
     
     // Check if self-inverse is needed and create it
     const selfInverse = createSelfInverse(specification, context);
     const selfInverseCount = selfInverse ? 1 : 0;
     if (selfInverse) {
-        Trace.info(`[InvertSpec] Self-inverse created for given type: ${specification.given[0].label.type}`);
+        Trace.debug(`[InvertSpec] Self-inverse created for given type: ${specification.given[0].label.type}`);
     }
     
     const totalInverses = inverses.length + projectionInverses.length + selfInverseCount;
@@ -213,7 +213,7 @@ function computeInverses(specification: Specification): SpecificationInverse[] {
 
     const deduplicatedInverses = deduplicateInverses(allInverses);
 
-    Trace.info(`[InvertSpec] Deduplication - Before: ${allInverses.length}, After: ${deduplicatedInverses.length}`);
+    Trace.debug(`[InvertSpec] Deduplication - Before: ${allInverses.length}, After: ${deduplicatedInverses.length}`);
 
     return deduplicatedInverses;
 }
@@ -243,7 +243,7 @@ function deduplicateInverses(inverses: SpecificationInverse[]): SpecificationInv
         if (!seen.has(key)) {
             seen.set(key, inverse);
         } else {
-            Trace.info(`[InvertSpec] Skipping duplicate inverse - Spec key: ${specKey.substring(0, 8)}..., Operation: ${inverse.operation}`);
+            Trace.debug(`[InvertSpec] Skipping duplicate inverse - Spec key: ${specKey.substring(0, 8)}..., Operation: ${inverse.operation}`);
         }
     }
     
@@ -541,7 +541,7 @@ function invertProjection(matches: Match[], context: InverterContext): Specifica
     // Produce inverses for all collections in the projection.
     if (context.projection.type === "composite") {
         const specComponents = context.projection.components.filter(c => c.type === "specification");
-        Trace.info(`[InvertProjection] Processing composite projection - Path: "${context.path}", Spec components: ${specComponents.length}/${context.projection.components.length}`);
+        Trace.debug(`[InvertProjection] Processing composite projection - Path: "${context.path}", Spec components: ${specComponents.length}/${context.projection.components.length}`);
         
         for (const component of context.projection.components) {
             if (component.type === "specification") {
@@ -549,7 +549,7 @@ function invertProjection(matches: Match[], context: InverterContext): Specifica
                 const componentLabels = component.matches.map(m => m.unknown);
                 const childPath = context.path + "." + component.name;
                 
-                Trace.info(`[InvertProjection] NESTED SPEC - Component: ${component.name}, Path: "${childPath}", Component matches: ${component.matches.length}, Component labels: ${componentLabels.length}`);
+                Trace.debug(`[InvertProjection] NESTED SPEC - Component: ${component.name}, Path: "${childPath}", Component matches: ${component.matches.length}, Component labels: ${componentLabels.length}`);
                 
                 const childContext: InverterContext = {
                     ...context,
@@ -559,19 +559,19 @@ function invertProjection(matches: Match[], context: InverterContext): Specifica
                     projection: component.projection
                 };
                 
-                Trace.info(`[InvertProjection] Child context - Path: "${childPath}", Parent subset: [${childContext.parentSubset.join(', ')}], Result subset: [${childContext.resultSubset.join(', ')}]`);
+                Trace.debug(`[InvertProjection] Child context - Path: "${childPath}", Parent subset: [${childContext.parentSubset.join(', ')}], Result subset: [${childContext.resultSubset.join(', ')}]`);
                 
                 const matchInverses = invertMatches(componentMatches, componentLabels, childContext);
-                Trace.info(`[InvertProjection] Generated ${matchInverses.length} match inverses for nested spec "${component.name}"`);
+                Trace.debug(`[InvertProjection] Generated ${matchInverses.length} match inverses for nested spec "${component.name}"`);
                 
                 const projectionInverses = invertProjection(componentMatches, childContext);
-                Trace.info(`[InvertProjection] Generated ${projectionInverses.length} projection inverses for nested spec "${component.name}"`);
+                Trace.debug(`[InvertProjection] Generated ${projectionInverses.length} projection inverses for nested spec "${component.name}"`);
                 
                 inverses.push(...matchInverses, ...projectionInverses);
             }
         }
     } else {
-        Trace.info(`[InvertProjection] Non-composite projection - Path: "${context.path}", Type: ${context.projection.type}`);
+        Trace.debug(`[InvertProjection] Non-composite projection - Path: "${context.path}", Type: ${context.projection.type}`);
     }
 
     return inverses;
@@ -683,7 +683,7 @@ function createSelfInverse(specification: Specification, context: InverterContex
     // Safety check: Only support single given fact
     // Multiple givens are too complex and risk infinite loops
     if (specification.given.length !== 1) {
-        Trace.info(`[SelfInverse] Skipping - Multiple givens (${specification.given.length})`);
+        Trace.debug(`[SelfInverse] Skipping - Multiple givens (${specification.given.length})`);
         return null;
     }
     
@@ -694,7 +694,7 @@ function createSelfInverse(specification: Specification, context: InverterContex
     // Safety check: No complex conditions on given
     // Complex conditions could cause unexpected behavior
     if (given.conditions.length > 0) {
-        Trace.info(`[SelfInverse] Skipping - Given has conditions (${given.conditions.length})`);
+        Trace.debug(`[SelfInverse] Skipping - Given has conditions (${given.conditions.length})`);
         return null;
     }
     
@@ -710,6 +710,6 @@ function createSelfInverse(specification: Specification, context: InverterContex
         resultSubset: context.resultSubset
     };
     
-    Trace.info(`[SelfInverse] Created for given: ${givenType} (${givenName})`);
+    Trace.debug(`[SelfInverse] Created for given: ${givenType} (${givenName})`);
     return selfInverse;
 }
