@@ -199,9 +199,9 @@ export class ObservableSource {
                                 .map(c => c.name)
                                 .join(', ')
                             : '';
-                        Trace.info(`[ObservableSource] NESTED SPEC DETECTED - Spec ${specCount}/${listenersBySpecification.size}, Key: ${specificationKey.substring(0, 8)}..., Nested components: [${nestedSpecNames}], Listeners: ${listenerCount}`);
+                        Trace.debug(`[ObservableSource] NESTED SPEC DETECTED - Spec ${specCount}/${listenersBySpecification.size}, Key: ${specificationKey.substring(0, 8)}..., Nested components: [${nestedSpecNames}], Listeners: ${listenerCount}`);
                     } else {
-                        Trace.info(`[ObservableSource] Processing spec ${specCount}/${listenersBySpecification.size} - Key: ${specificationKey.substring(0, 8)}..., Listeners: ${listenerCount}`);
+                        Trace.debug(`[ObservableSource] Processing spec ${specCount}/${listenersBySpecification.size} - Key: ${specificationKey.substring(0, 8)}..., Listeners: ${listenerCount}`);
                     }
                     
                     const givenReference = {
@@ -214,17 +214,17 @@ export class ObservableSource {
                     const readDuration = Date.now() - readStart;
                     
                     if (hasNestedSpecs) {
-                        Trace.info(`[ObservableSource] Store read for NESTED spec - Results: ${results.length}, Duration: ${readDuration}ms`);
+                        Trace.debug(`[ObservableSource] Store read for NESTED spec - Results: ${results.length}, Duration: ${readDuration}ms`);
                         // Log nested result structure if present
                         if (results.length > 0 && specification.projection.type === "composite") {
                             const nestedResults = specification.projection.components
                                 .filter(c => c.type === "specification")
                                 .map(c => `${c.name}: ${results[0].result[c.name]?.length || 0}`)
                                 .join(', ');
-                            Trace.info(`[ObservableSource] Nested results structure: {${nestedResults}}`);
+                            Trace.debug(`[ObservableSource] Nested results structure: {${nestedResults}}`);
                         }
                     } else {
-                        Trace.info(`[ObservableSource] Store read completed - Results: ${results.length}, Duration: ${readDuration}ms`);
+                        Trace.debug(`[ObservableSource] Store read completed - Results: ${results.length}, Duration: ${readDuration}ms`);
                     }
                     
                     // Create a snapshot of listeners to avoid modification during iteration
@@ -262,14 +262,14 @@ export class ObservableSource {
                         this.notifyListener(specificationListener, results, i, listenerSnapshot.length, specificationKey, fact.type, hasNestedSpecs)));
                     totalNotifications += outcomes.filter(completed => completed).length;
                 } else {
-                    Trace.info(`[ObservableSource] Skipping spec ${specCount}/${listenersBySpecification.size} - No listeners or null group`);
+                    Trace.debug(`[ObservableSource] Skipping spec ${specCount}/${listenersBySpecification.size} - No listeners or null group`);
                 }
             }
             
             const totalDuration = Date.now() - startTime;
             Trace.info(`[ObservableSource] NOTIFY COMPLETE - Fact: ${fact.hash.substring(0, 8)}..., Type: ${fact.type}, Specs processed: ${specCount} (${nestedSpecCount} nested), Total notifications: ${totalNotifications}, Duration: ${totalDuration}ms`);
         } else {
-            Trace.info(`[ObservableSource] No listeners for fact type: ${fact.type} - Available types: [${Array.from(this.listenersByTypeAndSpecification.keys()).join(', ')}]`);
+            Trace.debug(`[ObservableSource] No listeners for fact type: ${fact.type} - Available types: [${Array.from(this.listenersByTypeAndSpecification.keys()).join(', ')}]`);
         }
     }
 
@@ -290,7 +290,7 @@ export class ObservableSource {
     ): Promise<boolean> {
         const label = `${index + 1}/${count}`;
         const notifyStart = Date.now();
-        Trace.info(`[ObservableSource] Calling listener ${label} - Nested: ${hasNestedSpecs}`);
+        Trace.debug(`[ObservableSource] Calling listener ${label} - Nested: ${hasNestedSpecs}`);
         Trace.counter("observable_listener_started", 1);
         this.listenerDispatchDepth++;
         try {
@@ -322,7 +322,7 @@ export class ObservableSource {
             if (notifyDuration > 100) {
                 Trace.warn(`[ObservableSource] SLOW notification - Listener ${label}, Duration: ${notifyDuration}ms, Nested: ${hasNestedSpecs}`);
             } else {
-                Trace.info(`[ObservableSource] Listener completed - ${label}, Duration: ${notifyDuration}ms`);
+                Trace.debug(`[ObservableSource] Listener completed - ${label}, Duration: ${notifyDuration}ms`);
             }
             return true;
         }
