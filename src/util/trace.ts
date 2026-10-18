@@ -46,6 +46,14 @@ export class NoOpTracer implements Tracer {
     }
 }
 
+/**
+ * Writes to the console. `Trace` forwards `counter`, `dependency` and `metric`
+ * unconditionally, because an exporter needs every call however quiet the
+ * console is, so this tracer renders each of those at a level of its own and
+ * prints it only while `Trace` admits that level. It asks `Trace.enabled`
+ * rather than holding a threshold or a rank table, so the comparison lives in
+ * one place.
+ */
 export class ConsoleTracer implements Tracer {
     debug(message: string): void {
         console.debug(message);
@@ -68,17 +76,26 @@ export class ConsoleTracer implements Tracer {
             const end = new Date().getTime();
             const duration = end - start;
     
-            // Log the dependency
-            console.log(`Dependency: ${name} (${data}) took ${duration}ms`);
+            // One line per operation, so a per-event summary: the info tier.
+            if (Trace.enabled("info")) {
+                console.log(`Dependency: ${name} (${data}) took ${duration}ms`);
+            }
         }
     }
 
     metric(message: string, measurements: { [key: string]: number }): void {
-        console.log(`Metric: ${message}`, measurements);
+        // A per-event measurement, so the same tier as a dependency.
+        if (Trace.enabled("info")) {
+            console.log(`Metric: ${message}`, measurements);
+        }
     }
     
     counter(name: string, value: number): void {
-        console.log(`Counter: ${name} = ${value}`);
+        // Each call is one increment, so on a console it is per-item detail.
+        // It summarizes anything only once an exporter adds the increments up.
+        if (Trace.enabled("debug")) {
+            console.debug(`Counter: ${name} = ${value}`);
+        }
     }
 }
 
@@ -120,7 +137,14 @@ export class Trace {
         return Trace.level;
     }
 
-    private static enabled(level: TraceLevel): boolean {
+    /**
+     * Whether a message at this level reaches the tracer. This is the only
+     * comparison against the threshold in the library. It is public so that a
+     * tracer can render a call `Trace` forwards unconditionally at a level of
+     * its own, as `ConsoleTracer` does for `counter`, `dependency` and
+     * `metric`, without storing a second threshold.
+     */
+    static enabled(level: TraceLevel): boolean {
         return levelRank[level] >= levelRank[Trace.level];
     }
 
