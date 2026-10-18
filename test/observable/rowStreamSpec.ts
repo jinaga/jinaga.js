@@ -125,19 +125,32 @@ describe("watchRows", () => {
         // put in the wrong order, and this pins the order inside.
         await j.fact(new Task(project, "anything"));
 
+        // The two lines sit at different levels -- LISTENER ADDED is
+        // per-listener detail (issue #331), READING CURRENT ROWS is the
+        // stream's own aggregate -- so record both and lower the threshold
+        // far enough to see them. The order is what is under test, not the
+        // level either line is written at.
         const lines: string[] = [];
+        const record = (message: string) => {
+            if (message.includes("LISTENER ADDED") || message.includes("READING CURRENT ROWS")) {
+                lines.push(message);
+            }
+        };
         Trace.configure(new class extends NoOpTracer implements Tracer {
+            debug(message: string): void {
+                record(message);
+            }
             info(message: string): void {
-                if (message.includes("LISTENER ADDED") || message.includes("READING CURRENT ROWS")) {
-                    lines.push(message);
-                }
+                record(message);
             }
         }());
+        Trace.setLevel("debug");
         let stream;
         try {
             stream = await j.watchRows(outstandingTasks, project);
         }
         finally {
+            Trace.setLevel("info");
             Trace.configure(new NoOpTracer());
         }
 
