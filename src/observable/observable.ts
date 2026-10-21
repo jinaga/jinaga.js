@@ -82,6 +82,14 @@ export class ObservableSource {
         await Promise.all(saved.map(envelope => this.notifyFactSaved(envelope.fact)));
     }
 
+    /**
+     * Traced at `debug` throughout. Every line here describes one listener, or
+     * one map entry created on its behalf, which is the per-item detail
+     * `debug` carries; there is no aggregate to keep at `info`, because
+     * registering a listener has no items to summarize. At `info` this made a
+     * reconnect write lines in proportion to the subscriptions it
+     * re-established (issue #331). The same holds for removal, below.
+     */
     public addSpecificationListener(specification: Specification, onResult: (results: ProjectedResult[]) => Promise<void>): SpecificationListener {
         if (specification.given.length !== 1) {
             throw new Error("Specification must have exactly one given fact");
@@ -92,13 +100,13 @@ export class ObservableSource {
         const hasNestedSpecs = specification.projection.type === "composite" &&
             specification.projection.components.some(c => c.type === "specification");
 
-        Trace.info(`[ObservableSource] ADD_LISTENER REQUEST - Type: ${givenType}, Name: ${givenName}, Spec key: ${specificationKey.substring(0, 8)}..., Has nested specs: ${hasNestedSpecs}`);
+        Trace.debug(`[ObservableSource] ADD_LISTENER REQUEST - Type: ${givenType}, Name: ${givenName}, Spec key: ${specificationKey.substring(0, 8)}..., Has nested specs: ${hasNestedSpecs}`);
 
         let listenersBySpecification = this.listenersByTypeAndSpecification.get(givenType);
         if (!listenersBySpecification) {
             listenersBySpecification = new Map();
             this.listenersByTypeAndSpecification.set(givenType, listenersBySpecification);
-            Trace.info(`[ObservableSource] Created new listener map for type: ${givenType}`);
+            Trace.debug(`[ObservableSource] Created new listener map for type: ${givenType}`);
         }
 
         let listeners = listenersBySpecification.get(specificationKey);
@@ -108,7 +116,7 @@ export class ObservableSource {
                 listeners: []
             };
             listenersBySpecification.set(specificationKey, listeners);
-            Trace.info(`[ObservableSource] Created new listener group for spec: ${specificationKey.substring(0, 8)}... (type: ${givenType})`);
+            Trace.debug(`[ObservableSource] Created new listener group for spec: ${specificationKey.substring(0, 8)}... (type: ${givenType})`);
         }
 
         const specificationListener = {
@@ -120,7 +128,7 @@ export class ObservableSource {
         const totalListeners = Array.from(this.listenersByTypeAndSpecification.values())
             .reduce((total, map) => total + Array.from(map.values()).reduce((sum, l) => sum + l.listeners.length, 0), 0);
         
-        Trace.info(`[ObservableSource] LISTENER ADDED - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Count for spec: ${listenerCount}, Total listeners: ${totalListeners}, Nested specs: ${hasNestedSpecs}`);
+        Trace.debug(`[ObservableSource] LISTENER ADDED - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Count for spec: ${listenerCount}, Total listeners: ${totalListeners}, Nested specs: ${hasNestedSpecs}`);
         
         return specificationListener;
     }
@@ -136,7 +144,7 @@ export class ObservableSource {
                 const beforeCount = listeners.listeners.length;
                 const index = listeners.listeners.indexOf(specificationListener);
                 if (index >= 0) {
-                    Trace.info(`[ObservableSource] REMOVING listener - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Index: ${index}, Before count: ${beforeCount}`);
+                    Trace.debug(`[ObservableSource] REMOVING listener - Spec: ${specificationKey.substring(0, 8)}..., Type: ${givenType}, Index: ${index}, Before count: ${beforeCount}`);
                     
                     listeners.listeners.splice(index, 1);
                     found = true;
@@ -144,15 +152,15 @@ export class ObservableSource {
                     removedFromType = givenType;
                     
                     const afterCount = listeners.listeners.length;
-                    Trace.info(`[ObservableSource] REMOVED listener - After count: ${afterCount}`);
+                    Trace.debug(`[ObservableSource] REMOVED listener - After count: ${afterCount}`);
 
                     if (listeners.listeners.length === 0) {
                         listenersBySpecification.delete(specificationKey);
-                        Trace.info(`[ObservableSource] Deleted empty spec group: ${specificationKey.substring(0, 8)}...`);
+                        Trace.debug(`[ObservableSource] Deleted empty spec group: ${specificationKey.substring(0, 8)}...`);
 
                         if (listenersBySpecification.size === 0) {
                             this.listenersByTypeAndSpecification.delete(givenType);
-                            Trace.info(`[ObservableSource] Deleted empty type group: ${givenType}`);
+                            Trace.debug(`[ObservableSource] Deleted empty type group: ${givenType}`);
                         }
                     }
                     break;
@@ -166,7 +174,7 @@ export class ObservableSource {
         
         const duration = Date.now() - startTime;
         if (found) {
-            Trace.info(`[ObservableSource] Listener removal completed - Spec: ${removedFromSpec.substring(0, 8)}..., Type: ${removedFromType}, Total remaining: ${totalListeners}, Duration: ${duration}ms`);
+            Trace.debug(`[ObservableSource] Listener removal completed - Spec: ${removedFromSpec.substring(0, 8)}..., Type: ${removedFromType}, Total remaining: ${totalListeners}, Duration: ${duration}ms`);
         } else {
             Trace.warn(`[ObservableSource] Listener NOT FOUND during removal - Total listeners: ${totalListeners}, Duration: ${duration}ms`);
         }
@@ -177,7 +185,11 @@ export class ObservableSource {
         const listenersBySpecification = this.listenersByTypeAndSpecification.get(fact.type);
         
         if (listenersBySpecification) {
-            Trace.info(`[ObservableSource] NOTIFY START - Fact type: ${fact.type}, Hash: ${fact.hash.substring(0, 8)}..., Spec groups: ${listenersBySpecification.size}`);
+            // COMPLETE carries everything START carries and the outcome
+            // besides, so reporting both at `info` reported one notification
+            // twice. START stays at `debug`, where it still marks a
+            // notification that began and never completed (issue #331).
+            Trace.debug(`[ObservableSource] NOTIFY START - Fact type: ${fact.type}, Hash: ${fact.hash.substring(0, 8)}..., Spec groups: ${listenersBySpecification.size}`);
             
             let totalNotifications = 0;
             let specCount = 0;
