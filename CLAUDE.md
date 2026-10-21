@@ -41,6 +41,18 @@ Most of the hard bugs in this repository concentrate here, and they interact:
 
 This engine backs both `JinagaTest` and the real replicator (jinaga-server). They are intended to stay in lock-step, but that has not always held in practice. **A passing `JinagaTest` run is not sufficient evidence that a distribution or feed-decomposition fix works.** Test at the level of the failing mechanism, not only end to end.
 
+## Replicas are peers: design for local truth
+
+Do not reason about Jinaga as a client and a server. Every replica is a peer. A client with no connection must be fully functional, and a replica may exchange facts with several others along branching, redundant paths, many hops apart. A design that needs a global order of facts, an authoritative answer ("what the server returns"), or a position some replica must assign before a fact counts, does not fit, however natural it feels for one client talking to one replicator.
+
+- **A result is exact for the replica's own graph.** That graph is always a consistent state, because a fact never arrives before its predecessors. `query`, `watch` and the row streams owe exactness against it, nothing more and nothing less.
+- **Positions belong to a replica.** A bookmark is a cursor into one peer's history for one feed. It is not a time shared across replicas.
+- **Negation over a local graph is provisional.** No witness here is not no witness anywhere. No protocol between replicas makes a `notExists` settled without coordination, so do not try to make it settled in the transport.
+- **Put premises in the model.** When an action must not run on a provisional negation, the fact it writes references the facts it acted on, so a concurrent contradiction is visible in history and a specification can find it. When a decision must be unique, name the principal who makes it with an authorization rule.
+- **Prove what holds in every topology:** exactness for the local graph, independence of arrival order, feeds that carry every relevant fact, and convergence once replicas hold the same facts. Say plainly what cannot be proven, rather than offering a guarantee that needs a central replica.
+
+Axiom A5 in `docs/analysis/specification-invariants.md` assumes replicators deployed in a hierarchy. Distribution relies on it today. Do not build new reasoning on it.
+
 ## Writing tests
 
 Full guidance is in `contributing.md`. The rule that matters most:
