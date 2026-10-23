@@ -26,7 +26,7 @@ export interface LoadResponse {
  * The replicator's per-feed distribution decision, returned on `POST /feeds`
  * (issue #207). `feed` is the URL-safe feed hash. `decision: 'reactive'`
  * corresponds to the authorized-via-intersection case: the feed is denied for
- * the current user right now but will self-heal once the authorizing fact
+ * the current user right now but can self-heal if an authorizing fact
  * arrives, so it must never be treated as a hard failure. `code` and the
  * human-readable `reason` describe why the feed was denied or made reactive.
  */

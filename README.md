@@ -56,7 +56,7 @@ the feed (`no-matching-rule`), or the spec is narrower than its rule
 This makes a mis-authored spec or distribution rule observable at the call
 site instead of masquerading as "no matching data". A one-shot query has no
 "later" to wait for, unlike `j.subscribe()`, whose feed stays open and
-self-heals when the authorizing fact arrives.
+self-heals if an authorizing fact arrives.
 
 Unchanged: `reactive` decisions (the subscription race) and non-structural
 denials (`principal-excluded`, `not-authenticated`) still return an empty

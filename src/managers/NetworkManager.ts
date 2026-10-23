@@ -242,7 +242,7 @@ class LoadBatch {
  * Both fields are cached under the same specification key. Feed hashes are
  * deterministic in the specification, but decisions depend on the requester's
  * authorization state and can change over time — most notably a `reactive`
- * feed becoming `authorized` once the authorizing fact arrives. Caching the
+ * feed becoming `authorized` if an authorizing fact arrives. Caching the
  * decision keeps a non-self-healing denial (`denied`) reported on repeated
  * calls, which is correct; the only staleness is a `reactive` decision that
  * should stop being reported once data begins to flow. Clearing a diagnostic
