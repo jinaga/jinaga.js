@@ -225,12 +225,12 @@ export class Jinaga {
         // Fail loudly, by default, for a structural denial (a missing rule or a
         // spec narrowed past its rule) that provably never self-heals. A
         // one-shot `query` has no "later" to wait for — unlike `subscribe`, whose
-        // feed stays open and delivers the moment the authorizing fact arrives —
+        // feed stays open and delivers if an authorizing fact arrives —
         // so a silent empty result is indistinguishable from "no data" and hides
         // the mis-authored spec or distribution rule. This matches the write
         // path's exception-on-authorization-failure contract (issue
         // jinaga-server#179). A `reactive` decision (the subscription race) is
-        // NEVER thrown for — it self-heals — and neither are non-structural
+        // NEVER thrown for — it can self-heal — and neither are non-structural
         // denials (`principal-excluded` / `not-authenticated`), which are auth
         // states rather than authoring errors. Callers that want to inspect any
         // decision without throwing use `queryWithDiagnostics`.
@@ -314,8 +314,8 @@ export class Jinaga {
      * in a single call — without a `POST /feeds/explain` endpoint.
      *
      * Unlike `query`, this never throws on a distribution decision. A `reactive`
-     * decision (the subscription race — the current user is not yet authorized
-     * but the feed will self-heal when the authorizing fact arrives) is reported
+     * decision (the current user is not authorized now, and the feed can
+     * self-heal if an authorizing fact arrives) is reported
      * as a diagnostic, not an error; the results stay silently empty. Against an
      * old replicator that omits decisions, `diagnostics` is always empty.
      *

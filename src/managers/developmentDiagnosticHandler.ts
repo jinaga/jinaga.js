@@ -71,7 +71,7 @@ function formatMessage(diagnostic: DistributionDiagnostic): string {
     }
     if (diagnostic.reactive) {
         return `[jinaga] Specification is pending authorization for the current user; ` +
-            `it will populate when the authorizing fact arrives.\n${spec}`;
+            `it will populate if an authorizing fact arrives.\n${spec}`;
     }
     switch (diagnostic.code) {
         case 'no-matching-rule':

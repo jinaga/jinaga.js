@@ -343,7 +343,7 @@ class RowObserver<U> {
      * reports `reactive` and delivers nothing (issue #279), or is refused
      * outright by the in-process engine. With it the authorization pattern
      * becomes part of the specification, so the stream starts empty and the
-     * inverse engine delivers the backlog when the authorizing fact arrives.
+     * inverse engine delivers the backlog if an authorizing fact arrives.
      *
      * Each rule that applies becomes its own branch, and the branches are ORed:
      * a row authorized by any of them is delivered. A row authorized by more

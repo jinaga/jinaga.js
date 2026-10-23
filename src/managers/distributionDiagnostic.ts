@@ -6,11 +6,14 @@ import { FeedDecision } from "../http/messages";
  * that the replicator marked `reactive` or `denied`; authorized feeds produce
  * none.
  *
- * The single load-bearing field is `reactive`. When `true`, the decision is the
- * subscription race — the feed is denied for the current user *right now* but
- * will self-heal once the authorizing fact arrives — and must NEVER be treated
- * as fatal. When `false`, the denial is structural (a missing or narrowed-past
- * rule, or a principal the rule excludes) and will not self-heal on its own.
+ * The single load-bearing field is `reactive`. When `true`, a rule's shape
+ * matches the feed but the current user does not satisfy it *right now*. The
+ * feed stays open and delivers if an authorizing fact arrives, so it must NEVER
+ * be treated as fatal. Nothing in the decision predicts that such a fact will
+ * arrive. The subscription race, where this client has saved the authorizing
+ * fact and the replicator has not yet received it, is the case it exists for.
+ * When `false`, the denial is structural (a missing or narrowed-past rule, or a
+ * principal the rule excludes) and will not self-heal on its own.
  *
  * It is therefore *not* a copy of `decision`: a replicator that reports
  * `decision: "reactive"` for a structurally denied feed yields `reactive:
@@ -29,7 +32,7 @@ export interface DistributionDiagnostic {
     specification: string;            // describeSpecification(...)
     decision: 'reactive' | 'denied';
     code?: DistributionDenialCode;
-    reactive: boolean;                // true => will self-heal; NEVER treat as fatal
+    reactive: boolean;                // true => can self-heal; NEVER treat as fatal
     reason: string;
     /**
      * The feed hash this diagnostic pertains to (issue #207 W9). Lets a
@@ -72,7 +75,7 @@ function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
  * `reactive` is derived from the *code* rather than copied from the decision.
  * A replicator can report `decision: "reactive"` alongside a structural code
  * (observed on jinaga-replicator 3.7.7, issue #242), and the two disagree: the
- * decision predicts the feed will self-heal, while the code says the shapes
+ * decision says the feed can self-heal, while the code says the shapes
  * never matched, which no arriving fact can change. The code is the narrower,
  * checkable claim, so it wins. `decision` still carries what the replicator
  * actually said, for a consumer that wants to see it.
