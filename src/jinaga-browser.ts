@@ -17,13 +17,14 @@ import { IndexedDBStore } from "./indexeddb/indexeddb-store";
 import { Jinaga } from "./jinaga";
 import { createDevelopmentDiagnosticHandler } from "./managers/developmentDiagnosticHandler";
 import { FactManager } from "./managers/factManager";
+import { connectFactsAdded, isFactsAddedSource } from "./managers/factsAddedBridge";
 import { Network, NetworkNoOp } from "./managers/NetworkManager";
 import { MemoryStore } from "./memory/memory-store";
 import { ObservableSource } from "./observable/observable";
 import { PurgeConditions } from "./purge/purgeConditions";
 import { validatePurgeSpecification } from "./purge/validate";
 import { Specification } from "./specification/specification";
-import { FactEnvelope, Storage } from "./storage";
+import { Storage } from "./storage";
 import { WsGraphNetwork } from "./ws/wsGraphNetwork";
 
 export type JinagaBrowserConfig = {
@@ -109,12 +110,11 @@ export class JinagaBrowser {
         const purgeConditions = createPurgeConditions(config);
         const factManager = new FactManager(fork, observableSource, store, network, purgeConditions, config.feedRefreshIntervalSeconds);
 
-        // Phase 3.4: Connect observer notification bridge if network supports it
-        if (network && 'setFactsAddedListener' in network && typeof network.setFactsAddedListener === 'function') {
-            (network as any).setFactsAddedListener(async (envelopes: FactEnvelope[]) => {
-                // Notify FactManager about facts added via WebSocket
-                (factManager as any).factsAdded(envelopes);
-            });
+        // Connect the observer notification bridge if the network pushes facts
+        // of its own accord. The bridge awaits the notification, so the
+        // source's own ordering holds (issue #347).
+        if (isFactsAddedSource(network)) {
+            connectFactsAdded(network, factManager);
         }
 
         const developmentMode = config.developmentMode === true;
