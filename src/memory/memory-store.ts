@@ -27,7 +27,7 @@ export function getPredecessors(fact: FactRecord | null, role: string) {
     }
 }
 
-function loadAll(references: FactReference[], source: FactEnvelope[], target: FactEnvelope[]) {
+function loadAll(references: FactReference[], source: readonly FactEnvelope[], target: FactEnvelope[]) {
     references.forEach(reference => {
         const predicate = factEnvelopeEquals(reference);
         if (!target.some(predicate)) {
@@ -44,20 +44,20 @@ function loadAll(references: FactReference[], source: FactEnvelope[], target: Fa
 }
 
 export class MemoryStore implements Storage {
-    private factEnvelopes: TimestampedFactEnvelope[] = [];
+    // Held as an immutable array. An operation that awaits between accesses
+    // captures this reference once and reads the graph it names for the rest of
+    // its run, so a save that lands in one of its gaps cannot move the graph
+    // underneath it. `read` awaits at every step of a specification, and a read
+    // that saw part of one graph and part of the next returned rows that
+    // belonged to neither (issue #346). Every change below therefore publishes
+    // a new array rather than mutating the one it replaces.
+    private factEnvelopes: readonly TimestampedFactEnvelope[] = [];
     private bookmarksByFeed: { [feed: string]: string } = {};
-    private runner: SpecificationRunner;
     private mruDateBySpecificationHash: { [specificationHash: string]: Date } = {};
     private timeProvider: TimeProvider;
 
     constructor(timeProvider?: TimeProvider) {
         this.timeProvider = timeProvider ?? (() => new Date());
-        this.runner = new SpecificationRunner({
-            getPredecessors: this.getPredecessors.bind(this),
-            getSuccessors: this.getSuccessors.bind(this),
-            findFact: this.findFact.bind(this),
-            hydrate: this.hydrate.bind(this)
-        });
     }
 
     close(): Promise<void> {
@@ -67,32 +67,43 @@ export class MemoryStore implements Storage {
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
         const added: FactEnvelope[] = [];
         const timestamp = this.timeProvider();
+        // Built up in a copy that nothing else can see, then published in one
+        // assignment. A read already in flight holds the previous array and
+        // goes on reading that one.
+        const next: TimestampedFactEnvelope[] = [ ...this.factEnvelopes ];
         for (const envelope of envelopes) {
             const isFact = factReferenceEquals(envelope.fact);
-            const existing = this.factEnvelopes.find(e => isFact(e.fact));
-            if (!existing) {
+            const existingIndex = next.findIndex(e => isFact(e.fact));
+            if (existingIndex < 0) {
                 // Add timestamp to new facts
                 const timestampedEnvelope: TimestampedFactEnvelope = {
                     fact: { ...envelope.fact, timestamp },
                     signatures: envelope.signatures
                 };
-                this.factEnvelopes.push(timestampedEnvelope);
+                next.push(timestampedEnvelope);
                 added.push(envelope);
             }
             else {
                 // Preserve original timestamp for duplicates
+                const existing = next[existingIndex];
                 const newSignatures = envelope.signatures.filter(s =>
                     !existing.signatures.some(s2 => s2.publicKey === s.publicKey));
                 if (newSignatures.length > 0) {
-                    existing.signatures = [ ...existing.signatures, ...newSignatures ];
+                    // Replaced rather than mutated: the envelope object is the
+                    // one a read in flight is holding.
+                    next[existingIndex] = {
+                        fact: existing.fact,
+                        signatures: [ ...existing.signatures, ...newSignatures ]
+                    };
                 }
             }
         }
+        this.factEnvelopes = next;
         return Promise.resolve(added);
     }
 
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
-        return this.runner.read(start, specification);
+        return this.runnerFor(this.factEnvelopes).read(start, specification);
     }
 
     async feed(feed: Specification, start: FactReference[], _bookmark: string): Promise<FactFeed> {
@@ -103,7 +114,7 @@ export class MemoryStore implements Storage {
         // For now, feeds ignore bookmarks and always return empty bookmark values.
 
         // Compute projected results using the same engine as application reads
-        const results: ProjectedResult[] = await this.runner.read(start, feed);
+        const results: ProjectedResult[] = await this.runnerFor(this.factEnvelopes).read(start, feed);
 
         // Map each projected result to a tuple of fact references
         const tuples: FactTuple[] = results.map(result => {
@@ -116,8 +127,9 @@ export class MemoryStore implements Storage {
     }
 
     whichExist(references: FactReference[]): Promise<FactReference[]> {
+        const factEnvelopes = this.factEnvelopes;
         const existing = references.filter(reference => {
-            return this.factEnvelopes.some(factEnvelopeEquals(reference));
+            return factEnvelopes.some(factEnvelopeEquals(reference));
         });
         return Promise.resolve(existing);
     }
@@ -136,20 +148,22 @@ export class MemoryStore implements Storage {
     purgeDescendants(purgeRoot: FactReference, triggers: FactReference[]): Promise<number> {
         // Remove all facts that are descendants of the purge root
         // and not a trigger or an ancestor of a trigger.
+        const factEnvelopes = this.factEnvelopes;
         const triggersAndTheirAncestors: FactReference[] = [...triggers];
         for (const trigger of triggers) {
-            const triggerEnvelope = this.factEnvelopes.find(factEnvelopeEquals(trigger));
+            const triggerEnvelope = factEnvelopes.find(factEnvelopeEquals(trigger));
             if (triggerEnvelope) {
-                this.addAllAncestors(triggerEnvelope.fact, triggersAndTheirAncestors);
+                this.addAllAncestors(factEnvelopes, triggerEnvelope.fact, triggersAndTheirAncestors);
             }
         }
-        const startingCount = this.factEnvelopes.length;
-        this.factEnvelopes = this.factEnvelopes.filter(e => {
-            const ancestors: FactReference[] = this.ancestorsOf(e.fact);
+        const startingCount = factEnvelopes.length;
+        const remaining = factEnvelopes.filter(e => {
+            const ancestors: FactReference[] = this.ancestorsOf(factEnvelopes, e.fact);
             return !ancestors.some(factReferenceEquals(purgeRoot)) ||
                 triggersAndTheirAncestors.some(factReferenceEquals(e.fact));
         });
-        const endingCount = this.factEnvelopes.length;
+        this.factEnvelopes = remaining;
+        const endingCount = remaining.length;
         return Promise.resolve(startingCount - endingCount);
     }
 
@@ -173,13 +187,26 @@ export class MemoryStore implements Storage {
         return Promise.resolve();
     }
 
-    private findFact(reference: FactReference): Promise<FactRecord | null> {
-        const envelope = this.factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
+    // Bound to one array rather than to the store, so every step of the
+    // specification it runs reads the same graph.
+    private runnerFor(factEnvelopes: readonly TimestampedFactEnvelope[]): SpecificationRunner {
+        return new SpecificationRunner({
+            getPredecessors: (reference, name, predecessorType) =>
+                this.getPredecessors(factEnvelopes, reference, name, predecessorType),
+            getSuccessors: (reference, name, successorType) =>
+                this.getSuccessors(factEnvelopes, reference, name, successorType),
+            findFact: reference => this.findFact(factEnvelopes, reference),
+            hydrate: reference => this.hydrate(factEnvelopes, reference)
+        });
+    }
+
+    private findFact(factEnvelopes: readonly TimestampedFactEnvelope[], reference: FactReference): Promise<FactRecord | null> {
+        const envelope = factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
         return Promise.resolve(envelope?.fact ?? null);
     }
 
-    private getPredecessors(reference: FactReference, name: string, predecessorType: string): Promise<FactReference[]> {
-        const record = this.factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
+    private getPredecessors(factEnvelopes: readonly TimestampedFactEnvelope[], reference: FactReference, name: string, predecessorType: string): Promise<FactReference[]> {
+        const record = factEnvelopes.find(factEnvelopeEquals(reference)) ?? null;
         if (record === null) {
             // Return empty array instead of throwing when fact is not found
             // This allows specifications to handle unpersisted given facts gracefully
@@ -190,36 +217,36 @@ export class MemoryStore implements Storage {
         return Promise.resolve(matching);
     }
     
-    private getSuccessors(reference: FactReference, name: string, successorType: string): Promise<FactReference[]> {
-        const successors = this.factEnvelopes.filter(record => record.fact.type === successorType &&
+    private getSuccessors(factEnvelopes: readonly TimestampedFactEnvelope[], reference: FactReference, name: string, successorType: string): Promise<FactReference[]> {
+        const successors = factEnvelopes.filter(record => record.fact.type === successorType &&
             getPredecessors(record.fact, name).some(factReferenceEquals(reference)))
             .map(e => e.fact);
         return Promise.resolve(successors);
     }
 
-    private ancestorsOf(fact: FactRecord): FactReference[] {
+    private ancestorsOf(factEnvelopes: readonly TimestampedFactEnvelope[], fact: FactRecord): FactReference[] {
         const ancestors: FactReference[] = [];
-        this.addAllAncestors(fact, ancestors);
+        this.addAllAncestors(factEnvelopes, fact, ancestors);
         return ancestors;
     }
 
-    private addAllAncestors(fact: FactRecord, ancestors: FactReference[]) {
+    private addAllAncestors(factEnvelopes: readonly TimestampedFactEnvelope[], fact: FactRecord, ancestors: FactReference[]) {
         for (const role in fact.predecessors) {
             const predecessors = getPredecessors(fact, role);
             predecessors.forEach(predecessor => {
                 if (!ancestors.some(factReferenceEquals(predecessor))) {
                     ancestors.push(predecessor);
-                    const predecessorRecord = this.factEnvelopes.find(factEnvelopeEquals(predecessor));
+                    const predecessorRecord = factEnvelopes.find(factEnvelopeEquals(predecessor));
                     if (predecessorRecord) {
-                        this.addAllAncestors(predecessorRecord.fact, ancestors);
+                        this.addAllAncestors(factEnvelopes, predecessorRecord.fact, ancestors);
                     }
                 }
             });
         }
     }
 
-    private hydrate(reference: FactReference) {
-        const fact = hydrateFromTree([reference], this.factEnvelopes.map(e => e.fact));
+    private hydrate(factEnvelopes: readonly TimestampedFactEnvelope[], reference: FactReference) {
+        const fact = hydrateFromTree([reference], factEnvelopes.map(e => e.fact));
         if (fact.length === 0) {
             return Promise.resolve(undefined);
         }

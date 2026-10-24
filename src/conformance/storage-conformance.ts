@@ -65,17 +65,77 @@ function buildFixture() {
         officeClosed: closed
     };
 
-    const dehydration = new Dehydration();
-    for (const fact of [creator, company, office, closedOffice, closed, anotherClosedOffice, anotherClosed, reopened]) {
-        dehydration.dehydrate(fact);
-    }
-    const envelopes = dehydration.factRecords().map(fact => <FactEnvelope>({
-        fact,
-        signatures: []
-    }));
+    const envelopes = envelopesOf([creator, company, office, closedOffice, closed, anotherClosedOffice, anotherClosed, reopened]);
 
     return { company, office, closedOffice, anotherClosedOffice, envelopes };
 }
+
+/**
+ * Dehydrates facts into envelopes, including the predecessors each one reaches.
+ */
+function envelopesOf(facts: HashMap[]): FactEnvelope[] {
+    const dehydration = new Dehydration();
+    for (const fact of facts) {
+        dehydration.dehydrate(fact);
+    }
+    return dehydration.factRecords().map(fact => <FactEnvelope>({
+        fact,
+        signatures: []
+    }));
+}
+
+/**
+ * The graph for one interleaving case.
+ *
+ * `initial` is a root that already holds one `A` and one `B`. `concurrent` adds
+ * a second of each. `a` and `b` are independent collections under the root, so
+ * a read's row count is the product of the two: one row on the graph in
+ * `initial`, and four once `concurrent` has landed. Two rows is the count that
+ * belongs to neither graph, which is what a read that saw `A1` before the save
+ * and both `B`s after it returns.
+ *
+ * Each case gets its own root, named by `caseName`, so no case reads a graph an
+ * earlier case has already written to.
+ */
+function buildInterleavingCase(caseName: string) {
+    const creator: HashMap = {
+        type: "Jinaga.User",
+        publicKey: "--- PUBLIC KEY GOES HERE ---"
+    };
+    const root: HashMap = {
+        type: "Root",
+        creator,
+        identifier: caseName
+    };
+    const firstA: HashMap = { type: "A", root, identifier: "A1" };
+    const firstB: HashMap = { type: "B", root, identifier: "B1" };
+    const secondA: HashMap = { type: "A", root, identifier: "A2" };
+    const secondB: HashMap = { type: "B", root, identifier: "B2" };
+
+    return {
+        root,
+        initial: envelopesOf([creator, root, firstA, firstB]),
+        concurrent: envelopesOf([secondA, secondB])
+    };
+}
+
+/**
+ * Separates the two graphs an interleaving case holds. Projects both labels so
+ * a failure names the rows the read returned rather than only how many.
+ */
+const interleavingSpecification = `
+    (r: Root) {
+        a: A [
+            a->root: Root = r
+        ]
+        b: B [
+            b->root: Root = r
+        ]
+    } => {
+        a = a
+        b = b
+    }
+`;
 
 /**
  * Runs the storage conformance suite against an implementation of `Storage`.
@@ -341,6 +401,47 @@ export function describeStorageConformance(
             expect(results.length).toBe(1);
             expect(results[0].result.type).toBe("Office");
             expect(results[0].result.identifier).toBe("AnotherClosedOffice");
+        });
+
+        it("should return the graph as it stood when the read began, while a save lands during the read", async () => {
+            if (!store) {
+                throw new Error("No store under test: `createStore` did not return one.");
+            }
+
+            const parser = new SpecificationParser(interleavingSpecification);
+            parser.skipWhitespace();
+            const specification = parser.parseSpecification();
+
+            // One delay is not evidence. A read interleaves with a save only at
+            // the awaits it has yet to reach when the save lands, so a single
+            // delay can miss every gap that fails. Walking the save across a
+            // range of delays puts it in each of them in turn.
+            //
+            // These are microtask yields rather than timeouts: the interleaving
+            // is the subject of the test, so where the save lands has to be
+            // exact, which a timeout cannot be.
+            for (let microtasks = 0; microtasks <= 40; microtasks++) {
+                const graph = buildInterleavingCase(`interleaving-${microtasks}`);
+                await store.save(graph.initial);
+                const given = [ dehydrateReference(graph.root) ];
+
+                const reading = store.read(given, specification);
+                for (let yielded = 0; yielded < microtasks; yielded++) {
+                    await Promise.resolve();
+                }
+                const saving = store.save(graph.concurrent);
+
+                const results = await reading;
+                await saving;
+
+                const rows = results.map(r => `${r.result.a.identifier} ${r.result.b.identifier}`);
+                expect(rows).toEqual([ "A1 B1" ]);
+
+                // The concurrent save did land, so the case was a real
+                // interleaving rather than a read that had already finished.
+                const afterwards = await store.read(given, specification);
+                expect(afterwards.length).toBe(4);
+            }
         });
     });
 }
