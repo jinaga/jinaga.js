@@ -1,6 +1,6 @@
 import { HttpError } from "../http/errors";
 import { Network } from "../managers/NetworkManager";
-import { Storage, FactEnvelope, FactReference } from "../storage";
+import { Storage, FactEnvelope, FactReference, saveAndNotify } from "../storage";
 import { Trace } from "../util/trace";
 
 export class Subscriber {
@@ -81,13 +81,14 @@ export class Subscriber {
       const unknownFactReferences: FactReference[] = factReferences.filter(fr => !knownFactReferences.includes(fr));
       if (unknownFactReferences.length > 0) {
         const graph = await this.network.load(unknownFactReferences);
-        await this.store.save(graph);
-        if (graph.length > 0) {
-          Trace.counter("facts_saved", graph.length);
-        }
+        // The graph is a predecessor closure, so it carries facts this store
+        // already holds; notify only what the save reports as added
+        // (issue #337). The bookmark advances afterwards, and it advances
+        // whether or not anything was added: a response of entirely known
+        // facts is still a response this subscription has processed.
+        await saveAndNotify(this.store, graph, added => this.notifyFactsAdded(added));
         await this.store.saveBookmark(this.feed, nextBookmark);
         this.bookmark = nextBookmark;
-        await this.notifyFactsAdded(graph);
       } else {
         // Treat empty-reference responses as bookmark advance from WS graph transport
         if (nextBookmark && nextBookmark !== this.bookmark) {

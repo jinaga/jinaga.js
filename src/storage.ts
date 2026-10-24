@@ -1,6 +1,7 @@
 import { computeObjectHash } from "./fact/hash";
 import { Specification } from "./specification/specification";
 import { findIndex } from './util/fn';
+import { Trace } from "./util/trace";
 
 export type FactReference = {
     type: string;
@@ -105,4 +106,47 @@ export function validateGiven(start: FactReference[], specification: Specificati
             throw new Error(`The type of start fact ${i} (${start[i].type}) does not match the type of input ${i} (${specification.given[i].label.type})`);
         }
     }
+}
+
+/**
+ * Save a graph and notify exactly the envelopes the store reports as added.
+ *
+ * A graph is a predecessor closure: `/load` and a graph stream both answer with
+ * a fact together with everything it depends on, so a graph routinely carries
+ * facts the store already holds. Every inverse is derived on the premise that
+ * its given was just inserted and therefore has no successors, which is what
+ * lets `simplifyMatch` drop the successor conditions of the level it solves
+ * (`src/specification/inverse.ts`; axiom A3 in
+ * `docs/analysis/specification-invariants.md`). Notify a fact the store already
+ * held and that premise is false: the fact's "add" inverse runs without the
+ * `notExists` conditions that excluded it, and a listener is offered a row its
+ * own store rejects.
+ *
+ * `Storage.save` reports which envelopes it actually added, and that report is
+ * what carries the premise. This is the one place that turns a saved graph into
+ * a notification; every caller that saves a graph goes through here, and none
+ * reaches its notification another way.
+ *
+ * @param onSaveStarted Called with the save still in flight, for a caller that
+ * must let something else wait on persistence alone rather than on persistence
+ * and notification together.
+ */
+export async function saveAndNotify(
+    store: Storage,
+    envelopes: FactEnvelope[],
+    notifyFactsAdded: ((added: FactEnvelope[]) => Promise<void>) | undefined,
+    onSaveStarted?: (saving: Promise<FactEnvelope[]>) => void
+): Promise<FactEnvelope[]> {
+    const saving = store.save(envelopes);
+    if (onSaveStarted) {
+        onSaveStarted(saving);
+    }
+    const added = await saving;
+    if (added.length > 0) {
+        Trace.counter("facts_saved", added.length);
+        if (notifyFactsAdded) {
+            await notifyFactsAdded(added);
+        }
+    }
+    return added;
 }
