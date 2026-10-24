@@ -4,6 +4,7 @@ import {
     User, buildModel
 } from "@src";
 import { Network } from "@src";
+import { seededRandom, shuffled } from "../utils/seeded-random";
 
 // Issue #336: a row stream's output was the history of inverse firings, not the
 // history of the result. An inverse said "add" or "remove" and the stream
@@ -277,29 +278,6 @@ describe("a row stream re-checks its candidates", () => {
         stream.stop();
     });
 });
-
-/**
- * A deterministic generator, so a failure is reproducible from the seed rather
- * than from the run. xorshift32.
- */
-function seededRandom(seed: number): () => number {
-    let state = seed >>> 0 || 1;
-    return () => {
-        state ^= state << 13; state >>>= 0;
-        state ^= state >>> 17;
-        state ^= state << 5; state >>>= 0;
-        return state / 0x100000000;
-    };
-}
-
-function shuffled<T>(items: T[], random: () => number): T[] {
-    const copy = [...items];
-    for (let i = copy.length - 1; i > 0; i--) {
-        const j = Math.floor(random() * (i + 1));
-        [copy[i], copy[j]] = [copy[j], copy[i]];
-    }
-    return copy;
-}
 
 describe("a row stream over notExists nested to depth three", () => {
     /**
