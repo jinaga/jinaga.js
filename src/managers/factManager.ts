@@ -195,6 +195,19 @@ export class FactManager {
         return observer;
     }
 
+    /**
+     * Notify observers of facts that arrived from somewhere other than
+     * `save` -- a WebSocket graph stream, for one -- and run the purge step
+     * for them.
+     *
+     * The returned promise is the caller's ordering signal: await it before
+     * reading the next batch, or that batch lands while this one is still
+     * being notified.
+     */
+    notifyFactsAdded(envelopes: FactEnvelope[]): Promise<void> {
+        return this.factsAdded(envelopes);
+    }
+
     private async factsAdded(factsAdded: FactEnvelope[]): Promise<void> {
         await this.observableSource.notify(factsAdded);
         await this.purgeManager.triggerPurge(factsAdded);

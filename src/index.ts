@@ -51,6 +51,7 @@ export { DistributionDeniedError, DistributionDiagnostic, Fact, Jinaga, MakeObse
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { FactManager } from "./managers/factManager";
+export { FactsAddedSource, FactsAddedTarget, connectFactsAdded, isFactsAddedSource } from "./managers/factsAddedBridge";
 export { Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
 export { QueueProcessor, Saver } from './managers/QueueProcessor';
 export { MemoryStore } from './memory/memory-store';
