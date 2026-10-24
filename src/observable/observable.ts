@@ -1,12 +1,35 @@
 import { describeSpecification } from '../specification/description';
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, ProjectedResult, Storage } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from '../storage';
 import { computeStringHash } from '../util/encoding';
 import { TIMED_OUT, withTimeout } from '../util/promise';
 import { Trace } from '../util/trace';
 
 export interface SpecificationListener {
     onResult(results: ProjectedResult[]): Promise<void>;
+}
+
+/**
+ * A listener registered for one inverse read with a subscription's own givens.
+ *
+ * Structurally identical to `SpecificationListener`, and deliberately a
+ * separate name: the two live in separate registries, so
+ * `removeInverseListener` looks only here and `removeSpecificationListener`
+ * only there.
+ */
+export interface InverseListener {
+    onResult(results: ProjectedResult[]): Promise<void>;
+}
+
+/**
+ * Identifies the read that serves a group of inverse listeners. Two listeners
+ * share a read exactly when they registered the same inverse against the same
+ * given references, in the same order; the order is positional, so it is not
+ * normalized.
+ */
+function inverseGroupKey(inverse: Specification, givenRefs: FactReference[]): string {
+    const givens = givenRefs.map(r => `${r.type}:${r.hash}`).join(",");
+    return computeStringHash(`${describeSpecification(inverse, 0)}\n${givens}`);
 }
 
 /**
@@ -36,6 +59,16 @@ export class ObservableSource {
     private listenersByTypeAndSpecification: Map<string, Map<string, {
         specification: Specification,
         listeners: SpecificationListener[]
+    }>> = new Map();
+    /**
+     * Keyed by the pin's type, then by `inverseGroupKey`. The pin is the
+     * inverse's last given (`__f`), so the type a group waits for is the type
+     * of the unknown that inverse binds the new fact to.
+     */
+    private inverseListenersByTypeAndGroup: Map<string, Map<string, {
+        inverse: Specification,
+        givenRefs: FactReference[],
+        listeners: InverseListener[]
     }>> = new Map();
     private readonly listenerTimeoutMs: number;
     private listenerDispatchDepth = 0;
@@ -180,6 +213,92 @@ export class ObservableSource {
         }
     }
 
+    /**
+     * Register a listener for one inverse produced by `candidateInverses`.
+     *
+     * The inverse's last given is the pin, `__f`, and its type is the type the
+     * listener waits for. When a fact of that type is saved, the inverse is
+     * read with `[...givenRefs, newFactRef]` and every resulting row is passed
+     * to `onResult`.
+     *
+     * That is the whole difference from `addSpecificationListener`, which
+     * reads an inverse from the new fact alone and so requires every given to
+     * be reachable from it. Binding the subscription's givens in the read
+     * instead lets a specification whose given is joined only inside an
+     * existential condition be listened to, and leaves the consumer nothing to
+     * filter: every row the read returns already belongs to these givens.
+     *
+     * Traced at `debug` for the reason registration is there for specification
+     * listeners (issue #331): each line describes one listener, and
+     * registering one has no aggregate to summarize.
+     */
+    public addInverseListener(inverse: Specification, givenRefs: FactReference[], onResult: (results: ProjectedResult[]) => Promise<void>): InverseListener {
+        if (inverse.given.length === 0) {
+            throw new Error("An inverse must declare at least one given, the pin");
+        }
+        if (givenRefs.length !== inverse.given.length - 1) {
+            throw new Error(`The inverse declares ${inverse.given.length - 1} given(s) besides the pin, but ${givenRefs.length} reference(s) were supplied`);
+        }
+        const pinType = inverse.given[inverse.given.length - 1].label.type;
+        const groupKey = inverseGroupKey(inverse, givenRefs);
+
+        Trace.debug(`[ObservableSource] ADD_INVERSE_LISTENER REQUEST - Pin type: ${pinType}, Group: ${groupKey.substring(0, 8)}..., Givens: ${givenRefs.length}`);
+
+        let groupsByKey = this.inverseListenersByTypeAndGroup.get(pinType);
+        if (!groupsByKey) {
+            groupsByKey = new Map();
+            this.inverseListenersByTypeAndGroup.set(pinType, groupsByKey);
+            Trace.debug(`[ObservableSource] Created new inverse listener map for pin type: ${pinType}`);
+        }
+
+        let group = groupsByKey.get(groupKey);
+        if (!group) {
+            group = {
+                inverse,
+                // Copied: the group key was computed from these references, so
+                // a caller that later mutated its own array would leave the
+                // key and the read disagreeing.
+                givenRefs: [...givenRefs],
+                listeners: []
+            };
+            groupsByKey.set(groupKey, group);
+            Trace.debug(`[ObservableSource] Created new inverse listener group: ${groupKey.substring(0, 8)}... (pin type: ${pinType})`);
+        }
+
+        const inverseListener = {
+            onResult
+        };
+        group.listeners.push(inverseListener);
+
+        Trace.debug(`[ObservableSource] INVERSE LISTENER ADDED - Group: ${groupKey.substring(0, 8)}..., Pin type: ${pinType}, Count for group: ${group.listeners.length}`);
+
+        return inverseListener;
+    }
+
+    public removeInverseListener(inverseListener: InverseListener) {
+        for (const [pinType, groupsByKey] of this.inverseListenersByTypeAndGroup) {
+            for (const [groupKey, group] of groupsByKey) {
+                const index = group.listeners.indexOf(inverseListener);
+                if (index >= 0) {
+                    group.listeners.splice(index, 1);
+                    Trace.debug(`[ObservableSource] REMOVED inverse listener - Group: ${groupKey.substring(0, 8)}..., Pin type: ${pinType}, After count: ${group.listeners.length}`);
+
+                    if (group.listeners.length === 0) {
+                        groupsByKey.delete(groupKey);
+                        Trace.debug(`[ObservableSource] Deleted empty inverse group: ${groupKey.substring(0, 8)}...`);
+
+                        if (groupsByKey.size === 0) {
+                            this.inverseListenersByTypeAndGroup.delete(pinType);
+                            Trace.debug(`[ObservableSource] Deleted empty inverse pin type group: ${pinType}`);
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+        Trace.warn("[ObservableSource] Inverse listener NOT FOUND during removal");
+    }
+
     private async notifyFactSaved(fact: FactRecord) {
         const startTime = Date.now();
         const listenersBySpecification = this.listenersByTypeAndSpecification.get(fact.type);
@@ -281,7 +400,48 @@ export class ObservableSource {
             const totalDuration = Date.now() - startTime;
             Trace.info(`[ObservableSource] NOTIFY COMPLETE - Fact: ${fact.hash.substring(0, 8)}..., Type: ${fact.type}, Specs processed: ${specCount} (${nestedSpecCount} nested), Total notifications: ${totalNotifications}, Duration: ${totalDuration}ms`);
         } else {
-            Trace.debug(`[ObservableSource] No listeners for fact type: ${fact.type} - Available types: [${Array.from(this.listenersByTypeAndSpecification.keys()).join(', ')}]`);
+            Trace.debug(`[ObservableSource] No specification listeners for fact type: ${fact.type} - Available types: [${Array.from(this.listenersByTypeAndSpecification.keys()).join(', ')}]`);
+        }
+
+        await this.notifyInverseListeners(fact);
+    }
+
+    /**
+     * The inverse-listener half of a notification. Groups whose pin type
+     * matches the saved fact are read once each, with the group's own given
+     * references ahead of the new fact, and dispatched through
+     * `notifyListener` so the timeout and the re-entrancy accounting are the
+     * same as for a specification listener.
+     *
+     * Serial over groups and concurrent within one, matching the
+     * specification loop above: the listeners in a group are independent
+     * subscriptions to the same read, so the model records no edge between
+     * them to sequence by, while a wedged listener in one group delays the
+     * groups after it by up to `listenerTimeoutMs`.
+     */
+    private async notifyInverseListeners(fact: FactRecord) {
+        const groupsByKey = this.inverseListenersByTypeAndGroup.get(fact.type);
+        if (!groupsByKey) {
+            return;
+        }
+
+        const factReference: FactReference = {
+            type: fact.type,
+            hash: fact.hash
+        };
+
+        for (const [groupKey, group] of groupsByKey) {
+            if (group.listeners.length === 0) {
+                continue;
+            }
+
+            const readStart = Date.now();
+            const results = await this.store.read([...group.givenRefs, factReference], group.inverse);
+            Trace.debug(`[ObservableSource] Inverse read completed - Group: ${groupKey.substring(0, 8)}..., Results: ${results.length}, Duration: ${Date.now() - readStart}ms`);
+
+            const listenerSnapshot = [...group.listeners];
+            await Promise.all(listenerSnapshot.map((inverseListener, i) =>
+                this.notifyListener(inverseListener, results, i, listenerSnapshot.length, groupKey, fact.type, false)));
         }
     }
 
