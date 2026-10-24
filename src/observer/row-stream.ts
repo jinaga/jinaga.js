@@ -1,11 +1,12 @@
 import { FeedDecision } from "../http/messages";
 import { FactManager } from "../managers/factManager";
-import { SpecificationListener } from "../observable/observable";
-import { SpecificationInverse, invertSpecification } from "../specification/inverse";
+import { InverseListener } from "../observable/observable";
+import { candidateInverses } from "../specification/inverse-candidates";
 import { SpecificationRow, rowIdentityLabels, toRow, toRows } from "../specification/row";
 import { Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
 import { Trace } from "../util/trace";
+import { givenCandidateInverse, recheckCandidates } from "./recheck";
 
 /**
  * One row entering or leaving a specification's result set.
@@ -215,7 +216,7 @@ class RowQueue<U> {
  */
 interface RowBranch {
     specification: Specification;
-    listeners: SpecificationListener[];
+    listeners: InverseListener[];
     feeds: string[];
 }
 
@@ -226,15 +227,44 @@ class RowObserver<U> {
     private stopped = false;
 
     /**
-     * Changes seen between listener registration and the end of the initial
-     * delivery, held rather than queued.
+     * The rows this stream has offered and not withdrawn, by `rowHash`.
      *
-     * This is not `pendingAddsByKey` returning. It covers one window that
-     * always closes, and both it and `startingRowHashes` are released when it
-     * does, so neither grows with throughput.
+     * This is the stream's whole state, and `recheckCandidates` keeps it equal
+     * to a read of the specification. It is initialized from the starting read
+     * — for `watchChanges` and `subscribeChanges` too, which do not *deliver*
+     * those rows but still have to know them, or a later removal would be a
+     * withdrawal of a row the stream never offered.
+     *
+     * It is bounded by the size of the result set, not by throughput, which is
+     * why holding it is affordable where holding every delivered row for the
+     * life of the stream was not.
      */
-    private startupBuffer: { operation: "added" | "removed", rows: SpecificationRow<U>[] }[] | null = [];
-    private startingRowHashes: Set<string> | null = null;
+    private held: Map<string, SpecificationRow<U>> = new Map();
+
+    /**
+     * Candidates seen between listener registration and the end of the initial
+     * read, held rather than decided.
+     *
+     * A notification during that window cannot be re-checked yet, because
+     * `held` is not yet the result. So it is kept as a candidate and re-checked
+     * once the starting read has landed, which is `maintain_correct`'s own
+     * premise: the loop may start from any held set equal to a read. The window
+     * always closes, and the buffer is released when it does.
+     */
+    private startupCandidates: SpecificationRow<U>[] | null = [];
+
+    /**
+     * Candidates waiting on the current re-check, and the chain that decides
+     * them one at a time.
+     *
+     * Decisions are serialized per stream, so the order a consumer sees is the
+     * order they were decided in. Candidates that queue while a re-check is
+     * running are taken by that re-check's successor in one go, so the facts of
+     * one batch — notified concurrently — cost one read of the specification
+     * between them rather than one each.
+     */
+    private queuedCandidates: SpecificationRow<U>[] = [];
+    private recheckChain: Promise<void> = Promise.resolve();
 
     constructor(
         private readonly factManager: FactManager,
@@ -258,6 +288,15 @@ class RowObserver<U> {
         this.givenHash = this.computeGivenHash(specification);
     }
 
+    /**
+     * A short, stable name for this observation in the trace.
+     *
+     * It used to be load-bearing: a notification arrived for every observer of
+     * the same inverse and each filtered the results to its own givens by this
+     * hash. `addInverseListener` reads with the givens bound, so there is
+     * nothing left to filter, and this now only tells one stream's lines apart
+     * from another's.
+     */
     private computeGivenHash(specification: Specification): string {
         const givenSubset = specification.given.map(g => g.label.name);
         const tuple: ReferencesByName = specification.given.reduce((t, label, index) => ({
@@ -289,28 +328,39 @@ class RowObserver<U> {
             }
         }
 
-        const rootInverses = this.branches.map(branch => ({
+        // One inverse per way a fact can change a row, each read with this
+        // stream's givens ahead of the new fact, plus one per given of the
+        // stream's own. None of them says whether the row was added or
+        // removed: they propose candidates, and the re-check decides.
+        const branchInverses = this.branches.map(branch => ({
             branch,
-            inverses: invertSpecification(branch.specification)
-                .filter(inverse => inverse.path === "")
+            inverses: candidateInverses(branch.specification),
+            givenInverses: branch.specification.given.map((_, index) =>
+                givenCandidateInverse(branch.specification, index))
         }));
-        const inverseCount = rootInverses.reduce((sum, b) => sum + b.inverses.length, 0);
+        const inverseCount = branchInverses.reduce((sum, b) => sum + b.inverses.length + b.givenInverses.length, 0);
 
-        Trace.info(`[RowStream] START - From: ${options.from}, Feed: ${options.feed}, Branches: ${this.branches.length}, Root inverses: ${inverseCount}, Given hash: ${this.givenHash.substring(0, 8)}...`);
+        Trace.info(`[RowStream] START - From: ${options.from}, Feed: ${options.feed}, Branches: ${this.branches.length}, Candidate inverses: ${inverseCount}, Given hash: ${this.givenHash.substring(0, 8)}...`);
 
-        for (const { branch, inverses } of rootInverses) {
-            branch.listeners = inverses.map(inverse => this.factManager.addSpecificationListener(
-                inverse.inverseSpecification,
-                results => this.onResult(inverse, results)
-            ));
+        for (const { branch, inverses, givenInverses } of branchInverses) {
+            branch.listeners = [
+                ...inverses.map(inverse => this.factManager.addInverseListener(
+                    inverse,
+                    this.given,
+                    results => this.onCandidates(results, false)
+                )),
+                ...givenInverses.map(inverse => this.factManager.addInverseListener(
+                    inverse,
+                    this.given,
+                    results => this.onCandidates(results, true)
+                ))
+            ];
         }
 
         if (options.feed === "held") {
             await this.openFeeds(options.feedTimeoutMs);
         }
-        if (options.from === "current") {
-            await this.deliverStartingRows(options.feed);
-        }
+        await this.initializeHeld(options);
         await this.endStartup();
     }
 
@@ -321,7 +371,7 @@ class RowObserver<U> {
         this.stopped = true;
         for (const branch of this.branches) {
             for (const listener of branch.listeners) {
-                this.factManager.removeSpecificationListener(listener);
+                this.factManager.removeInverseListener(listener);
             }
             branch.listeners = [];
             if (branch.feeds.length > 0) {
@@ -329,8 +379,9 @@ class RowObserver<U> {
                 branch.feeds = [];
             }
         }
-        this.startupBuffer = null;
-        this.startingRowHashes = null;
+        this.startupCandidates = null;
+        this.queuedCandidates = [];
+        this.held.clear();
         this.queue.close();
         Trace.info(`[RowStream] STOPPED - Given hash: ${this.givenHash.substring(0, 8)}...`);
     }
@@ -405,106 +456,162 @@ class RowObserver<U> {
     }
 
     /**
-     * Read the rows that match now and queue them as additions.
+     * Read the rows that match now, make them the held set, and queue them as
+     * additions if this stream starts from them.
      *
-     * They go through the queue the changes go through, so a consumer has one
-     * code path for a row rather than two, and cannot apply its deduplication
-     * or its completion to only one of them.
+     * Every stream reads here, `...Changes` included. What the origin decides
+     * is whether the rows are *delivered*, not whether they are known: a
+     * stream that did not know them would have nothing for a later removal to
+     * be a transition from, and would withdraw a row it never offered.
+     *
+     * The rows it does deliver go through the queue the changes go through, so
+     * a consumer has one code path for a row rather than two, and cannot apply
+     * its deduplication or its completion to only one of them.
      */
-    private async deliverStartingRows(feed: FeedPolicy): Promise<void> {
+    private async initializeHeld(options: StartOptions): Promise<void> {
         // Traced so the order this method depends on is observable: every
         // listener is registered before this line runs.
         Trace.info(`[RowStream] READING CURRENT ROWS - Given hash: ${this.givenHash.substring(0, 8)}...`);
-        if (feed === "none") {
+        if (options.from === "current" && options.feed === "none") {
             // A held feed has already pulled what the replicator has. Without
             // one, this is the fetch that makes the read see more than what
-            // this client wrote, exactly as `watch` fetches once.
+            // this client wrote, exactly as `watch` fetches once. A
+            // `...Changes` stream still does not fetch: its read is of the
+            // local graph, which is what it reports changes against.
             const decisions = await this.factManager.fetch(this.given, this.specification);
             this.onFeedDecisions(decisions);
         }
         if (this.stopped) {
             return;
         }
-        // One read per branch: each authorizes an independently filtered set,
-        // and a row that more than one branch authorizes is delivered once.
-        const branchResults = await Promise.all(this.branches.map(branch =>
-            this.factManager.read(this.given, branch.specification)));
+        const { rows, totalCount } = await this.readResult();
         if (this.stopped) {
             return;
         }
-        const rows: SpecificationRow<U>[] = [];
-        const rowHashes = new Set<string>();
-        for (const projectedResults of branchResults) {
-            const branchRows = toRows<U>(projectedResults, this.specification, this.rowIdentityLabels);
-            Trace.counter("facts_loaded", branchRows.totalCount);
-            for (const row of branchRows.rows) {
-                if (rowHashes.has(row.rowHash)) {
-                    continue;
-                }
-                rowHashes.add(row.rowHash);
-                rows.push(row);
-            }
+        Trace.counter("facts_loaded", totalCount);
+        this.held = rows;
+        if (options.from === "current") {
+            Trace.info(`[RowStream] STARTING ROWS - Rows: ${rows.size}`);
+            this.queue.pushStarting([...rows.values()]);
         }
-        this.startingRowHashes = rowHashes;
-        Trace.info(`[RowStream] STARTING ROWS - Rows: ${rows.length}`);
-        this.queue.pushStarting(rows);
     }
 
     /**
-     * Release the startup window: queue what arrived during it, minus the
-     * additions the read already covered, then drop both sets.
+     * Read the result for this stream's givens, as one row set.
      *
-     * A duplicate can still reach a consumer whose row was saved before the
-     * read and notified after this flush. That direction is safe by design,
-     * and the consumer deduplicates on `rowHash`. The direction this method
-     * exists to make impossible is the other one.
+     * One read per branch: each authorizes an independently filtered set, and
+     * a row that more than one branch authorizes appears once.
      */
-    private async endStartup(): Promise<void> {
-        const buffered = this.startupBuffer;
-        this.startupBuffer = null;
-        const startingRowHashes = this.startingRowHashes;
-        this.startingRowHashes = null;
-        if (!buffered || this.stopped) {
-            return;
-        }
-        for (const batch of buffered) {
-            const rows = batch.operation === "added" && startingRowHashes
-                ? batch.rows.filter(row => !startingRowHashes.has(row.rowHash))
-                : batch.rows;
-            if (rows.length > 0) {
-                this.queue.pushChanges(batch.operation, rows);
+    private async readResult(): Promise<{ rows: Map<string, SpecificationRow<U>>, totalCount: number }> {
+        const branchResults = await Promise.all(this.branches.map(branch =>
+            this.factManager.read(this.given, branch.specification)));
+        const rows = new Map<string, SpecificationRow<U>>();
+        let totalCount = 0;
+        for (const projectedResults of branchResults) {
+            const branchRows = toRows<U>(projectedResults, this.specification, this.rowIdentityLabels);
+            totalCount += branchRows.totalCount;
+            for (const row of branchRows.rows) {
+                if (!rows.has(row.rowHash)) {
+                    rows.set(row.rowHash, row);
+                }
             }
         }
+        return { rows, totalCount };
     }
 
-    private async onResult(inverse: SpecificationInverse, results: ProjectedResult[]): Promise<void> {
+    /**
+     * Release the startup window: re-check what arrived during it against the
+     * result, then drop the buffer.
+     *
+     * The old shape replayed the window's notifications as changes, filtering
+     * out only additions the read had already returned. That made a stream's
+     * output the history of inverse firings rather than the history of the
+     * result, and a row added and removed inside the window reached the
+     * consumer as an `added` the read had correctly excluded (issue #336).
+     * Re-checking them instead decides each one against what the store holds.
+     */
+    private async endStartup(): Promise<void> {
+        const buffered = this.startupCandidates;
+        this.startupCandidates = null;
+        if (!buffered || buffered.length === 0 || this.stopped) {
+            return;
+        }
+        await this.enqueueRecheck(buffered);
+    }
+
+    /**
+     * One inverse's results, as candidates.
+     *
+     * `ofGiven` marks the inverse that fires when one of this stream's own
+     * givens is saved. Every row of the result is then a candidate, and so is
+     * every row the stream already holds, because that fact can change the
+     * answer for rows no inverse of an unknown would propose.
+     *
+     * No filtering by a given-subset hash: `addInverseListener` reads with this
+     * stream's given references bound, so every row it returns already belongs
+     * to this stream.
+     */
+    private async onCandidates(results: ProjectedResult[], ofGiven: boolean): Promise<void> {
         if (this.stopped) {
             return;
         }
 
-        const operation = inverse.operation === "add" ? "added" : "removed";
-
-        // Keep only the rows that descend from this observation's given. One
-        // inverse specification is shared by every observer of the same shape,
-        // so a notification arrives for all of them and each filters to its own.
-        const matching = results.filter(pr =>
-            this.givenHash === computeTupleSubsetHash(pr.tuple, inverse.givenSubset));
-        if (matching.length === 0) {
-            return;
-        }
-
-        const rows = this.toRows(matching);
+        const rows = this.toRows(results);
         if (rows.length === 0) {
             return;
         }
 
-        if (this.startupBuffer) {
-            this.startupBuffer.push({ operation, rows });
+        const candidates = ofGiven ? [...rows, ...this.held.values()] : rows;
+
+        if (this.startupCandidates) {
+            this.startupCandidates.push(...candidates);
             return;
         }
 
-        Trace.info(`[RowStream] ${operation.toUpperCase()} - Rows: ${rows.length}`);
-        this.queue.pushChanges(operation, rows);
+        await this.enqueueRecheck(candidates);
+    }
+
+    /**
+     * Decide a set of candidates, after every decision already in flight.
+     *
+     * The chain is what makes the emitted order the order of decisions. It
+     * also coalesces: candidates that arrive while a re-check is running are
+     * taken by the next link in one batch, so a batch of facts notified
+     * concurrently costs one read of the specification rather than one each.
+     * A link that finds the queue already drained does nothing, which is what
+     * the siblings of such a batch resolve to.
+     */
+    private enqueueRecheck(candidates: SpecificationRow<U>[]): Promise<void> {
+        this.queuedCandidates.push(...candidates);
+        const decided = this.recheckChain.then(() => this.decideQueuedCandidates());
+        // A failed read must not poison the chain. A rejected link would make
+        // every later re-check reject without running, so one failed read
+        // would silently end the stream's updates for good. The caller still
+        // sees the failure, through the promise returned here, and that is
+        // where `notifyListener` reports it.
+        this.recheckChain = decided.catch(() => { });
+        return decided;
+    }
+
+    private async decideQueuedCandidates(): Promise<void> {
+        const candidates = this.queuedCandidates;
+        this.queuedCandidates = [];
+        if (candidates.length === 0 || this.stopped) {
+            return;
+        }
+        const { rows: present } = await this.readResult();
+        if (this.stopped) {
+            return;
+        }
+        const decisions = recheckCandidates(this.held, candidates, present);
+        if (decisions.length === 0) {
+            Trace.info(`[RowStream] UNCHANGED - Candidates: ${candidates.length}`);
+            return;
+        }
+        Trace.info(`[RowStream] DECIDED - Candidates: ${candidates.length}, Added: ${decisions.filter(d => d.operation === "added").length}, Removed: ${decisions.filter(d => d.operation === "removed").length}`);
+        for (const decision of decisions) {
+            this.queue.pushChanges(decision.operation, [decision.row]);
+        }
     }
 
     /**
@@ -512,13 +619,15 @@ class RowObserver<U> {
      * as `query` would.
      *
      * The identity is narrowed rather than taken from the whole tuple: a
-     * remove inverse's tuple names the fact whose arrival retracted the row,
-     * that label is absent from the add side, and hashing the whole tuple
-     * would therefore give one row two different hashes.
+     * candidate inverse's tuple also names the new fact, as `__f`, and the
+     * labels its reordering lifted out of an existential condition, and none
+     * of those appear in a read of the specification. Hashing the whole tuple
+     * would therefore give one row a different hash on every path that found
+     * it.
      *
-     * Repeats within one batch are collapsed. Repeats ACROSS batches are not,
-     * outside the startup window: holding a delivered-row set for the life of
-     * the stream would reintroduce exactly the unbounded growth this avoids.
+     * Repeats within one batch of results are collapsed here. Repeats across
+     * batches cost nothing to allow: a candidate already held and still in the
+     * result is no transition, so the re-check drops it.
      */
     private toRows(results: ProjectedResult[]): SpecificationRow<U>[] {
         const rows: SpecificationRow<U>[] = [];
