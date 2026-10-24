@@ -1,5 +1,5 @@
 import { GraphDeserializer } from "../http/deserializer";
-import { FactEnvelope, FactReference, Storage } from "../storage";
+import { FactEnvelope, FactReference, Storage, saveAndNotify } from "../storage";
 import { Trace } from "../util/trace";
 import { WebSocketMessageRouter } from "./protocol-router";
 import { ControlFrameHandler } from "./control-frame-handler";
@@ -179,17 +179,13 @@ export class WsGraphClient {
     (async () => {
       try {
         await deserializer.read(async (envelopes: FactEnvelope[]) => {
-          const savePromise = this.store.save(envelopes);
-          // Track the latest save so control frames can wait for persistence
-          this.lastSavePromise = savePromise.then(() => {});
-          const saved = await savePromise;
-          if (saved.length > 0) {
-            Trace.counter("facts_saved", saved.length);
-            // Phase 3.4: Notify facts added listener for observer notifications
-            if (this.onFactsAdded) {
-              await this.onFactsAdded(saved);
-            }
-          }
+          // Phase 3.4: notify the facts added listener for observer
+          // notifications, with exactly what the store reports as added
+          // (issue #337).
+          await saveAndNotify(this.store, envelopes, this.onFactsAdded, savePromise => {
+            // Track the latest save so control frames can wait for persistence
+            this.lastSavePromise = savePromise.then(() => {});
+          });
         });
       } catch (err) {
         this.onErrorGlobal(err as Error);

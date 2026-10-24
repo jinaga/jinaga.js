@@ -9,7 +9,7 @@ import { InverseListener, ObservableSource, SpecificationListener } from "../obs
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
-import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage } from "../storage";
+import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage, saveAndNotify } from "../storage";
 import { Trace } from "../util/trace";
 import { CachedFeeds, Network, NetworkManager } from "./NetworkManager";
 import { PurgeManager } from "./PurgeManager";
@@ -65,12 +65,7 @@ export class FactManager {
         }
         
         await this.fork.save(envelopes);
-        const saved = await this.store.save(envelopes);
-        if (saved.length > 0) {
-            Trace.counter("facts_saved", saved.length);
-            await this.factsAdded(saved);
-        }
-        return saved;
+        return await saveAndNotify(this.store, envelopes, saved => this.factsAdded(saved));
     }
 
     /**

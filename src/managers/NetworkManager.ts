@@ -5,7 +5,7 @@ import { describeDeclaration, describeSpecification } from "../specification/des
 import { buildFeeds } from "../specification/feed-builder";
 import { FeedCache } from "../specification/feed-cache";
 import { Specification, reduceSpecification } from "../specification/specification";
-import { FactEnvelope, FactReference, ReferencesByName, Storage, factReferenceEquals } from "../storage";
+import { FactEnvelope, FactReference, ReferencesByName, Storage, factReferenceEquals, saveAndNotify } from "../storage";
 import { computeStringHash } from "../util/encoding";
 import { FeedTimeoutError, ValidationError } from "../util/errors";
 import { TIMED_OUT, withTimeout } from "../util/promise";
@@ -223,11 +223,7 @@ class LoadBatch {
     private async load() {
         const graph: FactEnvelope[] = await this.network.load(this.factReferences);
 
-        const factsAdded = await this.store.save(graph);
-        if (factsAdded.length > 0) {
-            Trace.counter("facts_saved", factsAdded.length);
-            await this.notifyFactsAdded(factsAdded);
-        }
+        await saveAndNotify(this.store, graph, factsAdded => this.notifyFactsAdded(factsAdded));
     }
 }
 
@@ -520,10 +516,11 @@ export class NetworkManager {
             if (!subscriber) {
                 // Wrap notifyFactsAdded so this feed's "began delivering data"
                 // signal fires after facts are saved (issue #207 W9), letting a
-                // reactive diagnostic clear when the race resolves. Only signal
-                // when facts actually arrived: the subscriber calls
-                // notifyFactsAdded even for an empty graph (references present
-                // but load() returned nothing), which must not count as delivery.
+                // reactive diagnostic clear when the race resolves. The
+                // subscriber notifies only what its store reported as added
+                // (issue #337), so delivery now means new facts arrived rather
+                // than a response arrived; the length check is what carried
+                // that distinction before, and it holds the line here.
                 const notify = async (envelopes: FactEnvelope[]) => {
                     await this.notifyFactsAdded(envelopes);
                     if (envelopes.length > 0) {
