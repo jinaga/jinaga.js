@@ -67,7 +67,11 @@ Every bug fix needs a regression test that fails before the change and passes af
 
 ## Conformance vectors
 
-[jinaga-spec](https://github.com/jinaga/jinaga-spec) states the well-formedness check and `splitBeforeFirstSuccessor` in Lean, proves them, and generates conformance vectors from the definitions. The `conformance` job in `main.yml` runs that repository's `ports/typescript/run-vectors.ts` against this checkout at a pinned jinaga-spec commit. The runner compares the split's head and tail, checks that `AuthorizationRules` refuses a rule exactly when its tail reads the given, and compares `wellFormedErrors` against each well-formedness vector.
+[jinaga-spec](https://github.com/jinaga/jinaga-spec) states the well-formedness check, `splitBeforeFirstSuccessor` and the inverses of a specification in Lean, proves them, and generates conformance vectors from the definitions. The `conformance` job in `main.yml` runs that repository's two runners against this checkout at a pinned jinaga-spec commit.
+
+`ports/typescript/run-vectors.ts` compares the split's head and tail, checks that `AuthorizationRules` refuses a rule exactly when its tail reads the given, and compares `wellFormedErrors` against each well-formedness vector.
+
+`ports/typescript/run-inverse-vectors.ts` runs the inverse vectors. Each carries a specification, a graph, the givens, the facts that arrive, the rows gained and lost, and the proven inverses. It requires that `MemoryStore` read those inverses to exactly the vector's candidate rows, so it gates this library's evaluation of a specification rather than its inversion of one. It also checks `src/specification/inverse-candidates.ts` against the proven inverses, skipping that while the file is absent, and reports — without failing — the vectors on which today's `invertSpecification` misses a change.
 
 To run it locally, from a jinaga-spec checkout at the pinned commit, with `npm ci` done in this repository:
 
@@ -75,9 +79,10 @@ To run it locally, from a jinaga-spec checkout at the pinned commit, with `npm c
 cd ports/typescript
 npm ci
 JINAGA_JS=/path/to/jinaga.js npm run vectors
+JINAGA_JS=/path/to/jinaga.js npm run inverse
 ```
 
-To move the pin, replace the `ref` in `main.yml` with the new jinaga-spec commit and run the vectors locally at it. A failing vector means this library and the specification disagree: change the library, or report the disagreement against jinaga-spec. Never edit a vector to match.
+To move the pin, replace the `ref` in `main.yml` with the new jinaga-spec commit and run both runners locally at it. A failing vector means this library and the specification disagree: change the library, or report the disagreement against jinaga-spec. Never edit a vector to match.
 
 ## Working from issues
 
