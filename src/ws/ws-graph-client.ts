@@ -24,6 +24,17 @@ declare const WebSocket: {
 };
 type BookmarkListener = (feed: string, bookmark: string) => void;
 
+/**
+ * Run a callback once, after a delay. The client schedules its reconnect
+ * through this, so a caller that needs to decide when the reconnect happens
+ * can supply its own.
+ */
+export type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
+
+const scheduleWithTimer: ReconnectScheduler = (callback, delayMs) => {
+  setTimeout(callback, delayMs);
+};
+
 type ActiveFeed = {
   feed: string;
   bookmark: string;
@@ -45,7 +56,7 @@ type QueuedFrame =
 export class WsGraphClient {
   private socket: any | null = null;
   private readonly activeFeeds = new Map<string, ActiveFeed>();
-  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectScheduled = false;
   private reconnectAttempt = 0;
   private connecting = false;
   private hasEverConnected = false;
@@ -60,7 +71,8 @@ export class WsGraphClient {
     private readonly onBookmark: BookmarkListener,
     private readonly onErrorGlobal: (err: Error) => void,
     private readonly getUserIdentity?: () => Promise<UserIdentity | null>,
-    private readonly onFactsAdded?: (envelopes: FactEnvelope[]) => Promise<void>
+    private readonly onFactsAdded?: (envelopes: FactEnvelope[]) => Promise<void>,
+    private readonly scheduleReconnectAfter: ReconnectScheduler = scheduleWithTimer
   ) {}
 
   subscribe(feed: string, bookmark: string, feedRefreshIntervalSeconds: number): () => void {
@@ -279,14 +291,15 @@ export class WsGraphClient {
   }
 
   private scheduleReconnect() {
-    if (this.reconnectTimer) return;
+    if (this.reconnectScheduled) return;
     if (this.activeFeeds.size === 0) {
       return; // No active subscriptions; do not reconnect
     }
     const delayMs = Math.min(30000, 1000 * Math.pow(2, this.reconnectAttempt));
     this.reconnectAttempt = Math.min(this.reconnectAttempt + 1, 15);
-    this.reconnectTimer = setTimeout(async () => {
-      this.reconnectTimer = null;
+    this.reconnectScheduled = true;
+    this.scheduleReconnectAfter(async () => {
+      this.reconnectScheduled = false;
       try {
         await this.ensureConnected();
       } catch (err) {
