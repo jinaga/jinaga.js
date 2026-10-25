@@ -306,6 +306,20 @@ class StoreWithReadHook extends MemoryStore {
     }
 }
 
+/**
+ * A store that records how many rows its reads returned, so a test can measure
+ * the work one save costs rather than timing it.
+ */
+class StoreCountingRows extends MemoryStore {
+    public rowsRead = 0;
+
+    async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        const results = await super.read(start, specification);
+        this.rowsRead += results.length;
+        return results;
+    }
+}
+
 interface PeerOptions {
     /** The store, so a test can hook its reads. */
     store?: MemoryStore;
@@ -788,6 +802,48 @@ describe("an observer reading a nested level", () => {
         const second = await j.fact(new Task(root, "second"));
         await observer.processed();
         expect(tasksHeld).toEqual(new Set([j.hash(first), j.hash(second)]));
+
+        observer.stop();
+    });
+});
+
+describe("an observer hearing a fact of its given's type", () => {
+    it("reads no rows when the fact is not its own given", async () => {
+        // Reported by the review on 56eb045. `candidateInverses` pins unknowns,
+        // and a given is not an unknown, so a given inverse is what tells a
+        // subscription its given has arrived. Its pin is bound through an
+        // unknown equal to both the new fact and the given, so an unrelated
+        // fact of that type yields no solution — but `onCandidates` unioned
+        // `held` in anyway on the strength of `ofGiven`, which made every
+        // saved fact of a common given type re-read every level that holds
+        // rows. The row stream, the proven sibling, returns early on an empty
+        // result whichever inverse fired.
+        const store = new StoreCountingRows();
+        const { j } = createPeer({ store });
+        const owner = await j.fact(new User("--- OWNER ---"));
+        const root = await j.fact(new Root(owner, "r"));
+        const tasks = [];
+        for (let i = 0; i < 5; i++) {
+            tasks.push(await j.fact(new Task(root, `task${i}`)));
+        }
+
+        const { held, handler } = collectHeld<Task>(t => j.hash(t));
+        const observer = j.watch(currentTasks, root, handler);
+        await observer.loaded();
+        expect(held.size).toEqual(5);
+
+        store.rowsRead = 0;
+        await j.fact(new Root(owner, "unrelated"));
+        await observer.processed();
+
+        expect(store.rowsRead).toEqual(0);
+        expect(held.size).toEqual(5);
+
+        // The observer still hears about its own given's successors, so the
+        // early return has not silenced it.
+        await j.fact(new Done(tasks[0]));
+        await observer.processed();
+        expect(held.size).toEqual(4);
 
         observer.stop();
     });

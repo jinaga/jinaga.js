@@ -885,6 +885,16 @@ export class ObserverImpl<T> implements Observer<T> {
      * every row this level already holds, because that fact can change the
      * answer for rows no inverse of an unknown would propose.
      *
+     * An empty result returns early whichever inverse fired, exactly as the row
+     * stream's `onCandidates` does. The given inverse's pin is bound through an
+     * unknown equal to both the new fact and the given, so a fact of the given's
+     * type that is *not* this observer's given yields no solution at all. There
+     * is nothing to decide for it: it cannot change this given's result, and
+     * whatever it does change `candidateInverses` proposes through an unknown.
+     * Unioning `held` in on that empty result instead made every saved fact of
+     * a common given type -- a user, a tenant -- re-read every level that holds
+     * rows, at the cost of the whole result and with no transition reachable.
+     *
      * Nothing is filtered by a given-subset hash here. `addInverseListener`
      * reads with this observer's given references bound, so every row it
      * returns already belongs to this observer — which is what lets the
@@ -896,13 +906,10 @@ export class ObserverImpl<T> implements Observer<T> {
             return;
         }
         const rows = this.toRows(results, level);
-        if (rows.length === 0 && !ofGiven) {
+        if (rows.length === 0) {
             return;
         }
         const candidates = ofGiven ? [...rows, ...level.held.values()] : rows;
-        if (candidates.length === 0) {
-            return;
-        }
 
         const buffer = this.startupCandidates ?? this.queuedCandidates;
         const entry = buffer.get(level);
