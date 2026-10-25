@@ -29,6 +29,19 @@ type ActiveFeed = {
   bookmark: string;
 };
 
+/**
+ * One frame as it arrived on the socket: either a line of the graph stream or
+ * a bookmark from a BOOK control frame.
+ *
+ * Both kinds go into one queue, which is what makes a bookmark take effect
+ * only after every graph line that reached the socket before it. The reader
+ * awaits each batch's save before asking for another frame, so by the time it
+ * dequeues a bookmark, everything ahead of that bookmark is durable.
+ */
+type QueuedFrame =
+  | { kind: "line", line: string }
+  | { kind: "bookmark", feed: string, bookmark: string };
+
 export class WsGraphClient {
   private socket: any | null = null;
   private readonly activeFeeds = new Map<string, ActiveFeed>();
@@ -37,10 +50,9 @@ export class WsGraphClient {
   private connecting = false;
   private hasEverConnected = false;
 
-  private pendingLines: string[] = [];
-  private waitingResolver: ((line: string | null) => void) | null = null;
+  private pendingFrames: QueuedFrame[] = [];
+  private waitingResolver: ((frame: QueuedFrame | null) => void) | null = null;
   private router: WebSocketMessageRouter | null = null;
-  private lastSavePromise: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly getWsUrl: () => Promise<string>,
@@ -111,18 +123,9 @@ export class WsGraphClient {
           // Instantiate router and handler per-connection
           const handler = new ControlFrameHandler(
             (feed, bookmark) => {
-              // Defer BOOK processing to next macrotask, then await latest save
-              setTimeout(() => {
-                this.lastSavePromise
-                  .catch(() => {})
-                  .then(() => {
-                    const active = this.activeFeeds.get(feed);
-                    if (active) {
-                      active.bookmark = bookmark;
-                      this.onBookmark(feed, bookmark);
-                    }
-                  });
-              }, 0);
+              // Queue the bookmark behind the graph lines that arrived before
+              // it, so the reader applies it in arrival order.
+              this.enqueue({ kind: "bookmark", feed, bookmark });
             },
             (feed, message) => {
               Trace.warn(`Feed error for ${feed}: ${message}`);
@@ -131,8 +134,7 @@ export class WsGraphClient {
           this.router = new WebSocketMessageRouter(
             {
               onGraphLine: (line: string) => {
-                this.pendingLines.push(line);
-                this.pumpWaiting();
+                this.enqueue({ kind: "line", line });
               },
             },
             handler
@@ -182,10 +184,7 @@ export class WsGraphClient {
           // Phase 3.4: notify the facts added listener for observer
           // notifications, with exactly what the store reports as added
           // (issue #337).
-          await saveAndNotify(this.store, envelopes, this.onFactsAdded, savePromise => {
-            // Track the latest save so control frames can wait for persistence
-            this.lastSavePromise = savePromise.then(() => {});
-          });
+          await saveAndNotify(this.store, envelopes, added => this.notify(added));
         });
       } catch (err) {
         this.onErrorGlobal(err as Error);
@@ -193,32 +192,90 @@ export class WsGraphClient {
     })();
   }
 
-  private pumpWaiting() {
-    if (this.waitingResolver && this.pendingLines.length > 0) {
-      const resolver = this.waitingResolver;
-      this.waitingResolver = null;
-      const line = this.pendingLines.shift()!;
-      resolver(line);
+  /**
+   * Run the facts-added notification for one saved batch, and keep a failure
+   * out of the reader.
+   *
+   * The batch is already saved when this runs, so a rejection here means the
+   * notification failed and nothing else. Letting it escape would end the
+   * reader on a socket that is still open, which stops ingestion until that
+   * socket closes. Report it and let the reader go on to the next frame; a
+   * bookmark still cannot pass a frame that was never saved, because the
+   * reader applies bookmarks from the same queue.
+   *
+   * A failed *save* is not contained here. It still ends the reader.
+   */
+  private async notify(added: FactEnvelope[]): Promise<void> {
+    if (!this.onFactsAdded) {
+      return;
+    }
+    try {
+      await this.onFactsAdded(added);
+    } catch (err) {
+      this.onErrorGlobal(err instanceof Error ? err : new Error(String(err)));
     }
   }
 
-  private readLine(): Promise<string | null> {
-    return new Promise<string | null>((resolve) => {
-      const tryDequeue = () => {
-        if (this.pendingLines.length === 0) {
-          // If socket closed and buffer empty, signal EOF
-          if (!this.socket || this.socket.readyState === 3 /* CLOSED */) {
-            resolve(null);
-            return;
-          }
-          this.waitingResolver = resolve;
+  private enqueue(frame: QueuedFrame) {
+    this.pendingFrames.push(frame);
+    this.pumpWaiting();
+  }
+
+  private pumpWaiting() {
+    if (this.waitingResolver && this.pendingFrames.length > 0) {
+      const resolver = this.waitingResolver;
+      this.waitingResolver = null;
+      resolver(this.pendingFrames.shift()!);
+    }
+  }
+
+  private takeFrame(): Promise<QueuedFrame | null> {
+    return new Promise<QueuedFrame | null>((resolve) => {
+      if (this.pendingFrames.length === 0) {
+        // If socket closed and buffer empty, signal EOF
+        if (!this.socket || this.socket.readyState === 3 /* CLOSED */) {
+          resolve(null);
           return;
         }
-        const line = this.pendingLines.shift()!;
-        resolve(line);
-      };
-      tryDequeue();
+        this.waitingResolver = resolve;
+        return;
+      }
+      resolve(this.pendingFrames.shift()!);
     });
+  }
+
+  /**
+   * The deserializer's line source. Bookmarks sit in the same queue as graph
+   * lines, so this applies each one it passes on its way to the next line.
+   */
+  private async readLine(): Promise<string | null> {
+    while (true) {
+      const frame = await this.takeFrame();
+      if (frame === null) {
+        return null;
+      }
+      if (frame.kind === "line") {
+        return frame.line;
+      }
+      this.applyBookmark(frame.feed, frame.bookmark);
+    }
+  }
+
+  /**
+   * Persist a bookmark that the reader has reached in arrival order.
+   *
+   * Every graph line ahead of it has been read, and the reader awaited each
+   * batch's save before asking for the frame that produced this call, so
+   * those facts are durable. The reader also awaits the notification, which
+   * this does not need; waiting for it costs the bookmark that much latency
+   * and never advances it too far.
+   */
+  private applyBookmark(feed: string, bookmark: string) {
+    const active = this.activeFeeds.get(feed);
+    if (active) {
+      active.bookmark = bookmark;
+      this.onBookmark(feed, bookmark);
+    }
   }
 
   private scheduleReconnect() {

@@ -219,6 +219,15 @@ export class FactManager {
      * The returned promise is the caller's ordering signal: await it before
      * reading the next batch, or that batch lands while this one is still
      * being notified.
+     *
+     * Nothing bounds how long it takes. The notification runs the caller's
+     * own watch handlers, and `ObservableSource` abandons a wedged listener
+     * only after `listenerTimeoutMs`, once per specification group. So a
+     * handler that waits for a fact arriving on the same socket stalls that
+     * socket for up to `listenerTimeoutMs` per group registered for the
+     * fact's type. A source that awaits this promise is buying ordering at
+     * that price, and a source that cannot afford the stall should not await
+     * it.
      */
     notifyFactsAdded(envelopes: FactEnvelope[]): Promise<void> {
         return this.factsAdded(envelopes);
