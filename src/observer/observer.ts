@@ -1166,6 +1166,14 @@ export class ObserverImpl<T> implements Observer<T> {
         return { rowHash: h, voteId: h };
     }
 
+    /**
+     * The rows a branch holds at its root path, keyed over its `voteLabels` --
+     * the same hash `rowAndVoteHashes` returns as a root row's `voteId`.
+     */
+    private rootHeld(branch: ObserverBranch): Map<string, SpecificationRow<ProjectedResult>> {
+        return branch.levels[0].held;
+    }
+
     private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[], resultSubset: string[], branch: ObserverBranch) {
         const displayPath = path || "(root)";
         Trace.info(`[Observer] NOTIFY_ADDED - Path: ${displayPath}, Results: ${projectedResults.length}, Parent subset: [${parentSubset.join(', ')}]`);
@@ -1230,6 +1238,23 @@ export class ObserverImpl<T> implements Observer<T> {
         const rowProjectionHash = computeTupleSubsetHash(pr.tuple, resultSubset);
         const rowChain = [...addedHandler.ownerChain, this.rowProjectionKey(path, rowProjectionHash)];
         const result: any = await this.injectObservers(pr, projection, path, resultSubset, rowChain);
+
+        // Deliver a root row only if its branch still holds it. `held` is the
+        // observer's single record of membership, and a delivery can be
+        // overtaken by a later decision: the startup window closes before the
+        // initial delivery, and no delivery is on the decision chain, so a
+        // decision that withdraws this row can run while an earlier row's
+        // handler is suspended. That removal finds no vote for a row not yet
+        // delivered and is dropped, so delivering it now would leave the
+        // caller holding a row the result no longer has, which no later
+        // re-check corrects. Skipping it makes the net transition absent to
+        // absent. If the row has been re-added since, that decision delivers
+        // it on its own. Checked after the await above, right before the vote
+        // and the handler. Nested rows are #358's.
+        if (path === "" && !this.rootHeld(branch).has(voteId)) {
+            Trace.info(`[Observer] SKIPPING WITHDRAWN ROW - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
+            return;
+        }
 
         // Cast the vote. First vote into an empty set means this is
         // the first time the user sees this row; subsequent votes

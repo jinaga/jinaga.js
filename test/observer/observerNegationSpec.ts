@@ -741,6 +741,66 @@ describe("an observer's startup window", () => {
         observer.stop();
     });
 
+    it("does not deliver a starting row that was withdrawn before the initial delivery reached it", async () => {
+        // Reported in review of #354 at dee583c. The startup window now closes
+        // before the initial delivery, so a decision can run while that
+        // delivery is still in progress. Both tasks are in the starting read;
+        // whichever is delivered first suspends its handler, and the other is
+        // then completed. The removal finds no vote for a row that has not
+        // been delivered yet, so it is dropped. Delivering that row afterwards
+        // would leave the caller holding a task the result no longer has, and
+        // `held` already records it as absent, so nothing would correct it.
+        // The net transition is absent to absent: neither its add nor its
+        // removal should reach the caller.
+        const { j } = createPeer();
+        const owner = await j.fact(new User("--- OWNER ---"));
+        const root = await j.fact(new Root(owner, "r"));
+        const tasks = [
+            await j.fact(new Task(root, "first")),
+            await j.fact(new Task(root, "second"))
+        ];
+
+        let releaseHandler: () => void = () => { };
+        const handlerReleased = new Promise<void>(resolve => { releaseHandler = resolve; });
+        let suspended: (hash: string) => void = () => { };
+        const handlerSuspended = new Promise<string>(resolve => { suspended = resolve; });
+
+        const held = new Set<string>();
+        const added: string[] = [];
+        const removed: string[] = [];
+        const observer = j.watch(currentTasks, root, async (task: Task) => {
+            const hash = j.hash(task);
+            held.add(hash);
+            added.push(hash);
+            if (added.length === 1) {
+                suspended(hash);
+                await handlerReleased;
+            }
+            return async () => {
+                held.delete(hash);
+                removed.push(hash);
+            };
+        });
+
+        const suspendedHash = await handlerSuspended;
+        const delivered = tasks.find(t => j.hash(t) === suspendedHash)!;
+        const other = tasks.find(t => j.hash(t) !== suspendedHash)!;
+
+        await j.fact(new Done(other));
+
+        releaseHandler();
+        await observer.loaded();
+        await observer.processed();
+
+        const rows = await j.query(currentTasks, root);
+        expect(rows).toEqual([delivered]);
+        expect(held).toEqual(new Set([j.hash(delivered)]));
+        expect(added).toEqual([j.hash(delivered)]);
+        expect(removed).toEqual([]);
+
+        observer.stop();
+    });
+
     it("decides candidates that arrive after the starting fetch fails", async () => {
         // Reported against this layer from the review pass on #355. The
         // starting read runs only after the fetch on the uncached path, so a
