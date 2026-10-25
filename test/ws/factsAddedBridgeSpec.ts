@@ -18,6 +18,7 @@ import {
     WsGraphNetwork
 } from '@src';
 import { connectFactsAdded } from '../../src/managers/factsAddedBridge';
+import { WsGraphClient } from '../../src/ws/ws-graph-client';
 import { waitForCondition } from '../utils/async-test-utils';
 
 /**
@@ -59,12 +60,13 @@ class FakeWebSocket {
 }
 
 /**
- * Records every batch handed to `save`, and can be told to fail the reads that
- * a notification makes.
+ * Records every batch it saves, and can be told to fail the next save or the
+ * reads that a notification makes.
  */
 class RecordingStore implements Storage {
     readonly savedBatches: FactEnvelope[][] = [];
     failReads = false;
+    failNextSave = false;
 
     constructor(private readonly inner: Storage) {}
 
@@ -73,6 +75,10 @@ class RecordingStore implements Storage {
     }
 
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]> {
+        if (this.failNextSave) {
+            this.failNextSave = false;
+            return Promise.reject(new Error('Store save failed'));
+        }
         this.savedBatches.push(envelopes);
         return this.inner.save(envelopes);
     }
@@ -131,8 +137,7 @@ const everyTestFact: Specification = {
     projection: { type: 'composite', components: [] }
 };
 
-function envelopeOf(fields: {}): FactEnvelope {
-    const predecessors = {};
+function envelopeOf(fields: {}, predecessors: { [role: string]: FactReference } = {}): FactEnvelope {
     const fact: FactRecord = {
         type: factType,
         hash: computeHash(fields, predecessors),
@@ -146,9 +151,9 @@ function envelopeOf(fields: {}): FactEnvelope {
  * The wire text for one fact, written by the serializer the replicator uses,
  * so the test does not carry a second copy of the graph format.
  */
-function frameOf(envelope: FactEnvelope): string {
+function frameOf(...envelopes: FactEnvelope[]): string {
     let chunk = '';
-    new GraphSerializer(part => chunk += part).serialize([envelope]);
+    new GraphSerializer(part => chunk += part).serialize(envelopes);
     return chunk;
 }
 
@@ -371,5 +376,170 @@ describe('WebSocket facts-added bridge', () => {
         ]);
         expect(notifications).toBe(1);
         expect(bookmarks).toEqual([{ bookmark: 'bm7', savedBatches: 2 }]);
+    });
+});
+
+/**
+ * The same client, built directly so the test can hold its reconnect. The
+ * client schedules a reconnect through the function it is given; this one
+ * keeps the callback for the test to run when it chooses, so no wall clock is
+ * involved.
+ */
+describe('WebSocket graph client across a reconnect', () => {
+    let originalTracer: Tracer;
+    let originalWebSocket: any;
+    let store: RecordingStore;
+    let factManager: FactManager;
+    let client: WsGraphClient;
+    let unsubscribe: () => void;
+    let errors: Error[];
+    let notifications: number;
+    let bookmarks: { bookmark: string, savedBatches: number }[];
+    let pendingReconnects: (() => void)[];
+
+    beforeEach(() => {
+        originalTracer = Trace.getTracer();
+        Trace.off();
+        originalWebSocket = (globalThis as any).WebSocket;
+        (globalThis as any).WebSocket = FakeWebSocket;
+        FakeWebSocket.instances = [];
+        errors = [];
+        notifications = 0;
+        bookmarks = [];
+        pendingReconnects = [];
+
+        store = new RecordingStore(new MemoryStore());
+        factManager = new FactManager(
+            new PassThroughFork(store),
+            new ObservableSource(store),
+            store,
+            new NetworkNoOp(),
+            []
+        );
+        client = new WsGraphClient(
+            async () => 'ws://127.0.0.1:1/',
+            store,
+            (_feed, bookmark) => {
+                bookmarks.push({ bookmark, savedBatches: store.savedBatches.length });
+            },
+            err => errors.push(err),
+            undefined,
+            // The browser's bridge, without the network in between.
+            envelopes => factManager.notifyFactsAdded(envelopes),
+            callback => { pendingReconnects.push(callback); }
+        );
+    });
+
+    afterEach(() => {
+        unsubscribe?.();
+        for (const socket of FakeWebSocket.instances) {
+            if (socket.readyState !== 3) socket.close();
+        }
+        (globalThis as any).WebSocket = originalWebSocket;
+        Trace.configure(originalTracer);
+    });
+
+    async function openFirstSocket(): Promise<FakeWebSocket> {
+        unsubscribe = client.subscribe('feed1', '', 60);
+        await waitForCondition(() => FakeWebSocket.instances.length === 1);
+        const socket = FakeWebSocket.instances[0];
+        socket.openConnection();
+        await drainTasks(2);
+        return socket;
+    }
+
+    /**
+     * Close the socket, run the reconnect the client scheduled, and open the
+     * socket it creates.
+     */
+    async function reconnect(socket: FakeWebSocket): Promise<FakeWebSocket> {
+        const count = FakeWebSocket.instances.length;
+        socket.close();
+        expect(pendingReconnects).toHaveLength(1);
+        pendingReconnects.shift()!();
+        await waitForCondition(() => FakeWebSocket.instances.length === count + 1);
+        const next = FakeWebSocket.instances[count];
+        next.openConnection();
+        await drainTasks(2);
+        return next;
+    }
+
+    it('reads the new socket with a fresh reader, after a notification held across the reconnect', async () => {
+        const firstNotification = deferred();
+        factManager.addSpecificationListener(everyTestFact, async () => {
+            notifications++;
+            if (notifications === 1) {
+                await firstNotification.promise;
+            }
+        });
+
+        const old = envelopeOf({ n: 8 });
+        const a = envelopeOf({ n: 9 });
+        const b = envelopeOf({ n: 10 }, { prior: { type: a.fact.type, hash: a.fact.hash } });
+
+        const first = await openFirstSocket();
+        first.deliver(frameOf(old));
+        await waitForCondition(() => notifications === 1);
+
+        // The socket drops while the old stream's notification is still held,
+        // and the client reconnects. The new socket's stream starts over: its
+        // fact indexes count from zero again.
+        const second = await reconnect(first);
+
+        // The old stream's notification finishes only now, after the new
+        // socket's reader has started.
+        firstNotification.resolve();
+        await drainTasks();
+
+        second.deliver(frameOf(a, b));
+        second.deliver(bookFrame('feed1', 'bm9'));
+
+        await waitForCondition(() => bookmarks.length > 0 || errors.length > 0);
+
+        // B names A by its index in the new stream. Read against the old
+        // stream's indexes, it would name the old fact and be saved under a
+        // hash that is not B's.
+        expect(errors).toEqual([]);
+        expect(store.savedBatches.map(batch => batch.map(e => e.fact.hash))).toEqual([
+            [old.fact.hash],
+            [a.fact.hash],
+            [b.fact.hash]
+        ]);
+        expect(bookmarks).toEqual([{ bookmark: 'bm9', savedBatches: 3 }]);
+    });
+
+    it('does not carry frames queued behind a failed save over to the next socket', async () => {
+        factManager.addSpecificationListener(everyTestFact, async () => {
+            notifications++;
+        });
+
+        const lost = envelopeOf({ n: 11 });
+        const stale = envelopeOf({ n: 12 });
+        const fresh = envelopeOf({ n: 13 });
+
+        const first = await openFirstSocket();
+        store.failNextSave = true;
+        first.deliver(frameOf(lost));
+        await waitForCondition(() => errors.length > 0);
+        expect(errors[0].message).toContain('Store save failed');
+
+        // The save failed, so this socket's reader has ended. What arrives
+        // behind it waits, and its bookmark must not be applied: it would pass
+        // the fact that was never saved.
+        first.deliver(frameOf(stale));
+        first.deliver(bookFrame('feed1', 'bm-stale'));
+        await drainTasks();
+
+        const second = await reconnect(first);
+        second.deliver(frameOf(fresh));
+        second.deliver(bookFrame('feed1', 'bm-fresh'));
+
+        await waitForCondition(() => bookmarks.length > 0);
+        await drainTasks();
+
+        expect(bookmarks).toEqual([{ bookmark: 'bm-fresh', savedBatches: 1 }]);
+        expect(store.savedBatches.map(batch => batch.map(e => e.fact.hash))).toEqual([
+            [fresh.fact.hash]
+        ]);
     });
 });
