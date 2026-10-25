@@ -1,7 +1,7 @@
 import {
     AuthenticationNoOp, FactEnvelope, FactManager, FactReference, FeedResponse, FeedsResponse,
-    Jinaga, MemoryStore, Network, ObservableSource, PassThroughFork, Specification,
-    SyncStatusNotifier, User, buildModel
+    Jinaga, MemoryStore, Network, ObservableSource, PassThroughFork, ProjectedResult,
+    Specification, SyncStatusNotifier, User, buildModel
 } from "@src";
 import { Condition, ExistentialCondition, Match, PathCondition } from "../../src/specification/specification";
 import { seededRandom, shuffled } from "../utils/seeded-random";
@@ -217,6 +217,38 @@ const accountsWithTheirCurrentMirrors = model.given(User).match((user, facts) =>
         }))
 );
 
+// A flat `notExists`, for the startup window. The window is about *when* a
+// candidate is decided rather than about which level decides it, so the
+// simplest shape that has a transition either way keeps the test on that
+// question.
+const currentTasks = model.given(Root).match((root, facts) =>
+    facts.ofType(Task)
+        .join(task => task.root, root)
+        .notExists(task => facts.ofType(Done)
+            .join(done => done.task, task))
+);
+
+// A child collection with no condition on `Task` at all, under a root match on
+// `Note`. A purge condition naming `Task` is then invisible to the root
+// specification -- `testSpecificationForCompliance` never descends into a
+// projection -- and reachable only through the flattening of this collection.
+const notesWithAllTasks = model.given(Root).match((root, facts) =>
+    facts.ofType(Note)
+        .join(note => note.root, root)
+        .select(note => ({
+            note,
+            tasks: facts.ofType(Task)
+                .join(task => task.root, root)
+        }))
+);
+
+// A purge condition on `Task`: compliance then requires every match on `Task`
+// to carry this same condition negated, which `notesWithAllTasks` does not.
+const taskPurgedWhenDone = model.given(Task).match((task, facts) =>
+    facts.ofType(Done)
+        .join(done => done.task, task)
+);
+
 /** A replicator with nothing to say, so the observer's reads see only what the test saved. */
 class QuietNetwork implements Network {
     feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
@@ -240,13 +272,57 @@ class QuietNetwork implements Network {
     }
 }
 
-function createPeer() {
-    const store = new MemoryStore();
+/** A replicator that cannot be reached, so the starting fetch rejects. */
+class UnreachableNetwork extends QuietNetwork {
+    feeds(): Promise<FeedsResponse> {
+        return Promise.reject(new Error("the replicator is unreachable"));
+    }
+}
+
+/**
+ * A store that runs one hook after a read of one named specification returns.
+ *
+ * That is how a test lands a fact in the window between the observer's starting
+ * read and the moment that read becomes its held set — the window the startup
+ * buffer covers. Keyed on the specification object `j.watch` passes through to
+ * the observer, so the hook fires on that read and on no other. Deterministic:
+ * the fact arrives at a point in the sequence rather than after a delay.
+ */
+class StoreWithReadHook extends MemoryStore {
+    private hooks = new Map<Specification, () => Promise<void>>();
+
+    public afterReadOf(specification: Specification, hook: () => Promise<void>): void {
+        this.hooks.set(specification, hook);
+    }
+
+    async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        const results = await super.read(start, specification);
+        const hook = this.hooks.get(specification);
+        if (hook) {
+            this.hooks.delete(specification);
+            await hook();
+        }
+        return results;
+    }
+}
+
+interface PeerOptions {
+    /** The store, so a test can hook its reads. */
+    store?: MemoryStore;
+    /** The replicator. */
+    network?: Network;
+    /** Purge conditions, which `FactManager.read` checks each specification against. */
+    purgeConditions?: Specification[];
+}
+
+function createPeer(options: PeerOptions = {}) {
+    const store = options.store ?? new MemoryStore();
     const observableSource = new ObservableSource(store);
     const factManager = new FactManager(
-        new PassThroughFork(store), observableSource, store, new QuietNetwork(), []);
+        new PassThroughFork(store), observableSource, store,
+        options.network ?? new QuietNetwork(), options.purgeConditions ?? []);
     const j = new Jinaga(new AuthenticationNoOp(), factManager, new SyncStatusNotifier());
-    return { j, factManager };
+    return { j, factManager, store };
 }
 
 /**
@@ -544,5 +620,175 @@ describe("an observer over notExists nested to depth three", () => {
 
             observer.stop();
         }
+    });
+});
+
+// Issue #345's startup clause, added when the issue was amended on 2026-10-24.
+// Listeners are installed before the starting read, deliberately, so a fact
+// that arrives during it is not missed. It cannot be decided yet, because
+// `held` is not the result until the read finishes, so it is buffered. The
+// question these tests settle is when that buffer is released: delivery calls
+// the caller's own handler, which may park for as long as it likes, so a buffer
+// released after the initial delivery is a buffer a suspended handler can hold
+// open indefinitely. A decision must never wait on a delivery.
+describe("an observer's startup window", () => {
+    it("delivers and withdraws a row while the initial delivery waits on a handler", async () => {
+        // Case 8. The first row's handler never returns, so the initial
+        // delivery stays suspended for the whole of this test. Everything that
+        // follows is decided and delivered anyway.
+        const { j } = createPeer();
+        const owner = await j.fact(new User("--- OWNER ---"));
+        const root = await j.fact(new Root(owner, "r"));
+        const first = await j.fact(new Task(root, "first"));
+
+        let releaseFirst: () => void = () => { };
+        const firstReleased = new Promise<void>(resolve => { releaseFirst = resolve; });
+        let firstEntered: () => void = () => { };
+        const firstHandlerEntered = new Promise<void>(resolve => { firstEntered = resolve; });
+
+        const held = new Set<string>();
+        const added: string[] = [];
+        const removed: string[] = [];
+        const observer = j.watch(currentTasks, root, async (task: Task) => {
+            const hash = j.hash(task);
+            held.add(hash);
+            added.push(hash);
+            if (hash === j.hash(first)) {
+                firstEntered();
+                await firstReleased;
+            }
+            return async () => {
+                held.delete(hash);
+                removed.push(hash);
+            };
+        });
+
+        // Not `loaded()`: the initial delivery is what suspends, so `loaded()`
+        // does not resolve until this test releases it at the end.
+        await firstHandlerEntered;
+
+        const second = await j.fact(new Task(root, "second"));
+        expect(added).toEqual([j.hash(first), j.hash(second)]);
+
+        await j.fact(new Done(second));
+        expect(removed).toEqual([j.hash(second)]);
+        expect(held).toEqual(new Set([j.hash(first)]));
+
+        releaseFirst();
+        await observer.loaded();
+        await observer.processed();
+        expect(await j.query(currentTasks, root)).toEqual([first]);
+
+        observer.stop();
+    });
+
+    it("completes a handler that waits on another row of the same watch", async () => {
+        // Case 9. The first row's handler waits for the second row to be
+        // delivered, and the fact that adds the second row arrives inside the
+        // startup window. Releasing that window only after the initial delivery
+        // has finished every handler makes this a deadlock: the delivery waits
+        // on the handler, the handler waits on the decision, and the decision
+        // waits on the window.
+        const store = new StoreWithReadHook();
+        const { j } = createPeer({ store });
+        const owner = await j.fact(new User("--- OWNER ---"));
+        const root = await j.fact(new Root(owner, "r"));
+        const first = await j.fact(new Task(root, "first"));
+        const second = new Task(root, "second");
+
+        store.afterReadOf(currentTasks.specification, async () => {
+            await j.fact(second);
+        });
+
+        let secondDelivered: () => void = () => { };
+        const secondIsDelivered = new Promise<void>(resolve => { secondDelivered = resolve; });
+
+        const added: string[] = [];
+        const completed: string[] = [];
+        const observer = j.watch(currentTasks, root, async (task: Task) => {
+            const hash = j.hash(task);
+            added.push(hash);
+            if (hash === j.hash(first)) {
+                await secondIsDelivered;
+            }
+            else {
+                secondDelivered();
+            }
+            completed.push(hash);
+        });
+
+        await observer.loaded();
+        await observer.processed();
+
+        const both = [j.hash(first), j.hash(second)].sort();
+        expect([...added].sort()).toEqual(both);
+        expect([...completed].sort()).toEqual(both);
+
+        observer.stop();
+    });
+
+    it("decides candidates that arrive after the starting fetch fails", async () => {
+        // Reported against this layer from the review pass on #355. The
+        // starting read runs only after the fetch on the uncached path, so a
+        // rejected fetch leaves the window open with nothing left to close it,
+        // and every later candidate joins a buffer nothing releases. The
+        // observer stays subscribed and never notifies again.
+        const { j } = createPeer({ network: new UnreachableNetwork() });
+        const owner = await j.fact(new User("--- OWNER ---"));
+        const root = await j.fact(new Root(owner, "r"));
+
+        const { held, added, handler } = collectHeld<Task>(t => j.hash(t));
+        const observer = j.watch(currentTasks, root, handler);
+        await expect(observer.loaded()).rejects.toThrow("the replicator is unreachable");
+
+        const task = await j.fact(new Task(root, "first"));
+        await observer.processed();
+        expect(added).toEqual([j.hash(task)]);
+        expect(held).toEqual(new Set([j.hash(task)]));
+
+        await j.fact(new Done(task));
+        await observer.processed();
+        expect(held.size).toEqual(0);
+
+        observer.stop();
+    });
+});
+
+describe("an observer reading a nested level", () => {
+    it("keeps a child collection current when a purge condition names a type only it reaches", async () => {
+        // Reported against this layer from the review pass on #355.
+        // `testSpecificationForCompliance` examines a specification's own
+        // matches and never descends into its projection, so the root
+        // specification here is never checked against a purge condition on
+        // `Task`. The nested level's specification is the parent's matches
+        // followed by the collection's own, which does present that match, so
+        // checking the flattened form again fails where the root passed. The
+        // throw is contained by listener containment, leaving the collection
+        // silently out of date.
+        const { j } = createPeer({ purgeConditions: [taskPurgedWhenDone.specification] });
+        const owner = await j.fact(new User("--- OWNER ---"));
+        const root = await j.fact(new Root(owner, "r"));
+        await j.fact(new Note(root, "n"));
+        const first = await j.fact(new Task(root, "first"));
+
+        const tasksHeld = new Set<string>();
+        const observer = j.watch(notesWithAllTasks, root, row => {
+            row.tasks.onAdded(task => {
+                const hash = j.hash(task);
+                tasksHeld.add(hash);
+                return () => {
+                    tasksHeld.delete(hash);
+                };
+            });
+        });
+        await observer.loaded();
+        await observer.processed();
+        expect(tasksHeld).toEqual(new Set([j.hash(first)]));
+
+        const second = await j.fact(new Task(root, "second"));
+        await observer.processed();
+        expect(tasksHeld).toEqual(new Set([j.hash(first), j.hash(second)]));
+
+        observer.stop();
     });
 });

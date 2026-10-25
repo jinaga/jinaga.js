@@ -460,6 +460,19 @@ export class ObserverImpl<T> implements Observer<T> {
                 }
                 catch (e) {
                     Trace.error(`[Observer] ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`);
+                    // The starting read never ran, so nothing has closed the
+                    // startup window. Close it here. `onCandidates` buffers
+                    // without deciding while the window is open, so a rejected
+                    // fetch -- a failing network, a distribution refusal, an
+                    // intersection error -- would otherwise leave this observer
+                    // subscribed and permanently silent, adding every later
+                    // candidate to a buffer nothing releases. `held` is empty,
+                    // which is exactly what has been delivered, so the
+                    // candidates decide against the store as any later batch
+                    // does. Idempotent on the cached path, where `read()` has
+                    // already closed it.
+                    this.endStartup().catch(error =>
+                        Trace.error(`[Observer] STARTUP RELEASE ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${error}`));
                     this.loadSettled = true;
                     this.loadResolve = undefined;
                     cacheResolve(false);
@@ -595,6 +608,12 @@ export class ObserverImpl<T> implements Observer<T> {
                 branch.feeds = [];
             }
         }
+        // Drop the candidates that will now never be decided, along with the
+        // levels they name. `held` is cleared above; leaving these holding the
+        // same rows would retain every projected result a stopped observer had
+        // queued.
+        this.queuedCandidates.clear();
+        this.startupCandidates = null;
         // Settle loadedPromise if it is still pending, so callers that await
         // loaded() are not permanently suspended after stop().
         if (this.loadResolve) {
@@ -827,12 +846,35 @@ export class ObserverImpl<T> implements Observer<T> {
         for (const { branch, projected } of branchResults) {
             this.initializeHeld(branch, projected);
         }
-        for (const { branch, projected } of branchResults) {
-            const givenSubset = branch.specification.given.map(g => g.label.name);
-            const resultSubset = [...givenSubset, ...branch.specification.matches.map(m => m.unknown.name)];
-            await this.notifyAdded(projected, branch.specification.projection, "", givenSubset, resultSubset, branch);
+        // Release the startup window here, as soon as `held` is the result --
+        // not after the deliveries below. A decision must never wait on a
+        // delivery: `notifyAdded` calls the caller's own add handler, which may
+        // park for as long as it likes, and while the window is open
+        // `onCandidates` buffers a candidate without deciding it. Ending the
+        // window afterwards therefore left every fact that arrived during the
+        // initial delivery undecided for as long as one handler stayed
+        // suspended, which for a handler that waits on a later row of this same
+        // watch is forever.
+        //
+        // The buffered candidates decide against `held`, which the loop above
+        // has just made the result, and deliver on their own promise. That
+        // promise is awaited after the deliveries below rather than before them,
+        // so neither side waits on the other's handler.
+        let startupFailure: unknown;
+        const startupDecided = this.endStartup().catch((e: unknown) => { startupFailure = e; });
+        try {
+            for (const { branch, projected } of branchResults) {
+                const givenSubset = branch.specification.given.map(g => g.label.name);
+                const resultSubset = [...givenSubset, ...branch.specification.matches.map(m => m.unknown.name)];
+                await this.notifyAdded(projected, branch.specification.projection, "", givenSubset, resultSubset, branch);
+            }
         }
-        await this.endStartup();
+        finally {
+            await startupDecided;
+        }
+        if (startupFailure !== undefined) {
+            throw startupFailure;
+        }
     }
 
     /**
@@ -956,7 +998,7 @@ export class ObserverImpl<T> implements Observer<T> {
         const reads = await Promise.all([...queued.entries()].map(async ([level, entry]) => ({
             level,
             entry,
-            present: this.toRowMap(await this.factManager.read(this.given, level.specification), level)
+            present: this.toRowMap(await this.readLevel(level), level)
         })));
         if (this.stopped) {
             return [];
@@ -984,6 +1026,26 @@ export class ObserverImpl<T> implements Observer<T> {
             }
         }
         return deliveries;
+    }
+
+    /**
+     * Read one level's specification.
+     *
+     * The root's specification is the branch specification, read the way every
+     * other caller reads it. A nested level's is derived -- the parent's matches
+     * followed by the component's own -- and is read without a second purge
+     * compliance check. `testSpecificationForCompliance` looks only at a
+     * specification's own matches and never inside a projection, so the
+     * flattened form presents matches the root never presented for checking: a
+     * purge condition on a type reached only inside a child collection passes
+     * for the root and fails for the flattening. The throw is contained by
+     * listener containment, which would leave that collection silently out of
+     * date rather than reporting anything.
+     */
+    private readLevel(level: ObserverLevel): Promise<ProjectedResult[]> {
+        return level.path === ""
+            ? this.factManager.read(this.given, level.specification)
+            : this.factManager.readDerived(this.given, level.specification);
     }
 
     /**
