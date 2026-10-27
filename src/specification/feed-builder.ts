@@ -1,7 +1,8 @@
 import { ComponentProjection, ExistentialCondition, Label, Match, Specification, SpecificationGiven, emptySpecification, isExistentialCondition, isPathCondition } from "./specification";
 
 /**
- * What a feed continues with once the match list it is following runs out.
+ * What a feed continues with once the part of the specification it is
+ * following runs out.
  *
  * A negative existential condition branches a feed off the current one. At odd
  * nesting depth that branch is an *excluding* feed: it is evidence that results
@@ -11,13 +12,28 @@ import { ComponentProjection, ExistentialCondition, Label, Match, Specification,
  * tuples contribute results.
  *
  * The branch is produced by a recursive call that only knows the matches of the
- * condition it is following, so the remainder of every enclosing level travels
- * with it in this list.
+ * condition it is following, so the whole remainder travels with it here. That
+ * remainder has two parts: the existential conditions still waiting on the
+ * match the branch left from, and the matches after that one, at this level and
+ * at every enclosing level. Both are carried by one continuation. Carrying only
+ * the second left the facts the first reads in no feed at all, because the main
+ * path reaches those conditions with the current one already attached as a
+ * one-level `!E` that excludes exactly the tuples the branch restored.
  */
 interface Continuation {
+    pending: PendingConditions | null;
     matches: Match[];
     projectionComponents: ComponentProjection[];
     parent: Continuation | null;
+}
+
+/**
+ * Existential conditions still waiting on a match the feed already carries.
+ * The label names that match, which is how `withCondition` finds it.
+ */
+interface PendingConditions {
+    label: string;
+    conditions: ExistentialCondition[];
 }
 
 export function buildFeeds(specification: Specification): Specification[] {
@@ -63,50 +79,19 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
                 unusedGivens = unusedGivens.filter(given => given.name !== reference.name);
             }
         }
-        for (const existentialCondition of match.conditions.filter(isExistentialCondition)) {
-            if (existentialCondition.exists) {
-                // Include the matches of the existential condition into the current feed.
-                // The flattened matches continue inline, so they carry neither a
-                // continuation nor the projection components: the feed they extend is
-                // not finished, and its projections are built at the real terminal.
-                const { specifications: newSpecifications, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches, [], parity, null);
-                const last = newSpecifications.length - 1;
-                specifications.push(...newSpecifications.slice(0, last));
-                specification = newSpecifications[last];
-                unusedGivens = newUnusedGivens;
-            }
-            else {
-                // Branch from the current feed and follow the matches of the existential condition.
-                // This will produce tuples that prove the condition false.
-                //
-                // Hand the branch everything still unmatched at this level and at
-                // every enclosing level. If the branch lands on even parity it is a
-                // restoring feed, and it will match that remainder so that its
-                // tuples carry the facts the results are built from. An excluding
-                // feed (odd parity) discards the continuation and stops.
-                const innerParity = parity + 1;
-                const innerContinuation: Continuation = {
-                    matches: matches.slice(index + 1),
-                    projectionComponents,
-                    parent: continuation
-                };
-                const { specifications: negatingSpecifications } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation);
-                specifications.push(...negatingSpecifications);
-
-                // Then apply the existential condition and continue with the tuple.
-                const { existentialCondition: newExistentialCondition, givens: newGivens, unusedGivens: newUnusedGivens } = buildExistentialCondition({
-                    type: "existential",
-                    exists: false,
-                    matches: []
-                }, existentialCondition.matches, specification.given, unusedGivens);
-                // Attach the condition to the match it actually belongs to. A
-                // preceding positive existential may have flattened its own
-                // matches onto the end of the feed, so the current match is no
-                // longer guaranteed to be the last one.
-                specification = withCondition(specification, newGivens, newExistentialCondition, match.unknown.name);
-                unusedGivens = newUnusedGivens;
-            }
-        }
+        // What follows this match's own conditions: the matches after it, and
+        // then whatever every enclosing level still has.
+        const rest: Continuation = {
+            pending: null,
+            matches: matches.slice(index + 1),
+            projectionComponents,
+            parent: continuation
+        };
+        const { specifications: conditionSpecifications, specification: conditioned, unusedGivens: conditionUnusedGivens } =
+            addConditions(specification, unusedGivens, match.unknown.name, match.conditions.filter(isExistentialCondition), projectionComponents, parity, rest);
+        specifications.push(...conditionSpecifications);
+        specification = conditioned;
+        unusedGivens = conditionUnusedGivens;
     }
 
     if (parity % 2 !== 0) {
@@ -117,10 +102,8 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
     }
 
     if (continuation !== null) {
-        // A positive feed with more of the specification still to match. Parity
-        // stays where it is: a negative condition among the remaining matches is
-        // the *first* level of negation relative to this feed.
-        const { specifications: continued, unusedGivens: continuedUnusedGivens } = addMatches(specification, unusedGivens, continuation.matches, continuation.projectionComponents, parity, continuation.parent);
+        // A positive feed with more of the specification still to match.
+        const { specifications: continued, unusedGivens: continuedUnusedGivens } = continueWith(specification, unusedGivens, parity, continuation);
         specifications.push(...continued);
         return { specifications, unusedGivens: continuedUnusedGivens };
     }
@@ -130,6 +113,95 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
     specifications.push(specification);
     specifications.push(...addProjections(specification, unusedGivens, projectionComponents));
     return { specifications, unusedGivens };
+}
+
+/**
+ * Apply the existential conditions of one match, in order, to the feed that
+ * already carries it. Returns the feeds branched off along the way, and the
+ * feed the main path continues with.
+ *
+ * `rest` is what follows these conditions. A branch is handed it with the
+ * conditions after the current one prepended, so the whole remainder reaches
+ * the branch as one thing.
+ */
+function addConditions(specification: Specification, unusedGivens: Label[], label: string, conditions: ExistentialCondition[], projectionComponents: ComponentProjection[], parity: number, rest: Continuation): { specifications: Specification[]; specification: Specification; unusedGivens: Label[]; } {
+    const specifications: Specification[] = [];
+    for (let index = 0; index < conditions.length; index++) {
+        const existentialCondition = conditions[index];
+        if (existentialCondition.exists) {
+            // Include the matches of the existential condition into the current feed.
+            // The flattened matches continue inline, so they carry neither a
+            // continuation nor the projection components: the feed they extend is
+            // not finished, and its projections are built at the real terminal.
+            const { specifications: newSpecifications, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches, [], parity, null);
+            const last = newSpecifications.length - 1;
+            specifications.push(...newSpecifications.slice(0, last));
+            specification = newSpecifications[last];
+            unusedGivens = newUnusedGivens;
+        }
+        else {
+            // Branch from the current feed and follow the matches of the existential condition.
+            // This will produce tuples that prove the condition false.
+            //
+            // Hand the branch everything still unmatched: the conditions that
+            // follow this one on the same match, and then the matches still
+            // waiting at this level and at every enclosing level. If the branch
+            // lands on even parity it is a restoring feed, and it will match
+            // that remainder so that its tuples carry the facts the results are
+            // built from. An excluding feed (odd parity) discards the
+            // continuation and stops.
+            const innerParity = parity + 1;
+            const innerContinuation: Continuation = {
+                pending: { label, conditions: conditions.slice(index + 1) },
+                matches: rest.matches,
+                projectionComponents: rest.projectionComponents,
+                parent: rest.parent
+            };
+            const { specifications: negatingSpecifications } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation);
+            specifications.push(...negatingSpecifications);
+
+            // Then apply the existential condition and continue with the tuple.
+            const { existentialCondition: newExistentialCondition, givens: newGivens, unusedGivens: newUnusedGivens } = buildExistentialCondition({
+                type: "existential",
+                exists: false,
+                matches: []
+            }, existentialCondition.matches, specification.given, unusedGivens);
+            // Attach the condition to the match it actually belongs to. A
+            // preceding positive existential may have flattened its own
+            // matches onto the end of the feed, so the current match is no
+            // longer guaranteed to be the last one.
+            specification = withCondition(specification, newGivens, newExistentialCondition, label);
+            unusedGivens = newUnusedGivens;
+        }
+    }
+    return { specifications, specification, unusedGivens };
+}
+
+/**
+ * Match the remainder a continuation carries: first the conditions still
+ * waiting on a match this feed already holds, then the matches after it.
+ *
+ * Parity stays where it is. A negative condition anywhere in the remainder is
+ * the *first* level of negation relative to this feed.
+ */
+function continueWith(specification: Specification, unusedGivens: Label[], parity: number, continuation: Continuation): { specifications: Specification[]; unusedGivens: Label[]; } {
+    const specifications: Specification[] = [];
+    if (continuation.pending !== null) {
+        const rest: Continuation = {
+            pending: null,
+            matches: continuation.matches,
+            projectionComponents: continuation.projectionComponents,
+            parent: continuation.parent
+        };
+        const { specifications: conditionSpecifications, specification: conditioned, unusedGivens: conditionUnusedGivens } =
+            addConditions(specification, unusedGivens, continuation.pending.label, continuation.pending.conditions, continuation.projectionComponents, parity, rest);
+        specifications.push(...conditionSpecifications);
+        specification = conditioned;
+        unusedGivens = conditionUnusedGivens;
+    }
+    const { specifications: continued, unusedGivens: continuedUnusedGivens } = addMatches(specification, unusedGivens, continuation.matches, continuation.projectionComponents, parity, continuation.parent);
+    specifications.push(...continued);
+    return { specifications, unusedGivens: continuedUnusedGivens };
 }
 
 function buildExistentialCondition(existentialCondition: ExistentialCondition, matches: Match[], givens: SpecificationGiven[], unusedGivens: Label[]): { existentialCondition: ExistentialCondition, givens: SpecificationGiven[], unusedGivens: Label[] } {
