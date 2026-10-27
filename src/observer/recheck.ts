@@ -1,13 +1,13 @@
 import { pinLabel } from "../specification/inverse-candidates";
-import { SpecificationRow } from "../specification/row";
-import { PathCondition, Specification } from "../specification/specification";
+import { Label, PathCondition, Specification } from "../specification/specification";
+import { FactReference, ReferencesByName } from "../storage";
 
 /**
  * One row's transition across the boundary of a specification's result set.
  */
-export interface RecheckDecision<U> {
+export interface RecheckDecision<R> {
     operation: "added" | "removed";
-    row: SpecificationRow<U>;
+    row: R;
 }
 
 /**
@@ -16,9 +16,11 @@ export interface RecheckDecision<U> {
  *
  * An inverse produces *candidates*: rows whose membership may have changed.
  * It carries no add or remove label, and a candidate may be an addition, a
- * removal, or no change at all. What decides is `present`, a read of the
- * specification for this subscription's givens on the store that holds the
- * whole batch.
+ * removal, or no change at all. What decides is `present`, read from the store
+ * that holds the whole batch. Only the candidates are ever looked up there, so
+ * `present` need only answer for them: a read of the whole result answers for
+ * every row, and a read of `membershipSpecification` answers for one
+ * (#359).
  *
  * `held` is the set a consumer has been offered and has not had withdrawn,
  * keyed by `rowHash`. Each candidate is kept exactly when `present` has it,
@@ -37,12 +39,12 @@ export interface RecheckDecision<U> {
  * candidates that cover every changed row — which `candidateInverses`
  * supplies.
  */
-export function recheckCandidates<U>(
-    held: Map<string, SpecificationRow<U>>,
-    candidates: Iterable<SpecificationRow<U>>,
-    present: Map<string, SpecificationRow<U>>
-): RecheckDecision<U>[] {
-    const decisions: RecheckDecision<U>[] = [];
+export function recheckCandidates<R extends { rowHash: string }>(
+    held: Map<string, R>,
+    candidates: Iterable<R>,
+    present: Map<string, R>
+): RecheckDecision<R>[] {
+    const decisions: RecheckDecision<R>[] = [];
     const decided = new Set<string>();
     for (const candidate of candidates) {
         if (decided.has(candidate.rowHash)) {
@@ -104,4 +106,31 @@ export function givenCandidateInverse(specification: Specification, index: numbe
         ],
         projection: specification.projection
     };
+}
+
+/**
+ * The references a membership read starts from: the subscription's own givens,
+ * then the fact each pinned label binds.
+ *
+ * `null` when the candidate does not bind one of them, or binds it to a fact of
+ * another type. A candidate from `candidateInverses` binds every match unknown
+ * of its level, and binds each to a fact the store reached by a role walk of
+ * that unknown's type, so neither arises for one. A caller that reads a
+ * candidate from somewhere else gets `null` rather than a membership read whose
+ * answer would be about a different tuple, and reads the whole result instead.
+ */
+export function membershipStart(
+    given: FactReference[],
+    pinned: Label[],
+    references: ReferencesByName
+): FactReference[] | null {
+    const pinnedReferences: FactReference[] = [];
+    for (const label of pinned) {
+        const reference = references[label.name];
+        if (reference === undefined || reference.type !== label.type) {
+            return null;
+        }
+        pinnedReferences.push(reference);
+    }
+    return [...given, ...pinnedReferences];
 }
