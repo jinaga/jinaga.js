@@ -636,6 +636,19 @@ Validation against the book's own worked examples:
 
 The restaurant feeds now reproduce the book's three specifications verbatim.
 
+**The same defect, one level in (#368).** The continuation that fix introduced
+carried the matches still unmatched at each level, and nothing else. The
+existential conditions still waiting on the *current* match were not in it, so
+a match with two negative conditions, the first of them nested, branched a
+restoring feed that stopped before the second condition. Meanwhile the main
+path had already attached the first condition as a one-level `!E`, which
+excludes exactly the tuples the branch restored, so every feed built for the
+second condition skipped them. Nothing delivered the facts the second condition
+reads for a restored entity, and swapping the two conditions moved which facts
+went missing. A continuation now carries both halves of the remainder, the
+conditions and the matches, so the branch receives it as one quantity. This
+closes one more case of L6d; L6d itself is still unproven in general (O6).
+
 ### 9.4 No downstream change is required
 
 Feeds still contain at most one level of negative existential condition, so
