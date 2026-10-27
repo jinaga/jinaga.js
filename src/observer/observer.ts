@@ -2,11 +2,13 @@ import { computeObjectHash } from "../fact/hash";
 import { FeedDecision } from "../http/messages";
 import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
-import { SpecificationListener } from "../observable/observable";
+import { InverseListener } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
-import { SpecificationInverse, invertSpecification } from "../specification/inverse";
-import { Projection, Specification } from "../specification/specification";
+import { candidateInverses } from "../specification/inverse-candidates";
+import { SpecificationRow } from "../specification/row";
+import { Match, Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
+import { givenCandidateInverse, recheckCandidates } from "./recheck";
 import { computeStringHash } from "../util/encoding";
 import { Trace } from "../util/trace";
 
@@ -77,19 +79,118 @@ export interface Observer<T> {
     onDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void): void;
 }
 
+/**
+ * One path within a branch's projection, as a specification that can be read
+ * and inverted on its own.
+ *
+ * A nested collection is flattened exactly the way `invertProjection` flattens
+ * it (`inverse.ts`): the parent's matches, then the component's own, carrying
+ * the component's projection. That makes every path -- the root and each child
+ * collection -- a specification this level reads for itself, which is what lets
+ * a change deep inside a collection be decided even though the root row's own
+ * membership never changes. This flattening is outside the proof in
+ * jinaga/jinaga-spec#12; the observer tests exercise it.
+ */
+interface ObserverLevel {
+    path: string;
+    specification: Specification;
+    projection: Projection;
+    parentSubset: string[];
+    resultSubset: string[];
+    /**
+     * The labels that key `held`.
+     *
+     * At the root this is the branch's `voteLabels`, not the row identity, so
+     * that two authorizing paths for one row are held -- and therefore
+     * withdrawn -- independently. That is the granularity `votesByRow` counts,
+     * so keying any coarser would let one path's withdrawal retract a row the
+     * other still supports. At a nested path a row has exactly one possible
+     * authorizing path, so the two coincide.
+     */
+    keyLabels: string[];
+    /**
+     * The rows this branch holds at this path, keyed over `keyLabels`.
+     * `recheckCandidates` keeps this equal to a read of `specification`, and
+     * each entry carries the projected result the delivery path needs.
+     */
+    held: Map<string, SpecificationRow<ProjectedResult>>;
+    listeners: InverseListener[];
+}
+
+/**
+ * One decided transition, waiting to be delivered to the caller's handler.
+ */
+interface PendingDelivery {
+    level: ObserverLevel;
+    branch: ObserverBranch;
+    operation: "added" | "removed";
+    result: ProjectedResult;
+}
+
 interface ObserverBranch {
     specification: Specification;
     feeds: string[];
-    listeners: SpecificationListener[];
+    /** The root path, then every nested collection, parents before children. */
+    levels: ObserverLevel[];
     /**
      * Labels of this branch's spec (givens + match unknowns). Used to
      * compute a stable "vote id" for per-row ref counting: the same
-     * (row, auth path) tuple from this branch's ADD inverse and its
-     * REMOVE inverse hash to the same id because both bind the same set
-     * of labels (the inverse's "from" fact differs but the resolved
-     * spec labels match in shape and value).
+     * (row, auth path) tuple reached through any of this branch's candidate
+     * inverses hashes to the same id, because they all bind the same set of
+     * labels (the inverse's "from" fact differs but the resolved spec labels
+     * match in shape and value).
      */
     voteLabels: string[];
+}
+
+/**
+ * Flatten a branch into one level per path, parents before children.
+ */
+function buildLevels(specification: Specification, voteLabels: string[]): ObserverLevel[] {
+    const givenSubset = specification.given.map(g => g.label.name);
+    const rootResultSubset = [...givenSubset, ...specification.matches.map(m => m.unknown.name)];
+    const levels: ObserverLevel[] = [];
+
+    const descend = (
+        path: string,
+        matches: Match[],
+        projection: Projection,
+        parentSubset: string[],
+        resultSubset: string[],
+        keyLabels: string[]
+    ) => {
+        levels.push({
+            path,
+            specification: { given: specification.given, matches, projection },
+            projection,
+            parentSubset,
+            resultSubset,
+            keyLabels,
+            held: new Map(),
+            listeners: []
+        });
+        if (projection.type === "composite") {
+            for (const component of projection.components) {
+                if (component.type === "specification") {
+                    const childResultSubset = [
+                        ...resultSubset,
+                        ...component.matches.map(m => m.unknown.name)
+                    ];
+                    descend(
+                        path + "." + component.name,
+                        [...matches, ...component.matches],
+                        component.projection,
+                        resultSubset,
+                        childResultSubset,
+                        childResultSubset
+                    );
+                }
+            }
+        }
+    };
+
+    descend("", specification.matches, specification.projection, givenSubset, rootResultSubset, voteLabels);
+    return levels;
 }
 
 export class ObserverImpl<T> implements Observer<T> {
@@ -187,6 +288,26 @@ export class ObserverImpl<T> implements Observer<T> {
      */
     private pendingNotifications: Set<Promise<void>> = new Set();
     /**
+     * Candidates that arrived before the starting read established `held`.
+     *
+     * Listeners are installed before the read, deliberately, to close the
+     * window in which a fact could arrive unseen. A candidate from that window
+     * cannot be decided yet, because `held` is not the result until the read
+     * finishes. So it is buffered and re-checked once the read has, which
+     * decides it against what the store holds rather than replaying it as a
+     * change. `null` once the window is closed.
+     */
+    private startupCandidates: Map<ObserverLevel, { branch: ObserverBranch; rows: SpecificationRow<ProjectedResult>[] }> | null = new Map();
+    /**
+     * Candidates awaiting a decision, grouped by the level that proposed them.
+     */
+    private queuedCandidates: Map<ObserverLevel, { branch: ObserverBranch; rows: SpecificationRow<ProjectedResult>[] }> = new Map();
+    /**
+     * Serializes re-checks, so the order rows reach the handlers is the order
+     * they were decided in.
+     */
+    private recheckChain: Promise<void> = Promise.resolve();
+    /**
      * Buffers results that are pending delivery to result handlers.
      * 
      * The key is a string in the format `path|tupleHash`, where:
@@ -251,11 +372,12 @@ export class ObserverImpl<T> implements Observer<T> {
         // For an unintersected branch the vote labels equal the row identity
         // labels, so each row carries exactly one vote and ref counting
         // reduces to the pre-fix behavior.
+        const rootVoteLabels = [...this.rowIdentityLabels];
         this.branches = [{
             specification,
             feeds: [],
-            listeners: [],
-            voteLabels: [...this.rowIdentityLabels]
+            levels: buildLevels(specification, rootVoteLabels),
+            voteLabels: rootVoteLabels
         }];
 
         // Map the given facts to a tuple.
@@ -338,6 +460,19 @@ export class ObserverImpl<T> implements Observer<T> {
                 }
                 catch (e) {
                     Trace.error(`[Observer] ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`);
+                    // The starting read never ran, so nothing has closed the
+                    // startup window. Close it here. `onCandidates` buffers
+                    // without deciding while the window is open, so a rejected
+                    // fetch -- a failing network, a distribution refusal, an
+                    // intersection error -- would otherwise leave this observer
+                    // subscribed and permanently silent, adding every later
+                    // candidate to a buffer nothing releases. `held` is empty,
+                    // which is exactly what has been delivered, so the
+                    // candidates decide against the store as any later batch
+                    // does. Idempotent on the cached path, where `read()` has
+                    // already closed it.
+                    this.endStartup().catch(error =>
+                        Trace.error(`[Observer] STARTUP RELEASE ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${error}`));
                     this.loadSettled = true;
                     this.loadResolve = undefined;
                     cacheResolve(false);
@@ -347,35 +482,61 @@ export class ObserverImpl<T> implements Observer<T> {
         });
     }
 
+    /**
+     * Install one listener per way a fact can change a row, at every path.
+     *
+     * The inverses come from `candidateInverses`, which is proven to propose
+     * every row a fresh batch adds or removes (`candidates_complete`,
+     * jinaga/jinaga-spec#12). They carry no add-or-remove label, because the
+     * label is what `invertSpecification` got wrong: an inverse built for one
+     * level still required the other levels' existential conditions on the new
+     * graph, so a level that had just *lost* its solution found nothing and no
+     * handler ran (issue #338). What an inverse proposes here is a candidate,
+     * and `recheckCandidates` decides it by reading the result.
+     *
+     * Each is read with this observer's given references bound ahead of the new
+     * fact, which is also how a specification whose given is joined only from
+     * inside an existential condition becomes watchable at all (issue #141):
+     * `addSpecificationListener` would refuse it for having more than one
+     * given.
+     */
     private addSpecificationListeners() {
         if (this.listenersAdded) {
             return;
         }
-        Trace.info(`[Observer] ADDING LISTENERS - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Branches: ${this.branches.length}`);
+        const levelCount = this.branches.reduce((sum, b) => sum + b.levels.length, 0);
+        Trace.info(`[Observer] ADDING LISTENERS - Spec hash: ${this.specificationHash.substring(0, 8)}..., Given hash: ${this.givenHash.substring(0, 8)}..., Branches: ${this.branches.length}, Levels: ${levelCount}`);
 
         for (let branchIndex = 0; branchIndex < this.branches.length; branchIndex++) {
             const branch = this.branches[branchIndex];
-            const inverses = invertSpecification(branch.specification);
-            Trace.info(`[Observer] Branch ${branchIndex} produced ${inverses.length} inverse specifications`);
+            for (const level of branch.levels) {
+                const inverses = candidateInverses(level.specification);
+                // One per given as well: no inverse of an unknown waits for a
+                // given's type, and a read returns nothing at all while a given
+                // is absent from the store, so without these a subscription
+                // started before its given arrived would never hear that every
+                // row had just become available.
+                const givenInverses = level.specification.given.map((_, index) =>
+                    givenCandidateInverse(level.specification, index));
+                const displayPath = level.path || "(root)";
+                Trace.info(`[Observer] Branch ${branchIndex} path ${displayPath} - Candidate inverses: ${inverses.length}, Given inverses: ${givenInverses.length}`);
 
-            inverses.forEach((inverse, index) => {
-                const givenType = inverse.inverseSpecification.given[0].label.type;
-                const path = inverse.path || "(root)";
-                const operation = inverse.operation;
-                Trace.info(`[Observer] Branch ${branchIndex} Inverse ${index + 1}/${inverses.length} - Path: ${path}, Operation: ${operation}, Given type: ${givenType}, Given subset: [${inverse.givenSubset.join(', ')}], Parent subset: [${inverse.parentSubset.join(', ')}]`);
-            });
-
-            branch.listeners = inverses.map((inverse, index) => {
-                const listener = this.factManager.addSpecificationListener(
-                    inverse.inverseSpecification,
-                    (results) => this.onResult(inverse, results, branch)
-                );
-                const path = inverse.path || "(root)";
-                Trace.info(`[Observer] Branch ${branchIndex} registered listener ${index + 1}/${inverses.length} for path: ${path}`);
-                return listener;
-            });
+                level.listeners = [
+                    ...inverses.map(inverse => this.factManager.addInverseListener(
+                        inverse,
+                        this.given,
+                        results => this.onCandidates(level, branch, results, false)
+                    )),
+                    ...givenInverses.map(inverse => this.factManager.addInverseListener(
+                        inverse,
+                        this.given,
+                        results => this.onCandidates(level, branch, results, true)
+                    ))
+                ];
+            }
         }
-        const totalListeners = this.branches.reduce((sum, b) => sum + b.listeners.length, 0);
+        const totalListeners = this.branches.reduce(
+            (sum, b) => sum + b.levels.reduce((levelSum, l) => levelSum + l.listeners.length, 0), 0);
         Trace.info(`[Observer] LISTENERS REGISTERED - Total: ${totalListeners}, Spec hash: ${this.specificationHash.substring(0, 8)}...`);
         this.listenersAdded = true;
     }
@@ -435,14 +596,24 @@ export class ObserverImpl<T> implements Observer<T> {
         }
         this.clearingUnsubscribes.length = 0;
         for (const branch of this.branches) {
-            for (const listener of branch.listeners) {
-                this.factManager.removeSpecificationListener(listener);
+            for (const level of branch.levels) {
+                for (const listener of level.listeners) {
+                    this.factManager.removeInverseListener(listener);
+                }
+                level.listeners = [];
+                level.held.clear();
             }
             if (branch.feeds.length > 0) {
                 this.factManager.unsubscribe(branch.feeds);
                 branch.feeds = [];
             }
         }
+        // Drop the candidates that will now never be decided, along with the
+        // levels they name. `held` is cleared above; leaving these holding the
+        // same rows would retain every projected result a stopped observer had
+        // queued.
+        this.queuedCandidates.clear();
+        this.startupCandidates = null;
         // Settle loadedPromise if it is still pending, so callers that await
         // loaded() are not permanently suspended after stop().
         if (this.loadResolve) {
@@ -480,21 +651,24 @@ export class ObserverImpl<T> implements Observer<T> {
         // in the constructor). That hash is the MRU cache key and the
         // user-facing subscription identity; intersection is an internal
         // rewrite that should not change it.
-        this.branches = branches.map(b => ({
-            specification: b.specification,
-            feeds: [],
-            listeners: [],
+        this.branches = branches.map(b => {
             // Vote labels are the branch's spec labels — broader than the
             // shared row-identity labels because each branch's auth path
             // contributes alpha-renamed unknowns (dist_admin, dist_user,
             // distributionUser, ...). Two distinct auth paths through the
             // same branch produce different vote ids; identical paths
             // collide and ref-count as one.
-            voteLabels: [
+            const voteLabels = [
                 ...b.specification.given.map(g => g.label.name),
                 ...b.specification.matches.map(m => m.unknown.name)
-            ]
-        }));
+            ];
+            return {
+                specification: b.specification,
+                feeds: [],
+                levels: buildLevels(b.specification, voteLabels),
+                voteLabels
+            };
+        });
         // Re-key any handlers that were registered with the pre-intersection
         // givenHash. Notification routing matches handlers by tupleHash, so a
         // stale value here would silently drop every result.
@@ -666,49 +840,304 @@ export class ObserverImpl<T> implements Observer<T> {
             // The observer was stopped before the read completed.
             return;
         }
+        // Make the read the held set before anything is delivered from it, so a
+        // candidate that arrives mid-delivery is decided against a set that is
+        // already the result rather than one still filling up.
         for (const { branch, projected } of branchResults) {
-            const givenSubset = branch.specification.given.map(g => g.label.name);
-            const resultSubset = [...givenSubset, ...branch.specification.matches.map(m => m.unknown.name)];
-            await this.notifyAdded(projected, branch.specification.projection, "", givenSubset, resultSubset, branch);
+            this.initializeHeld(branch, projected);
+        }
+        // Release the startup window here, as soon as `held` is the result --
+        // not after the deliveries below. A decision must never wait on a
+        // delivery: `notifyAdded` calls the caller's own add handler, which may
+        // park for as long as it likes, and while the window is open
+        // `onCandidates` buffers a candidate without deciding it. Ending the
+        // window afterwards therefore left every fact that arrived during the
+        // initial delivery undecided for as long as one handler stayed
+        // suspended, which for a handler that waits on a later row of this same
+        // watch is forever.
+        //
+        // The buffered candidates decide against `held`, which the loop above
+        // has just made the result, and deliver on their own promise. That
+        // promise is awaited after the deliveries below rather than before them,
+        // so neither side waits on the other's handler.
+        let startupFailure: unknown;
+        const startupDecided = this.endStartup().catch((e: unknown) => { startupFailure = e; });
+        try {
+            for (const { branch, projected } of branchResults) {
+                const givenSubset = branch.specification.given.map(g => g.label.name);
+                const resultSubset = [...givenSubset, ...branch.specification.matches.map(m => m.unknown.name)];
+                await this.notifyAdded(projected, branch.specification.projection, "", givenSubset, resultSubset, branch);
+            }
+        }
+        finally {
+            await startupDecided;
+        }
+        if (startupFailure !== undefined) {
+            throw startupFailure;
         }
     }
 
-    private async onResult(inverse: SpecificationInverse, results: ProjectedResult[], branch: ObserverBranch): Promise<void> {
-        const path = inverse.path || "(root)";
-        Trace.info(`[Observer] ON_RESULT - Path: ${path}, Operation: ${inverse.operation}, Results count: ${results.length}, Given hash: ${this.givenHash.substring(0, 8)}...`);
-        
-        // Track this notification for processing completion
-        const processNotification = async () => {
-            // Filter out results that do not match the given.
-            const matchingResults = results.filter(pr =>
-                this.givenHash === computeTupleSubsetHash(pr.tuple, inverse.givenSubset));
-            
-            if (matchingResults.length === 0) {
-                Trace.info(`[Observer] No matching results after filtering - Path: ${path}, Given subset: [${inverse.givenSubset.join(', ')}]`);
-                return;
-            }
-            
-            Trace.info(`[Observer] Matching results: ${matchingResults.length} - Path: ${path}, Operation: ${inverse.operation}`);
+    /**
+     * One inverse's results, as candidates at `level`.
+     *
+     * `ofGiven` marks the inverse that fires when one of this observer's own
+     * givens is saved. Every row of the result is then a candidate, and so is
+     * every row this level already holds, because that fact can change the
+     * answer for rows no inverse of an unknown would propose.
+     *
+     * An empty result returns early whichever inverse fired, exactly as the row
+     * stream's `onCandidates` does. The given inverse's pin is bound through an
+     * unknown equal to both the new fact and the given, so a fact of the given's
+     * type that is *not* this observer's given yields no solution at all. There
+     * is nothing to decide for it: it cannot change this given's result, and
+     * whatever it does change `candidateInverses` proposes through an unknown.
+     * Unioning `held` in on that empty result instead made every saved fact of
+     * a common given type -- a user, a tenant -- re-read every level that holds
+     * rows, at the cost of the whole result and with no transition reachable.
+     *
+     * Nothing is filtered by a given-subset hash here. `addInverseListener`
+     * reads with this observer's given references bound, so every row it
+     * returns already belongs to this observer — which is what lets the
+     * subscription's givens be bound in the read rather than reconstructed by
+     * hashing each result (issue #344).
+     */
+    private async onCandidates(level: ObserverLevel, branch: ObserverBranch, results: ProjectedResult[], ofGiven: boolean): Promise<void> {
+        if (this.stopped) {
+            return;
+        }
+        const rows = this.toRows(results, level);
+        if (rows.length === 0) {
+            return;
+        }
+        const candidates = ofGiven ? [...rows, ...level.held.values()] : rows;
 
-            if (inverse.operation === "add") {
-                return await this.notifyAdded(matchingResults, inverse.inverseSpecification.projection, inverse.path, inverse.parentSubset, inverse.resultSubset, branch);
-            }
-            else if (inverse.operation === "remove") {
-                return await this.notifyRemoved(inverse, matchingResults, branch);
-            }
-            else {
-                const _exhaustiveCheck: never = inverse.operation;
-                throw new Error(`Inverse operation ${_exhaustiveCheck} not implemented.`);
-            }
-        };
-        
-        const notificationPromise = processNotification().finally(() => {
-            // Remove from pending notifications when complete
+        const buffer = this.startupCandidates ?? this.queuedCandidates;
+        const entry = buffer.get(level);
+        if (entry) {
+            entry.rows.push(...candidates);
+        }
+        else {
+            buffer.set(level, { branch, rows: [...candidates] });
+        }
+        if (this.startupCandidates) {
+            return;
+        }
+
+        const notificationPromise = this.enqueueRecheck().finally(() => {
             this.pendingNotifications.delete(notificationPromise);
         });
-        
         this.pendingNotifications.add(notificationPromise);
         await notificationPromise;
+    }
+
+    /**
+     * Decide the queued candidates, after every decision already in flight.
+     *
+     * The chain is what makes the delivered order the order of decisions. It
+     * also coalesces: candidates that arrive while a re-check is running are
+     * taken by the next link in one batch, so a batch of facts notified
+     * concurrently costs one read per level rather than one read each.
+     */
+    private enqueueRecheck(): Promise<void> {
+        const decided = this.recheckChain.then(() => this.decideQueuedCandidates());
+        // Only the decision is serialized. It reads each level and updates
+        // `held`, so two batches deciding at once could read a graph neither of
+        // them is deciding against; the chain is what keeps each batch's read
+        // and its `held` update together.
+        //
+        // Delivery is deliberately NOT on the chain. It calls the caller's own
+        // add handler, which may park for as long as it likes -- a `watch`
+        // handler that awaits a save of its own is ordinary -- and holding the
+        // chain across it would stall every later decision behind it, and with
+        // it the `fact()` call whose notification produced the next batch. It
+        // would also defeat the observer's own add/remove race handling
+        // (`addsInFlight` and `pendingRemovals`), which exists precisely so
+        // that a removal can be recorded while an add handler is still
+        // suspended.
+        //
+        // A failed read must not poison the chain either. A rejected link would
+        // make every later re-check reject without running, so one failed read
+        // would silently end this observer's updates for good. The caller still
+        // sees the failure, through the promise returned here.
+        this.recheckChain = decided.then(() => { }, () => { });
+        return decided.then(decisions => this.deliverDecisions(decisions));
+    }
+
+    /**
+     * Deliver decided transitions, in the order they were decided.
+     *
+     * Ordering holds within a batch. Across batches saved concurrently it does
+     * not, which is the case issue #345 does not claim and
+     * jinaga/jinaga-spec#13 leaves open: the observer's vote set and its
+     * in-flight race handling are what keep that case from retaining a row, and
+     * they are reached from here unchanged.
+     */
+    private async deliverDecisions(decisions: PendingDelivery[]): Promise<void> {
+        for (const { level, branch, operation, result } of decisions) {
+            if (this.stopped) {
+                return;
+            }
+            if (operation === "added") {
+                await this.notifyAdded([result], level.projection, level.path, level.parentSubset, level.resultSubset, branch);
+            }
+            else {
+                await this.notifyRemoved(level.path, level.resultSubset, [result], branch);
+            }
+        }
+    }
+
+    /**
+     * Read each level that has candidates, then let the re-check decide.
+     *
+     * The read is what makes this correct where trusting the inverse was not.
+     * It happens on the store that already holds the whole batch, which is the
+     * premise jinaga/jinaga-spec#12 proves the loop exact under, and rows that
+     * are not candidates are left exactly as they were — so the order of the
+     * facts within one batch does not matter.
+     */
+    private async decideQueuedCandidates(): Promise<PendingDelivery[]> {
+        const queued = this.queuedCandidates;
+        if (queued.size === 0 || this.stopped) {
+            return [];
+        }
+        this.queuedCandidates = new Map();
+
+        const reads = await Promise.all([...queued.entries()].map(async ([level, entry]) => ({
+            level,
+            entry,
+            present: this.toRowMap(await this.readLevel(level), level)
+        })));
+        if (this.stopped) {
+            return [];
+        }
+
+        // Parents before children. A child row's handler is registered by its
+        // parent's `onAdded`, so deciding the shallower path first spares the
+        // child the buffer-and-replay path in `bufferPendingNotification`.
+        reads.sort((a, b) => a.level.path.length - b.level.path.length);
+
+        const deliveries: PendingDelivery[] = [];
+        for (const { level, entry, present } of reads) {
+            const decisions = recheckCandidates(level.held, entry.rows, present);
+            const displayPath = level.path || "(root)";
+            if (decisions.length > 0) {
+                Trace.info(`[Observer] RECHECKED - Path: ${displayPath}, Candidates: ${entry.rows.length}, Decisions: ${decisions.length}`);
+            }
+            for (const decision of decisions) {
+                deliveries.push({
+                    level,
+                    branch: entry.branch,
+                    operation: decision.operation,
+                    result: decision.row.result
+                });
+            }
+        }
+        return deliveries;
+    }
+
+    /**
+     * Read one level's specification.
+     *
+     * The root's specification is the branch specification, read the way every
+     * other caller reads it. A nested level's is derived -- the parent's matches
+     * followed by the component's own -- and is read without a second purge
+     * compliance check. `testSpecificationForCompliance` looks only at a
+     * specification's own matches and never inside a projection, so the
+     * flattened form presents matches the root never presented for checking: a
+     * purge condition on a type reached only inside a child collection passes
+     * for the root and fails for the flattening. The throw is contained by
+     * listener containment, which would leave that collection silently out of
+     * date rather than reporting anything.
+     */
+    private readLevel(level: ObserverLevel): Promise<ProjectedResult[]> {
+        return level.path === ""
+            ? this.factManager.read(this.given, level.specification)
+            : this.factManager.readDerived(this.given, level.specification);
+    }
+
+    /**
+     * Release the startup window: decide what arrived during it against the
+     * result that the starting read has now established.
+     */
+    private async endStartup(): Promise<void> {
+        const buffered = this.startupCandidates;
+        this.startupCandidates = null;
+        if (!buffered || buffered.size === 0 || this.stopped) {
+            return;
+        }
+        for (const [level, entry] of buffered) {
+            const existing = this.queuedCandidates.get(level);
+            if (existing) {
+                existing.rows.push(...entry.rows);
+            }
+            else {
+                this.queuedCandidates.set(level, entry);
+            }
+        }
+        const notificationPromise = this.enqueueRecheck().finally(() => {
+            this.pendingNotifications.delete(notificationPromise);
+        });
+        this.pendingNotifications.add(notificationPromise);
+        await notificationPromise;
+    }
+
+    /**
+     * A level's rows, each carrying the projected result the delivery path
+     * needs, keyed over the level's `keyLabels`. The extra labels a candidate
+     * inverse's tuple carries — the pinned fact, and any label lifted out of an
+     * existential condition — are not among them, so a row reached through one
+     * inverse keys identically to the same row read from the result.
+     */
+    private toRows(results: ProjectedResult[], level: ObserverLevel): SpecificationRow<ProjectedResult>[] {
+        return results.map(pr => ({
+            result: pr,
+            rowHash: computeTupleSubsetHash(pr.tuple, level.keyLabels)
+        }));
+    }
+
+    private toRowMap(results: ProjectedResult[], level: ObserverLevel): Map<string, SpecificationRow<ProjectedResult>> {
+        const rows = new Map<string, SpecificationRow<ProjectedResult>>();
+        for (const row of this.toRows(results, level)) {
+            if (!rows.has(row.rowHash)) {
+                rows.set(row.rowHash, row);
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * Make the starting read this branch's held set, at every path.
+     *
+     * Walking the projection costs no extra reads: a nested collection's rows
+     * are already in the result the root read returned, and their tuples carry
+     * the parent's labels, which is what the nested level keys on.
+     */
+    private initializeHeld(branch: ObserverBranch, projected: ProjectedResult[]): void {
+        const levelsByPath = new Map(branch.levels.map(level => [level.path, level]));
+        const walk = (path: string, results: ProjectedResult[]) => {
+            const level = levelsByPath.get(path);
+            if (!level) {
+                return;
+            }
+            for (const row of this.toRows(results, level)) {
+                if (!level.held.has(row.rowHash)) {
+                    level.held.set(row.rowHash, row);
+                }
+            }
+            if (level.projection.type === "composite") {
+                for (const component of level.projection.components) {
+                    if (component.type === "specification") {
+                        for (const pr of results) {
+                            const childResults = pr.result?.[component.name];
+                            if (Array.isArray(childResults)) {
+                                walk(path + "." + component.name, childResults);
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        walk("", projected);
     }
 
     /**
@@ -735,6 +1164,14 @@ export class ObserverImpl<T> implements Observer<T> {
         // to `resultSubset` keeps them in lock-step.
         const h = computeTupleSubsetHash(tuple, resultSubset);
         return { rowHash: h, voteId: h };
+    }
+
+    /**
+     * The rows a branch holds at its root path, keyed over its `voteLabels` --
+     * the same hash `rowAndVoteHashes` returns as a root row's `voteId`.
+     */
+    private rootHeld(branch: ObserverBranch): Map<string, SpecificationRow<ProjectedResult>> {
+        return branch.levels[0].held;
     }
 
     private async notifyAdded(projectedResults: ProjectedResult[], projection: Projection, path: string, parentSubset: string[], resultSubset: string[], branch: ObserverBranch) {
@@ -801,6 +1238,23 @@ export class ObserverImpl<T> implements Observer<T> {
         const rowProjectionHash = computeTupleSubsetHash(pr.tuple, resultSubset);
         const rowChain = [...addedHandler.ownerChain, this.rowProjectionKey(path, rowProjectionHash)];
         const result: any = await this.injectObservers(pr, projection, path, resultSubset, rowChain);
+
+        // Deliver a root row only if its branch still holds it. `held` is the
+        // observer's single record of membership, and a delivery can be
+        // overtaken by a later decision: the startup window closes before the
+        // initial delivery, and no delivery is on the decision chain, so a
+        // decision that withdraws this row can run while an earlier row's
+        // handler is suspended. That removal finds no vote for a row not yet
+        // delivered and is dropped, so delivering it now would leave the
+        // caller holding a row the result no longer has, which no later
+        // re-check corrects. Skipping it makes the net transition absent to
+        // absent. If the row has been re-added since, that decision delivers
+        // it on its own. Checked after the await above, right before the vote
+        // and the handler. Nested rows are #358's.
+        if (path === "" && !this.rootHeld(branch).has(voteId)) {
+            Trace.info(`[Observer] SKIPPING WITHDRAWN ROW - Path: ${displayPath}, Row hash: ${rowHash.substring(0, 8)}...`);
+            return;
+        }
 
         // Cast the vote. First vote into an empty set means this is
         // the first time the user sees this row; subsequent votes
@@ -903,9 +1357,9 @@ export class ObserverImpl<T> implements Observer<T> {
         }
     }
 
-    async notifyRemoved(inverse: SpecificationInverse, projectedResult: ProjectedResult[], branch: ObserverBranch): Promise<void> {
+    async notifyRemoved(path: string, resultSubset: string[], projectedResult: ProjectedResult[], branch: ObserverBranch): Promise<void> {
         for (const pr of projectedResult) {
-            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, inverse.path, branch, inverse.resultSubset);
+            const { rowHash, voteId } = this.rowAndVoteHashes(pr.tuple, path, branch, resultSubset);
             const votes = this.votesByRow.get(rowHash);
             if (!votes) continue;
             // `delete` returns false if this vote wasn't recorded, in
@@ -924,7 +1378,7 @@ export class ObserverImpl<T> implements Observer<T> {
             // Withdraw the row's handlers before the removal callback runs, so
             // that an add arriving while an asynchronous removal is in flight
             // cannot still reach the projection that is being torn down.
-            this.tearDownRowHandlers(inverse.path, computeTupleSubsetHash(pr.tuple, inverse.resultSubset));
+            this.tearDownRowHandlers(path, computeTupleSubsetHash(pr.tuple, resultSubset));
             if (removal !== undefined) {
                 Trace.info(`[Observer] NOTIFY_REMOVED - Row hash: ${rowHash.substring(0, 8)}..., Last vote withdrawn, firing removal`);
                 await removal();

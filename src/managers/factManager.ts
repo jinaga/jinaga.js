@@ -120,6 +120,22 @@ export class FactManager {
         return await this.store.read(start, specification);
     }
 
+    /**
+     * Read a specification derived from one that has already been checked for
+     * purge compliance.
+     *
+     * `testSpecificationForCompliance` examines a specification's own matches
+     * and never descends into its projection, so a specification flattened out
+     * of a nested collection -- the parent's matches followed by the
+     * component's own -- presents matches that the specification it came from
+     * never presented. Checking it again would fail for a purge condition the
+     * original passed, so the caller that already checked the original reads
+     * the derived form through here.
+     */
+    async readDerived(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        return await this.store.read(start, specification);
+    }
+
     async fetch(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
         this.purgeManager.checkCompliance(specification);
         return await this.networkManager.fetch(start, specification);
