@@ -24,23 +24,68 @@ declare const WebSocket: {
 };
 type BookmarkListener = (feed: string, bookmark: string) => void;
 
+/**
+ * Run a callback once, after a delay. The client schedules its reconnect
+ * through this, so a caller that needs to decide when the reconnect happens
+ * can supply its own.
+ */
+export type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
+
+const scheduleWithTimer: ReconnectScheduler = (callback, delayMs) => {
+  setTimeout(callback, delayMs);
+};
+
 type ActiveFeed = {
   feed: string;
   bookmark: string;
 };
 
+/**
+ * One frame as it arrived on the socket: either a line of the graph stream or
+ * a bookmark from a BOOK control frame.
+ *
+ * Both kinds go into one queue, which is what makes a bookmark take effect
+ * only after every graph line that reached the socket before it. The reader
+ * awaits each batch's save before asking for another frame, so by the time it
+ * dequeues a bookmark, everything ahead of that bookmark is durable.
+ */
+type QueuedFrame =
+  | { kind: "line", line: string }
+  | { kind: "bookmark", feed: string, bookmark: string };
+
+/**
+ * The reading state of one socket: the frames it has delivered that its
+ * reader has not yet taken, and that reader's pending request for the next
+ * one.
+ *
+ * Each socket gets its own, because each socket carries its own stream. A
+ * graph stream numbers its facts from zero, and its predecessor references
+ * are indexes into that numbering, so one socket's lines read against
+ * another socket's indexes name the wrong facts. Bookmarks are ordered only
+ * against the lines of the socket that sent them. Nothing in here may be
+ * shared with, or carried over to, a later socket.
+ */
+class Connection {
+  readonly frames: QueuedFrame[] = [];
+  waiter: ((frame: QueuedFrame | null) => void) | null = null;
+
+  constructor(readonly socket: MinimalWebSocket) {}
+}
+
 export class WsGraphClient {
-  private socket: any | null = null;
+  /**
+   * The current connection. A connection's reader runs only while its
+   * connection is current; once a new socket replaces it, the reader ends at
+   * its next read, and the frames it had not reached are dropped. Dropping
+   * them is safe: no bookmark behind them was applied, so the new socket
+   * subscribes from a bookmark that does not pass them.
+   */
+  private connection: Connection | null = null;
   private readonly activeFeeds = new Map<string, ActiveFeed>();
-  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectScheduled = false;
   private reconnectAttempt = 0;
   private connecting = false;
   private hasEverConnected = false;
-
-  private pendingLines: string[] = [];
-  private waitingResolver: ((line: string | null) => void) | null = null;
-  private router: WebSocketMessageRouter | null = null;
-  private lastSavePromise: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly getWsUrl: () => Promise<string>,
@@ -48,7 +93,8 @@ export class WsGraphClient {
     private readonly onBookmark: BookmarkListener,
     private readonly onErrorGlobal: (err: Error) => void,
     private readonly getUserIdentity?: () => Promise<UserIdentity | null>,
-    private readonly onFactsAdded?: (envelopes: FactEnvelope[]) => Promise<void>
+    private readonly onFactsAdded?: (envelopes: FactEnvelope[]) => Promise<void>,
+    private readonly scheduleReconnectAfter: ReconnectScheduler = scheduleWithTimer
   ) {}
 
   subscribe(feed: string, bookmark: string, feedRefreshIntervalSeconds: number): () => void {
@@ -58,6 +104,10 @@ export class WsGraphClient {
       this.activeFeeds.delete(feed);
       this.sendUnsub(feed).catch(() => {/* ignore */});
     };
+  }
+
+  private get socket(): MinimalWebSocket | null {
+    return this.connection?.socket ?? null;
   }
 
   private async ensureConnected(): Promise<void> {
@@ -103,7 +153,9 @@ export class WsGraphClient {
           } catch { /* ignore */ }
         }
         const socket = new WebSocket(url);
-        this.socket = socket;
+        const connection = new Connection(socket);
+        this.replaceConnection(connection);
+        let router: WebSocketMessageRouter | null = null;
 
         socket.onopen = () => {
           this.hasEverConnected = true;
@@ -111,35 +163,25 @@ export class WsGraphClient {
           // Instantiate router and handler per-connection
           const handler = new ControlFrameHandler(
             (feed, bookmark) => {
-              // Defer BOOK processing to next macrotask, then await latest save
-              setTimeout(() => {
-                this.lastSavePromise
-                  .catch(() => {})
-                  .then(() => {
-                    const active = this.activeFeeds.get(feed);
-                    if (active) {
-                      active.bookmark = bookmark;
-                      this.onBookmark(feed, bookmark);
-                    }
-                  });
-              }, 0);
+              // Queue the bookmark behind the graph lines that arrived before
+              // it, so the reader applies it in arrival order.
+              this.enqueue(connection, { kind: "bookmark", feed, bookmark });
             },
             (feed, message) => {
               Trace.warn(`Feed error for ${feed}: ${message}`);
             }
           );
-          this.router = new WebSocketMessageRouter(
+          router = new WebSocketMessageRouter(
             {
               onGraphLine: (line: string) => {
-                this.pendingLines.push(line);
-                this.pumpWaiting();
+                this.enqueue(connection, { kind: "line", line });
               },
             },
             handler
           );
 
-          // Start graph reader
-          this.startGraphReader();
+          // Start this socket's graph reader
+          this.startGraphReader(connection);
           // Resubscribe all feeds
           for (const { feed, bookmark } of this.activeFeeds.values()) {
             this.sendSub(feed, bookmark).catch(err => Trace.warn(String(err)));
@@ -149,7 +191,7 @@ export class WsGraphClient {
 
         socket.onmessage = (event: any) => {
           const chunk = typeof event.data === "string" ? event.data : String(event.data);
-          this.router?.pushChunk(chunk);
+          router?.pushChunk(chunk);
         };
 
         socket.onerror = () => {
@@ -159,6 +201,8 @@ export class WsGraphClient {
         };
 
         socket.onclose = () => {
+          // A reader waiting on an empty queue would wait forever now.
+          this.pump(connection);
           this.scheduleReconnect();
         };
       } catch (err) {
@@ -167,11 +211,24 @@ export class WsGraphClient {
     });
   }
 
-  private startGraphReader() {
+  /**
+   * Make this connection the current one, and end the reader of the one it
+   * replaces.
+   */
+  private replaceConnection(connection: Connection) {
+    const previous = this.connection;
+    this.connection = connection;
+    if (previous) {
+      previous.frames.length = 0;
+      this.pump(previous);
+    }
+  }
+
+  private startGraphReader(connection: Connection) {
+    // A fresh deserializer per connection: its fact indexes belong to this
+    // socket's stream.
     const deserializer = new GraphDeserializer(
-      async () => {
-        return await this.readLine();
-      },
+      () => this.readLine(connection),
       // In a live WebSocket stream there is no natural end-of-stream; flush each fact immediately
       1
     );
@@ -182,10 +239,7 @@ export class WsGraphClient {
           // Phase 3.4: notify the facts added listener for observer
           // notifications, with exactly what the store reports as added
           // (issue #337).
-          await saveAndNotify(this.store, envelopes, this.onFactsAdded, savePromise => {
-            // Track the latest save so control frames can wait for persistence
-            this.lastSavePromise = savePromise.then(() => {});
-          });
+          await saveAndNotify(this.store, envelopes, added => this.notify(added));
         });
       } catch (err) {
         this.onErrorGlobal(err as Error);
@@ -193,43 +247,125 @@ export class WsGraphClient {
     })();
   }
 
-  private pumpWaiting() {
-    if (this.waitingResolver && this.pendingLines.length > 0) {
-      const resolver = this.waitingResolver;
-      this.waitingResolver = null;
-      const line = this.pendingLines.shift()!;
-      resolver(line);
+  /**
+   * Run the facts-added notification for one saved batch, and keep a failure
+   * out of the reader.
+   *
+   * The batch is already saved when this runs, so a rejection here means the
+   * notification failed and nothing else. Letting it escape would end the
+   * reader on a socket that is still open, which stops ingestion until that
+   * socket closes. Report it and let the reader go on to the next frame; a
+   * bookmark still cannot pass a frame that was never saved, because the
+   * reader applies bookmarks from the same queue.
+   *
+   * A failed *save* is not contained here. It still ends the reader.
+   */
+  private async notify(added: FactEnvelope[]): Promise<void> {
+    if (!this.onFactsAdded) {
+      return;
+    }
+    try {
+      await this.onFactsAdded(added);
+    } catch (err) {
+      this.onErrorGlobal(err instanceof Error ? err : new Error(String(err)));
     }
   }
 
-  private readLine(): Promise<string | null> {
-    return new Promise<string | null>((resolve) => {
-      const tryDequeue = () => {
-        if (this.pendingLines.length === 0) {
-          // If socket closed and buffer empty, signal EOF
-          if (!this.socket || this.socket.readyState === 3 /* CLOSED */) {
-            resolve(null);
-            return;
-          }
-          this.waitingResolver = resolve;
-          return;
-        }
-        const line = this.pendingLines.shift()!;
-        resolve(line);
-      };
-      tryDequeue();
+  private enqueue(connection: Connection, frame: QueuedFrame) {
+    if (this.connection !== connection) {
+      return;
+    }
+    connection.frames.push(frame);
+    this.pump(connection);
+  }
+
+  /**
+   * Answer the connection's reader, if it is waiting and there is an answer:
+   * the next frame, or the end of the stream. The stream ends when the
+   * connection is no longer current, or when its socket has closed and every
+   * frame it delivered has been taken.
+   */
+  private pump(connection: Connection) {
+    const waiter = connection.waiter;
+    if (!waiter) {
+      return;
+    }
+    let frame: QueuedFrame | null;
+    if (this.connection !== connection) {
+      frame = null;
+    } else if (connection.frames.length > 0) {
+      frame = connection.frames.shift()!;
+    } else if (connection.socket.readyState === 3 /* CLOSED */) {
+      frame = null;
+    } else {
+      return;
+    }
+    connection.waiter = null;
+    waiter(frame);
+  }
+
+  private takeFrame(connection: Connection): Promise<QueuedFrame | null> {
+    return new Promise<QueuedFrame | null>(resolve => {
+      connection.waiter = resolve;
+      this.pump(connection);
     });
   }
 
+  /**
+   * The deserializer's line source for one connection. Bookmarks sit in the
+   * same queue as graph lines, so this applies each one it passes on its way
+   * to the next line.
+   *
+   * The deserializer also calls this for the lines inside one fact, not only
+   * between facts. A BOOK frame that arrived in the middle of a fact would
+   * therefore be applied before that fact was saved. A well-formed server
+   * sends BOOK only between facts, so this does not arise, but the ordering
+   * guarantee rests on that.
+   *
+   * Once the connection is no longer current, this reports the end of the
+   * stream, so a reader left over from a dropped socket stops instead of
+   * applying that socket's bookmarks after a newer socket has subscribed.
+   */
+  private async readLine(connection: Connection): Promise<string | null> {
+    while (true) {
+      const frame = await this.takeFrame(connection);
+      if (frame === null || this.connection !== connection) {
+        return null;
+      }
+      if (frame.kind === "line") {
+        return frame.line;
+      }
+      this.applyBookmark(frame.feed, frame.bookmark);
+    }
+  }
+
+  /**
+   * Persist a bookmark that the reader has reached in arrival order.
+   *
+   * Every graph line ahead of it has been read, and the reader awaited each
+   * batch's save before asking for the frame that produced this call, so
+   * those facts are durable. The reader also awaits the notification, which
+   * this does not need; waiting for it costs the bookmark that much latency
+   * and never advances it too far.
+   */
+  private applyBookmark(feed: string, bookmark: string) {
+    const active = this.activeFeeds.get(feed);
+    if (active) {
+      active.bookmark = bookmark;
+      this.onBookmark(feed, bookmark);
+    }
+  }
+
   private scheduleReconnect() {
-    if (this.reconnectTimer) return;
+    if (this.reconnectScheduled) return;
     if (this.activeFeeds.size === 0) {
       return; // No active subscriptions; do not reconnect
     }
     const delayMs = Math.min(30000, 1000 * Math.pow(2, this.reconnectAttempt));
     this.reconnectAttempt = Math.min(this.reconnectAttempt + 1, 15);
-    this.reconnectTimer = setTimeout(async () => {
-      this.reconnectTimer = null;
+    this.reconnectScheduled = true;
+    this.scheduleReconnectAfter(async () => {
+      this.reconnectScheduled = false;
       try {
         await this.ensureConnected();
       } catch (err) {
