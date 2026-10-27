@@ -1,12 +1,12 @@
 import { FeedDecision } from "../http/messages";
 import { FactManager } from "../managers/factManager";
 import { InverseListener } from "../observable/observable";
-import { candidateInverses } from "../specification/inverse-candidates";
+import { MembershipSpecification, candidateInverses, membershipSpecification } from "../specification/inverse-candidates";
 import { SpecificationRow, rowIdentityLabels, toRow, toRows } from "../specification/row";
 import { Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
 import { Trace } from "../util/trace";
-import { givenCandidateInverse, recheckCandidates } from "./recheck";
+import { givenCandidateInverse, membershipStart, recheckCandidates } from "./recheck";
 
 /**
  * One row entering or leaving a specification's result set.
@@ -118,6 +118,19 @@ interface StartOptions {
 }
 
 /**
+ * What a consumer is handed for one row: the projection and the row identity,
+ * and nothing a row carries internally.
+ *
+ * The rows a stream holds also carry the references a membership read starts
+ * from (#359). Spreading one into the change would put them in the consumer's
+ * hands, where `SpecificationChange` does not declare them and no consumer
+ * asked for them.
+ */
+function toChange<U>(row: SpecificationRow<U>, operation: "added" | "removed"): SpecificationChange<U> {
+    return { result: row.result, rowHash: row.rowHash, operation };
+}
+
+/**
  * The queue behind a stream.
  *
  * Two buffers, deliberately. `starting` holds what the read produced and is
@@ -150,7 +163,7 @@ class RowQueue<U> {
 
     pushStarting(rows: SpecificationRow<U>[]): void {
         for (const row of rows) {
-            const change: SpecificationChange<U> = { ...row, operation: "added" };
+            const change = toChange(row, "added");
             if (!this.handOff(change)) {
                 this.starting.push(change);
             }
@@ -159,7 +172,7 @@ class RowQueue<U> {
 
     pushChanges(operation: "added" | "removed", rows: SpecificationRow<U>[]): void {
         for (const row of rows) {
-            const change: SpecificationChange<U> = { ...row, operation };
+            const change = toChange(row, operation);
             if (this.handOff(change)) {
                 continue;
             }
@@ -218,10 +231,42 @@ interface RowBranch {
     specification: Specification;
     listeners: InverseListener[];
     feeds: string[];
+    /**
+     * This branch's specification rewritten to decide one fully bound tuple
+     * (#359), pinning the caller's own match unknowns. Those are the labels
+     * every branch carries under the same names, and the ones a candidate row
+     * of this stream identifies itself by; a branch's lifted authorization
+     * unknowns differ between branches and stay a search.
+     */
+    membership: MembershipSpecification;
+}
+
+/**
+ * A candidate row, carrying what a membership read of it starts from.
+ *
+ * The references are the row identity labels alone, which is the subset a
+ * membership read pins and the subset `rowHash` is computed over. The public
+ * `SpecificationRow` does not carry them, and a change handed to a consumer
+ * still carries only `result` and `rowHash`.
+ */
+interface CandidateRow<U> extends SpecificationRow<U> {
+    references: ReferencesByName;
+}
+
+/** The references the row identity labels bind, out of a read's whole tuple. */
+function identityReferences(tuple: ReferencesByName, labels: string[]): ReferencesByName {
+    const references: ReferencesByName = {};
+    for (const label of labels) {
+        if (tuple.hasOwnProperty(label)) {
+            references[label] = tuple[label];
+        }
+    }
+    return references;
 }
 
 class RowObserver<U> {
     private readonly rowIdentityLabels: string[];
+    private readonly membershipPinned: string[];
     private givenHash: string;
     private branches: RowBranch[];
     private stopped = false;
@@ -239,7 +284,7 @@ class RowObserver<U> {
      * why holding it is affordable where holding every delivered row for the
      * life of the stream was not.
      */
-    private held: Map<string, SpecificationRow<U>> = new Map();
+    private held: Map<string, CandidateRow<U>> = new Map();
 
     /**
      * Candidates seen between listener registration and the end of the initial
@@ -251,7 +296,12 @@ class RowObserver<U> {
      * premise: the loop may start from any held set equal to a read. The window
      * always closes, and the buffer is released when it does.
      */
-    private startupCandidates: SpecificationRow<U>[] | null = [];
+    private startupCandidates: CandidateRow<U>[] | null = [];
+    /**
+     * Whether the buffered candidates include one from this stream's own
+     * given, which is decided by one read of the whole result.
+     */
+    private startupFullRead = false;
 
     /**
      * Candidates waiting on the current re-check, and the chain that decides
@@ -263,7 +313,8 @@ class RowObserver<U> {
      * one batch — notified concurrently — cost one read of the specification
      * between them rather than one each.
      */
-    private queuedCandidates: SpecificationRow<U>[] = [];
+    private queuedCandidates: CandidateRow<U>[] = [];
+    private queuedFullRead = false;
     private recheckChain: Promise<void> = Promise.resolve();
 
     constructor(
@@ -281,11 +332,31 @@ class RowObserver<U> {
         // on every branch, and matches what `queryRows` produces.
         this.rowIdentityLabels = rowIdentityLabels(specification);
 
+        // The labels a membership read pins: the caller's own match unknowns,
+        // which are the row identity labels other than the givens.
+        this.membershipPinned = specification.matches.map(m => m.unknown.name);
+
         // A single passthrough branch until `applySubscribeIntersection`
         // replaces it with one branch per authorizing distribution rule.
-        this.branches = [{ specification, listeners: [], feeds: [] }];
+        this.branches = [this.toBranch(specification)];
 
         this.givenHash = this.computeGivenHash(specification);
+    }
+
+    /**
+     * One branch, with the membership specification its re-checks read.
+     *
+     * Derived when the branch is made rather than per read, so a shape the
+     * rewrite cannot pin fails where the caller of `start` sees it rather than
+     * inside a listener.
+     */
+    private toBranch(specification: Specification): RowBranch {
+        return {
+            specification,
+            listeners: [],
+            feeds: [],
+            membership: membershipSpecification(specification, this.membershipPinned)
+        };
     }
 
     /**
@@ -380,7 +451,9 @@ class RowObserver<U> {
             }
         }
         this.startupCandidates = null;
+        this.startupFullRead = false;
         this.queuedCandidates = [];
+        this.queuedFullRead = false;
         this.held.clear();
         this.queue.close();
         Trace.info(`[RowStream] STOPPED - Given hash: ${this.givenHash.substring(0, 8)}...`);
@@ -414,11 +487,7 @@ class RowObserver<U> {
         // observer-level `given` and `givenHash` covers them all.
         this.given = branches[0].start;
         this.givenHash = this.computeGivenHash(branches[0].specification);
-        this.branches = branches.map(b => ({
-            specification: b.specification,
-            listeners: [],
-            feeds: []
-        }));
+        this.branches = branches.map(b => this.toBranch(b.specification));
         Trace.info(`[RowStream] INTERSECTED - Branches: ${this.branches.length}, Given hash: ${this.givenHash.substring(0, 8)}...`);
     }
 
@@ -502,21 +571,69 @@ class RowObserver<U> {
      * One read per branch: each authorizes an independently filtered set, and
      * a row that more than one branch authorizes appears once.
      */
-    private async readResult(): Promise<{ rows: Map<string, SpecificationRow<U>>, totalCount: number }> {
+    private async readResult(): Promise<{ rows: Map<string, CandidateRow<U>>, totalCount: number }> {
         const branchResults = await Promise.all(this.branches.map(branch =>
             this.factManager.read(this.given, branch.specification)));
-        const rows = new Map<string, SpecificationRow<U>>();
+        const rows = new Map<string, CandidateRow<U>>();
         let totalCount = 0;
         for (const projectedResults of branchResults) {
             const branchRows = toRows<U>(projectedResults, this.specification, this.rowIdentityLabels);
             totalCount += branchRows.totalCount;
-            for (const row of branchRows.rows) {
+            // `toRows` returns one row per projected result, in order, so the
+            // tuple a row's references come from is at the same index.
+            branchRows.rows.forEach((row, index) => {
                 if (!rows.has(row.rowHash)) {
-                    rows.set(row.rowHash, row);
+                    rows.set(row.rowHash, {
+                        ...row,
+                        references: identityReferences(projectedResults[index].tuple, this.rowIdentityLabels)
+                    });
+                }
+            });
+        }
+        return { rows, totalCount };
+    }
+
+    /**
+     * Decide each candidate by reading its own membership.
+     *
+     * One read per distinct candidate, each costing what the specification's
+     * paths and conditions cost for that one tuple, rather than one read of the
+     * whole result for the batch. A candidate authorized by more than one
+     * branch is present as soon as a branch says so, which is the same union a
+     * read of every branch's result produces.
+     *
+     * `null` when a candidate does not bind every pinned label, so the caller
+     * reads the whole result instead. That is the answer for any candidate, and
+     * `membershipStart` says when it cannot be reached one tuple at a time.
+     */
+    private async readMembership(candidates: CandidateRow<U>[]): Promise<Map<string, CandidateRow<U>> | null> {
+        const distinct = new Map<string, CandidateRow<U>>();
+        for (const candidate of candidates) {
+            if (!distinct.has(candidate.rowHash)) {
+                distinct.set(candidate.rowHash, candidate);
+            }
+        }
+        const present = new Map<string, CandidateRow<U>>();
+        for (const [rowHash, candidate] of distinct) {
+            for (const branch of this.branches) {
+                const start = membershipStart(this.given, branch.membership.pinned, candidate.references);
+                if (start === null) {
+                    return null;
+                }
+                const results = await this.factManager.readDerived(start, branch.membership.specification);
+                if (this.stopped) {
+                    return present;
+                }
+                if (results.length > 0) {
+                    present.set(rowHash, {
+                        ...toRow<U>(results[0], this.specification, this.rowIdentityLabels),
+                        references: candidate.references
+                    });
+                    break;
                 }
             }
         }
-        return { rows, totalCount };
+        return present;
     }
 
     /**
@@ -532,11 +649,13 @@ class RowObserver<U> {
      */
     private async endStartup(): Promise<void> {
         const buffered = this.startupCandidates;
+        const fullRead = this.startupFullRead;
         this.startupCandidates = null;
+        this.startupFullRead = false;
         if (!buffered || buffered.length === 0 || this.stopped) {
             return;
         }
-        await this.enqueueRecheck(buffered);
+        await this.enqueueRecheck(buffered, fullRead);
     }
 
     /**
@@ -565,10 +684,11 @@ class RowObserver<U> {
 
         if (this.startupCandidates) {
             this.startupCandidates.push(...candidates);
+            this.startupFullRead = this.startupFullRead || ofGiven;
             return;
         }
 
-        await this.enqueueRecheck(candidates);
+        await this.enqueueRecheck(candidates, ofGiven);
     }
 
     /**
@@ -581,8 +701,9 @@ class RowObserver<U> {
      * A link that finds the queue already drained does nothing, which is what
      * the siblings of such a batch resolve to.
      */
-    private enqueueRecheck(candidates: SpecificationRow<U>[]): Promise<void> {
+    private enqueueRecheck(candidates: CandidateRow<U>[], fullRead: boolean): Promise<void> {
         this.queuedCandidates.push(...candidates);
+        this.queuedFullRead = this.queuedFullRead || fullRead;
         const decided = this.recheckChain.then(() => this.decideQueuedCandidates());
         // A failed read must not poison the chain. A rejected link would make
         // every later re-check reject without running, so one failed read
@@ -595,11 +716,18 @@ class RowObserver<U> {
 
     private async decideQueuedCandidates(): Promise<void> {
         const candidates = this.queuedCandidates;
+        const fullRead = this.queuedFullRead;
         this.queuedCandidates = [];
+        this.queuedFullRead = false;
         if (candidates.length === 0 || this.stopped) {
             return;
         }
-        const { rows: present } = await this.readResult();
+        // One read per candidate, except for a batch that holds a candidate of
+        // this stream's own given. That inverse fires when the given is first
+        // saved, while nothing is held yet, so the whole result then costs what
+        // the save changed (#359).
+        const membership = fullRead ? null : await this.readMembership(candidates);
+        const present = membership ?? (await this.readResult()).rows;
         if (this.stopped) {
             return;
         }
@@ -628,9 +756,14 @@ class RowObserver<U> {
      * Repeats within one batch of results are collapsed here. Repeats across
      * batches cost nothing to allow: a candidate already held and still in the
      * result is no transition, so the re-check drops it.
+     *
+     * The identity labels' own references are kept, narrowed the same way, so
+     * the re-check can read this one row's membership rather than the whole
+     * result (#359). The tuple itself is not kept: the labels it also names are
+     * the ones a membership read must not pin.
      */
-    private toRows(results: ProjectedResult[]): SpecificationRow<U>[] {
-        const rows: SpecificationRow<U>[] = [];
+    private toRows(results: ProjectedResult[]): CandidateRow<U>[] {
+        const rows: CandidateRow<U>[] = [];
         const seen = new Set<string>();
         for (const pr of results) {
             const row = toRow<U>(pr, this.specification, this.rowIdentityLabels);
@@ -638,7 +771,10 @@ class RowObserver<U> {
                 continue;
             }
             seen.add(row.rowHash);
-            rows.push(row);
+            rows.push({
+                ...row,
+                references: identityReferences(pr.tuple, this.rowIdentityLabels)
+            });
         }
         return rows;
     }

@@ -24,6 +24,46 @@ describe("subscribeRows with distribution-rule intersection (#279)", () => {
             .join(o => o.company, c)
     );
 
+    /**
+     * A network that hands back two branches matching the same rows, which is
+     * what an OR over two distribution rules looks like to the row stream. The
+     * in-process engine cannot produce that state deterministically, because a
+     * rule whose auth fact is present authorizes the user outright and
+     * collapses the fan-out.
+     */
+    class TwoBranchNetwork implements Network {
+        feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
+            return Promise.resolve({ feeds: ["feed-one"] });
+        }
+
+        fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
+            return Promise.resolve({ references: [], bookmark });
+        }
+
+        streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>): () => void {
+            void onResponse([], bookmark);
+            return () => { };
+        }
+
+        load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
+            return Promise.resolve([]);
+        }
+
+        async intersectForSubscribe(start: FactReference[], specification: Specification) {
+            return [
+                { start, specification },
+                { start, specification }
+            ];
+        }
+    }
+
+    function createTwoBranch() {
+        const store = new MemoryStore();
+        const factManager = new FactManager(
+            new PassThroughFork(store), new ObservableSource(store), store, new TwoBranchNetwork(), []);
+        return new Jinaga(new AuthenticationNoOp(), factManager, new SyncStatusNotifier());
+    }
+
     // Share Company → Office with the company's administrators. The subscriber
     // is not an administrator when the stream starts.
     const distribution = (r: DistributionRules) => r
@@ -239,36 +279,7 @@ describe("subscribeRows with distribution-rule intersection (#279)", () => {
         // authorizes the user outright and collapses the fan-out (above).
         //
         // Without the dedup this office arrives twice.
-        class TwoBranchNetwork implements Network {
-            feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
-                return Promise.resolve({ feeds: ["feed-one"] });
-            }
-
-            fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
-                return Promise.resolve({ references: [], bookmark });
-            }
-
-            streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>): () => void {
-                void onResponse([], bookmark);
-                return () => { };
-            }
-
-            load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
-                return Promise.resolve([]);
-            }
-
-            async intersectForSubscribe(start: FactReference[], specification: Specification) {
-                return [
-                    { start, specification },
-                    { start, specification }
-                ];
-            }
-        }
-
-        const store = new MemoryStore();
-        const factManager = new FactManager(
-            new PassThroughFork(store), new ObservableSource(store), store, new TwoBranchNetwork(), []);
-        const j = new Jinaga(new AuthenticationNoOp(), factManager, new SyncStatusNotifier());
+        const j = createTwoBranch();
 
         const persistedCreator = await j.fact(creator);
         const persistedCompany = await j.fact(new Company(persistedCreator, "Co"));
@@ -290,6 +301,33 @@ describe("subscribeRows with distribution-rule intersection (#279)", () => {
         finally {
             // Release the held feed even when an assertion above fails, so a
             // failure is reported rather than hanging the run on an open feed.
+            stream.stop();
+        }
+    });
+
+    it("decides a change once when two branches both match it", async () => {
+        // The same cross-branch dedup, now on the re-check rather than on the
+        // starting read. A re-check decides each candidate by reading its own
+        // membership (#359), one branch at a time until one answers, so a row
+        // every branch authorizes still produces one decision.
+        const j = createTwoBranch();
+
+        const persistedCreator = await j.fact(creator);
+        const persistedCompany = await j.fact(new Company(persistedCreator, "Co"));
+
+        const stream = await j.subscribeRows(officesOfCompany, persistedCompany);
+        try {
+            expect(stream.pending).toEqual(0);
+
+            const office = await j.fact(new Office(persistedCompany, "Office1"));
+
+            expect(stream.pending).toEqual(1);
+            const changes = stream[Symbol.asyncIterator]();
+            const first = await changes.next();
+            expect(first.value.operation).toEqual("added");
+            expect(j.hash(first.value.result)).toEqual(j.hash(office));
+        }
+        finally {
             stream.stop();
         }
     });

@@ -8,7 +8,10 @@ import {
     PathCondition,
     Projection,
     Specification,
-    isPathCondition
+    SpecificationGiven,
+    isExistentialCondition,
+    isPathCondition,
+    reservedLabelPrefix
 } from "./specification";
 
 /**
@@ -380,4 +383,204 @@ export function candidateInverses(specification: Specification): Specification[]
         candidateCache.delete(oldest.value);
     }
     return [...inverses];
+}
+
+/* ---------------- Membership: deciding one fully bound tuple ---------------- */
+
+/**
+ * A specification that decides ONE fully bound tuple, and the labels it binds.
+ *
+ * `specification`'s givens are the original specification's, followed by
+ * `pinned` in order, so a read starts from
+ * `[...subscriptionGivenRefs, ...pinnedRefs]`.
+ */
+export interface MembershipSpecification {
+    specification: Specification;
+    pinned: Label[];
+}
+
+/**
+ * The specification rewritten to answer "is this tuple a row?" rather than
+ * "which tuples are rows?".
+ *
+ * A candidate from `candidateInverses` binds every one of its level's match
+ * unknowns, so deciding it is a membership test of one fully bound tuple rather
+ * than a search. A tuple is a row exactly when each bound fact is in the graph
+ * with its declared type, each path condition holds of that binding, and each
+ * existential condition holds of it (`evalMatches` in
+ * `JinagaSpec/Semantics.lean`). Re-reading the whole result to answer that
+ * costs as much as the result holds, which is what made absorbing one save
+ * grow with the size of the watch (#359).
+ *
+ * The rewrite pins each label in `pinned` as a given, and then says the three
+ * conditions above in a form the runner can check without enumerating
+ * successors:
+ *
+ * - A path condition `u->L = r->R` on a pinned `u` becomes an auxiliary match
+ *   `__p<i>` bound to `u->L` and filtered to `r->R`. Both sides are
+ *   predecessor walks from facts that are already bound, so each costs the
+ *   length of its path. Written any other way it enumerates: `filterByCondition`
+ *   walks a path condition from its right side through successors, so keeping
+ *   `task->project = project` as a filter reads every task of the project —
+ *   the whole result again.
+ * - A pinned match's existential conditions move onto an identity match
+ *   `__e<i>` equal to `u`, so they run unchanged against the bound tuple. An
+ *   existential condition does not read the match it is written on, only the
+ *   labels in scope around it, and those are all bound here.
+ * - The specification's own projection is kept, so a nested collection is
+ *   computed for that one row and the delivery path gets the result it needs.
+ *
+ * A match whose unknown is NOT in `pinned` is kept as written, in place. That
+ * is what lets a distribution-intersected branch be decided: the row identity a
+ * row stream holds covers the caller's own unknowns, which every branch carries
+ * under the same names, while each branch's lifted authorization unknowns
+ * differ and stay a search — over the authorization path, not over the result.
+ *
+ * The given facts' own existential conditions are carried through untouched;
+ * `SpecificationRunner.read` evaluates those.
+ *
+ * Memoized on the specification's STRUCTURE and the pinned labels, as
+ * `candidateInverses` is and for the same reason. The result is shared between
+ * callers rather than copied, so a caller holds it and does not mutate it.
+ *
+ * NOT proven. jinaga-spec proves the re-check as membership in the full
+ * evaluation (`maintain_correct` in `JinagaSpec/Maintain.lean`), and the
+ * reduction to a per-tuple read follows from the definitions, but the lemma is
+ * not stated there: Lean's `Row` holds only the projection's labels, so it
+ * would have to be stated on full bindings. Until it is, the equivalence tests
+ * in `test/observer/membershipSpecificationSpec.ts` are the gate.
+ */
+export function membershipSpecification(specification: Specification, pinned: string[]): MembershipSpecification {
+    const key = computeStringHash(`${pinned.join(",")}\n${describeSpecification(specification, 0)}`);
+    const cached = membershipCache.get(key);
+    if (cached !== undefined) {
+        // Re-insert to mark the entry most recently used.
+        membershipCache.delete(key);
+        membershipCache.set(key, cached);
+        return cached;
+    }
+
+    const membership = buildMembership(specification, pinned);
+    membershipCache.set(key, membership);
+    while (membershipCache.size > CANDIDATE_CACHE_CAPACITY) {
+        const oldest = membershipCache.keys().next();
+        if (oldest.done) {
+            break;
+        }
+        membershipCache.delete(oldest.value);
+    }
+    return membership;
+}
+
+const membershipCache = new Map<string, MembershipSpecification>();
+
+function buildMembership(specification: Specification, pinned: string[]): MembershipSpecification {
+    const unknowns = new Map(specification.matches.map(m => [m.unknown.name, m.unknown]));
+    const pinnedLabels = pinned.map(name => {
+        const unknown = unknowns.get(name);
+        if (unknown === undefined) {
+            throw new Error(`The specification has no match for the pinned label ${name}.`);
+        }
+        return unknown;
+    });
+    const pinnedNames = new Set(pinned);
+
+    // The auxiliary labels are fresh in the whole specification, not only at
+    // its top level: an existential condition's own matches and a projected
+    // collection's are in scope around the matches built here, and a name they
+    // already declare would shadow rather than join.
+    const taken = declaredLabels(specification);
+    let index = 0;
+    const fresh = (kind: string): string => {
+        let name: string;
+        do {
+            name = `${reservedLabelPrefix}${kind}${index++}`;
+        } while (taken.has(name));
+        taken.add(name);
+        return name;
+    };
+
+    const matches: Match[] = [];
+    for (const match of specification.matches) {
+        if (!pinnedNames.has(match.unknown.name)) {
+            // Left as a search, in place, so the matches around it still name
+            // it and the labels it names are still bound before it.
+            matches.push(match);
+            continue;
+        }
+        for (const condition of match.conditions) {
+            if (isPathCondition(condition)) {
+                matches.push({
+                    unknown: { name: fresh("p"), type: joinType(match.unknown, condition) },
+                    conditions: [
+                        { type: "path", rolesLeft: [], labelRight: match.unknown.name, rolesRight: condition.rolesLeft },
+                        { type: "path", rolesLeft: [], labelRight: condition.labelRight, rolesRight: condition.rolesRight }
+                    ]
+                });
+            }
+        }
+        const existentialConditions = match.conditions.filter(isExistentialCondition);
+        if (existentialConditions.length > 0) {
+            matches.push({
+                unknown: { name: fresh("e"), type: match.unknown.type },
+                conditions: [
+                    { type: "path", rolesLeft: [], labelRight: match.unknown.name, rolesRight: [] },
+                    ...existentialConditions
+                ]
+            });
+        }
+    }
+
+    const pinnedGivens: SpecificationGiven[] = pinnedLabels.map(label => ({ label, conditions: [] }));
+    return {
+        specification: {
+            given: [...specification.given, ...pinnedGivens],
+            matches,
+            projection: specification.projection
+        },
+        pinned: pinnedLabels
+    };
+}
+
+/** The fact a path condition joins on, from the pinned side. */
+function joinType(unknown: Label, condition: PathCondition): string {
+    return condition.rolesLeft.length === 0
+        ? unknown.type
+        : condition.rolesLeft[condition.rolesLeft.length - 1].predecessorType;
+}
+
+/** Every label the specification declares, at any depth. */
+function declaredLabels(specification: Specification): Set<string> {
+    const labels = new Set<string>();
+    for (const given of specification.given) {
+        labels.add(given.label.name);
+        for (const condition of given.conditions) {
+            collectMatchLabels(condition.matches, labels);
+        }
+    }
+    collectMatchLabels(specification.matches, labels);
+    collectProjectionLabels(specification.projection, labels);
+    return labels;
+}
+
+function collectMatchLabels(matches: Match[], labels: Set<string>): void {
+    for (const match of matches) {
+        labels.add(match.unknown.name);
+        for (const condition of match.conditions) {
+            if (!isPathCondition(condition)) {
+                collectMatchLabels(condition.matches, labels);
+            }
+        }
+    }
+}
+
+function collectProjectionLabels(projection: Projection, labels: Set<string>): void {
+    if (projection.type === "composite") {
+        for (const component of projection.components) {
+            if (component.type === "specification") {
+                collectMatchLabels(component.matches, labels);
+                collectProjectionLabels(component.projection, labels);
+            }
+        }
+    }
 }

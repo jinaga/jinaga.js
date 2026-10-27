@@ -4,11 +4,11 @@ import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics
 import { FactManager } from "../managers/factManager";
 import { InverseListener } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
-import { candidateInverses } from "../specification/inverse-candidates";
+import { MembershipSpecification, candidateInverses, membershipSpecification } from "../specification/inverse-candidates";
 import { SpecificationRow } from "../specification/row";
 import { Match, Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
-import { givenCandidateInverse, recheckCandidates } from "./recheck";
+import { givenCandidateInverse, membershipStart, recheckCandidates } from "./recheck";
 import { computeStringHash } from "../util/encoding";
 import { Trace } from "../util/trace";
 
@@ -115,6 +115,26 @@ interface ObserverLevel {
      */
     held: Map<string, SpecificationRow<ProjectedResult>>;
     listeners: InverseListener[];
+    /**
+     * This level's specification rewritten to decide one fully bound tuple
+     * (#359), pinning every match unknown of the level. A candidate binds all
+     * of them -- `keyLabels` is the givens and those unknowns -- so a re-check
+     * reads one row rather than the whole level.
+     */
+    membership: MembershipSpecification;
+}
+
+/**
+ * The candidates one level has waiting, and how they are to be read.
+ *
+ * `fullRead` marks a batch holding a candidate of the observer's own given.
+ * That inverse fires when the given is first saved, while nothing is held yet,
+ * so one read of the whole level then costs what the save changed.
+ */
+interface CandidateBatch {
+    branch: ObserverBranch;
+    rows: SpecificationRow<ProjectedResult>[];
+    fullRead: boolean;
 }
 
 /**
@@ -159,15 +179,17 @@ function buildLevels(specification: Specification, voteLabels: string[]): Observ
         resultSubset: string[],
         keyLabels: string[]
     ) => {
+        const levelSpecification: Specification = { given: specification.given, matches, projection };
         levels.push({
             path,
-            specification: { given: specification.given, matches, projection },
+            specification: levelSpecification,
             projection,
             parentSubset,
             resultSubset,
             keyLabels,
             held: new Map(),
-            listeners: []
+            listeners: [],
+            membership: membershipSpecification(levelSpecification, matches.map(m => m.unknown.name))
         });
         if (projection.type === "composite") {
             for (const component of projection.components) {
@@ -297,11 +319,11 @@ export class ObserverImpl<T> implements Observer<T> {
      * decides it against what the store holds rather than replaying it as a
      * change. `null` once the window is closed.
      */
-    private startupCandidates: Map<ObserverLevel, { branch: ObserverBranch; rows: SpecificationRow<ProjectedResult>[] }> | null = new Map();
+    private startupCandidates: Map<ObserverLevel, CandidateBatch> | null = new Map();
     /**
      * Candidates awaiting a decision, grouped by the level that proposed them.
      */
-    private queuedCandidates: Map<ObserverLevel, { branch: ObserverBranch; rows: SpecificationRow<ProjectedResult>[] }> = new Map();
+    private queuedCandidates: Map<ObserverLevel, CandidateBatch> = new Map();
     /**
      * Serializes re-checks, so the order rows reach the handlers is the order
      * they were decided in.
@@ -915,9 +937,10 @@ export class ObserverImpl<T> implements Observer<T> {
         const entry = buffer.get(level);
         if (entry) {
             entry.rows.push(...candidates);
+            entry.fullRead = entry.fullRead || ofGiven;
         }
         else {
-            buffer.set(level, { branch, rows: [...candidates] });
+            buffer.set(level, { branch, rows: [...candidates], fullRead: ofGiven });
         }
         if (this.startupCandidates) {
             return;
@@ -1005,7 +1028,7 @@ export class ObserverImpl<T> implements Observer<T> {
         const reads = await Promise.all([...queued.entries()].map(async ([level, entry]) => ({
             level,
             entry,
-            present: this.toRowMap(await this.readLevel(level), level)
+            present: await this.readPresent(level, entry)
         })));
         if (this.stopped) {
             return [];
@@ -1033,6 +1056,56 @@ export class ObserverImpl<T> implements Observer<T> {
             }
         }
         return deliveries;
+    }
+
+    /**
+     * The rows of this batch's candidates that are in the result.
+     *
+     * One read per distinct candidate, each costing what the level's paths and
+     * conditions cost for that one tuple, rather than one read of the whole
+     * level for the batch -- which is what made absorbing a save cost as much
+     * as the observer held (#359). `recheckCandidates` looks up only the
+     * candidates, so answering for them is answering for the batch.
+     *
+     * The whole level is read for a batch holding a candidate of the
+     * observer's own given, and for a candidate that does not bind every label
+     * the membership read pins. `membershipStart` says when that is, and no
+     * candidate from `candidateInverses` is one.
+     */
+    private async readPresent(level: ObserverLevel, entry: CandidateBatch): Promise<Map<string, SpecificationRow<ProjectedResult>>> {
+        if (!entry.fullRead) {
+            const present = await this.readMembership(level, entry.rows);
+            if (present !== null) {
+                return present;
+            }
+        }
+        return this.toRowMap(await this.readLevel(level), level);
+    }
+
+    private async readMembership(level: ObserverLevel, rows: SpecificationRow<ProjectedResult>[]): Promise<Map<string, SpecificationRow<ProjectedResult>> | null> {
+        const distinct = new Map<string, SpecificationRow<ProjectedResult>>();
+        for (const row of rows) {
+            if (!distinct.has(row.rowHash)) {
+                distinct.set(row.rowHash, row);
+            }
+        }
+        const present = new Map<string, SpecificationRow<ProjectedResult>>();
+        for (const [rowHash, row] of distinct) {
+            const start = membershipStart(this.given, level.membership.pinned, row.result.tuple);
+            if (start === null) {
+                return null;
+            }
+            // Derived, like a nested level's read: the specification it comes
+            // from has already been checked for purge compliance.
+            const results = await this.factManager.readDerived(start, level.membership.specification);
+            if (this.stopped) {
+                return present;
+            }
+            if (results.length > 0) {
+                present.set(rowHash, this.toRows([results[0]], level)[0]);
+            }
+        }
+        return present;
     }
 
     /**
@@ -1069,6 +1142,7 @@ export class ObserverImpl<T> implements Observer<T> {
             const existing = this.queuedCandidates.get(level);
             if (existing) {
                 existing.rows.push(...entry.rows);
+                existing.fullRead = existing.fullRead || entry.fullRead;
             }
             else {
                 this.queuedCandidates.set(level, entry);
