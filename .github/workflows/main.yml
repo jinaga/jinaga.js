@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: jinaga/jinaga-spec
-          ref: 07d5788576975265a6179270a857e954c5678185
+          ref: 23d8a9f2f868fc551312cb2f4cfa91865d292ba8
           path: jinaga-spec
       - uses: actions/setup-node@v7
         with:
