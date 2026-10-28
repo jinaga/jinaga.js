@@ -64,7 +64,9 @@ function describeCondition(condition: Condition, unknown: string, depth: number)
 function describeProjection(projection: Projection, depth: number): string {
     if (projection.type === "composite") {
         const indent = "    ".repeat(depth);
-        const orderedProjections = projection.components.sort((a, b) => a.name.localeCompare(b.name));
+        // Sort a copy: `Array.prototype.sort` is in place, and a printer must not
+        // reorder the specification it was handed (#313).
+        const orderedProjections = [...projection.components].sort((a, b) => a.name.localeCompare(b.name));
         const projectionDescriptions = orderedProjections.map(projection => `    ${indent}${projection.name} = ${describeComponentProjection(projection, depth + 1)}\n`).join("");
         return `{\n${projectionDescriptions}${indent}}`;
     }
