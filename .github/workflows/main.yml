@@ -50,10 +50,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+      - name: Read jinaga-spec pin
+        id: pin
+        run: |
+          ref=$(tr -d '[:space:]' < conformance/jinaga-spec.ref)
+          [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { echo "conformance/jinaga-spec.ref must hold a full commit SHA"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
           repository: jinaga/jinaga-spec
-          ref: 07d5788576975265a6179270a857e954c5678185
+          ref: ${{ steps.pin.outputs.ref }}
           path: jinaga-spec
       - uses: actions/setup-node@v7
         with:

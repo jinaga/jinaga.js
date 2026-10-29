@@ -1,5 +1,6 @@
 import { FactRecord, FactReference, MemoryStore } from "@src";
-import { candidateInverses, pinLabel } from "../../src/specification/inverse-candidates";
+import { candidateInverses, pinLabel, reduceGivenConditions } from "../../src/specification/inverse-candidates";
+import { describeSpecification } from "../../src/specification/description";
 import { Condition, ExistentialCondition, Match, PathCondition, Specification } from "../../src/specification/specification";
 
 // Issue #338. An inverse of `invertSpecification` reads, on the new graph, the
@@ -135,6 +136,10 @@ function withGivens(inverse: Specification, start: FactReference[], fresh: FactR
     }
     return references;
 }
+
+/** The reduction, printed, so a shape test reads as the specification it expects. */
+const reducedDescription = (specification: Specification): string =>
+    describeSpecification(reduceGivenConditions(specification), 0);
 
 describe("inverse candidates", () => {
     it("covers the account that loses its only current mirror", async () => {
@@ -314,5 +319,533 @@ describe("inverse candidates", () => {
 
         await expectCandidatesCoverTheChange(specification, graph, ["root"],
             node("archived", "Archived", role("root", "root")));
+    });
+
+    describe("reduceGivenConditions", () => {
+        // Issue #371. The proof's language has no conditions on a given, so
+        // `candidateInverses` reduces them away first. jinaga-spec now proves
+        // that reduction (`read_reduceGivenConditions`, `stream_correct_given`,
+        // jinaga/jinaga-spec#16), and the proven shape is one match carrying
+        // every given's conditions, bound to the first given that has one, under
+        // the first of `given`, `given2`, ... the specification does not already
+        // name. An ordinary label matters: the proofs reserve `__` for the
+        // split's own labels, so a reduction that emitted `__g0` produced a
+        // specification the theorem does not cover. Shapes 1 and 2 are
+        // jinaga-spec's two given-condition vectors, whose `expected.reduced`
+        // these are.
+
+        it("puts the only given's condition onto a match labelled given", () => {
+            const specification: Specification = {
+                given: [{
+                    label: { name: "p1", type: "Root" },
+                    conditions: [notExists([match("ar", "Archived", [path("root", "Root", "p1")])])]
+                }],
+                matches: [match("t", "Task", [path("root", "Root", "p1")])],
+                projection: { type: "fact", label: "t" }
+            };
+
+            expect(reducedDescription(specification)).toEqual(
+`(p1: Root) {
+    given: Root [
+        given = p1
+        !E {
+            ar: Archived [
+                ar->root: Root = p1
+            ]
+        }
+    ]
+    t: Task [
+        t->root: Root = p1
+    ]
+} => t
+`);
+        });
+
+        it("puts an exists condition on the first of two givens onto one match", () => {
+            const specification: Specification = {
+                given: [
+                    {
+                        label: { name: "p1", type: "Root" },
+                        conditions: [exists([match("op", "Opened", [path("root", "Root", "p1")])])]
+                    },
+                    { label: { name: "p2", type: "Channel" }, conditions: [] }
+                ],
+                matches: [match("t", "Task", [path("channel", "Channel", "p2")])],
+                projection: { type: "fact", label: "t" }
+            };
+
+            expect(reducedDescription(specification)).toEqual(
+`(p1: Root, p2: Channel) {
+    given: Root [
+        given = p1
+        E {
+            op: Opened [
+                op->root: Root = p1
+            ]
+        }
+    ]
+    t: Task [
+        t->channel: Channel = p2
+    ]
+} => t
+`);
+        });
+
+        it("labels the match given2 when the specification already names given", () => {
+            const specification: Specification = {
+                given: [{
+                    label: { name: "given", type: "Root" },
+                    conditions: [notExists([match("ar", "Archived", [path("root", "Root", "given")])])]
+                }],
+                matches: [match("t", "Task", [path("root", "Root", "given")])],
+                projection: { type: "fact", label: "t" }
+            };
+
+            expect(reducedDescription(specification)).toEqual(
+`(given: Root) {
+    given2: Root [
+        given2 = given
+        !E {
+            ar: Archived [
+                ar->root: Root = given
+            ]
+        }
+    ]
+    t: Task [
+        t->root: Root = given
+    ]
+} => t
+`);
+        });
+
+        it("puts the conditions of two givens onto one match bound to the first", () => {
+            const specification: Specification = {
+                given: [
+                    {
+                        label: { name: "p1", type: "Root" },
+                        conditions: [notExists([match("ar", "Archived", [path("root", "Root", "p1")])])]
+                    },
+                    {
+                        label: { name: "p2", type: "User" },
+                        conditions: [exists([match("ac", "Active", [path("user", "User", "p2")])])]
+                    }
+                ],
+                matches: [match("t", "Task", [path("root", "Root", "p1")])],
+                projection: { type: "fact", label: "t" }
+            };
+
+            expect(reducedDescription(specification)).toEqual(
+`(p1: Root, p2: User) {
+    given: Root [
+        given = p1
+        !E {
+            ar: Archived [
+                ar->root: Root = p1
+            ]
+        }
+        E {
+            ac: Active [
+                ac->user: User = p2
+            ]
+        }
+    ]
+    t: Task [
+        t->root: Root = p1
+    ]
+} => t
+`);
+        });
+
+        it("binds the match to the first given that has a condition, not to the first given", () => {
+            const specification: Specification = {
+                given: [
+                    { label: { name: "p1", type: "User" }, conditions: [] },
+                    {
+                        label: { name: "p2", type: "Message" },
+                        conditions: [notExists([match("r", "Read", [
+                            path("message", "Message", "p2"),
+                            path("user", "User", "p1")
+                        ])])]
+                    }
+                ],
+                matches: [match("t", "Reply", [path("message", "Message", "p2")])],
+                projection: { type: "fact", label: "t" }
+            };
+
+            expect(reducedDescription(specification)).toEqual(
+`(p1: User, p2: Message) {
+    given: Message [
+        given = p2
+        !E {
+            r: Read [
+                r->message: Message = p2
+                r->user: User = p1
+            ]
+        }
+    ]
+    t: Reply [
+        t->message: Message = p2
+    ]
+} => t
+`);
+        });
+
+        it("labels the match given2 when a nested specification projection names given", () => {
+            // Nested specification projections are outside jinaga-spec's model.
+            // Avoiding their labels too can only skip a name, never choose one
+            // the vectors reject, and it keeps the per-collection specifications
+            // `observer.ts` flattens clear of a child collection's unknowns.
+            const specification: Specification = {
+                given: [{
+                    label: { name: "p1", type: "Root" },
+                    conditions: [notExists([match("ar", "Archived", [path("root", "Root", "p1")])])]
+                }],
+                matches: [match("t", "Task", [path("root", "Root", "p1")])],
+                projection: {
+                    type: "composite",
+                    components: [{
+                        type: "specification",
+                        name: "subs",
+                        matches: [match("given", "Sub", [path("task", "Task", "t")])],
+                        projection: { type: "fact", label: "given" }
+                    }]
+                }
+            };
+
+            expect(reducedDescription(specification)).toEqual(
+`(p1: Root) {
+    given2: Root [
+        given2 = p1
+        !E {
+            ar: Archived [
+                ar->root: Root = p1
+            ]
+        }
+    ]
+    t: Task [
+        t->root: Root = p1
+    ]
+} => {
+    subs = {
+        given: Sub [
+            given->task: Task = t
+        ]
+    } => given
+}
+`);
+        });
+
+        it("carries a condition nested three levels deep onto the match unchanged", () => {
+            const specification: Specification = {
+                given: [{
+                    label: { name: "p1", type: "Root" },
+                    conditions: [notExists([match("ar", "Archived", [
+                        path("root", "Root", "p1"),
+                        exists([match("ap", "Approval", [
+                            path("archived", "Archived", "ar"),
+                            notExists([match("rv", "Revoke", [path("approval", "Approval", "ap")])])
+                        ])])
+                    ])])]
+                }],
+                matches: [match("t", "Task", [path("root", "Root", "p1")])],
+                projection: { type: "fact", label: "t" }
+            };
+
+            expect(reducedDescription(specification)).toEqual(
+`(p1: Root) {
+    given: Root [
+        given = p1
+        !E {
+            ar: Archived [
+                ar->root: Root = p1
+                E {
+                    ap: Approval [
+                        ap->archived: Archived = ar
+                        !E {
+                            rv: Revoke [
+                                rv->approval: Approval = ap
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+    t: Task [
+        t->root: Root = p1
+    ]
+} => t
+`);
+        });
+
+        it("carries a condition that names a second given onto the match unchanged", () => {
+            const specification: Specification = {
+                given: [
+                    {
+                        label: { name: "p1", type: "Message" },
+                        conditions: [notExists([match("r", "Read", [
+                            path("message", "Message", "p1"),
+                            path("user", "User", "p2"),
+                            notExists([match("ur", "Unread", [path("read", "Read", "r")])])
+                        ])])]
+                    },
+                    { label: { name: "p2", type: "User" }, conditions: [] }
+                ],
+                matches: [match("t", "Reply", [path("message", "Message", "p1")])],
+                projection: { type: "fact", label: "t" }
+            };
+
+            expect(reducedDescription(specification)).toEqual(
+`(p1: Message, p2: User) {
+    given: Message [
+        given = p1
+        !E {
+            r: Read [
+                r->message: Message = p1
+                r->user: User = p2
+                !E {
+                    ur: Unread [
+                        ur->read: Read = r
+                    ]
+                }
+            ]
+        }
+    ]
+    t: Reply [
+        t->message: Message = p1
+    ]
+} => t
+`);
+        });
+
+        it("returns a specification with no conditions on its givens unchanged", () => {
+            // The same object, so every inverse of such a specification is built
+            // from exactly what the caller passed.
+            const specification: Specification = {
+                given: [{ label: { name: "p1", type: "Root" }, conditions: [] }],
+                matches: [match("t", "Task", [path("root", "Root", "p1")])],
+                projection: { type: "fact", label: "t" }
+            };
+
+            expect(reduceGivenConditions(specification)).toBe(specification);
+        });
+    });
+
+    describe("candidates for a condition on a given", () => {
+        // What the shape tests cannot show: that the candidates of the reduced
+        // specification's inverses still cover every change, whatever shape the
+        // reduction takes. Folded in from #360, these are the shapes the
+        // restructure could break — a negation inside a negation, an `exists`
+        // that holds one, conditions on two givens, a condition three levels
+        // deep, and a condition correlated on another given — each driven in both
+        // directions where a fact can drive it both ways.
+
+        const notExistsInNotExists: Specification = {
+            given: [{
+                label: { name: "p1", type: "Root" },
+                conditions: [notExists([match("ar", "Archived", [
+                    path("root", "Root", "p1"),
+                    notExists([match("rs", "Restore", [path("archived", "Archived", "ar")])])
+                ])])]
+            }],
+            matches: [match("t", "Task", [path("root", "Root", "p1")])],
+            projection: { type: "fact", label: "t" }
+        };
+
+        it("covers the row an archived fact loses under a notExists holding a notExists", async () => {
+            const graph = [
+                node("root", "Root"),
+                node("task", "Task", role("root", "root"))
+            ];
+
+            await expectCandidatesCoverTheChange(notExistsInNotExists, graph, ["root"],
+                node("archived", "Archived", role("root", "root")));
+        });
+
+        it("covers the row a restore fact gains by making the condition true again", async () => {
+            const graph = [
+                node("root", "Root"),
+                node("task", "Task", role("root", "root")),
+                node("archived", "Archived", role("root", "root"))
+            ];
+
+            await expectCandidatesCoverTheChange(notExistsInNotExists, graph, ["root"],
+                node("restore", "Restore", role("archived", "archived")));
+        });
+
+        const notExistsInExists: Specification = {
+            given: [{
+                label: { name: "p1", type: "Root" },
+                conditions: [exists([match("op", "Opened", [
+                    path("root", "Root", "p1"),
+                    notExists([match("cl", "Closed", [path("opened", "Opened", "op")])])
+                ])])]
+            }],
+            matches: [match("t", "Task", [path("root", "Root", "p1")])],
+            projection: { type: "fact", label: "t" }
+        };
+
+        it("covers the row an opened fact gains under an exists holding a notExists", async () => {
+            const graph = [
+                node("root", "Root"),
+                node("task", "Task", role("root", "root"))
+            ];
+
+            await expectCandidatesCoverTheChange(notExistsInExists, graph, ["root"],
+                node("opened", "Opened", role("root", "root")));
+        });
+
+        it("covers the row a closed fact loses by emptying the exists", async () => {
+            const graph = [
+                node("root", "Root"),
+                node("task", "Task", role("root", "root")),
+                node("opened", "Opened", role("root", "root"))
+            ];
+
+            await expectCandidatesCoverTheChange(notExistsInExists, graph, ["root"],
+                node("closed", "Closed", role("opened", "opened")));
+        });
+
+        const conditionsOnTwoGivens: Specification = {
+            given: [
+                {
+                    label: { name: "p1", type: "Root" },
+                    conditions: [notExists([match("ar", "Archived", [path("root", "Root", "p1")])])]
+                },
+                {
+                    label: { name: "p2", type: "User" },
+                    conditions: [exists([match("ac", "Active", [path("user", "User", "p2")])])]
+                }
+            ],
+            matches: [match("t", "Task", [path("root", "Root", "p1")])],
+            projection: { type: "fact", label: "t" }
+        };
+
+        it("covers the row the second given's exists gains, with both conditions on one match", async () => {
+            const graph = [
+                node("root", "Root"),
+                node("user", "User"),
+                node("task", "Task", role("root", "root"))
+            ];
+
+            await expectCandidatesCoverTheChange(conditionsOnTwoGivens, graph, ["root", "user"],
+                node("active", "Active", role("user", "user")));
+        });
+
+        it("covers the row the first given's notExists loses, with both conditions on one match", async () => {
+            const graph = [
+                node("root", "Root"),
+                node("user", "User"),
+                node("task", "Task", role("root", "root")),
+                node("active", "Active", role("user", "user"))
+            ];
+
+            await expectCandidatesCoverTheChange(conditionsOnTwoGivens, graph, ["root", "user"],
+                node("archived", "Archived", role("root", "root")));
+        });
+
+        const conditionThreeDeep: Specification = {
+            given: [{
+                label: { name: "p1", type: "Root" },
+                conditions: [notExists([match("ar", "Archived", [
+                    path("root", "Root", "p1"),
+                    exists([match("ap", "Approval", [
+                        path("archived", "Archived", "ar"),
+                        notExists([match("rv", "Revoke", [path("approval", "Approval", "ap")])])
+                    ])])
+                ])])]
+            }],
+            matches: [match("t", "Task", [path("root", "Root", "p1")])],
+            projection: { type: "fact", label: "t" }
+        };
+
+        it("covers the row an approval loses three levels inside the given's condition", async () => {
+            const graph = [
+                node("root", "Root"),
+                node("task", "Task", role("root", "root")),
+                node("archived", "Archived", role("root", "root"))
+            ];
+
+            await expectCandidatesCoverTheChange(conditionThreeDeep, graph, ["root"],
+                node("approval", "Approval", role("archived", "archived")));
+        });
+
+        it("covers the row a revoke gains three levels inside the given's condition", async () => {
+            const graph = [
+                node("root", "Root"),
+                node("task", "Task", role("root", "root")),
+                node("archived", "Archived", role("root", "root")),
+                node("approval", "Approval", role("archived", "archived"))
+            ];
+
+            await expectCandidatesCoverTheChange(conditionThreeDeep, graph, ["root"],
+                node("revoke", "Revoke", role("approval", "approval")));
+        });
+
+        const conditionNamingASecondGiven: Specification = {
+            given: [
+                {
+                    label: { name: "p1", type: "Message" },
+                    conditions: [notExists([match("r", "Read", [
+                        path("message", "Message", "p1"),
+                        path("user", "User", "p2"),
+                        notExists([match("ur", "Unread", [path("read", "Read", "r")])])
+                    ])])]
+                },
+                { label: { name: "p2", type: "User" }, conditions: [] }
+            ],
+            matches: [match("t", "Reply", [path("message", "Message", "p1")])],
+            projection: { type: "fact", label: "t" }
+        };
+
+        it("covers the row a read loses through a condition correlated on a second given", async () => {
+            const graph = [
+                node("message", "Message"),
+                node("user", "User"),
+                node("reply", "Reply", role("message", "message"))
+            ];
+
+            await expectCandidatesCoverTheChange(conditionNamingASecondGiven, graph, ["message", "user"],
+                node("read", "Read", role("message", "message"), role("user", "user")));
+        });
+
+        it("covers the row an unread gains through a condition correlated on a second given", async () => {
+            const graph = [
+                node("message", "Message"),
+                node("user", "User"),
+                node("reply", "Reply", role("message", "message")),
+                node("read", "Read", role("message", "message"), role("user", "user"))
+            ];
+
+            await expectCandidatesCoverTheChange(conditionNamingASecondGiven, graph, ["message", "user"],
+                node("unread", "Unread", role("read", "read")));
+        });
+
+        it("covers the row lost through a condition on the second given naming the first", async () => {
+            // The new match is bound to `p2`, the first given that has a
+            // condition, while the condition itself still reads `p1`.
+            const specification: Specification = {
+                given: [
+                    { label: { name: "p1", type: "User" }, conditions: [] },
+                    {
+                        label: { name: "p2", type: "Message" },
+                        conditions: [notExists([match("r", "Read", [
+                            path("message", "Message", "p2"),
+                            path("user", "User", "p1")
+                        ])])]
+                    }
+                ],
+                matches: [match("t", "Reply", [path("message", "Message", "p2")])],
+                projection: { type: "fact", label: "t" }
+            };
+            const graph = [
+                node("user", "User"),
+                node("message", "Message"),
+                node("reply", "Reply", role("message", "message"))
+            ];
+
+            await expectCandidatesCoverTheChange(specification, graph, ["user", "message"],
+                node("read", "Read", role("message", "message"), role("user", "user")));
+        });
     });
 });

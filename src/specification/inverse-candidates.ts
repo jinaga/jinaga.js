@@ -304,36 +304,63 @@ export function reorderInverse(inverse: Specification): Specification {
     return ok ? { ...inverse, matches: ordered! } : inverse;
 }
 
-/* ---------------- Outside the proof: conditions on a given ---------------- */
+/* ---------------- Conditions on a given, reduced as jinaga-spec proves ---------------- */
+
+/** Every label a list of matches declares or names, at any depth. */
+function labelsInMatches(matches: Match[]): string[] {
+    return matches.flatMap(m => [m.unknown.name, ...m.conditions.flatMap(c =>
+        c.type === "path" ? [c.labelRight] : labelsInMatches(c.matches))]);
+}
+
+/** Every label a projection names, including those inside nested specifications. */
+function labelsInProjection(projection: Projection): string[] {
+    switch (projection.type) {
+        case "fact": case "field": case "hash": case "time": return [projection.label];
+        case "composite": return projection.components.flatMap(c =>
+            c.type === "specification"
+                ? [...labelsInMatches(c.matches), ...labelsInProjection(c.projection)]
+                : [c.label]);
+    }
+}
 
 /**
- * The proof's language has no conditions on a given, so move each given's
- * conditions onto a new first match that joins back to the given.
- *
- * An existential condition does not read the match it is written on, so a
- * condition on `given[i]` means the same thing written on a fresh unknown of
- * the same type that is joined to `given[i]` by identity. The reduction is not
- * proven, unlike everything above it.
+ * Move every condition on a given onto one new first match, bound to the first
+ * given that has a condition. An existential condition does not read the match
+ * it is written on, so one match serves every given's conditions. Its label is
+ * the first of `given`, `given2`, `given3`, ... that the specification does not
+ * name. jinaga-spec proves the result reads the same rows
+ * (`read_reduceGivenConditions`), so the candidates of its inverses are
+ * complete (`stream_correct_given`, jinaga/jinaga-spec#16).
  */
-function reduceGivenConditions(specification: Specification): Specification {
-    if (specification.given.every(g => g.conditions.length === 0)) {
+export function reduceGivenConditions(specification: Specification): Specification {
+    const first = specification.given.find(g => g.conditions.length > 0);
+    if (!first) {
         return specification;
     }
-    const conditionMatches: Match[] = [];
-    specification.given.forEach((given, index) => {
-        if (given.conditions.length > 0) {
-            conditionMatches.push({
-                unknown: { name: `__g${index}`, type: given.label.type },
-                conditions: [
-                    { type: "path", rolesLeft: [], labelRight: given.label.name, rolesRight: [] },
-                    ...given.conditions
-                ]
-            });
-        }
-    });
+    const conditions = specification.given.flatMap(g => g.conditions);
+    const used = new Set([
+        ...specification.given.map(g => g.label.name),
+        ...labelsInMatches(conditions.flatMap(c => c.matches)),
+        ...labelsInMatches(specification.matches),
+        ...labelsInProjection(specification.projection)
+    ]);
+    let k = 1;
+    while (used.has(k === 1 ? "given" : `given${k}`)) {
+        k++;
+    }
+    const label = k === 1 ? "given" : `given${k}`;
     return {
         given: specification.given.map(g => ({ label: g.label, conditions: [] })),
-        matches: [...conditionMatches, ...specification.matches],
+        matches: [
+            {
+                unknown: { name: label, type: first.label.type },
+                conditions: [
+                    { type: "path", rolesLeft: [], labelRight: first.label.name, rolesRight: [] },
+                    ...conditions
+                ]
+            },
+            ...specification.matches
+        ],
         projection: specification.projection
     };
 }
