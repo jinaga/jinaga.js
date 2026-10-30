@@ -561,7 +561,7 @@ export class ObserverImpl<T> implements Observer<T> {
                     // report to a buffer nothing releases. `held` is empty,
                     // which is exactly what has been delivered, so the reports
                     // apply against it as any later batch's do; the starting
-                    // read never ran, so no number floors them. Idempotent on
+                    // read never answered, so no number floors them. Idempotent on
                     // the cached path, where `read()` has already closed it.
                     this.endStartup().catch(error =>
                         Trace.error(`[Observer] STARTUP RELEASE ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${error}`));
@@ -945,9 +945,11 @@ export class ObserverImpl<T> implements Observer<T> {
     private async read() {
         // Numbered before the read, and kept as the floor every later report is
         // measured against. This read is an answer about every row, so a report
-        // from a read numbered below it has already been answered here.
+        // from a read numbered below it has already been answered here. The
+        // floor stands only once the read has answered: a read that rejects
+        // answered nothing, and a floor left behind by it would drop every
+        // report buffered while the fetch ran.
         const read = this.beginRead();
-        this.startupRead = read;
         let branchResults: { branch: ObserverBranch; projected: ProjectedResult[] }[];
         try {
             // Read every branch's spec. Each branch produces an independently
@@ -961,6 +963,7 @@ export class ObserverImpl<T> implements Observer<T> {
                 // The observer was stopped before the read completed.
                 return;
             }
+            this.startupRead = read;
             // Make the read the held set before anything is delivered from it,
             // so a report that arrives mid-delivery is applied against a set
             // that is already the result rather than one still filling up.

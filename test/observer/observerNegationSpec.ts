@@ -361,6 +361,39 @@ class StoreCountingRows extends MemoryStore {
     }
 }
 
+/**
+ * A replicator whose `feeds` call runs one hook before it answers, so a test
+ * can save a fact while the starting fetch is still in flight -- before the
+ * starting read has been numbered. Deterministic: the fact arrives at a point
+ * in the sequence rather than after a delay.
+ */
+class NetworkWithFeedsHook extends QuietNetwork {
+    public duringFeeds: () => Promise<void> = async () => { };
+
+    async feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
+        const hook = this.duringFeeds;
+        this.duringFeeds = async () => { };
+        await hook();
+        return super.feeds(start, specification);
+    }
+}
+
+/** A store whose read of one named specification rejects, once. */
+class StoreFailingReadOf extends MemoryStore {
+    private failing = new Set<Specification>();
+
+    public failReadOf(specification: Specification): void {
+        this.failing.add(specification);
+    }
+
+    async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        if (this.failing.delete(specification)) {
+            throw new Error("the starting read failed");
+        }
+        return super.read(start, specification);
+    }
+}
+
 interface PeerOptions {
     /** The store, so a test can hook its reads. */
     store?: MemoryStore;
@@ -911,6 +944,38 @@ describe("an observer's startup window", () => {
         await j.fact(new Done(task));
         await observer.processed();
         expect(held.size).toEqual(0);
+
+        observer.stop();
+    });
+
+    it("delivers a fact saved during the fetch when the starting read fails", async () => {
+        // Reported in review of #379. The starting read is numbered before it
+        // runs and that number floors every buffered report. A fact saved
+        // while the fetch is in flight is reported by a read numbered below
+        // it. If the starting read then rejects, it answered nothing, so no
+        // floor may stand: the buffered report must still apply against the
+        // empty `held`, or the row is lost while the observer stays
+        // subscribed.
+        const network = new NetworkWithFeedsHook();
+        const store = new StoreFailingReadOf();
+        const { j } = createPeer({ network, store });
+        const owner = await j.fact(new User("--- OWNER ---"));
+        const root = await j.fact(new Root(owner, "r"));
+
+        let duringFetch: Task | undefined;
+        network.duringFeeds = async () => {
+            duringFetch = await j.fact(new Task(root, "saved during the fetch"));
+        };
+        store.failReadOf(currentTasks.specification);
+
+        const { held, added, handler } = collectHeld<Task>(t => j.hash(t));
+        const observer = j.watch(currentTasks, root, handler);
+        await expect(observer.loaded()).rejects.toThrow("the starting read failed");
+        await observer.processed();
+
+        expect(duringFetch).toBeDefined();
+        expect(added).toEqual([j.hash(duringFetch!)]);
+        expect(held).toEqual(new Set([j.hash(duringFetch!)]));
 
         observer.stop();
     });
