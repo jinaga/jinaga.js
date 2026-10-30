@@ -1,12 +1,12 @@
 import { FeedDecision } from "../http/messages";
 import { FactManager } from "../managers/factManager";
-import { InverseListener } from "../observable/observable";
-import { MembershipSpecification, candidateInverses, membershipSpecification } from "../specification/inverse-candidates";
+import { InverseListener, InverseReadNumbering } from "../observable/observable";
+import { MembershipSpecification, exactInverses, membershipSpecification } from "../specification/inverse-candidates";
 import { SpecificationRow, rowIdentityLabels, toRow, toRows } from "../specification/row";
 import { Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
 import { Trace } from "../util/trace";
-import { givenCandidateInverse, membershipStart, recheckCandidates } from "./recheck";
+import { givenCandidateInverse, membershipStart } from "./recheck";
 
 /**
  * One row entering or leaving a specification's result set.
@@ -264,6 +264,53 @@ function identityReferences(tuple: ReferencesByName, labels: string[]): Referenc
     return references;
 }
 
+/**
+ * One read's answer about one row: that it is in the result, or that it is not.
+ *
+ * jinaga-spec's exact inverses report changes rather than propose candidates:
+ * every row an add inverse returns is in the new result and every row a remove
+ * inverse returns is absent from it (`adds_sound`, `removes_sound`,
+ * `changes_complete`, `exact_stream_correct`, jinaga/jinaga-spec#19). So an add
+ * needs no second read to decide it.
+ *
+ * `read` is the number the read was given before it ran, which is what tells
+ * this answer apart from a later read's answer about the same row. A report
+ * produced by a membership read carries that read's number rather than the
+ * inverse read's, because the membership read is the one it is an answer about.
+ */
+interface RowReport<U> {
+    row: CandidateRow<U>;
+    operation: "added" | "removed";
+    read: number;
+}
+
+/**
+ * One whole-result read, which is an answer about every row at once.
+ *
+ * This is what the arrival of the stream's own given produces. It is expanded
+ * into reports when the batch is applied rather than when the read returns,
+ * because the rows it did NOT return are reports only against `held`, and
+ * `held` is stable only inside the decision chain.
+ */
+interface RowFullRead<U> {
+    read: number;
+    present: Map<string, CandidateRow<U>>;
+}
+
+/** The reports and whole-result reads waiting to be applied. */
+interface RowReportBatch<U> {
+    reports: RowReport<U>[];
+    fullReads: RowFullRead<U>[];
+}
+
+function emptyBatch<U>(): RowReportBatch<U> {
+    return { reports: [], fullReads: [] };
+}
+
+function isEmpty<U>(batch: RowReportBatch<U>): boolean {
+    return batch.reports.length === 0 && batch.fullReads.length === 0;
+}
+
 class RowObserver<U> {
     private readonly rowIdentityLabels: string[];
     private readonly membershipPinned: string[];
@@ -274,8 +321,9 @@ class RowObserver<U> {
     /**
      * The rows this stream has offered and not withdrawn, by `rowHash`.
      *
-     * This is the stream's whole state, and `recheckCandidates` keeps it equal
-     * to a read of the specification. It is initialized from the starting read
+     * This is the stream's whole state. Each row is here because the latest
+     * read that reported it found it in the result, and `decidedBy` records
+     * which read that was. It is initialized from the starting read
      * — for `watchChanges` and `subscribeChanges` too, which do not *deliver*
      * those rows but still have to know them, or a later removal would be a
      * withdrawal of a row the stream never offered.
@@ -287,35 +335,100 @@ class RowObserver<U> {
     private held: Map<string, CandidateRow<U>> = new Map();
 
     /**
-     * Candidates seen between listener registration and the end of the initial
-     * read, held rather than decided.
+     * The number of the latest read that decided each row, present or absent.
      *
-     * A notification during that window cannot be re-checked yet, because
-     * `held` is not yet the result. So it is kept as a candidate and re-checked
-     * once the starting read has landed, which is `maintain_correct`'s own
-     * premise: the loop may start from any held set equal to a read. The window
-     * always closes, and the buffer is released when it does.
+     * This is what makes `held` independent of the order reads finish in. A
+     * report from a read numbered at or below the entry is an answer about a
+     * store state no newer than the one already applied, so it is dropped. An
+     * entry is kept for a row that is absent as well as for one that is held —
+     * a row withdrawn by read 9 must still outrank an add from read 7 arriving
+     * late — and `endRead` forgets the absent ones once no older read is
+     * outstanding.
      */
-    private startupCandidates: CandidateRow<U>[] | null = [];
+    private decidedBy: Map<string, number> = new Map();
+
+    /** The next read number this stream hands out. */
+    private nextRead = 0;
     /**
-     * Whether the buffered candidates include one from this stream's own
-     * given, which is decided by one read of the whole result.
+     * The reads this stream has numbered and that have not finished.
+     *
+     * A `decidedBy` entry for a row this stream does not hold is kept only to
+     * outrank a report from a read that was already in flight. Once no
+     * outstanding read is numbered below it, no such report can arrive, so the
+     * entry is dropped — the same bound jinaga.net's `ObserverLocal.EndRead`
+     * puts on its withdrawals.
      */
-    private startupFullRead = false;
+    private pendingReads = new Set<number>();
+    /**
+     * Rows withdrawn, with the read that withdrew each, kept only so
+     * `decidedBy` can forget them.
+     *
+     * Nothing is decided from this list. It is the work list `endRead` drains,
+     * and holding it apart from `decidedBy` is what keeps forgetting a withdrawn
+     * row from costing a walk of every row the stream holds — the cost issue
+     * #359 removed from absorbing a save.
+     */
+    private withdrawals: { rowHash: string; read: number }[] = [];
+    /**
+     * The number of the starting read, or `null` while it has not been taken.
+     *
+     * A report numbered below it is ignored. The starting read is an answer
+     * about every row, taken after such a report's own read, so it has already
+     * decided every row that report could be about.
+     */
+    private startupRead: number | null = null;
+    /**
+     * This stream's read numbering, handed to every inverse listener it
+     * registers so the source numbers each read before it runs.
+     */
+    private readonly readNumbering: InverseReadNumbering = {
+        beginRead: () => this.beginRead(),
+        endRead: read => this.endRead(read)
+    };
+    /**
+     * Whether a remove must be decided by a membership read rather than
+     * applied directly.
+     *
+     * The remove direction of the exact inverses is proven only where a row
+     * determines its solution (`ProjectsUnknowns`). That holds for an
+     * unintersected stream: one passthrough branch, whose top-level unknowns
+     * are exactly the row identity. `applySubscribeIntersection` breaks it two
+     * ways. Within a branch, the lifted authorization matches are top-level
+     * unknowns outside the key, so a row authorized by two bindings is two
+     * solutions with one key, and a remove inverse that flips one binding's
+     * condition reports a row the other binding still supports. Across
+     * branches, `held` is the union, so a remove sound for branch A says
+     * nothing about branch B.
+     *
+     * An add is sound either way and needs no hypothesis: a row an add inverse
+     * returns is in that branch's result, and the stream's result is the union
+     * over branches.
+     */
+    private removesNeedMembership = false;
 
     /**
-     * Candidates waiting on the current re-check, and the chain that decides
-     * them one at a time.
+     * Reports waiting to be applied, and the chain that applies them one batch
+     * at a time.
      *
-     * Decisions are serialized per stream, so the order a consumer sees is the
-     * order they were decided in. Candidates that queue while a re-check is
-     * running are taken by that re-check's successor in one go, so the facts of
-     * one batch — notified concurrently — cost one read of the specification
-     * between them rather than one each.
+     * Applications are serialized per stream, so the order a consumer sees is
+     * the order they were decided in. Reports that queue while an application
+     * is running are taken by its successor in one go, where the link keeps
+     * only the latest read's answer per row and emits the net change against
+     * `held`.
      */
-    private queuedCandidates: CandidateRow<U>[] = [];
-    private queuedFullRead = false;
-    private recheckChain: Promise<void> = Promise.resolve();
+    private queuedReports: RowReportBatch<U> = emptyBatch<U>();
+    private applyChain: Promise<void> = Promise.resolve();
+    /**
+     * Reports seen between listener registration and the end of the initial
+     * read, held rather than applied.
+     *
+     * A report during that window cannot be applied yet, because `held` is not
+     * yet the result. The window always closes, and the buffer is released into
+     * the same link that applies everything else, so a row the window saw added
+     * and then removed costs one decision and a report the starting read has
+     * already answered is dropped by its number.
+     */
+    private startupReports: RowReportBatch<U> | null = emptyBatch<U>();
 
     constructor(
         private readonly factManager: FactManager,
@@ -344,7 +457,8 @@ class RowObserver<U> {
     }
 
     /**
-     * One branch, with the membership specification its re-checks read.
+     * One branch, with the membership specification an intersected remove
+     * reads.
      *
      * Derived when the branch is made rather than per read, so a shape the
      * rewrite cannot pin fails where the caller of `start` sees it rather than
@@ -399,31 +513,45 @@ class RowObserver<U> {
             }
         }
 
+        // Whether a remove can be applied as it arrives is a property of the
+        // branches, so it is settled here, once the intersection has run and
+        // before any listener can fire.
+        this.removesNeedMembership = this.decideRemovePath();
+
         // One inverse per way a fact can change a row, each read with this
         // stream's givens ahead of the new fact, plus one per given of the
-        // stream's own. None of them says whether the row was added or
-        // removed: they propose candidates, and the re-check decides.
+        // stream's own. The two directions `exactInverses` produces carry their
+        // direction, so an add is applied as it arrives; a remove is too,
+        // unless `removesNeedMembership`, which `decideRemovePath` explains.
         const branchInverses = this.branches.map(branch => ({
             branch,
-            inverses: candidateInverses(branch.specification),
+            ...exactInverses(branch.specification),
             givenInverses: branch.specification.given.map((_, index) =>
                 givenCandidateInverse(branch.specification, index))
         }));
-        const inverseCount = branchInverses.reduce((sum, b) => sum + b.inverses.length + b.givenInverses.length, 0);
+        const inverseCount = branchInverses.reduce((sum, b) => sum + b.adds.length + b.removes.length + b.givenInverses.length, 0);
 
-        Trace.info(`[RowStream] START - From: ${options.from}, Feed: ${options.feed}, Branches: ${this.branches.length}, Candidate inverses: ${inverseCount}, Given hash: ${this.givenHash.substring(0, 8)}...`);
+        Trace.info(`[RowStream] START - From: ${options.from}, Feed: ${options.feed}, Branches: ${this.branches.length}, Exact inverses: ${inverseCount}, Removes by membership: ${this.removesNeedMembership}, Given hash: ${this.givenHash.substring(0, 8)}...`);
 
-        for (const { branch, inverses, givenInverses } of branchInverses) {
+        for (const { branch, adds, removes, givenInverses } of branchInverses) {
             branch.listeners = [
-                ...inverses.map(inverse => this.factManager.addInverseListener(
+                ...adds.map(inverse => this.factManager.addInverseListener(
                     inverse,
                     this.given,
-                    results => this.onCandidates(results, false)
+                    (results, read) => this.onReports(results, "added", read),
+                    this.readNumbering
+                )),
+                ...removes.map(inverse => this.factManager.addInverseListener(
+                    inverse,
+                    this.given,
+                    (results, read) => this.onRemoveReports(results, read),
+                    this.readNumbering
                 )),
                 ...givenInverses.map(inverse => this.factManager.addInverseListener(
                     inverse,
                     this.given,
-                    results => this.onCandidates(results, true)
+                    results => this.onGivenArrived(results),
+                    this.readNumbering
                 ))
             ];
         }
@@ -450,10 +578,11 @@ class RowObserver<U> {
                 branch.feeds = [];
             }
         }
-        this.startupCandidates = null;
-        this.startupFullRead = false;
-        this.queuedCandidates = [];
-        this.queuedFullRead = false;
+        this.startupReports = null;
+        this.queuedReports = emptyBatch<U>();
+        this.withdrawals = [];
+        this.pendingReads.clear();
+        this.decidedBy.clear();
         this.held.clear();
         this.queue.close();
         Trace.info(`[RowStream] STOPPED - Given hash: ${this.givenHash.substring(0, 8)}...`);
@@ -553,13 +682,34 @@ class RowObserver<U> {
         if (this.stopped) {
             return;
         }
-        const { rows, totalCount } = await this.readResult();
-        if (this.stopped) {
-            return;
+        // Numbered before the read, and kept as the floor every later report is
+        // measured against. This read is an answer about every row, so a report
+        // from a read numbered below it has already been answered here.
+        const read = this.beginRead();
+        this.startupRead = read;
+        let rows: Map<string, CandidateRow<U>> | null = null;
+        try {
+            const result = await this.readResult();
+            if (this.stopped) {
+                return;
+            }
+            rows = result.rows;
+            Trace.counter("facts_loaded", result.totalCount);
+            // Make the read the held set before anything is delivered from it,
+            // so a report that arrives mid-delivery is applied against a set
+            // that is already the result rather than one still filling up.
+            this.held = rows;
+            for (const rowHash of rows.keys()) {
+                this.decidedBy.set(rowHash, read);
+            }
         }
-        Trace.counter("facts_loaded", totalCount);
-        this.held = rows;
-        if (options.from === "current") {
+        finally {
+            // The read is over once `held` is it. The delivery below is not
+            // part of the read, and a consumer that is slow to drain the queue
+            // must not hold this number outstanding.
+            this.endRead(read);
+        }
+        if (rows !== null && options.from === "current") {
             Trace.info(`[RowStream] STARTING ROWS - Rows: ${rows.size}`);
             this.queue.pushStarting([...rows.values()]);
         }
@@ -596,11 +746,17 @@ class RowObserver<U> {
     /**
      * Decide each candidate by reading its own membership.
      *
+     * Reached only from the intersected remove path, which is the one place a
+     * row still needs a hypothesis tested rather than a direction trusted:
+     * `decideRemovePath` says why. Every other report carries its own
+     * direction.
+     *
      * One read per distinct candidate, each costing what the specification's
      * paths and conditions cost for that one tuple, rather than one read of the
      * whole result for the batch. A candidate authorized by more than one
      * branch is present as soon as a branch says so, which is the same union a
-     * read of every branch's result produces.
+     * read of every branch's result produces — and is what answers both ways
+     * the remove direction's hypothesis fails under intersection.
      *
      * `null` when a candidate does not bind every pinned label, so the caller
      * reads the whole result instead. That is the answer for any candidate, and
@@ -637,130 +793,366 @@ class RowObserver<U> {
     }
 
     /**
-     * Release the startup window: re-check what arrived during it against the
-     * result, then drop the buffer.
+     * Release the startup window: apply what arrived during it against the
+     * result the starting read has now established, then drop the buffer.
      *
-     * The old shape replayed the window's notifications as changes, filtering
-     * out only additions the read had already returned. That made a stream's
-     * output the history of inverse firings rather than the history of the
-     * result, and a row added and removed inside the window reached the
+     * The oldest shape replayed the window's notifications as changes,
+     * filtering out only additions the read had already returned. That made a
+     * stream's output the history of inverse firings rather than the history of
+     * the result, and a row added and removed inside the window reached the
      * consumer as an `added` the read had correctly excluded (issue #336).
-     * Re-checking them instead decides each one against what the store holds.
+     *
+     * The window's reports are coalesced with everything else in the link that
+     * applies them, so that row costs one decision and nets to no change, and
+     * a report from a read the starting read already answered is dropped by its
+     * number rather than by a second read.
      */
     private async endStartup(): Promise<void> {
-        const buffered = this.startupCandidates;
-        const fullRead = this.startupFullRead;
-        this.startupCandidates = null;
-        this.startupFullRead = false;
-        if (!buffered || buffered.length === 0 || this.stopped) {
+        const buffered = this.startupReports;
+        this.startupReports = null;
+        if (!buffered || isEmpty(buffered) || this.stopped) {
             return;
         }
-        await this.enqueueRecheck(buffered, fullRead);
+        this.queuedReports.reports.push(...buffered.reports);
+        this.queuedReports.fullReads.push(...buffered.fullReads);
+        await this.enqueueApply();
     }
 
     /**
-     * One inverse's results, as candidates.
+     * Whether this stream's removes must be decided by a membership read.
      *
-     * `ofGiven` marks the inverse that fires when one of this stream's own
-     * givens is saved. Every row of the result is then a candidate, and so is
-     * every row the stream already holds, because that fact can change the
-     * answer for rows no inverse of an unknown would propose.
+     * See `removesNeedMembership` for why. The two states that break the remove
+     * direction's hypothesis are more than one branch, and a branch carrying a
+     * top-level unknown the row identity does not cover — which is what a
+     * lifted authorization match is. The row identity stays pre-intersection,
+     * so this test reads the branches against it rather than against
+     * themselves.
+     */
+    private decideRemovePath(): boolean {
+        if (this.branches.length > 1) {
+            return true;
+        }
+        const identity = new Set(this.rowIdentityLabels);
+        return this.branches.some(branch =>
+            branch.specification.matches.some(match => !identity.has(match.unknown.name)));
+    }
+
+    /**
+     * One exact inverse's rows, as reports.
+     *
+     * The direction is the listener's: every row an add inverse returns is in
+     * the result its read saw, and every row a remove inverse returns is absent
+     * from it. `read` is the number that read was given before it ran, which is
+     * how a row's latest answer is recognized when two reads about it finish
+     * out of order.
      *
      * No filtering by a given-subset hash: `addInverseListener` reads with this
      * stream's given references bound, so every row it returns already belongs
      * to this stream.
      */
-    private async onCandidates(results: ProjectedResult[], ofGiven: boolean): Promise<void> {
+    private async onReports(results: ProjectedResult[], operation: "added" | "removed", read: number): Promise<void> {
         if (this.stopped) {
             return;
         }
-
         const rows = this.toRows(results);
         if (rows.length === 0) {
             return;
         }
-
-        const candidates = ofGiven ? [...rows, ...this.held.values()] : rows;
-
-        if (this.startupCandidates) {
-            this.startupCandidates.push(...candidates);
-            this.startupFullRead = this.startupFullRead || ofGiven;
-            return;
-        }
-
-        await this.enqueueRecheck(candidates, ofGiven);
+        await this.queueReports(rows.map(row => ({ row, operation, read })), []);
     }
 
     /**
-     * Decide a set of candidates, after every decision already in flight.
+     * A remove inverse's rows, applied directly or tested first.
      *
-     * The chain is what makes the emitted order the order of decisions. It
-     * also coalesces: candidates that arrive while a re-check is running are
-     * taken by the next link in one batch, so a batch of facts notified
-     * concurrently costs one read of the specification rather than one each.
-     * A link that finds the queue already drained does nothing, which is what
-     * the siblings of such a batch resolve to.
+     * Where the remove direction is proven for this stream the rows are reports
+     * like any other. Where it is not — an intersected stream, per
+     * `decideRemovePath` — each row is a candidate rather than an answer, and
+     * the membership read across every branch decides it. That read, not the
+     * inverse read, is what the resulting reports are answers about, so they
+     * carry its number: it ran later, and it is the one whose snapshot they
+     * describe.
+     *
+     * A candidate the read finds still present is reported as an add. That is
+     * not a second guess at the remove: the read says the row is in some
+     * branch's result, which is the stream's result, so the report is sound in
+     * its own right and nets to no change for a row already held.
      */
-    private enqueueRecheck(candidates: CandidateRow<U>[], fullRead: boolean): Promise<void> {
-        this.queuedCandidates.push(...candidates);
-        this.queuedFullRead = this.queuedFullRead || fullRead;
-        const decided = this.recheckChain.then(() => this.decideQueuedCandidates());
-        // A failed read must not poison the chain. A rejected link would make
-        // every later re-check reject without running, so one failed read
-        // would silently end the stream's updates for good. The caller still
-        // sees the failure, through the promise returned here, and that is
-        // where `notifyListener` reports it.
-        this.recheckChain = decided.catch(() => { });
-        return decided;
-    }
-
-    private async decideQueuedCandidates(): Promise<void> {
-        const candidates = this.queuedCandidates;
-        const fullRead = this.queuedFullRead;
-        this.queuedCandidates = [];
-        this.queuedFullRead = false;
-        if (candidates.length === 0 || this.stopped) {
-            return;
-        }
-        // One read per candidate, except for a batch that holds a candidate of
-        // this stream's own given. That inverse fires when the given is first
-        // saved, while nothing is held yet, so the whole result then costs what
-        // the save changed (#359).
-        const membership = fullRead ? null : await this.readMembership(candidates);
-        const present = membership ?? (await this.readResult()).rows;
+    private async onRemoveReports(results: ProjectedResult[], read: number): Promise<void> {
         if (this.stopped) {
             return;
         }
-        const decisions = recheckCandidates(this.held, candidates, present);
-        if (decisions.length === 0) {
-            Trace.info(`[RowStream] UNCHANGED - Candidates: ${candidates.length}`);
+        const rows = this.toRows(results);
+        if (rows.length === 0) {
             return;
         }
-        Trace.info(`[RowStream] DECIDED - Candidates: ${candidates.length}, Added: ${decisions.filter(d => d.operation === "added").length}, Removed: ${decisions.filter(d => d.operation === "removed").length}`);
-        for (const decision of decisions) {
-            this.queue.pushChanges(decision.operation, [decision.row]);
+        if (!this.removesNeedMembership) {
+            await this.queueReports(rows.map(row => ({ row, operation: "removed" as const, read })), []);
+            return;
         }
+        const decided = this.beginRead();
+        try {
+            // A candidate that cannot be read one tuple at a time falls back to
+            // the whole result, exactly as the re-check did. It is used to
+            // answer these candidates alone rather than as a whole-result
+            // report, so this path decides no row the remove inverse did not
+            // name.
+            const membership = await this.readMembership(rows);
+            const present = membership ?? (await this.readResult()).rows;
+            if (this.stopped) {
+                return;
+            }
+            await this.queueReports(rows.map(row => {
+                const found = present.get(row.rowHash);
+                return found !== undefined
+                    ? { row: found, operation: "added" as const, read: decided }
+                    : { row, operation: "removed" as const, read: decided };
+            }), []);
+        }
+        finally {
+            this.endRead(decided);
+        }
+    }
+
+    /**
+     * This stream's own given has arrived, so read the whole result.
+     *
+     * No inverse of an unknown waits for a given's type, and
+     * `SpecificationRunner.read` returns nothing at all while a given fact is
+     * absent, so the moment the given arrives every row appears at once. That
+     * is the theorem's given case — nothing was read before, so every row read
+     * now is an add — and the read is numbered before it runs like any other,
+     * so it orders against the inverse reads instead of overriding them.
+     *
+     * The rows it does not return are reports too, against `held`, which is why
+     * it is queued whole and expanded inside the chain.
+     *
+     * An empty result returns early. The given inverse's pin is bound through an
+     * unknown equal to both the new fact and the given, so a fact of the given's
+     * type that is *not* this stream's given yields no solution at all, and
+     * reading the whole result for it would cost the whole result on every
+     * unrelated fact of a common given type — a user, a tenant.
+     */
+    private async onGivenArrived(results: ProjectedResult[]): Promise<void> {
+        if (this.stopped || results.length === 0) {
+            return;
+        }
+        // Numbered before the read it is an answer about — this one — not
+        // before the inverse read that brought us here.
+        const read = this.beginRead();
+        try {
+            const { rows } = await this.readResult();
+            if (this.stopped) {
+                return;
+            }
+            await this.queueReports([], [{ read, present: rows }]);
+        }
+        finally {
+            this.endRead(read);
+        }
+    }
+
+    /**
+     * Buffer reports, and apply them unless the startup window is still open.
+     */
+    private async queueReports(reports: RowReport<U>[], fullReads: RowFullRead<U>[]): Promise<void> {
+        const buffer = this.startupReports ?? this.queuedReports;
+        buffer.reports.push(...reports);
+        buffer.fullReads.push(...fullReads);
+        if (this.startupReports) {
+            return;
+        }
+        await this.enqueueApply();
+    }
+
+    /** The next read number, recorded as outstanding until `endRead`. */
+    private beginRead(): number {
+        const read = this.nextRead++;
+        this.pendingReads.add(read);
+        return read;
+    }
+
+    /**
+     * Report a read finished, and forget what was kept only to outrank it.
+     *
+     * A `decidedBy` entry for a row this stream does not hold exists only to
+     * drop a report from a read that was already in flight when the row was
+     * withdrawn. Once no outstanding read is numbered below the entry, no such
+     * report can arrive, so the entry goes. A row that is held keeps its entry:
+     * that is the number a later report about it is measured against.
+     */
+    private endRead(read: number): void {
+        this.pendingReads.delete(read);
+        if (this.withdrawals.length === 0) {
+            return;
+        }
+        let floor = Number.POSITIVE_INFINITY;
+        for (const pending of this.pendingReads) {
+            if (pending < floor) {
+                floor = pending;
+            }
+        }
+        this.withdrawals = this.withdrawals.filter(withdrawal => {
+            if (withdrawal.read >= floor) {
+                return true;
+            }
+            if (!this.held.has(withdrawal.rowHash)
+                && this.decidedBy.get(withdrawal.rowHash) === withdrawal.read) {
+                this.decidedBy.delete(withdrawal.rowHash);
+            }
+            return false;
+        });
+    }
+
+    /**
+     * Apply the queued reports, after every application already in flight.
+     *
+     * The chain is what makes the emitted order the order of decisions. It
+     * also coalesces: reports that arrive while an application is running are
+     * taken by the next link in one batch, where the link keeps only the latest
+     * read's answer per row and emits the net change against `held`. A link
+     * that finds the queue already drained does nothing, which is what the
+     * siblings of such a batch resolve to.
+     *
+     * Only the application is serialized. It updates `held`, so two batches
+     * applying at once could interleave their updates; the chain is what keeps
+     * each batch's coalescing and its `held` update together.
+     */
+    private enqueueApply(): Promise<void> {
+        const decided = this.applyChain.then(() => this.applyQueuedReports());
+        // A failed read must not poison the chain. A rejected link would make
+        // every later application reject without running, so one failed read
+        // would silently end the stream's updates for good. The caller still
+        // sees the failure, through the promise returned here, and that is
+        // where `notifyListener` reports it.
+        this.applyChain = decided.catch(() => { });
+        return decided;
+    }
+
+    private async applyQueuedReports(): Promise<void> {
+        const batch = this.queuedReports;
+        this.queuedReports = emptyBatch<U>();
+        if (isEmpty(batch) || this.stopped) {
+            return;
+        }
+        const reports = this.latestPerRow(batch);
+        const changes: { operation: "added" | "removed", row: CandidateRow<U> }[] = [];
+        for (const report of reports) {
+            const change = this.applyReport(report);
+            if (change !== null) {
+                changes.push(change);
+            }
+        }
+        if (changes.length === 0) {
+            Trace.info(`[RowStream] UNCHANGED - Reports: ${reports.length}`);
+            return;
+        }
+        Trace.info(`[RowStream] DECIDED - Reports: ${reports.length}, Added: ${changes.filter(c => c.operation === "added").length}, Removed: ${changes.filter(c => c.operation === "removed").length}`);
+        for (const change of changes) {
+            this.queue.pushChanges(change.operation, [change.row]);
+        }
+    }
+
+    /**
+     * One report per row: the one from the latest read.
+     *
+     * The reports reaching one link come from several reads, which finished in
+     * whatever order they finished in. Keeping the greatest read number per row
+     * and applying only that is what makes the link emit the net change against
+     * `held` rather than replaying each read's answer in turn: a row an older
+     * read added and a newer read removed is one removal, or no transition at
+     * all if the stream never held it. That is the #336 startup case, now
+     * settled by the numbers rather than by a second read.
+     *
+     * This is NOT `recheckCandidates`' dedupe, which kept the FIRST candidate
+     * for a row because a fresh read, not the candidate, was going to decide
+     * it. Keeping the first report here would keep the stalest answer.
+     *
+     * A whole-result read is expanded here, inside the chain, because the rows
+     * it did not return are an answer only against `held`.
+     */
+    private latestPerRow(batch: RowReportBatch<U>): RowReport<U>[] {
+        const latest = new Map<string, RowReport<U>>();
+        const consider = (report: RowReport<U>) => {
+            const existing = latest.get(report.row.rowHash);
+            if (existing === undefined || existing.read < report.read) {
+                latest.set(report.row.rowHash, report);
+            }
+        };
+        for (const report of batch.reports) {
+            consider(report);
+        }
+        for (const { read, present } of batch.fullReads) {
+            for (const row of present.values()) {
+                consider({ row, operation: "added", read });
+            }
+            for (const row of this.held.values()) {
+                if (!present.has(row.rowHash)) {
+                    consider({ row, operation: "removed", read });
+                }
+            }
+        }
+        return [...latest.values()];
+    }
+
+    /**
+     * Apply one report, and return the transition it makes.
+     *
+     * A report from a read numbered at or below the latest that decided this
+     * row is an answer about a store state no newer than the one already
+     * applied, so it is dropped. Otherwise the number is recorded — whether or
+     * not the row moved, because a remove that changes nothing must still
+     * outrank an older add arriving after it — and the row is added or removed
+     * where `held` disagrees with the report.
+     *
+     * A removal is delivered from `held`, not from the remove inverse's own
+     * row: that tuple carries the fact whose arrival retracted the row, while
+     * the consumer is being told about the result it was offered.
+     */
+    private applyReport(report: RowReport<U>): { operation: "added" | "removed", row: CandidateRow<U> } | null {
+        const rowHash = report.row.rowHash;
+        if (this.startupRead !== null && report.read < this.startupRead) {
+            return null;
+        }
+        const decided = this.decidedBy.get(rowHash);
+        if (decided !== undefined && decided >= report.read) {
+            return null;
+        }
+        this.decidedBy.set(rowHash, report.read);
+        if (report.operation === "added") {
+            if (this.held.has(rowHash)) {
+                return null;
+            }
+            this.held.set(rowHash, report.row);
+            return { operation: "added", row: report.row };
+        }
+        this.withdrawals.push({ rowHash, read: report.read });
+        const heldRow = this.held.get(rowHash);
+        if (heldRow === undefined) {
+            return null;
+        }
+        this.held.delete(rowHash);
+        return { operation: "removed", row: heldRow };
     }
 
     /**
      * Identify each result by the row identity labels and project it exactly
      * as `query` would.
      *
-     * The identity is narrowed rather than taken from the whole tuple: a
-     * candidate inverse's tuple also names the new fact, as `__f`, and the
-     * labels its reordering lifted out of an existential condition, and none
-     * of those appear in a read of the specification. Hashing the whole tuple
-     * would therefore give one row a different hash on every path that found
-     * it.
+     * The identity is narrowed rather than taken from the whole tuple: an
+     * inverse's tuple also names the new fact, as `__f`, the labels its
+     * reordering lifted out of an existential condition, and the `given…` match
+     * `reduceGivenConditions` adds, and none of those appear in a read of the
+     * specification. Hashing the whole tuple would therefore give one row a
+     * different hash on every path that found it.
      *
      * Repeats within one batch of results are collapsed here. Repeats across
-     * batches cost nothing to allow: a candidate already held and still in the
-     * result is no transition, so the re-check drops it.
+     * batches cost nothing to allow: a report that an already-held row is in
+     * the result is no transition, so `applyReport` emits nothing for it.
      *
      * The identity labels' own references are kept, narrowed the same way, so
-     * the re-check can read this one row's membership rather than the whole
-     * result (#359). The tuple itself is not kept: the labels it also names are
-     * the ones a membership read must not pin.
+     * an intersected remove can read this one row's membership rather than the
+     * whole result (#359). The tuple itself is not kept: the labels it also
+     * names are the ones a membership read must not pin.
      */
     private toRows(results: ProjectedResult[]): CandidateRow<U>[] {
         const rows: CandidateRow<U>[] = [];

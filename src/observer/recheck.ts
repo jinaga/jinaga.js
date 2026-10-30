@@ -3,91 +3,23 @@ import { Label, PathCondition, Specification } from "../specification/specificat
 import { FactReference, ReferencesByName } from "../storage";
 
 /**
- * One row's transition across the boundary of a specification's result set.
- */
-export interface RecheckDecision<R> {
-    operation: "added" | "removed";
-    row: R;
-}
-
-/**
- * Decide which candidate rows changed, by reading the result rather than by
- * trusting the inverse that proposed them.
- *
- * The row stream is the one caller left. The observer applied this loop to
- * `candidateInverses`' rows until issue #376, and now applies the rows of
- * `exactInverses` directly: those carry their direction, so there is nothing
- * for a second read to decide (`exact_correct`, jinaga/jinaga-spec#19). The row
- * stream follows in #377, where `exact_stream_correct` replaces
- * `stream_correct` as the theorem it rests on, and this function and
- * `membershipSpecification` go with it.
- *
- * An inverse produces *candidates*: rows whose membership may have changed.
- * It carries no add or remove label, and a candidate may be an addition, a
- * removal, or no change at all. What decides is `present`, read from the store
- * that holds the whole batch. Only the candidates are ever looked up there, so
- * `present` need only answer for them: a read of the whole result answers for
- * every row, and a read of `membershipSpecification` answers for one
- * (#359).
- *
- * `held` is the set a consumer has been offered and has not had withdrawn,
- * keyed by `rowHash`. Each candidate is kept exactly when `present` has it,
- * and **every row that is not a candidate is left exactly as it was** — that
- * is what makes the order of the facts in one batch immaterial, since each
- * fact's re-check touches only its own candidates and the reads all see the
- * same graph. A transition is reported only when the two sides disagree, so a
- * row the consumer already holds is never offered twice and a row it was
- * never offered is never withdrawn.
- *
- * `held` is updated in place, and the decisions are returned in candidate
- * order so one caller can emit them in the order it decided them.
- *
- * jinaga/jinaga-spec#12 proves this loop exact for a sequence of fresh
- * batches (`maintain_correct`, `recheck_each`, `stream_correct`), given
- * candidates that cover every changed row — which `candidateInverses`
- * supplies.
- */
-export function recheckCandidates<R extends { rowHash: string }>(
-    held: Map<string, R>,
-    candidates: Iterable<R>,
-    present: Map<string, R>
-): RecheckDecision<R>[] {
-    const decisions: RecheckDecision<R>[] = [];
-    const decided = new Set<string>();
-    for (const candidate of candidates) {
-        if (decided.has(candidate.rowHash)) {
-            continue;
-        }
-        decided.add(candidate.rowHash);
-        const inResult = present.get(candidate.rowHash);
-        const wasHeld = held.get(candidate.rowHash);
-        if (inResult !== undefined && wasHeld === undefined) {
-            held.set(candidate.rowHash, inResult);
-            decisions.push({ operation: "added", row: inResult });
-        }
-        else if (inResult === undefined && wasHeld !== undefined) {
-            held.delete(candidate.rowHash);
-            decisions.push({ operation: "removed", row: wasHeld });
-        }
-    }
-    return decisions;
-}
-
-/**
  * An inverse that fires when the specification's own given at `index` is
  * saved, and whose rows are every row of the specification.
  *
  * Both consumers still need this one. `exactInverses` pins unknowns too, so the
- * given case is outside what it reports, and the observer answers this inverse
- * with a read of the whole level rather than with a report per row (#376).
+ * given case is outside what it reports, and each consumer answers this inverse
+ * with a read of its whole result rather than with a report per row: the
+ * observer per level (#376), the row stream over every branch (#377).
  *
- * `candidateInverses` pins unknowns, and a given is not an unknown, so no
- * inverse it builds waits for a given's type. That matters because
+ * Every inverse of an unknown pins unknowns, and a given is not an unknown, so
+ * none of them waits for a given's type. That matters because
  * `SpecificationRunner.read` returns nothing at all while any given fact is
  * absent from the store: a subscription started on a given that has not
  * arrived yet holds no rows, and the moment that fact arrives every row of
  * the specification appears at once. This inverse is how the subscription
- * hears about it, and the re-check above then decides each row.
+ * hears about it, and the whole-result read it triggers is an answer about
+ * every row at once — each row read is an add, and each row held but not read
+ * is a remove.
  *
  * The pin is bound through an unknown equal to both the new fact and the
  * given, so a fact of the given's type that is *not* this subscription's
@@ -124,14 +56,17 @@ export function givenCandidateInverse(specification: Specification, index: numbe
  * The references a membership read starts from: the subscription's own givens,
  * then the fact each pinned label binds.
  *
- * Read by the row stream. The observer stopped reading membership in #376.
+ * Read by the row stream's intersected remove path alone. The observer stopped
+ * reading membership in #376, and the row stream stopped for every other
+ * report in #377; what is left is the one case the remove direction is not
+ * proven for, which `RowObserver.decideRemovePath` states.
  *
  * `null` when the candidate does not bind one of them, or binds it to a fact of
- * another type. A candidate from `candidateInverses` binds every match unknown
- * of its level, and binds each to a fact the store reached by a role walk of
- * that unknown's type, so neither arises for one. A caller that reads a
- * candidate from somewhere else gets `null` rather than a membership read whose
- * answer would be about a different tuple, and reads the whole result instead.
+ * another type. An inverse of an unknown binds every match unknown of its
+ * level, and binds each to a fact the store reached by a role walk of that
+ * unknown's type, so neither arises for one. A caller that reads a candidate
+ * from somewhere else gets `null` rather than a membership read whose answer
+ * would be about a different tuple, and reads the whole result instead.
  */
 export function membershipStart(
     given: FactReference[],

@@ -1,9 +1,12 @@
 import {
-    AuthenticationNoOp, DistributionRules, FactEnvelope, FactManager, FactReference, FeedResponse,
-    FeedsResponse, Jinaga, JinagaTest, MemoryStore, Network, NoOpTracer, ObservableSource,
-    PassThroughFork, Specification, SyncStatusNotifier, Trace, Tracer, User
+    AuthenticationNoOp, DistributionEngine, DistributionRules, FactEnvelope, FactManager,
+    FactReference, FeedResponse, FeedsResponse, Jinaga, JinagaTest, MemoryStore, Network, NoOpTracer,
+    ObservableSource, PassThroughFork, Specification, SyncStatusNotifier, Trace, Tracer, User,
+    dehydrateFact
 } from "@src";
-import { Administrator, Company, Office, President, model } from "../companyModel";
+import {
+    Administrator, AdministratorRevoked, Company, Office, President, model
+} from "../companyModel";
 
 // Issue #279: `subscribeRows` resolved its feed without the distribution-rule
 // intersection that `j.subscribe` performs, so a specification authorized only
@@ -353,5 +356,138 @@ describe("subscribeRows with distribution-rule intersection (#279)", () => {
         const changes = second[Symbol.asyncIterator]();
         expect(j.hash((await changes.next()).value.result)).toEqual(j.hash(office));
         second.stop();
+    });
+
+    // Issue #377. An unintersected stream applies the exact inverses' rows
+    // directly in both directions. Intersection breaks the remove direction's
+    // hypothesis within a single branch: the lifted authorization matches are
+    // top-level unknowns outside the row identity, so a row two grants
+    // authorize is two solutions carrying one `rowHash`, and the remove inverse
+    // that flips one grant's condition reports a row the other grant still
+    // supports. So an intersected stream decides a remove by reading the row's
+    // membership across every branch, and withdraws the row only when no
+    // binding is left.
+    //
+    // Share Company -> Office with the company's administrators, except those
+    // whose grant has been revoked. The revocation is what lets one of two
+    // bindings be taken away.
+    const revocableUsers = model.given(Company).match((c, facts) =>
+        facts.ofType(Administrator)
+            .join(a => a.company, c)
+            .notExists(a => facts.ofType(AdministratorRevoked)
+                .join(revoked => revoked.administrator, a))
+            .selectMany(a => facts.ofType(User).join(u => u, a.user))
+    );
+
+    /**
+     * The real intersected branch for a subscriber the rule does not yet
+     * authorize.
+     *
+     * This state cannot be reached end to end, for the same reason the
+     * two-branch state above cannot: a rule whose auth facts are present
+     * authorizes the user outright, and `intersectForSubscribe` then returns
+     * the caller's own specification untouched — observed as `Branches: 1` with
+     * no lifted matches. A rule whose auth facts are absent has no grants to
+     * have two of. So the branch is taken from the engine once, in the
+     * unauthorized state, and the stream is started on it over a graph that
+     * does hold two grants. The specification is the engine's own, not one
+     * written by hand, so what the stream sees is the shape intersection really
+     * produces.
+     */
+    async function intersectedBranch(): Promise<{ start: FactReference[], specification: Specification }> {
+        const store = new MemoryStore();
+        await store.save([
+            ...dehydrateFact(creator),
+            ...dehydrateFact(subscriber),
+            ...dehydrateFact(company)
+        ].map(fact => ({ fact, signatures: [] })));
+        const rules = new DistributionRules([])
+            .share(model.given(Company).match((c, facts) =>
+                facts.ofType(Office)
+                    .join(o => o.company, c)
+            ))
+            .with(revocableUsers);
+        const engine = new DistributionEngine(rules, store);
+        const companyRef = dehydrateFact(company)[1]; // [0] is the creator User
+        const subscriberRef = dehydrateFact(subscriber)[0];
+        const result = await engine.intersectForSubscribe(
+            [companyRef], officesOfCompany.specification, subscriberRef);
+        // The premise of the whole test: without the rewrite there are no
+        // lifted matches and nothing to have two bindings of.
+        expect(result.intersected).toBe(true);
+        expect(result.branches).toHaveLength(1);
+        return result.branches[0];
+    }
+
+    /** A network that hands back one prepared branch, and a quiet feed. */
+    class IntersectedNetwork implements Network {
+        constructor(private readonly branch: { start: FactReference[], specification: Specification }) { }
+
+        feeds(): Promise<FeedsResponse> {
+            return Promise.resolve({ feeds: ["feed-one"] });
+        }
+
+        fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
+            return Promise.resolve({ references: [], bookmark });
+        }
+
+        streamFeed(feed: string, bookmark: string, onResponse: (factReferences: FactReference[], nextBookmark: string) => Promise<void>): () => void {
+            void onResponse([], bookmark);
+            return () => { };
+        }
+
+        load(factReferences: FactReference[]): Promise<FactEnvelope[]> {
+            return Promise.resolve([]);
+        }
+
+        async intersectForSubscribe() {
+            return [this.branch];
+        }
+    }
+
+    it("keeps a row that a second authorization still supports", async () => {
+        const branch = await intersectedBranch();
+        const store = new MemoryStore();
+        const factManager = new FactManager(
+            new PassThroughFork(store), new ObservableSource(store), store, new IntersectedNetwork(branch), []);
+        const j = new Jinaga(new AuthenticationNoOp(), factManager, new SyncStatusNotifier());
+
+        const persistedCreator = await j.fact(creator);
+        await j.fact(subscriber);
+        const persistedCompany = await j.fact(new Company(persistedCreator, "Co"));
+        const office = await j.fact(new Office(persistedCompany, "Office1"));
+        // Two grants to one subscriber: two bindings of the lifted matches for
+        // the one office row.
+        const firstGrant = await j.fact(new Administrator(persistedCompany, subscriber, new Date("2026-05-26")));
+        const secondGrant = await j.fact(new Administrator(persistedCompany, subscriber, new Date("2026-06-26")));
+
+        const stream = await j.subscribeRows(officesOfCompany, persistedCompany);
+        try {
+            // One row, not one per binding: row identity stays
+            // pre-intersection, so both solutions carry the same `rowHash`.
+            expect(stream.pending).toEqual(1);
+            const changes = stream[Symbol.asyncIterator]();
+            const added = await changes.next();
+            expect(added.value.operation).toEqual("added");
+            expect(j.hash(added.value.result)).toEqual(j.hash(office));
+
+            // One grant revoked. The remove inverse reports the row, and the
+            // membership read finds the other grant still authorizing it, so
+            // nothing is withdrawn. Applied directly, this would withdraw a row
+            // the stream should still be offering.
+            await j.fact(new AdministratorRevoked(firstGrant));
+            expect(stream.pending).toEqual(0);
+
+            // The last grant revoked. No binding is left, so the row goes —
+            // which also shows it was still held a moment ago.
+            await j.fact(new AdministratorRevoked(secondGrant));
+            expect(stream.pending).toEqual(1);
+            const removed = await changes.next();
+            expect(removed.value.operation).toEqual("removed");
+            expect(j.hash(removed.value.result)).toEqual(j.hash(office));
+        }
+        finally {
+            stream.stop();
+        }
     });
 });
