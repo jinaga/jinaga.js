@@ -17,12 +17,19 @@ import { seededRandom, shuffled } from "../utils/seeded-random";
 // specification whose given is joined only inside an existential condition
 // could not be watched at all (#141).
 //
-// The observer now registers `candidateInverses` through `addInverseListener`
-// and decides each candidate by reading the result. The inverses carry no
-// operation, so there is no label left to get wrong.
+// The observer answered that by registering `candidateInverses` through
+// `addInverseListener` and deciding each candidate by reading the result: the
+// inverses carried no operation, so there was no label left to get wrong.
+// Since #376 it registers `exactInverses` and applies their rows directly. The
+// direction is the inverse's own again, but it is a proven one now rather than
+// the guess `invertSpecification` made, and the reads that produce it are
+// numbered so a stale answer cannot override a newer one.
+//
+// Every case below is about which rows reach the caller, so each one holds
+// whichever way the direction is established.
 //
 // No arbitrary timeouts anywhere (CLAUDE.md). Every assertion below runs after
-// `j.fact` has resolved, which awaits the notification the re-check runs
+// `j.fact` has resolved, which awaits the notification the decision runs
 // inside, or after an explicit `observer.processed()`.
 
 class Account {
@@ -396,7 +403,7 @@ function collectHeld<T>(identify: (value: T) => string) {
     return { held, added, removed, handler };
 }
 
-describe("an observer re-checks its candidates", () => {
+describe("an observer deciding rows under negation", () => {
     let j: Jinaga;
     let owner: User;
 
@@ -628,8 +635,8 @@ describe("an observer re-checks its candidates", () => {
 
     it("removes and restores a child collection row as its witness arrives and is negated", async () => {
         // Case 6. The change is inside a nested collection, so the parent row's
-        // own membership never changes: the root read reports no transition at
-        // all, and only the nested level's own re-check can decide it.
+        // own membership never changes: the root level reports no transition at
+        // all, and only the nested level's own inverses report this one.
         const account = await j.fact(new Account(owner, "one"));
         const mirror = await j.fact(new Mirror(account, "https://one"));
 
@@ -690,8 +697,8 @@ describe("an observer over notExists nested to depth three", () => {
     }
 
     it("holds exactly the rows a query returns, after every batch", async () => {
-        // Case 7. The property the re-check is for, measured rather than
-        // argued: what the observer holds equals `j.query` of the same
+        // Case 7. The property the whole mechanism is for, measured rather
+        // than argued: what the observer holds equals `j.query` of the same
         // specification, whatever order the facts arrived in and whichever
         // batches they came in.
         const random = seededRandom(20261024);
@@ -950,15 +957,16 @@ describe("an observer reading a nested level", () => {
 
 describe("an observer hearing a fact of its given's type", () => {
     it("reads no rows when the fact is not its own given", async () => {
-        // Reported by the review on 56eb045. `candidateInverses` pins unknowns,
-        // and a given is not an unknown, so a given inverse is what tells a
+        // Reported by the review on 56eb045. The inverses pin unknowns, and a
+        // given is not an unknown, so a given inverse is what tells a
         // subscription its given has arrived. Its pin is bound through an
         // unknown equal to both the new fact and the given, so an unrelated
         // fact of that type yields no solution — but `onCandidates` unioned
         // `held` in anyway on the strength of `ofGiven`, which made every
         // saved fact of a common given type re-read every level that holds
-        // rows. The row stream, the proven sibling, returns early on an empty
-        // result whichever inverse fired.
+        // rows. The early return on an empty result is what this measures, and
+        // #376 kept it: a given inverse that finds nothing provokes no
+        // whole-level read.
         const store = new StoreCountingRows();
         const { j } = createPeer({ store });
         const owner = await j.fact(new User("--- OWNER ---"));
