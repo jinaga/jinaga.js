@@ -5,7 +5,7 @@ import { PersistentFork } from "../fork/persistent-fork";
 import { DistributionIntersectionBranch } from "../distribution/distribution-engine";
 import { FeedDecision } from "../http/messages";
 import { DistributionDiagnostic } from "./distributionDiagnostic";
-import { InverseListener, ObservableSource, SpecificationListener } from "../observable/observable";
+import { InverseListener, InverseReadNumbering, ObservableSource, SpecificationListener } from "../observable/observable";
 import { Observer, ObserverImpl, ResultAddedFunc } from "../observer/observer";
 import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
@@ -41,8 +41,8 @@ export class FactManager {
         this.observableSource.removeSpecificationListener(listener);
     }
 
-    addInverseListener(inverse: Specification, givenRefs: FactReference[], onResult: (results: ProjectedResult[]) => Promise<void>): InverseListener {
-        return this.observableSource.addInverseListener(inverse, givenRefs, onResult);
+    addInverseListener(inverse: Specification, givenRefs: FactReference[], onResult: (results: ProjectedResult[], read: number) => Promise<void>, numbering?: InverseReadNumbering): InverseListener {
+        return this.observableSource.addInverseListener(inverse, givenRefs, onResult, numbering);
     }
 
     removeInverseListener(listener: InverseListener): void {

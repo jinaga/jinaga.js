@@ -14,6 +14,14 @@ export interface RecheckDecision<R> {
  * Decide which candidate rows changed, by reading the result rather than by
  * trusting the inverse that proposed them.
  *
+ * The row stream is the one caller left. The observer applied this loop to
+ * `candidateInverses`' rows until issue #376, and now applies the rows of
+ * `exactInverses` directly: those carry their direction, so there is nothing
+ * for a second read to decide (`exact_correct`, jinaga/jinaga-spec#19). The row
+ * stream follows in #377, where `exact_stream_correct` replaces
+ * `stream_correct` as the theorem it rests on, and this function and
+ * `membershipSpecification` go with it.
+ *
  * An inverse produces *candidates*: rows whose membership may have changed.
  * It carries no add or remove label, and a candidate may be an addition, a
  * removal, or no change at all. What decides is `present`, read from the store
@@ -69,6 +77,10 @@ export function recheckCandidates<R extends { rowHash: string }>(
  * An inverse that fires when the specification's own given at `index` is
  * saved, and whose rows are every row of the specification.
  *
+ * Both consumers still need this one. `exactInverses` pins unknowns too, so the
+ * given case is outside what it reports, and the observer answers this inverse
+ * with a read of the whole level rather than with a report per row (#376).
+ *
  * `candidateInverses` pins unknowns, and a given is not an unknown, so no
  * inverse it builds waits for a given's type. That matters because
  * `SpecificationRunner.read` returns nothing at all while any given fact is
@@ -111,6 +123,8 @@ export function givenCandidateInverse(specification: Specification, index: numbe
 /**
  * The references a membership read starts from: the subscription's own givens,
  * then the fact each pinned label binds.
+ *
+ * Read by the row stream. The observer stopped reading membership in #376.
  *
  * `null` when the candidate does not bind one of them, or binds it to a fact of
  * another type. A candidate from `candidateInverses` binds every match unknown

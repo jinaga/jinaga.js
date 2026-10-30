@@ -1,11 +1,19 @@
 import {
     FactReference, Jinaga, JinagaTest, MemoryStore, ProjectedResult, Specification, User, buildModel
 } from "@src";
+import { describeSpecification } from "../../src/specification/description";
+import { pinLabel } from "../../src/specification/inverse-candidates";
 
 // Issue #359: a re-check decided each candidate by re-reading the whole result,
 // so absorbing one save cost as much as the watch held. These are counts of the
 // rows the store's `read` returns, not timings: the same watch over ten rows
 // and over a thousand must spend the same reads absorbing the same save.
+//
+// Issue #376 then removed the observer's second read altogether. The exact
+// inverses report the direction as well as the row, so there is nothing left to
+// decide by reading: a save that is not one of the observer's givens costs the
+// inverses' own reads and nothing else. The last two cases here are the row
+// stream's, which still decides by a membership read until #377.
 
 class Project {
     static Type = "Cost.Project" as const;
@@ -59,25 +67,44 @@ const projectsWithOpenTasks = model.given(User).match(user =>
 
 /**
  * A store that counts what its reads return, modelled on `RoundTripStore` in
- * `subscriberNotifiesAddedSpec.ts`. Every read a re-check makes goes through
- * `Storage.read` -- the inverse listeners' reads, the membership reads, and a
- * read of the whole result alike -- so one counter here measures the whole cost
- * of absorbing a save.
+ * `subscriberNotifiesAddedSpec.ts`. Every read absorbing a save makes goes
+ * through `Storage.read` -- the inverse listeners' reads, a membership read,
+ * and a read of a whole level alike -- so one counter here measures the whole
+ * cost of absorbing a save.
+ *
+ * It also separates the inverses' reads from every other read. An inverse
+ * declares the pin as its last given and is read with
+ * `[...subscriptionGivenRefs, newFactRef]`, so the last given's NAME is what
+ * tells it apart: a whole-level read starts from the subscription's own givens,
+ * and a membership read from those followed by the pinned labels. `otherReads`
+ * holds each such read described, so a failure names what was read rather than
+ * only how many.
  */
 class CountingStore extends MemoryStore {
     public reads = 0;
     public rowsRead = 0;
+    public inverseReads = 0;
+    public otherReads: string[] = [];
 
     async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
         const results = await super.read(start, specification);
         this.reads++;
         this.rowsRead += results.length;
+        const given = specification.given;
+        if (given.length > 0 && given[given.length - 1].label.name === pinLabel) {
+            this.inverseReads++;
+        }
+        else {
+            this.otherReads.push(describeSpecification(specification, 0));
+        }
         return results;
     }
 
     reset(): void {
         this.reads = 0;
         this.rowsRead = 0;
+        this.inverseReads = 0;
+        this.otherReads = [];
     }
 }
 
@@ -188,5 +215,46 @@ describe("The cost of a re-check (issue #359)", () => {
         const large = await measure(1000);
 
         expect(large).toBe(small);
+    });
+});
+
+describe("absorbing a save into a watch (issue #376)", () => {
+    it("issues only the exact inverses' reads for a fact that is not a given", async () => {
+        const { j, store, project, tasks } = await withOpenTasks(10);
+        const observer = j.watch(openTasks, project, async () => { });
+        await observer.loaded();
+
+        // A fact that adds a row, then one that removes a row: both directions
+        // are reported by an inverse, so neither needs a read to decide it.
+        store.reset();
+        await j.fact(new Task(project, "arriving"));
+        await observer.processed();
+        expect(store.otherReads).toEqual([]);
+        expect(store.inverseReads).toBeGreaterThan(0);
+
+        store.reset();
+        await j.fact(new Done(tasks[0]));
+        await observer.processed();
+        expect(store.otherReads).toEqual([]);
+        expect(store.inverseReads).toBeGreaterThan(0);
+
+        observer.stop();
+    });
+
+    it("issues only the exact inverses' reads for a fact that lands in a nested collection", async () => {
+        const { j, store, owner, project } = await withOpenTasks(10);
+        const observer = j.watch(projectsWithOpenTasks, owner, async p => {
+            p.openTasks.onAdded(async () => { });
+        });
+        await observer.loaded();
+
+        store.reset();
+        await j.fact(new Task(project, "arriving"));
+        await observer.processed();
+
+        expect(store.otherReads).toEqual([]);
+        expect(store.inverseReads).toBeGreaterThan(0);
+
+        observer.stop();
     });
 });

@@ -51,6 +51,23 @@ class RetirementRevoked {
     constructor(public retired: MirrorRetired) { }
 }
 
+// The mirror image of `Mirror`/`MirrorRetired`: a condition whose witness is
+// itself negated, where the OUTER condition is the negative one. Issue #376.
+class Freeze {
+    static Type = "Test.Freeze" as const;
+    type = Freeze.Type;
+    // `reason` distinguishes two freezes of one account. Without a field of
+    // its own a fact is identified by its predecessors alone, so two would be
+    // one fact and the shape below would hold only one freeze.
+    constructor(public account: Account, public reason: string) { }
+}
+
+class Unfreeze {
+    static Type = "Test.Unfreeze" as const;
+    type = Unfreeze.Type;
+    constructor(public freeze: Freeze) { }
+}
+
 class Root {
     static Type = "Test.Root" as const;
     type = Root.Type;
@@ -131,6 +148,8 @@ const model = buildModel(b => b
     .type(Mirror, x => x.predecessor("account", Account))
     .type(MirrorRetired, x => x.predecessor("mirror", Mirror))
     .type(RetirementRevoked, x => x.predecessor("retired", MirrorRetired))
+    .type(Freeze, x => x.predecessor("account", Account))
+    .type(Unfreeze, x => x.predecessor("freeze", Freeze))
     .type(Root, x => x.predecessor("owner", User))
     .type(Task, x => x.predecessor("root", Root))
     .type(Done, x => x.predecessor("task", Task))
@@ -162,6 +181,21 @@ const accountsWithCurrentMirror = model.given(User).match((user, facts) =>
             .join(mirror => mirror.account, account)
             .notExists(mirror => facts.ofType(MirrorRetired)
                 .join(retired => retired.mirror, mirror)))
+);
+
+// `notExists { notExists }`, the mirror image of `accountsWithCurrentMirror`.
+// An account is in the result while it has no unrestored freeze -- while every
+// freeze of it has been undone. Issue #376: an `Unfreeze` fires an ADD inverse
+// here, and that inverse is sound only because it re-attaches the original
+// top-level condition. Without that it would propose the account on the
+// strength of the one freeze it undid, ignoring the other one still standing.
+const unfrozenAccounts = model.given(User).match((user, facts) =>
+    facts.ofType(Account)
+        .join(account => account.owner, user)
+        .notExists(account => facts.ofType(Freeze)
+            .join(freeze => freeze.account, account)
+            .notExists(freeze => facts.ofType(Unfreeze)
+                .join(unfreeze => unfreeze.freeze, freeze)))
 );
 
 // Two sibling `notExists` conditions that one `Sweep` falsifies together. Each
@@ -409,6 +443,53 @@ describe("an observer re-checks its candidates", () => {
         expect(removed).toEqual([]);
         expect(held).toEqual(new Set([j.hash(account)]));
         expect((await j.query(accountsWithCurrentMirror, owner)).map(a => j.hash(a)))
+            .toEqual([j.hash(account)]);
+
+        observer.stop();
+    });
+
+    it("adds no account when one of two freezes is undone", async () => {
+        // The mirror of "keeps the account when one of two current mirrors is
+        // retired", on the negative side. One `Unfreeze` leaves the other
+        // freeze standing, so the account is out of the result before the save
+        // and out of it after, and no add may reach the caller.
+        const account = await j.fact(new Account(owner, "one"));
+        const first = await j.fact(new Freeze(account, "audit"));
+        await j.fact(new Freeze(account, "fraud"));
+
+        const { held, added, handler } = collectHeld<Account>(a => j.hash(a));
+        const observer = j.watch(unfrozenAccounts, owner, handler);
+        await observer.loaded();
+        expect(added).toEqual([]);
+
+        await j.fact(new Unfreeze(first));
+        await observer.processed();
+
+        expect(added).toEqual([]);
+        expect(held.size).toEqual(0);
+        expect(await j.query(unfrozenAccounts, owner)).toEqual([]);
+
+        observer.stop();
+    });
+
+    it("adds the account when its last freeze is undone", async () => {
+        // The other half: the add inverse must still fire when the condition
+        // really has become true, or the shape above would pass by saying
+        // nothing at all.
+        const account = await j.fact(new Account(owner, "one"));
+        const only = await j.fact(new Freeze(account, "audit"));
+
+        const { held, added, handler } = collectHeld<Account>(a => j.hash(a));
+        const observer = j.watch(unfrozenAccounts, owner, handler);
+        await observer.loaded();
+        expect(added).toEqual([]);
+
+        await j.fact(new Unfreeze(only));
+        await observer.processed();
+
+        expect(added).toEqual([j.hash(account)]);
+        expect(held).toEqual(new Set([j.hash(account)]));
+        expect((await j.query(unfrozenAccounts, owner)).map(a => j.hash(a)))
             .toEqual([j.hash(account)]);
 
         observer.stop();

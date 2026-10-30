@@ -2,13 +2,13 @@ import { computeObjectHash } from "../fact/hash";
 import { FeedDecision } from "../http/messages";
 import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
-import { InverseListener } from "../observable/observable";
+import { InverseListener, InverseReadNumbering } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
-import { MembershipSpecification, candidateInverses, membershipSpecification } from "../specification/inverse-candidates";
+import { exactInverses } from "../specification/inverse-candidates";
 import { SpecificationRow } from "../specification/row";
 import { Match, Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
-import { givenCandidateInverse, membershipStart, recheckCandidates } from "./recheck";
+import { givenCandidateInverse } from "./recheck";
 import { computeStringHash } from "../util/encoding";
 import { Trace } from "../util/trace";
 
@@ -110,31 +110,64 @@ interface ObserverLevel {
     keyLabels: string[];
     /**
      * The rows this branch holds at this path, keyed over `keyLabels`.
-     * `recheckCandidates` keeps this equal to a read of `specification`, and
-     * each entry carries the projected result the delivery path needs.
+     *
+     * A row is here because the latest read that reported it found it in the
+     * result, and each entry carries the projected result the delivery path
+     * needs. `decidedBy` records which read that was.
      */
     held: Map<string, SpecificationRow<ProjectedResult>>;
     listeners: InverseListener[];
     /**
-     * This level's specification rewritten to decide one fully bound tuple
-     * (#359), pinning every match unknown of the level. A candidate binds all
-     * of them -- `keyLabels` is the givens and those unknowns -- so a re-check
-     * reads one row rather than the whole level.
+     * The number of the latest read that decided each row, present or absent.
+     *
+     * This is what makes `held` independent of the order reads finish in. A
+     * report from a read numbered at or below the entry is an answer about a
+     * store state no newer than the one already applied, so it is dropped. An
+     * entry is kept for a row that is absent as well as for one that is held --
+     * a row withdrawn by read 9 must still outrank an add from read 7 arriving
+     * late -- and `endRead` forgets the absent ones once no older read is
+     * outstanding.
      */
-    membership: MembershipSpecification;
+    decidedBy: Map<string, number>;
 }
 
 /**
- * The candidates one level has waiting, and how they are to be read.
+ * One read's answer about one row: that it is in the result, or that it is not.
  *
- * `fullRead` marks a batch holding a candidate of the observer's own given.
- * That inverse fires when the given is first saved, while nothing is held yet,
- * so one read of the whole level then costs what the save changed.
+ * jinaga-spec's exact inverses report changes rather than propose candidates --
+ * every row an add inverse returns is in the new result and every row a remove
+ * inverse returns is absent from it (`adds_sound`, `removes_sound`,
+ * `changes_complete`, `exact_correct`, jinaga/jinaga-spec#19) -- so a row needs
+ * no second read to decide it. What it needs instead is `read`: the number the
+ * read was given before it ran, which is what tells this answer apart from a
+ * later read's answer about the same row.
  */
-interface CandidateBatch {
+interface Report {
+    row: SpecificationRow<ProjectedResult>;
+    operation: "added" | "removed";
+    read: number;
+}
+
+/**
+ * One whole-level read, which is an answer about every row at once.
+ *
+ * This is what the arrival of the observer's own given produces. It is expanded
+ * into reports when the batch is applied rather than when the read returns,
+ * because the rows it did NOT return are reports only against `held`, and
+ * `held` is stable only inside the decision chain.
+ */
+interface FullRead {
+    read: number;
+    present: Map<string, SpecificationRow<ProjectedResult>>;
+}
+
+/**
+ * The reports one level has waiting, and the whole-level reads it has waiting.
+ */
+interface ReportBatch {
     branch: ObserverBranch;
-    rows: SpecificationRow<ProjectedResult>[];
-    fullRead: boolean;
+    reports: Report[];
+    fullReads: FullRead[];
 }
 
 /**
@@ -155,10 +188,10 @@ interface ObserverBranch {
     /**
      * Labels of this branch's spec (givens + match unknowns). Used to
      * compute a stable "vote id" for per-row ref counting: the same
-     * (row, auth path) tuple reached through any of this branch's candidate
-     * inverses hashes to the same id, because they all bind the same set of
-     * labels (the inverse's "from" fact differs but the resolved spec labels
-     * match in shape and value).
+     * (row, auth path) tuple reached through any of this branch's inverses
+     * hashes to the same id, because they all bind the same set of labels (the
+     * inverse's "from" fact differs but the resolved spec labels match in shape
+     * and value).
      */
     voteLabels: string[];
 }
@@ -189,7 +222,7 @@ function buildLevels(specification: Specification, voteLabels: string[]): Observ
             keyLabels,
             held: new Map(),
             listeners: [],
-            membership: membershipSpecification(levelSpecification, matches.map(m => m.unknown.name))
+            decidedBy: new Map()
         });
         if (projection.type === "composite") {
             for (const component of projection.components) {
@@ -310,25 +343,62 @@ export class ObserverImpl<T> implements Observer<T> {
      */
     private pendingNotifications: Set<Promise<void>> = new Set();
     /**
-     * Candidates that arrived before the starting read established `held`.
+     * Reports that arrived before the starting read established `held`.
      *
      * Listeners are installed before the read, deliberately, to close the
-     * window in which a fact could arrive unseen. A candidate from that window
-     * cannot be decided yet, because `held` is not the result until the read
-     * finishes. So it is buffered and re-checked once the read has, which
-     * decides it against what the store holds rather than replaying it as a
-     * change. `null` once the window is closed.
+     * window in which a fact could arrive unseen. A report from that window
+     * cannot be applied yet, because `held` is not the result until the read
+     * finishes. So it is buffered and applied once the read has. `null` once
+     * the window is closed.
      */
-    private startupCandidates: Map<ObserverLevel, CandidateBatch> | null = new Map();
+    private startupReports: Map<ObserverLevel, ReportBatch> | null = new Map();
     /**
-     * Candidates awaiting a decision, grouped by the level that proposed them.
+     * Reports awaiting application, grouped by the level they are about.
      */
-    private queuedCandidates: Map<ObserverLevel, CandidateBatch> = new Map();
+    private queuedReports: Map<ObserverLevel, ReportBatch> = new Map();
+    /** The next read number this observer hands out. */
+    private nextRead = 0;
     /**
-     * Serializes re-checks, so the order rows reach the handlers is the order
-     * they were decided in.
+     * The reads this observer has numbered and that have not finished.
+     *
+     * A `decidedBy` entry for a row this observer does not hold is kept only to
+     * outrank a report from a read that was already in flight. Once no
+     * outstanding read is numbered below it, no such report can arrive, so the
+     * entry is dropped -- the same bound jinaga.net's `ObserverLocal.EndRead`
+     * puts on its withdrawals.
      */
-    private recheckChain: Promise<void> = Promise.resolve();
+    private pendingReads = new Set<number>();
+    /**
+     * Rows withdrawn, with the read that withdrew each, kept only so
+     * `decidedBy` can forget them.
+     *
+     * Nothing is decided from this list. It is the work list `endRead` drains,
+     * and holding it apart from `decidedBy` is what keeps forgetting a withdrawn
+     * row from costing a walk of every row the observer holds -- the cost
+     * issue #359 removed from absorbing a save.
+     */
+    private withdrawals: { level: ObserverLevel; rowHash: string; read: number }[] = [];
+    /**
+     * The number of the starting read, or `null` while it has not been taken.
+     *
+     * A report numbered below it is ignored. The starting read is an answer
+     * about every row, taken after such a report's own read, so it has already
+     * decided every row that report could be about.
+     */
+    private startupRead: number | null = null;
+    /**
+     * This observer's read numbering, handed to every inverse listener it
+     * registers so the source numbers each read before it runs.
+     */
+    private readonly readNumbering: InverseReadNumbering = {
+        beginRead: () => this.beginRead(),
+        endRead: read => this.endRead(read)
+    };
+    /**
+     * Serializes the application of reports, so the order rows reach the
+     * handlers is the order they were decided in.
+     */
+    private applyChain: Promise<void> = Promise.resolve();
     /**
      * Buffers results that are pending delivery to result handlers.
      * 
@@ -483,16 +553,16 @@ export class ObserverImpl<T> implements Observer<T> {
                 catch (e) {
                     Trace.error(`[Observer] ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`);
                     // The starting read never ran, so nothing has closed the
-                    // startup window. Close it here. `onCandidates` buffers
-                    // without deciding while the window is open, so a rejected
+                    // startup window. Close it here. `queueReports` buffers
+                    // without applying while the window is open, so a rejected
                     // fetch -- a failing network, a distribution refusal, an
                     // intersection error -- would otherwise leave this observer
                     // subscribed and permanently silent, adding every later
-                    // candidate to a buffer nothing releases. `held` is empty,
-                    // which is exactly what has been delivered, so the
-                    // candidates decide against the store as any later batch
-                    // does. Idempotent on the cached path, where `read()` has
-                    // already closed it.
+                    // report to a buffer nothing releases. `held` is empty,
+                    // which is exactly what has been delivered, so the reports
+                    // apply against it as any later batch's do; the starting
+                    // read never ran, so no number floors them. Idempotent on
+                    // the cached path, where `read()` has already closed it.
                     this.endStartup().catch(error =>
                         Trace.error(`[Observer] STARTUP RELEASE ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${error}`));
                     this.loadSettled = true;
@@ -507,14 +577,25 @@ export class ObserverImpl<T> implements Observer<T> {
     /**
      * Install one listener per way a fact can change a row, at every path.
      *
-     * The inverses come from `candidateInverses`, which is proven to propose
-     * every row a fresh batch adds or removes (`candidates_complete`,
-     * jinaga/jinaga-spec#12). They carry no add-or-remove label, because the
-     * label is what `invertSpecification` got wrong: an inverse built for one
-     * level still required the other levels' existential conditions on the new
-     * graph, so a level that had just *lost* its solution found nothing and no
-     * handler ran (issue #338). What an inverse proposes here is a candidate,
-     * and `recheckCandidates` decides it by reading the result.
+     * The inverses come from `exactInverses`, which is proven to report every
+     * row a fresh batch changes, and to report it with its direction
+     * (`adds_sound`, `removes_sound`, `changes_complete`, `exact_correct`,
+     * jinaga/jinaga-spec#19). So a row is applied as it arrives, and nothing is
+     * read a second time to decide it.
+     *
+     * That is not the same as trusting the label `invertSpecification` carried,
+     * which is what issue #338 got wrong: an inverse built for one level still
+     * required the other levels' existential conditions on the new graph, so a
+     * level that had just *lost* its solution found nothing and no handler ran.
+     * The exact inverses re-attach every original top-level condition in the
+     * add direction, and flip exactly one of them in the remove direction,
+     * which is what makes each direction sound rather than merely a proposal.
+     *
+     * What direct application needs and a re-check did not is to know which of
+     * two answers about one row is the later one. Reads run in the save path and
+     * rows arrive in the order the reads *finish*, which is not the order of the
+     * store states they saw, so every read is numbered before it runs and a
+     * row's highest number wins. See `ObserverLevel.decidedBy`.
      *
      * Each is read with this observer's given references bound ahead of the new
      * fact, which is also how a specification whose given is joined only from
@@ -532,7 +613,7 @@ export class ObserverImpl<T> implements Observer<T> {
         for (let branchIndex = 0; branchIndex < this.branches.length; branchIndex++) {
             const branch = this.branches[branchIndex];
             for (const level of branch.levels) {
-                const inverses = candidateInverses(level.specification);
+                const { adds, removes } = exactInverses(level.specification);
                 // One per given as well: no inverse of an unknown waits for a
                 // given's type, and a read returns nothing at all while a given
                 // is absent from the store, so without these a subscription
@@ -541,18 +622,26 @@ export class ObserverImpl<T> implements Observer<T> {
                 const givenInverses = level.specification.given.map((_, index) =>
                     givenCandidateInverse(level.specification, index));
                 const displayPath = level.path || "(root)";
-                Trace.info(`[Observer] Branch ${branchIndex} path ${displayPath} - Candidate inverses: ${inverses.length}, Given inverses: ${givenInverses.length}`);
+                Trace.info(`[Observer] Branch ${branchIndex} path ${displayPath} - Add inverses: ${adds.length}, Remove inverses: ${removes.length}, Given inverses: ${givenInverses.length}`);
 
                 level.listeners = [
-                    ...inverses.map(inverse => this.factManager.addInverseListener(
+                    ...adds.map(inverse => this.factManager.addInverseListener(
                         inverse,
                         this.given,
-                        results => this.onCandidates(level, branch, results, false)
+                        (results, read) => this.onReports(level, branch, results, "added", read),
+                        this.readNumbering
+                    )),
+                    ...removes.map(inverse => this.factManager.addInverseListener(
+                        inverse,
+                        this.given,
+                        (results, read) => this.onReports(level, branch, results, "removed", read),
+                        this.readNumbering
                     )),
                     ...givenInverses.map(inverse => this.factManager.addInverseListener(
                         inverse,
                         this.given,
-                        results => this.onCandidates(level, branch, results, true)
+                        results => this.onGivenArrived(level, branch, results),
+                        this.readNumbering
                     ))
                 ];
             }
@@ -624,18 +713,21 @@ export class ObserverImpl<T> implements Observer<T> {
                 }
                 level.listeners = [];
                 level.held.clear();
+                level.decidedBy.clear();
             }
             if (branch.feeds.length > 0) {
                 this.factManager.unsubscribe(branch.feeds);
                 branch.feeds = [];
             }
         }
-        // Drop the candidates that will now never be decided, along with the
+        // Drop the reports that will now never be applied, along with the
         // levels they name. `held` is cleared above; leaving these holding the
         // same rows would retain every projected result a stopped observer had
         // queued.
-        this.queuedCandidates.clear();
-        this.startupCandidates = null;
+        this.queuedReports.clear();
+        this.startupReports = null;
+        this.withdrawals = [];
+        this.pendingReads.clear();
         // Settle loadedPromise if it is still pending, so callers that await
         // loaded() are not permanently suspended after stop().
         if (this.loadResolve) {
@@ -851,37 +943,51 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     private async read() {
-        // Read every branch's spec. Each branch produces an independently
-        // filtered result set (different intersected auth conditions); the
-        // dedup at `notifyAdded` ensures each row surfaces only once.
-        const branchResults = await Promise.all(this.branches.map(async branch => ({
-            branch,
-            projected: await this.factManager.read(this.given, branch.specification)
-        })));
-        if (this.stopped) {
-            // The observer was stopped before the read completed.
-            return;
+        // Numbered before the read, and kept as the floor every later report is
+        // measured against. This read is an answer about every row, so a report
+        // from a read numbered below it has already been answered here.
+        const read = this.beginRead();
+        this.startupRead = read;
+        let branchResults: { branch: ObserverBranch; projected: ProjectedResult[] }[];
+        try {
+            // Read every branch's spec. Each branch produces an independently
+            // filtered result set (different intersected auth conditions); the
+            // dedup at `notifyAdded` ensures each row surfaces only once.
+            branchResults = await Promise.all(this.branches.map(async branch => ({
+                branch,
+                projected: await this.factManager.read(this.given, branch.specification)
+            })));
+            if (this.stopped) {
+                // The observer was stopped before the read completed.
+                return;
+            }
+            // Make the read the held set before anything is delivered from it,
+            // so a report that arrives mid-delivery is applied against a set
+            // that is already the result rather than one still filling up.
+            for (const { branch, projected } of branchResults) {
+                this.initializeHeld(branch, projected, read);
+            }
         }
-        // Make the read the held set before anything is delivered from it, so a
-        // candidate that arrives mid-delivery is decided against a set that is
-        // already the result rather than one still filling up.
-        for (const { branch, projected } of branchResults) {
-            this.initializeHeld(branch, projected);
+        finally {
+            // The read is over once `held` is it. The delivery below is not
+            // part of the read, and a handler that parks -- which one may do
+            // for as long as it likes -- must not hold this number outstanding.
+            this.endRead(read);
         }
         // Release the startup window here, as soon as `held` is the result --
         // not after the deliveries below. A decision must never wait on a
         // delivery: `notifyAdded` calls the caller's own add handler, which may
         // park for as long as it likes, and while the window is open
-        // `onCandidates` buffers a candidate without deciding it. Ending the
+        // `queueReports` buffers a report without applying it. Ending the
         // window afterwards therefore left every fact that arrived during the
         // initial delivery undecided for as long as one handler stayed
         // suspended, which for a handler that waits on a later row of this same
         // watch is forever.
         //
-        // The buffered candidates decide against `held`, which the loop above
-        // has just made the result, and deliver on their own promise. That
-        // promise is awaited after the deliveries below rather than before them,
-        // so neither side waits on the other's handler.
+        // The buffered reports apply against `held`, which the loop above has
+        // just made the result, and deliver on their own promise. That promise
+        // is awaited after the deliveries below rather than before them, so
+        // neither side waits on the other's handler.
         let startupFailure: unknown;
         const startupDecided = this.endStartup().catch((e: unknown) => { startupFailure = e; });
         try {
@@ -900,22 +1006,16 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     /**
-     * One inverse's results, as candidates at `level`.
+     * One exact inverse's rows, as reports at `level`.
      *
-     * `ofGiven` marks the inverse that fires when one of this observer's own
-     * givens is saved. Every row of the result is then a candidate, and so is
-     * every row this level already holds, because that fact can change the
-     * answer for rows no inverse of an unknown would propose.
+     * The direction is the listener's: every row an add inverse returns is in
+     * the result its read saw, and every row a remove inverse returns is absent
+     * from it. `read` is the number that read was given before it ran, which is
+     * how a row's latest answer is recognized when two reads about it finish out
+     * of order.
      *
-     * An empty result returns early whichever inverse fired, exactly as the row
-     * stream's `onCandidates` does. The given inverse's pin is bound through an
-     * unknown equal to both the new fact and the given, so a fact of the given's
-     * type that is *not* this observer's given yields no solution at all. There
-     * is nothing to decide for it: it cannot change this given's result, and
-     * whatever it does change `candidateInverses` proposes through an unknown.
-     * Unioning `held` in on that empty result instead made every saved fact of
-     * a common given type -- a user, a tenant -- re-read every level that holds
-     * rows, at the cost of the whole result and with no transition reachable.
+     * An empty result returns early, exactly as the row stream's
+     * `onCandidates` does: there is no row to report.
      *
      * Nothing is filtered by a given-subset hash here. `addInverseListener`
      * reads with this observer's given references bound, so every row it
@@ -923,7 +1023,7 @@ export class ObserverImpl<T> implements Observer<T> {
      * subscription's givens be bound in the read rather than reconstructed by
      * hashing each result (issue #344).
      */
-    private async onCandidates(level: ObserverLevel, branch: ObserverBranch, results: ProjectedResult[], ofGiven: boolean): Promise<void> {
+    private async onReports(level: ObserverLevel, branch: ObserverBranch, results: ProjectedResult[], operation: "added" | "removed", read: number): Promise<void> {
         if (this.stopped) {
             return;
         }
@@ -931,42 +1031,123 @@ export class ObserverImpl<T> implements Observer<T> {
         if (rows.length === 0) {
             return;
         }
-        const candidates = ofGiven ? [...rows, ...level.held.values()] : rows;
+        await this.queueReports(level, branch, rows.map(row => ({ row, operation, read })), []);
+    }
 
-        const buffer = this.startupCandidates ?? this.queuedCandidates;
+    /**
+     * This observer's own given has arrived, so read the whole level.
+     *
+     * No inverse of an unknown waits for a given's type, and
+     * `SpecificationRunner.read` returns nothing at all while a given fact is
+     * absent, so the moment the given arrives every row of the level appears at
+     * once. That is the theorem's given case -- nothing was read before, so
+     * every row read now is an add -- and the read is numbered before it runs
+     * like any other, so it orders against the inverse reads instead of
+     * overriding them.
+     *
+     * An empty result returns early whichever inverse fired. The given
+     * inverse's pin is bound through an unknown equal to both the new fact and
+     * the given, so a fact of the given's type that is *not* this observer's
+     * given yields no solution at all, and reading the whole level for it would
+     * cost the whole result on every unrelated fact of a common given type --
+     * a user, a tenant.
+     */
+    private async onGivenArrived(level: ObserverLevel, branch: ObserverBranch, results: ProjectedResult[]): Promise<void> {
+        if (this.stopped || results.length === 0) {
+            return;
+        }
+        // Numbered before the read it is an answer about -- this one -- not
+        // before the inverse read that brought us here.
+        const read = this.beginRead();
+        try {
+            const present = this.toRowMap(await this.readLevel(level), level);
+            if (this.stopped) {
+                return;
+            }
+            await this.queueReports(level, branch, [], [{ read, present }]);
+        }
+        finally {
+            this.endRead(read);
+        }
+    }
+
+    /**
+     * Buffer reports for a level, and apply them unless the startup window is
+     * still open.
+     */
+    private async queueReports(level: ObserverLevel, branch: ObserverBranch, reports: Report[], fullReads: FullRead[]): Promise<void> {
+        const buffer = this.startupReports ?? this.queuedReports;
         const entry = buffer.get(level);
         if (entry) {
-            entry.rows.push(...candidates);
-            entry.fullRead = entry.fullRead || ofGiven;
+            entry.reports.push(...reports);
+            entry.fullReads.push(...fullReads);
         }
         else {
-            buffer.set(level, { branch, rows: [...candidates], fullRead: ofGiven });
+            buffer.set(level, { branch, reports: [...reports], fullReads: [...fullReads] });
         }
-        if (this.startupCandidates) {
+        if (this.startupReports) {
             return;
         }
 
-        const notificationPromise = this.enqueueRecheck().finally(() => {
+        const notificationPromise = this.enqueueApply().finally(() => {
             this.pendingNotifications.delete(notificationPromise);
         });
         this.pendingNotifications.add(notificationPromise);
         await notificationPromise;
     }
 
+    /** The next read number, recorded as outstanding until `endRead`. */
+    private beginRead(): number {
+        const read = this.nextRead++;
+        this.pendingReads.add(read);
+        return read;
+    }
+
     /**
-     * Decide the queued candidates, after every decision already in flight.
+     * Report a read finished, and forget what was kept only to outrank it.
+     *
+     * A `decidedBy` entry for a row this observer does not hold exists only to
+     * drop a report from a read that was already in flight when the row was
+     * withdrawn. Once no outstanding read is numbered below the entry, no such
+     * report can arrive, so the entry goes. A row that is held keeps its entry:
+     * that is the number a later report about it is measured against.
+     */
+    private endRead(read: number): void {
+        this.pendingReads.delete(read);
+        if (this.withdrawals.length === 0) {
+            return;
+        }
+        let floor = Number.POSITIVE_INFINITY;
+        for (const pending of this.pendingReads) {
+            if (pending < floor) {
+                floor = pending;
+            }
+        }
+        this.withdrawals = this.withdrawals.filter(withdrawal => {
+            if (withdrawal.read >= floor) {
+                return true;
+            }
+            if (!withdrawal.level.held.has(withdrawal.rowHash)
+                && withdrawal.level.decidedBy.get(withdrawal.rowHash) === withdrawal.read) {
+                withdrawal.level.decidedBy.delete(withdrawal.rowHash);
+            }
+            return false;
+        });
+    }
+
+    /**
+     * Apply the queued reports, after every application already in flight.
      *
      * The chain is what makes the delivered order the order of decisions. It
-     * also coalesces: candidates that arrive while a re-check is running are
-     * taken by the next link in one batch, so a batch of facts notified
-     * concurrently costs one read per level rather than one read each.
+     * also coalesces: reports that arrive while an application is running are
+     * taken by the next link in one batch, where the link keeps only the latest
+     * read's answer per row and emits the net change against `held`.
      */
-    private enqueueRecheck(): Promise<void> {
-        const decided = this.recheckChain.then(() => this.decideQueuedCandidates());
-        // Only the decision is serialized. It reads each level and updates
-        // `held`, so two batches deciding at once could read a graph neither of
-        // them is deciding against; the chain is what keeps each batch's read
-        // and its `held` update together.
+    private enqueueApply(): Promise<void> {
+        const decided = this.applyChain.then(() => this.applyQueuedReports());
+        // Only the application is serialized. It updates `held`, so two batches
+        // applying at once could interleave their updates; the chain is what
+        // keeps each batch's coalescing and its `held` update together.
         //
         // Delivery is deliberately NOT on the chain. It calls the caller's own
         // add handler, which may park for as long as it likes -- a `watch`
@@ -978,11 +1159,11 @@ export class ObserverImpl<T> implements Observer<T> {
         // that a removal can be recorded while an add handler is still
         // suspended.
         //
-        // A failed read must not poison the chain either. A rejected link would
-        // make every later re-check reject without running, so one failed read
+        // A failure must not poison the chain either. A rejected link would
+        // make every later application reject without running, so one failure
         // would silently end this observer's updates for good. The caller still
-        // sees the failure, through the promise returned here.
-        this.recheckChain = decided.then(() => { }, () => { });
+        // sees it, through the promise returned here.
+        this.applyChain = decided.then(() => { }, () => { });
         return decided.then(decisions => this.deliverDecisions(decisions));
     }
 
@@ -1010,102 +1191,124 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     /**
-     * Read each level that has candidates, then let the re-check decide.
+     * Apply the queued reports, level by level, and return what to deliver.
      *
-     * The read is what makes this correct where trusting the inverse was not.
-     * It happens on the store that already holds the whole batch, which is the
-     * premise jinaga/jinaga-spec#12 proves the loop exact under, and rows that
-     * are not candidates are left exactly as they were — so the order of the
-     * facts within one batch does not matter.
+     * Nothing is read here. The exact inverses have already said which rows
+     * changed and in which direction, on a store that held the whole batch,
+     * which is the premise jinaga/jinaga-spec#19 proves them exact under
+     * (`exact_correct`). What remains is to take, per row, the answer from the
+     * latest read, and emit the change it makes to `held`.
      */
-    private async decideQueuedCandidates(): Promise<PendingDelivery[]> {
-        const queued = this.queuedCandidates;
+    private async applyQueuedReports(): Promise<PendingDelivery[]> {
+        const queued = this.queuedReports;
         if (queued.size === 0 || this.stopped) {
             return [];
         }
-        this.queuedCandidates = new Map();
-
-        const reads = await Promise.all([...queued.entries()].map(async ([level, entry]) => ({
-            level,
-            entry,
-            present: await this.readPresent(level, entry)
-        })));
-        if (this.stopped) {
-            return [];
-        }
+        this.queuedReports = new Map();
 
         // Parents before children. A child row's handler is registered by its
-        // parent's `onAdded`, so deciding the shallower path first spares the
+        // parent's `onAdded`, so applying the shallower path first spares the
         // child the buffer-and-replay path in `bufferPendingNotification`.
-        reads.sort((a, b) => a.level.path.length - b.level.path.length);
+        const entries = [...queued.entries()].sort((a, b) => a[0].path.length - b[0].path.length);
 
         const deliveries: PendingDelivery[] = [];
-        for (const { level, entry, present } of reads) {
-            const decisions = recheckCandidates(level.held, entry.rows, present);
-            const displayPath = level.path || "(root)";
-            if (decisions.length > 0) {
-                Trace.info(`[Observer] RECHECKED - Path: ${displayPath}, Candidates: ${entry.rows.length}, Decisions: ${decisions.length}`);
+        for (const [level, entry] of entries) {
+            const reports = this.latestPerRow(level, entry);
+            let changes = 0;
+            for (const report of reports) {
+                const delivery = this.applyReport(level, entry.branch, report);
+                if (delivery !== null) {
+                    deliveries.push(delivery);
+                    changes++;
+                }
             }
-            for (const decision of decisions) {
-                deliveries.push({
-                    level,
-                    branch: entry.branch,
-                    operation: decision.operation,
-                    result: decision.row.result
-                });
+            if (changes > 0) {
+                const displayPath = level.path || "(root)";
+                Trace.info(`[Observer] APPLIED - Path: ${displayPath}, Reports: ${reports.length}, Changes: ${changes}`);
             }
         }
         return deliveries;
     }
 
     /**
-     * The rows of this batch's candidates that are in the result.
+     * One report per row: the one from the latest read.
      *
-     * One read per distinct candidate, each costing what the level's paths and
-     * conditions cost for that one tuple, rather than one read of the whole
-     * level for the batch -- which is what made absorbing a save cost as much
-     * as the observer held (#359). `recheckCandidates` looks up only the
-     * candidates, so answering for them is answering for the batch.
+     * The reports reaching one link come from several reads, which finished in
+     * whatever order they finished in. Keeping the greatest read number per row
+     * and applying only that is what makes the link emit the net change against
+     * `held` rather than replaying each read's answer in turn: a row an older
+     * read added and a newer read removed is one removal, or no transition at
+     * all if the observer never held it.
      *
-     * The whole level is read for a batch holding a candidate of the
-     * observer's own given, and for a candidate that does not bind every label
-     * the membership read pins. `membershipStart` says when that is, and no
-     * candidate from `candidateInverses` is one.
+     * This is NOT `recheckCandidates`' dedupe, which kept the FIRST candidate
+     * for a row because a fresh read, not the candidate, was going to decide
+     * it. Keeping the first report here would keep the stalest answer.
+     *
+     * A whole-level read is expanded here, inside the chain, because the rows it
+     * did not return are an answer about this level only against `held`.
      */
-    private async readPresent(level: ObserverLevel, entry: CandidateBatch): Promise<Map<string, SpecificationRow<ProjectedResult>>> {
-        if (!entry.fullRead) {
-            const present = await this.readMembership(level, entry.rows);
-            if (present !== null) {
-                return present;
+    private latestPerRow(level: ObserverLevel, entry: ReportBatch): Report[] {
+        const latest = new Map<string, Report>();
+        const consider = (report: Report) => {
+            const existing = latest.get(report.row.rowHash);
+            if (existing === undefined || existing.read < report.read) {
+                latest.set(report.row.rowHash, report);
+            }
+        };
+        for (const report of entry.reports) {
+            consider(report);
+        }
+        for (const { read, present } of entry.fullReads) {
+            for (const row of present.values()) {
+                consider({ row, operation: "added", read });
+            }
+            for (const row of level.held.values()) {
+                if (!present.has(row.rowHash)) {
+                    consider({ row, operation: "removed", read });
+                }
             }
         }
-        return this.toRowMap(await this.readLevel(level), level);
+        return [...latest.values()];
     }
 
-    private async readMembership(level: ObserverLevel, rows: SpecificationRow<ProjectedResult>[]): Promise<Map<string, SpecificationRow<ProjectedResult>> | null> {
-        const distinct = new Map<string, SpecificationRow<ProjectedResult>>();
-        for (const row of rows) {
-            if (!distinct.has(row.rowHash)) {
-                distinct.set(row.rowHash, row);
-            }
+    /**
+     * Apply one report at one level, and return the transition it makes.
+     *
+     * A report from a read numbered at or below the latest that decided this
+     * row is an answer about a store state no newer than the one already
+     * applied, so it is dropped. Otherwise the number is recorded -- whether or
+     * not the row moved, because a remove that changes nothing must still
+     * outrank an older add arriving after it -- and the row is added or removed
+     * where `held` disagrees with the report.
+     *
+     * A removal is delivered from `held`, not from the remove inverse's own
+     * row: that tuple carries the fact whose arrival retracted the row, while
+     * the caller is being told about the result it was offered.
+     */
+    private applyReport(level: ObserverLevel, branch: ObserverBranch, report: Report): PendingDelivery | null {
+        const rowHash = report.row.rowHash;
+        if (this.startupRead !== null && report.read < this.startupRead) {
+            return null;
         }
-        const present = new Map<string, SpecificationRow<ProjectedResult>>();
-        for (const [rowHash, row] of distinct) {
-            const start = membershipStart(this.given, level.membership.pinned, row.result.tuple);
-            if (start === null) {
+        const decided = level.decidedBy.get(rowHash);
+        if (decided !== undefined && decided >= report.read) {
+            return null;
+        }
+        level.decidedBy.set(rowHash, report.read);
+        if (report.operation === "added") {
+            if (level.held.has(rowHash)) {
                 return null;
             }
-            // Derived, like a nested level's read: the specification it comes
-            // from has already been checked for purge compliance.
-            const results = await this.factManager.readDerived(start, level.membership.specification);
-            if (this.stopped) {
-                return present;
-            }
-            if (results.length > 0) {
-                present.set(rowHash, this.toRows([results[0]], level)[0]);
-            }
+            level.held.set(rowHash, report.row);
+            return { level, branch, operation: "added", result: report.row.result };
         }
-        return present;
+        this.withdrawals.push({ level, rowHash, read: report.read });
+        const heldRow = level.held.get(rowHash);
+        if (heldRow === undefined) {
+            return null;
+        }
+        level.held.delete(rowHash);
+        return { level, branch, operation: "removed", result: heldRow.result };
     }
 
     /**
@@ -1129,26 +1332,31 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     /**
-     * Release the startup window: decide what arrived during it against the
+     * Release the startup window: apply what arrived during it against the
      * result that the starting read has now established.
+     *
+     * The window's reports are coalesced with everything else in the link that
+     * applies them, so a row the window saw added and then removed costs one
+     * decision, and a report from a read the starting read already answered is
+     * dropped by its number.
      */
     private async endStartup(): Promise<void> {
-        const buffered = this.startupCandidates;
-        this.startupCandidates = null;
+        const buffered = this.startupReports;
+        this.startupReports = null;
         if (!buffered || buffered.size === 0 || this.stopped) {
             return;
         }
         for (const [level, entry] of buffered) {
-            const existing = this.queuedCandidates.get(level);
+            const existing = this.queuedReports.get(level);
             if (existing) {
-                existing.rows.push(...entry.rows);
-                existing.fullRead = existing.fullRead || entry.fullRead;
+                existing.reports.push(...entry.reports);
+                existing.fullReads.push(...entry.fullReads);
             }
             else {
-                this.queuedCandidates.set(level, entry);
+                this.queuedReports.set(level, entry);
             }
         }
-        const notificationPromise = this.enqueueRecheck().finally(() => {
+        const notificationPromise = this.enqueueApply().finally(() => {
             this.pendingNotifications.delete(notificationPromise);
         });
         this.pendingNotifications.add(notificationPromise);
@@ -1157,10 +1365,11 @@ export class ObserverImpl<T> implements Observer<T> {
 
     /**
      * A level's rows, each carrying the projected result the delivery path
-     * needs, keyed over the level's `keyLabels`. The extra labels a candidate
-     * inverse's tuple carries — the pinned fact, and any label lifted out of an
-     * existential condition — are not among them, so a row reached through one
-     * inverse keys identically to the same row read from the result.
+     * needs, keyed over the level's `keyLabels`. The extra labels an inverse's
+     * tuple carries — the pinned fact, any label lifted out of an existential
+     * condition, and the `given` match `reduceGivenConditions` adds — are not
+     * among them, so a row reached through one inverse keys identically to the
+     * same row read from the result.
      */
     private toRows(results: ProjectedResult[], level: ObserverLevel): SpecificationRow<ProjectedResult>[] {
         return results.map(pr => ({
@@ -1186,7 +1395,7 @@ export class ObserverImpl<T> implements Observer<T> {
      * are already in the result the root read returned, and their tuples carry
      * the parent's labels, which is what the nested level keys on.
      */
-    private initializeHeld(branch: ObserverBranch, projected: ProjectedResult[]): void {
+    private initializeHeld(branch: ObserverBranch, projected: ProjectedResult[], read: number): void {
         const levelsByPath = new Map(branch.levels.map(level => [level.path, level]));
         const walk = (path: string, results: ProjectedResult[]) => {
             const level = levelsByPath.get(path);
@@ -1196,6 +1405,7 @@ export class ObserverImpl<T> implements Observer<T> {
             for (const row of this.toRows(results, level)) {
                 if (!level.held.has(row.rowHash)) {
                     level.held.set(row.rowHash, row);
+                    level.decidedBy.set(row.rowHash, read);
                 }
             }
             if (level.projection.type === "composite") {
@@ -1321,7 +1531,7 @@ export class ObserverImpl<T> implements Observer<T> {
         // handler is suspended. That removal finds no vote for a row not yet
         // delivered and is dropped, so delivering it now would leave the
         // caller holding a row the result no longer has, which no later
-        // re-check corrects. Skipping it makes the net transition absent to
+        // report corrects. Skipping it makes the net transition absent to
         // absent. If the row has been re-added since, that decision delivers
         // it on its own. Checked after the await above, right before the vote
         // and the handler. Nested rows are #358's.
