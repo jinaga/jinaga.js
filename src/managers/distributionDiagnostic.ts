@@ -138,6 +138,13 @@ export function toClearingDiagnostic(
  * The throw is unconditional. `developmentMode` gates only the installation of
  * the console handler in `JinagaBrowser`, never `query`'s contract, so a
  * structural denial fails loudly in production too.
+ *
+ * Exported so that consumers classify diagnostics the way `query` does rather
+ * than re-implementing it. It answers "will an incoming fact ever heal this?",
+ * which is not an application's "does the app need to act?". The two diverge on
+ * `not-authenticated`: it is not structural, because a login can change it, yet
+ * a UI must act on it, so it usually shows as an error rather than as pending.
+ * Use this to inform an application's policy, not to replace it.
  */
 export function isStructuralDenial(diagnostic: DistributionDiagnostic): boolean {
     return !diagnostic.reactive

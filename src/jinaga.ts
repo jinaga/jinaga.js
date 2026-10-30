@@ -17,7 +17,7 @@ import { FactEnvelope, FactReference } from './storage';
 import { toJSON } from './util/obj';
 import { Trace } from './util/trace';
 
-export { DistributionDeniedError, DistributionDiagnostic } from './managers/distributionDiagnostic';
+export { DistributionDeniedError, DistributionDiagnostic, isStructuralDenial } from './managers/distributionDiagnostic';
 
 export interface Profile {
     displayName: string;
