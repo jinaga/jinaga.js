@@ -17,12 +17,19 @@ import { seededRandom, shuffled } from "../utils/seeded-random";
 // specification whose given is joined only inside an existential condition
 // could not be watched at all (#141).
 //
-// The observer now registers `candidateInverses` through `addInverseListener`
-// and decides each candidate by reading the result. The inverses carry no
-// operation, so there is no label left to get wrong.
+// The observer answered that by registering `candidateInverses` through
+// `addInverseListener` and deciding each candidate by reading the result: the
+// inverses carried no operation, so there was no label left to get wrong.
+// Since #376 it registers `exactInverses` and applies their rows directly. The
+// direction is the inverse's own again, but it is a proven one now rather than
+// the guess `invertSpecification` made, and the reads that produce it are
+// numbered so a stale answer cannot override a newer one.
+//
+// Every case below is about which rows reach the caller, so each one holds
+// whichever way the direction is established.
 //
 // No arbitrary timeouts anywhere (CLAUDE.md). Every assertion below runs after
-// `j.fact` has resolved, which awaits the notification the re-check runs
+// `j.fact` has resolved, which awaits the notification the decision runs
 // inside, or after an explicit `observer.processed()`.
 
 class Account {
@@ -49,6 +56,23 @@ class RetirementRevoked {
     static Type = "Test.RetirementRevoked" as const;
     type = RetirementRevoked.Type;
     constructor(public retired: MirrorRetired) { }
+}
+
+// The mirror image of `Mirror`/`MirrorRetired`: a condition whose witness is
+// itself negated, where the OUTER condition is the negative one. Issue #376.
+class Freeze {
+    static Type = "Test.Freeze" as const;
+    type = Freeze.Type;
+    // `reason` distinguishes two freezes of one account. Without a field of
+    // its own a fact is identified by its predecessors alone, so two would be
+    // one fact and the shape below would hold only one freeze.
+    constructor(public account: Account, public reason: string) { }
+}
+
+class Unfreeze {
+    static Type = "Test.Unfreeze" as const;
+    type = Unfreeze.Type;
+    constructor(public freeze: Freeze) { }
 }
 
 class Root {
@@ -131,6 +155,8 @@ const model = buildModel(b => b
     .type(Mirror, x => x.predecessor("account", Account))
     .type(MirrorRetired, x => x.predecessor("mirror", Mirror))
     .type(RetirementRevoked, x => x.predecessor("retired", MirrorRetired))
+    .type(Freeze, x => x.predecessor("account", Account))
+    .type(Unfreeze, x => x.predecessor("freeze", Freeze))
     .type(Root, x => x.predecessor("owner", User))
     .type(Task, x => x.predecessor("root", Root))
     .type(Done, x => x.predecessor("task", Task))
@@ -162,6 +188,21 @@ const accountsWithCurrentMirror = model.given(User).match((user, facts) =>
             .join(mirror => mirror.account, account)
             .notExists(mirror => facts.ofType(MirrorRetired)
                 .join(retired => retired.mirror, mirror)))
+);
+
+// `notExists { notExists }`, the mirror image of `accountsWithCurrentMirror`.
+// An account is in the result while it has no unrestored freeze -- while every
+// freeze of it has been undone. Issue #376: an `Unfreeze` fires an ADD inverse
+// here, and that inverse is sound only because it re-attaches the original
+// top-level condition. Without that it would propose the account on the
+// strength of the one freeze it undid, ignoring the other one still standing.
+const unfrozenAccounts = model.given(User).match((user, facts) =>
+    facts.ofType(Account)
+        .join(account => account.owner, user)
+        .notExists(account => facts.ofType(Freeze)
+            .join(freeze => freeze.account, account)
+            .notExists(freeze => facts.ofType(Unfreeze)
+                .join(unfreeze => unfreeze.freeze, freeze)))
 );
 
 // Two sibling `notExists` conditions that one `Sweep` falsifies together. Each
@@ -320,6 +361,39 @@ class StoreCountingRows extends MemoryStore {
     }
 }
 
+/**
+ * A replicator whose `feeds` call runs one hook before it answers, so a test
+ * can save a fact while the starting fetch is still in flight -- before the
+ * starting read has been numbered. Deterministic: the fact arrives at a point
+ * in the sequence rather than after a delay.
+ */
+class NetworkWithFeedsHook extends QuietNetwork {
+    public duringFeeds: () => Promise<void> = async () => { };
+
+    async feeds(start: FactReference[], specification: Specification): Promise<FeedsResponse> {
+        const hook = this.duringFeeds;
+        this.duringFeeds = async () => { };
+        await hook();
+        return super.feeds(start, specification);
+    }
+}
+
+/** A store whose read of one named specification rejects, once. */
+class StoreFailingReadOf extends MemoryStore {
+    private failing = new Set<Specification>();
+
+    public failReadOf(specification: Specification): void {
+        this.failing.add(specification);
+    }
+
+    async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        if (this.failing.delete(specification)) {
+            throw new Error("the starting read failed");
+        }
+        return super.read(start, specification);
+    }
+}
+
 interface PeerOptions {
     /** The store, so a test can hook its reads. */
     store?: MemoryStore;
@@ -362,7 +436,7 @@ function collectHeld<T>(identify: (value: T) => string) {
     return { held, added, removed, handler };
 }
 
-describe("an observer re-checks its candidates", () => {
+describe("an observer deciding rows under negation", () => {
     let j: Jinaga;
     let owner: User;
 
@@ -409,6 +483,53 @@ describe("an observer re-checks its candidates", () => {
         expect(removed).toEqual([]);
         expect(held).toEqual(new Set([j.hash(account)]));
         expect((await j.query(accountsWithCurrentMirror, owner)).map(a => j.hash(a)))
+            .toEqual([j.hash(account)]);
+
+        observer.stop();
+    });
+
+    it("adds no account when one of two freezes is undone", async () => {
+        // The mirror of "keeps the account when one of two current mirrors is
+        // retired", on the negative side. One `Unfreeze` leaves the other
+        // freeze standing, so the account is out of the result before the save
+        // and out of it after, and no add may reach the caller.
+        const account = await j.fact(new Account(owner, "one"));
+        const first = await j.fact(new Freeze(account, "audit"));
+        await j.fact(new Freeze(account, "fraud"));
+
+        const { held, added, handler } = collectHeld<Account>(a => j.hash(a));
+        const observer = j.watch(unfrozenAccounts, owner, handler);
+        await observer.loaded();
+        expect(added).toEqual([]);
+
+        await j.fact(new Unfreeze(first));
+        await observer.processed();
+
+        expect(added).toEqual([]);
+        expect(held.size).toEqual(0);
+        expect(await j.query(unfrozenAccounts, owner)).toEqual([]);
+
+        observer.stop();
+    });
+
+    it("adds the account when its last freeze is undone", async () => {
+        // The other half: the add inverse must still fire when the condition
+        // really has become true, or the shape above would pass by saying
+        // nothing at all.
+        const account = await j.fact(new Account(owner, "one"));
+        const only = await j.fact(new Freeze(account, "audit"));
+
+        const { held, added, handler } = collectHeld<Account>(a => j.hash(a));
+        const observer = j.watch(unfrozenAccounts, owner, handler);
+        await observer.loaded();
+        expect(added).toEqual([]);
+
+        await j.fact(new Unfreeze(only));
+        await observer.processed();
+
+        expect(added).toEqual([j.hash(account)]);
+        expect(held).toEqual(new Set([j.hash(account)]));
+        expect((await j.query(unfrozenAccounts, owner)).map(a => j.hash(a)))
             .toEqual([j.hash(account)]);
 
         observer.stop();
@@ -547,8 +668,8 @@ describe("an observer re-checks its candidates", () => {
 
     it("removes and restores a child collection row as its witness arrives and is negated", async () => {
         // Case 6. The change is inside a nested collection, so the parent row's
-        // own membership never changes: the root read reports no transition at
-        // all, and only the nested level's own re-check can decide it.
+        // own membership never changes: the root level reports no transition at
+        // all, and only the nested level's own inverses report this one.
         const account = await j.fact(new Account(owner, "one"));
         const mirror = await j.fact(new Mirror(account, "https://one"));
 
@@ -609,8 +730,8 @@ describe("an observer over notExists nested to depth three", () => {
     }
 
     it("holds exactly the rows a query returns, after every batch", async () => {
-        // Case 7. The property the re-check is for, measured rather than
-        // argued: what the observer holds equals `j.query` of the same
+        // Case 7. The property the whole mechanism is for, measured rather
+        // than argued: what the observer holds equals `j.query` of the same
         // specification, whatever order the facts arrived in and whichever
         // batches they came in.
         const random = seededRandom(20261024);
@@ -826,6 +947,38 @@ describe("an observer's startup window", () => {
 
         observer.stop();
     });
+
+    it("delivers a fact saved during the fetch when the starting read fails", async () => {
+        // Reported in review of #379. The starting read is numbered before it
+        // runs and that number floors every buffered report. A fact saved
+        // while the fetch is in flight is reported by a read numbered below
+        // it. If the starting read then rejects, it answered nothing, so no
+        // floor may stand: the buffered report must still apply against the
+        // empty `held`, or the row is lost while the observer stays
+        // subscribed.
+        const network = new NetworkWithFeedsHook();
+        const store = new StoreFailingReadOf();
+        const { j } = createPeer({ network, store });
+        const owner = await j.fact(new User("--- OWNER ---"));
+        const root = await j.fact(new Root(owner, "r"));
+
+        let duringFetch: Task | undefined;
+        network.duringFeeds = async () => {
+            duringFetch = await j.fact(new Task(root, "saved during the fetch"));
+        };
+        store.failReadOf(currentTasks.specification);
+
+        const { held, added, handler } = collectHeld<Task>(t => j.hash(t));
+        const observer = j.watch(currentTasks, root, handler);
+        await expect(observer.loaded()).rejects.toThrow("the starting read failed");
+        await observer.processed();
+
+        expect(duringFetch).toBeDefined();
+        expect(added).toEqual([j.hash(duringFetch!)]);
+        expect(held).toEqual(new Set([j.hash(duringFetch!)]));
+
+        observer.stop();
+    });
 });
 
 describe("an observer reading a nested level", () => {
@@ -869,15 +1022,16 @@ describe("an observer reading a nested level", () => {
 
 describe("an observer hearing a fact of its given's type", () => {
     it("reads no rows when the fact is not its own given", async () => {
-        // Reported by the review on 56eb045. `candidateInverses` pins unknowns,
-        // and a given is not an unknown, so a given inverse is what tells a
+        // Reported by the review on 56eb045. The inverses pin unknowns, and a
+        // given is not an unknown, so a given inverse is what tells a
         // subscription its given has arrived. Its pin is bound through an
         // unknown equal to both the new fact and the given, so an unrelated
         // fact of that type yields no solution — but `onCandidates` unioned
         // `held` in anyway on the strength of `ofGiven`, which made every
         // saved fact of a common given type re-read every level that holds
-        // rows. The row stream, the proven sibling, returns early on an empty
-        // result whichever inverse fired.
+        // rows. The early return on an empty result is what this measures, and
+        // #376 kept it: a given inverse that finds nothing provokes no
+        // whole-level read.
         const store = new StoreCountingRows();
         const { j } = createPeer({ store });
         const owner = await j.fact(new User("--- OWNER ---"));

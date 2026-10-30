@@ -12,14 +12,64 @@ export interface SpecificationListener {
 /**
  * A listener registered for one inverse read with a subscription's own givens.
  *
- * Structurally identical to `SpecificationListener`, and deliberately a
- * separate name: the two live in separate registries, so
- * `removeInverseListener` looks only here and `removeSpecificationListener`
- * only there.
+ * Deliberately a separate name from `SpecificationListener`: the two live in
+ * separate registries, so `removeInverseListener` looks only here and
+ * `removeSpecificationListener` only there.
+ *
+ * `beginRead` and `endRead` number the read this listener is served by, so the
+ * consumer can tell which of two answers about the same row is the later one.
+ * The number is taken before the read, and `endRead` reports that no answer
+ * from it is outstanding any more. See `InverseReadNumbering`.
  */
 export interface InverseListener {
-    onResult(results: ProjectedResult[]): Promise<void>;
+    onResult(results: ProjectedResult[], read: number): Promise<void>;
+    beginRead(): number;
+    endRead(read: number): void;
 }
+
+/**
+ * How one consumer numbers the reads that decide its rows.
+ *
+ * A consumer that applies an inverse's rows directly needs to know, for each
+ * row, which read decided it last. Rows arrive in the order reads *finish*,
+ * which is not the order of the store states they saw: a read whose snapshot
+ * was fixed first can return last, and applying its rows then would undo a
+ * later read's answer. A number taken BEFORE the read -- before the snapshot
+ * it will see is fixed -- orders the reads by what they can have seen, because
+ * a batch's own inverse reads are numbered after that batch is saved, so every
+ * read numbered earlier is one the batch's reads beat.
+ *
+ * `beginRead` is therefore called synchronously, with no `await` between it and
+ * the store read it numbers. A number taken in the handler instead would be
+ * taken after the read returned, and would rank a stale answer above a fresh
+ * one.
+ *
+ * `endRead` is called once the listener has been dispatched, however that
+ * turned out -- returned, threw, or timed out -- so the consumer can forget
+ * what it was keeping only to compare against a read still in flight.
+ *
+ * Numbers are compared only among the reads of one consumer, so each consumer
+ * supplies its own counter. A consumer that does not use them omits this and
+ * the source numbers its reads for it.
+ */
+export interface InverseReadNumbering {
+    beginRead(): number;
+    endRead(read: number): void;
+}
+
+/**
+ * The numbering a listener registered without one is served by.
+ *
+ * A consumer that ignores the number still needs the read to have one, so the
+ * dispatch path has a single shape. Monotonic across the process, so these
+ * numbers order the same way a consumer's own would; nothing reads them.
+ * The row stream is the one such consumer today (#377).
+ */
+let unnumberedRead = 0;
+const unnumberedReads: InverseReadNumbering = {
+    beginRead: () => unnumberedRead++,
+    endRead: () => { }
+};
 
 /**
  * Identifies the read that serves a group of inverse listeners. Two listeners
@@ -214,12 +264,18 @@ export class ObservableSource {
     }
 
     /**
-     * Register a listener for one inverse produced by `candidateInverses`.
+     * Register a listener for one inverse: one produced by `candidateInverses`,
+     * or one of the two directions `exactInverses` produces.
      *
      * The inverse's last given is the pin, `__f`, and its type is the type the
      * listener waits for. When a fact of that type is saved, the inverse is
      * read with `[...givenRefs, newFactRef]` and every resulting row is passed
      * to `onResult`.
+     *
+     * `numbering` numbers that read for this listener alone, before it runs.
+     * A consumer that applies the rows directly needs it to tell a stale
+     * answer from a fresh one; one that re-reads to decide does not, and omits
+     * it. See `InverseReadNumbering`.
      *
      * That is the whole difference from `addSpecificationListener`, which
      * reads an inverse from the new fact alone and so requires every given to
@@ -232,7 +288,7 @@ export class ObservableSource {
      * listeners (issue #331): each line describes one listener, and
      * registering one has no aggregate to summarize.
      */
-    public addInverseListener(inverse: Specification, givenRefs: FactReference[], onResult: (results: ProjectedResult[]) => Promise<void>): InverseListener {
+    public addInverseListener(inverse: Specification, givenRefs: FactReference[], onResult: (results: ProjectedResult[], read: number) => Promise<void>, numbering?: InverseReadNumbering): InverseListener {
         if (inverse.given.length === 0) {
             throw new Error("An inverse must declare at least one given, the pin");
         }
@@ -265,8 +321,11 @@ export class ObservableSource {
             Trace.debug(`[ObservableSource] Created new inverse listener group: ${groupKey.substring(0, 8)}... (pin type: ${pinType})`);
         }
 
-        const inverseListener = {
-            onResult
+        const reads = numbering ?? unnumberedReads;
+        const inverseListener: InverseListener = {
+            onResult,
+            beginRead: () => reads.beginRead(),
+            endRead: read => reads.endRead(read)
         };
         group.listeners.push(inverseListener);
 
@@ -390,7 +449,9 @@ export class ObservableSource {
                     // to that loop would be sound; it is left serial here to
                     // keep this change to the wait that caused issue #246.
                     const outcomes = await Promise.all(listenerSnapshot.map((specificationListener, i) =>
-                        this.notifyListener(specificationListener, results, i, listenerSnapshot.length, specificationKey, fact.type, hasNestedSpecs)));
+                        this.notifyListener(
+                            () => specificationListener.onResult(results),
+                            i, listenerSnapshot.length, specificationKey, fact.type, hasNestedSpecs)));
                     totalNotifications += outcomes.filter(completed => completed).length;
                 } else {
                     Trace.debug(`[ObservableSource] Skipping spec ${specCount}/${listenersBySpecification.size} - No listeners or null group`);
@@ -418,6 +479,14 @@ export class ObservableSource {
      * subscriptions to the same read, so the model records no edge between
      * them to sequence by, while a wedged listener in one group delays the
      * groups after it by up to `listenerTimeoutMs`.
+     *
+     * Each listener numbers the group's read for itself, synchronously and
+     * with nothing awaited between the numbering and the read. The read is
+     * shared, the numbering is not: the numbers mean something only within one
+     * consumer, and two consumers subscribed to the same inverse are counting
+     * their own reads. `endRead` runs in a `finally`, so a read that throws and
+     * a listener that times out both report their number as no longer
+     * outstanding.
      */
     private async notifyInverseListeners(fact: FactRecord) {
         const groupsByKey = this.inverseListenersByTypeAndGroup.get(fact.type);
@@ -435,25 +504,44 @@ export class ObservableSource {
                 continue;
             }
 
-            const readStart = Date.now();
-            const results = await this.store.read([...group.givenRefs, factReference], group.inverse);
-            Trace.debug(`[ObservableSource] Inverse read completed - Group: ${groupKey.substring(0, 8)}..., Results: ${results.length}, Duration: ${Date.now() - readStart}ms`);
-
             const listenerSnapshot = [...group.listeners];
-            await Promise.all(listenerSnapshot.map((inverseListener, i) =>
-                this.notifyListener(inverseListener, results, i, listenerSnapshot.length, groupKey, fact.type, false)));
+            // Numbered before the read, with nothing awaited in between, so
+            // every batch saved before this point is one the read can only
+            // have seen.
+            const reads = listenerSnapshot.map(inverseListener => inverseListener.beginRead());
+            try {
+                const readStart = Date.now();
+                const results = await this.store.read([...group.givenRefs, factReference], group.inverse);
+                Trace.debug(`[ObservableSource] Inverse read completed - Group: ${groupKey.substring(0, 8)}..., Results: ${results.length}, Duration: ${Date.now() - readStart}ms`);
+
+                await Promise.all(listenerSnapshot.map((inverseListener, i) =>
+                    this.notifyListener(
+                        () => inverseListener.onResult(results, reads[i]),
+                        i, listenerSnapshot.length, groupKey, fact.type, false)));
+            }
+            finally {
+                listenerSnapshot.forEach((inverseListener, i) => {
+                    try {
+                        inverseListener.endRead(reads[i]);
+                    }
+                    catch (error) {
+                        Trace.error(`[ObservableSource] ERROR ending read ${reads[i]} - Group: ${groupKey.substring(0, 8)}..., Error: ${error}`);
+                    }
+                });
+            }
         }
     }
 
     /**
-     * Dispatch one listener, bounding how long we wait for it. Never rejects:
+     * Dispatch one listener, bounding how long we wait for it. Takes the call
+     * rather than the listener, because an inverse listener's `onResult` also
+     * carries the number of the read it is being told about. Never rejects:
      * a listener that throws, or one that never settles, is reported and
      * stepped over so it cannot hold the save that triggered this notification
      * (issue #246). Returns whether the listener actually completed.
      */
     private async notifyListener(
-        specificationListener: SpecificationListener,
-        results: ProjectedResult[],
+        invoke: () => Promise<void>,
         index: number,
         count: number,
         specificationKey: string,
@@ -467,7 +555,7 @@ export class ObservableSource {
         this.listenerDispatchDepth++;
         try {
             const outcome = await withTimeout(
-                specificationListener.onResult(results),
+                invoke(),
                 this.listenerTimeoutMs,
                 late => {
                     Trace.counter("observable_listener_late_settled", 1);
