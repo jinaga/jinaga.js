@@ -51,11 +51,9 @@ export function buildFeeds(specification: Specification): Specification[] {
  * with its predecessors, so the subscriber already holds every result. Those
  * feeds are dropped.
  *
- * This asks a narrower question than `specificationIsNotDeterministic`, which
- * asks whether the graph can run a specification without the store and answers
- * no to any existential condition. An existential condition here says nothing
- * about what this feed delivers, because its own matches travel in a feed of
- * their own, so only the path conditions of this feed's matches decide.
+ * Only the path conditions of this feed's matches decide. An existential
+ * condition says nothing about what this feed delivers, because its own matches
+ * travel in a feed of their own.
  */
 function traversesSuccessors(specification: Specification): boolean {
     return specification.matches.some(match =>

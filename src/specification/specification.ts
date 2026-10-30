@@ -255,6 +255,13 @@ export function specificationIsDeterministic(specification: Specification): bool
     return specification.matches.every(matchIsDeterministic);
 }
 
+/**
+ * @deprecated Nothing reads this, and it will be removed in the next major
+ * release. Since #309 it is true for any match `matchIsDeterministic` rejects,
+ * including one whose only non-path condition is existential, so it no longer
+ * means "walks a successor". Use `!specificationIsDeterministic(specification)`
+ * for the same answer, or `matchIsDeterministic` per match.
+ */
 export function specificationIsNotDeterministic(specification: Specification): boolean {
     return specification.matches.some(match => !matchIsDeterministic(match));
 }
