@@ -31,9 +31,20 @@ import {
  * and the row stream re-checks each one against a read of the specification
  * (#336), which is what makes the stream exact (`stream_correct`).
  *
- * That is why an inverse here carries no "add" or "remove" operation, unlike
- * `invertSpecification`. A candidate from any inverse may be an add, a remove,
- * or no change, and only the re-check decides.
+ * That is why a candidate carries no "add" or "remove" operation, unlike an
+ * inverse of `invertSpecification`. A candidate from any inverse that
+ * `candidateInverses` returns may be an add, a remove, or no change, and only
+ * the re-check decides.
+ *
+ * `exactInverses` reports changes rather than proposing candidates. jinaga-spec
+ * has since proved (`JinagaSpec/Exact.lean`, `JinagaSpec/Proofs/Exact.lean`,
+ * jinaga/jinaga-spec#19) that a small strengthening of the same inverses is
+ * exact: every row an add inverse returns is in the new result
+ * (`adds_sound`), every row a remove inverse returns is absent from it
+ * (`removes_sound`), and together they report every row that changed
+ * (`changes_complete`, `exact_correct`, `exact_stream_correct`). The remove
+ * direction needs `ProjectsUnknowns` — the row identity names every top-level
+ * unknown, so a row determines its solution.
  *
  * These inverses are internal. `pinLabel` starts with the prefix the parser
  * reserves, on purpose, so it can never collide with a declared label — so do
@@ -127,7 +138,16 @@ function touchCondition(gained: boolean, c: Condition): Touch<Condition>[] {
  * reach it through `candidateInverses`, which reduces those away first.
  */
 export function buildInverses(specification: Specification): Specification[] {
-    return [...touchMatches(true, specification.matches), ...touchMatches(false, specification.matches)].map(t => ({
+    return [...inversesFor(true, specification), ...inversesFor(false, specification)];
+}
+
+/**
+ * Every inverse in one direction, given the subscription's givens and the new
+ * fact as `__f`. `buildInverses` is the two concatenated, in that order, and
+ * the exact inverses strengthen each direction on its own.
+ */
+function inversesFor(gained: boolean, specification: Specification): Specification[] {
+    return touchMatches(gained, specification.matches).map(t => ({
         given: [...specification.given, { label: { name: pinLabel, type: t.pinned.type }, conditions: [] }],
         matches: t.value,
         projection: specification.projection
@@ -410,6 +430,123 @@ export function candidateInverses(specification: Specification): Specification[]
         candidateCache.delete(oldest.value);
     }
     return [...inverses];
+}
+
+/* ---------------- Exact inverses: the same construction, by direction ---------------- */
+
+/**
+ * Two match lists over the same unknowns, as one: match by match, the unknown,
+ * and the conditions of both. Every inverse `touchMatches` builds keeps the
+ * original's top-level unknowns in order, so the zip is well defined.
+ *
+ * A condition of the second list structurally equal to one the match already
+ * carries is dropped. That is Lean's `conj` with duplicates removed; a
+ * conjunction is idempotent, so the solutions are the same. The duplicates are
+ * not harmless in every store: jinaga.net's SQLite generator returns no rows
+ * for a duplicated join (jinaga/jinaga.net#330), and jinaga-server's Postgres
+ * compiler has never run the shape, so neither port emits it.
+ */
+function conj(ms1: Match[], ms2: Match[]): Match[] {
+    return ms1.map((m1, i) => ({
+        unknown: m1.unknown,
+        conditions: [...m1.conditions, ...ms2[i].conditions.filter(c => !m1.conditions.some(c1 => deepEqual(c1, c)))]
+    }));
+}
+
+/**
+ * The gained-direction inverses, each with every original top-level condition
+ * re-attached. Every solution one finds is then a solution of the
+ * specification on the new graph, so its row is in the new result.
+ */
+function addInverses(specification: Specification): Specification[] {
+    return inversesFor(true, specification).map(inverse => ({
+        ...inverse,
+        matches: conj(inverse.matches, specification.matches)
+    }));
+}
+
+/** The existential condition that asks the opposite. */
+const flip = (condition: ExistentialCondition): ExistentialCondition => ({ ...condition, exists: !condition.exists });
+
+/**
+ * For each top-level match and each existential condition on it: the same
+ * unknowns, with no conditions but that one flipped, on that match.
+ *
+ * A path condition cannot change on a fresh batch, so it is not flipped, and a
+ * specification with no top-level existential condition yields no test — a row
+ * can be lost only when one of them flips.
+ */
+function removeTests(matches: Match[]): Match[][] {
+    if (matches.length === 0) {
+        return [];
+    }
+    const [m, ...rest] = matches;
+    const cleared = rest.map(r => ({ unknown: r.unknown, conditions: [] }));
+    return [
+        ...m.conditions.filter(isExistentialCondition)
+            .map(d => [{ unknown: m.unknown, conditions: [flip(d)] }, ...cleared]),
+        ...removeTests(rest).map(t => [{ unknown: m.unknown, conditions: [] }, ...t])
+    ];
+}
+
+/**
+ * The lost-direction inverses, each strengthened by one remove test. Every
+ * solution one finds fails the flipped condition on the new graph, so it is
+ * not a solution of the specification there.
+ */
+function removeInverses(specification: Specification): Specification[] {
+    return inversesFor(false, specification).flatMap(inverse =>
+        removeTests(specification.matches).map(t => ({ ...inverse, matches: conj(inverse.matches, t) })));
+}
+
+/** The inverses that report a row added, and those that report one removed. */
+export interface ExactInverses {
+    adds: Specification[];
+    removes: Specification[];
+}
+
+const exactCache = new Map<string, ExactInverses>();
+
+/**
+ * The exact inverses of the specification, each read with
+ * `[...subscriptionGivenRefs, newFactRef]`. Every row an `adds` inverse
+ * returns is in the new result, and every row a `removes` inverse returns is
+ * absent from it, so a reader applies them without reading the specification
+ * again. Together they report every row that changed.
+ *
+ * The guarantee is the one the module comment states, under the same
+ * fresh-batch hypothesis as `candidateInverses`, and the remove direction
+ * holds where the row identity names every top-level unknown.
+ *
+ * Memoized on the specification's STRUCTURE rather than its identity, and
+ * bounded, exactly as `candidateInverses` is and for the same reasons. The
+ * returned lists are copies, so one caller's in-place sort cannot reorder what
+ * a later caller sees.
+ */
+export function exactInverses(specification: Specification): ExactInverses {
+    const key = computeStringHash(describeSpecification(specification, 0));
+    const cached = exactCache.get(key);
+    if (cached !== undefined) {
+        // Re-insert to mark the entry most recently used.
+        exactCache.delete(key);
+        exactCache.set(key, cached);
+        return { adds: [...cached.adds], removes: [...cached.removes] };
+    }
+
+    const reduced = reduceGivenConditions(specification);
+    const inverses: ExactInverses = {
+        adds: addInverses(reduced).map(reorderInverse),
+        removes: removeInverses(reduced).map(reorderInverse)
+    };
+    exactCache.set(key, inverses);
+    while (exactCache.size > CANDIDATE_CACHE_CAPACITY) {
+        const oldest = exactCache.keys().next();
+        if (oldest.done) {
+            break;
+        }
+        exactCache.delete(oldest.value);
+    }
+    return { adds: [...inverses.adds], removes: [...inverses.removes] };
 }
 
 /* ---------------- Membership: deciding one fully bound tuple ---------------- */
