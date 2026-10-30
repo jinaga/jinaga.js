@@ -28,13 +28,19 @@ import {
  * these inverses find, read with the subscription's givens and one of the
  * batch's facts, on the store that holds the whole batch
  * (`candidates_complete`). They may find more: the candidates are a superset,
- * and the row stream re-checks each one against a read of the specification
- * (#336), which is what makes the stream exact (`stream_correct`).
+ * so a consumer of them re-checks each one against a read of the specification
+ * (#336), which is what made a stream built on them exact (`stream_correct`).
  *
  * That is why a candidate carries no "add" or "remove" operation, unlike an
  * inverse of `invertSpecification`. A candidate from any inverse that
  * `candidateInverses` returns may be an add, a remove, or no change, and only
- * the re-check decides.
+ * such a re-check decides.
+ *
+ * No consumer in this library reads `candidateInverses` any more: the observer
+ * moved to `exactInverses` in #376 and the row stream in #377. It stays because
+ * it is this library's port of jinaga-spec's `candidates`, which the
+ * conformance runners check, and `buildInverses` beneath it is deep-equaled by
+ * them.
  *
  * `exactInverses` reports changes rather than proposing candidates. jinaga-spec
  * has since proved (`JinagaSpec/Exact.lean`, `JinagaSpec/Proofs/Exact.lean`,
