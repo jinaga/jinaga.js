@@ -649,6 +649,34 @@ went missing. A continuation now carries both halves of the remainder, the
 conditions and the matches, so the branch receives it as one quantity. This
 closes one more case of L6d; L6d itself is still unproven in general (O6).
 
+**The same defect, one enclosing level out (#372).** One path still handed on no
+remainder at all. `addConditions` flattens a **positive** existential condition
+into the current feed, and the main path needs no continuation there because the
+enclosing loop goes on to finish the feed. That reasoning holds for the feed
+being extended. It does not hold for a branch created *inside* the flattened
+matches, which leaves that feed for good: it was built from a continuation whose
+matches were the existential's own and whose parent was `null`, so a restoring
+feed nested inside a positive existential stopped at the end of that
+existential. It never reached the conditions still waiting on the outer match,
+the later matches at any enclosing level, or the projection components, which it
+was handed as `[]`.
+
+For `accounts that have a mirror in service and are not frozen` — the positive
+existential carrying a nested `!E Retired [ !E Reinstated ]`, and a sibling
+`!E Freeze` — the feed that carries a `Freeze` hangs off the main path, whose
+one-level `!E Retired` excludes an account whose mirror was retired and
+reinstated. The restoring branch delivers that account, its mirror, the
+retirement and the reinstatement, and then stops without applying `!E Freeze`.
+So no feed carried the freeze, and a replica holding every feed returned a
+frozen account as unfrozen. Writing the two conditions in the other order gave
+the right answer, as in #368.
+
+**Fix.** The flattening call is given the remainder too, and `addMatches` takes
+an `inline` flag that says who finishes the feed. Branches taken inside the
+flattened matches receive the continuation; the feed being extended is handed
+back unemitted and uncontinued, so the enclosing loop still finishes it exactly
+once. One continuation carries the remainder, as the #368 fix established.
+
 ### 9.4 No downstream change is required
 
 Feeds still contain at most one level of negative existential condition, so
@@ -818,6 +846,12 @@ one additional feed appears per positive branch. Existing bookmarks for those
 feeds no longer resolve, so clients re-read them from the beginning. Fact
 delivery is idempotent, so this is benign, but it is a one-time re-read on
 upgrade and worth expecting in replicator logs.
+
+The same holds for the #372 fix, for the shape it covers: a restoring branch
+nested inside a positive existential now continues, so it carries more matches
+and gets a new hash, and a feed appears for the conditions it goes on to reach.
+Ordinary and excluding feeds are again unaffected. Existing bookmarks for the
+affected restoring feeds re-read from the beginning, benignly and once.
 
 ### 10.4 The silence, attributed: `reactive` was copied, not derived
 
