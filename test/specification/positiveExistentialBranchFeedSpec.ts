@@ -95,7 +95,7 @@ const mirrorInService = (a: LabelOf<Account>) => a.successors(Mirror, m => m.acc
     .notExists(m => m.successors(Retired, r => r.mirror)
         .notExists(r => r.successors(Reinstated, x => x.retired)));
 
-const notFrozen = (a: LabelOf<Account>) => a.successors(Freeze, f => f.account);
+const freezesOf = (a: LabelOf<Account>) => a.successors(Freeze, f => f.account);
 
 // Accounts that have a mirror in service and are not frozen, in each of the two
 // orders the two conditions can be written in. The order carries no meaning, so
@@ -103,13 +103,13 @@ const notFrozen = (a: LabelOf<Account>) => a.successors(Freeze, f => f.account);
 const servedAndUnfrozen = model.given(Tenant).match(tenant =>
     tenant.successors(Account, a => a.tenant)
         .exists(a => mirrorInService(a))
-        .notExists(a => notFrozen(a))
+        .notExists(a => freezesOf(a))
         .select(a => a.identifier)
 );
 
 const servedAndUnfrozenSwapped = model.given(Tenant).match(tenant =>
     tenant.successors(Account, a => a.tenant)
-        .notExists(a => notFrozen(a))
+        .notExists(a => freezesOf(a))
         .exists(a => mirrorInService(a))
         .select(a => a.identifier)
 );
@@ -120,7 +120,7 @@ const servedAndUnfrozenSwapped = model.given(Tenant).match(tenant =>
 const servedAndUnfrozenWithRegions = model.given(Tenant).match(tenant =>
     tenant.successors(Account, a => a.tenant)
         .exists(a => mirrorInService(a))
-        .notExists(a => notFrozen(a))
+        .notExists(a => freezesOf(a))
         .select(a => ({
             identifier: a.identifier,
             regions: a.successors(Mirror, m => m.account).select(m => m.region)
