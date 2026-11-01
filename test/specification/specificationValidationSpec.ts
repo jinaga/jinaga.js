@@ -260,15 +260,19 @@ describe("well-formedness", () => {
         expect(wellFormedErrors(parse(post("u1")))).toEqual([]);
     });
 
-    it("reports a projection that names a label nothing declares", () => {
-        // The parser accepts this, and so does validateSpecification.
-        const specification = parse(post("nosuchlabel"));
+    it("reports a projection that names a label nothing declares, in a specification that did not come from the parser", () => {
+        // The parser now refuses this text (issue #314), so a specification that
+        // carries the defect was composed somewhere else. validateSpecification
+        // still passes it, because every match is rooted.
+        const specification = parse(post("u1"));
+        (specification.projection as any).label = "nosuchlabel";
         expect(validateSpecification(specification)).toEqual([]);
         expect(wellFormedErrors(specification)).toEqual(["The projection names the label 'nosuchlabel', which has not been defined."]);
     });
 
     it("reports a composite projection that names a label nothing declares", () => {
-        const specification = parse(post("{ office = u1 other = nosuchlabel }"));
+        const specification = parse(post("{ office = u1 other = u1 }"));
+        (specification.projection as any).components[1].label = "nosuchlabel";
         expect(wellFormedErrors(specification)).toEqual(["The projection names the label 'nosuchlabel', which has not been defined."]);
     });
 
@@ -324,7 +328,9 @@ describe("well-formedness", () => {
     });
 
     it("refuses to build an authorization rule whose projection names no declared label", () => {
-        expect(() => new AuthorizationRuleSpecification(parse(post("nosuchlabel"))))
+        const specification = parse(post("u1"));
+        (specification.projection as any).label = "nosuchlabel";
+        expect(() => new AuthorizationRuleSpecification(specification))
             .toThrow(/The specification of an authorization rule is not valid. The projection names the label 'nosuchlabel'/);
     });
 

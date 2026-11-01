@@ -79,9 +79,9 @@ export function validateSpecificationOrThrow(specification: Specification, descr
  *
  * A match sees the givens, the matches before it, and, inside its own
  * existential conditions, its own unknown. Scope is lexical, so sibling
- * existential conditions may reuse a name. `SpecificationParser` enforces the
- * first two while it reads text. This checks specifications from any source,
- * and also the others, which the parser does not.
+ * existential conditions may reuse a name. `SpecificationParser` enforces every
+ * one of these but the reserved prefix while it reads text. This checks
+ * specifications from any source, including ones no parser produced.
  *
  * @param specification The specification to check.
  * @returns One message per defect, or an empty array if the specification is well formed.

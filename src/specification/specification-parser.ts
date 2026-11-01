@@ -166,6 +166,25 @@ export class SpecificationParser {
         return roles;
     }
 
+    /**
+     * Read an identifier that names a label, and require that the label be in
+     * scope. A projection reaches a fact only through a label the specification
+     * declares, so a projection that names an undefined label cannot run: the
+     * defect reaches the reader as `The label ... is not defined` from
+     * `SpecificationRunner`, long after the text was written. Report it here, in
+     * the same words `parsePathCondition` uses for a joined label.
+     *
+     * @param labels The labels in scope where the identifier appears.
+     * @returns The name of the label.
+     */
+    private parseDefinedLabel(labels: Label[]): string {
+        const name = this.parseIdentifier();
+        if (!labels.some(label => label.name === name)) {
+            throw new Invalid(`The label '${name}' has not been defined`);
+        }
+        return name;
+    }
+
     parsePathCondition(unknown: Label, labels: Label[]): PathCondition {
         const labelLeft = this.parseIdentifier();
         if (labelLeft !== unknown.name) {
@@ -262,15 +281,15 @@ export class SpecificationParser {
             return { type: "specification", name, matches, projection: projection };
         }
         else if (this.consume("#")) {
-            const label = this.parseIdentifier();
+            const label = this.parseDefinedLabel(labels);
             return { type: "hash", name, label };
         }
         else if (this.consume("@")) {
-            const label = this.parseIdentifier();
+            const label = this.parseDefinedLabel(labels);
             return { type: "time", name, label };
         }
         else {
-            const label = this.parseIdentifier();
+            const label = this.parseDefinedLabel(labels);
             if (this.consume(".")) {
                 const field = this.parseIdentifier();
                 return { type: "field", name, label, field };
@@ -301,21 +320,21 @@ export class SpecificationParser {
             };
         }
         else if (this.consume("#")) {
-            const label = this.parseIdentifier();
+            const label = this.parseDefinedLabel(labels);
             return {
                 type: "hash",
                 label
             };
         }
         else if (this.consume("@")) {
-            const label = this.parseIdentifier();
+            const label = this.parseDefinedLabel(labels);
             return {
                 type: "time",
                 label
             };
         }
         else {
-            const label = this.parseIdentifier();
+            const label = this.parseDefinedLabel(labels);
             if (this.consume(".")) {
                 const field = this.parseIdentifier();
                 return {
