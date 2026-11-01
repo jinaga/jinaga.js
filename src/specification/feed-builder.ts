@@ -40,7 +40,7 @@ export function buildFeeds(specification: Specification): Specification[] {
     const projectionComponents = specification.projection.type === "composite"
         ? specification.projection.components
         : [];
-    const { specifications } = addMatches(emptySpecification, specification.given.map(g => g.label), specification.matches, projectionComponents, 0, null);
+    const { specifications } = addMatches(emptySpecification, specification.given.map(g => g.label), specification.matches, projectionComponents, 0, null, false);
     return specifications.filter(traversesSuccessors);
 }
 
@@ -64,7 +64,19 @@ function traversesSuccessors(specification: Specification): boolean {
     );
 }
 
-function addMatches(specification: Specification, unusedGivens: Label[], matches: Match[], projectionComponents: ComponentProjection[], parity: number, continuation: Continuation | null): { specifications: Specification[]; unusedGivens: Label[]; } {
+/**
+ * Extend a feed with a run of matches, applying each match's own existential
+ * conditions as it goes.
+ *
+ * `inline` says who finishes the feed. When it is false this run is the feed's
+ * own: the terminal disposition below applies, and the returned `specification`
+ * has already been emitted, continued, or extended with projections. When it is
+ * true the matches are being flattened into a feed the *caller* is still
+ * building, so the terminal disposition is skipped and the caller goes on with
+ * the returned `specification`. Either way `continuation` names the remainder,
+ * and branches taken inside this run are handed it.
+ */
+function addMatches(specification: Specification, unusedGivens: Label[], matches: Match[], projectionComponents: ComponentProjection[], parity: number, continuation: Continuation | null, inline: boolean): { specifications: Specification[]; specification: Specification; unusedGivens: Label[]; } {
     const specifications: Specification[] = [];
     for (let index = 0; index < matches.length; index++) {
         const match = matches[index];
@@ -92,25 +104,34 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
         unusedGivens = conditionUnusedGivens;
     }
 
+    if (inline) {
+        // These matches were flattened into a feed the caller is still
+        // building. It is not finished, so it is neither emitted nor continued
+        // here, and its projections are built at the real terminal. The
+        // continuation reached the branches above; it must not reach this feed
+        // twice.
+        return { specifications, specification, unusedGivens };
+    }
+
     if (parity % 2 !== 0) {
         // An excluding feed. It is evidence that results should be removed, so it
         // neither matches the rest of the specification nor carries projections.
         specifications.push(specification);
-        return { specifications, unusedGivens };
+        return { specifications, specification, unusedGivens };
     }
 
     if (continuation !== null) {
         // A positive feed with more of the specification still to match.
         const { specifications: continued, unusedGivens: continuedUnusedGivens } = continueWith(specification, unusedGivens, parity, continuation);
         specifications.push(...continued);
-        return { specifications, unusedGivens: continuedUnusedGivens };
+        return { specifications, specification, unusedGivens: continuedUnusedGivens };
     }
 
     // A positive feed with nothing left to match. Emit it, then extend it with
     // the feeds of each projection component.
     specifications.push(specification);
     specifications.push(...addProjections(specification, unusedGivens, projectionComponents));
-    return { specifications, unusedGivens };
+    return { specifications, specification, unusedGivens };
 }
 
 /**
@@ -127,14 +148,30 @@ function addConditions(specification: Specification, unusedGivens: Label[], labe
     for (let index = 0; index < conditions.length; index++) {
         const existentialCondition = conditions[index];
         if (existentialCondition.exists) {
-            // Include the matches of the existential condition into the current feed.
-            // The flattened matches continue inline, so they carry neither a
-            // continuation nor the projection components: the feed they extend is
-            // not finished, and its projections are built at the real terminal.
-            const { specifications: newSpecifications, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches, [], parity, null);
-            const last = newSpecifications.length - 1;
-            specifications.push(...newSpecifications.slice(0, last));
-            specification = newSpecifications[last];
+            // Include the matches of the existential condition into the current
+            // feed. The flattened matches continue inline: the feed they extend
+            // is not finished, so `addMatches` hands it back rather than
+            // emitting it, and the enclosing loop goes on to apply the
+            // conditions after this one.
+            //
+            // A negative condition on one of those flattened matches still
+            // branches, and that branch leaves this feed for good. So it is
+            // handed the whole remainder, exactly as a branch on the main path
+            // is: the conditions after it within the existential and the
+            // existential's later matches, which the flattened run's own `rest`
+            // chain carries, and then everything this level still has. Carrying
+            // only the first left a restoring branch nested inside a positive
+            // existential stopping at the end of that existential, so the facts
+            // the outer match's later conditions read were in no feed at all.
+            const flattenedContinuation: Continuation = {
+                pending: { label, conditions: conditions.slice(index + 1) },
+                matches: rest.matches,
+                projectionComponents: rest.projectionComponents,
+                parent: rest.parent
+            };
+            const { specifications: newSpecifications, specification: flattened, unusedGivens: newUnusedGivens } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, parity, flattenedContinuation, true);
+            specifications.push(...newSpecifications);
+            specification = flattened;
             unusedGivens = newUnusedGivens;
         }
         else {
@@ -155,7 +192,7 @@ function addConditions(specification: Specification, unusedGivens: Label[], labe
                 projectionComponents: rest.projectionComponents,
                 parent: rest.parent
             };
-            const { specifications: negatingSpecifications } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation);
+            const { specifications: negatingSpecifications } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation, false);
             specifications.push(...negatingSpecifications);
 
             // Then apply the existential condition and continue with the tuple.
@@ -197,7 +234,7 @@ function continueWith(specification: Specification, unusedGivens: Label[], parit
         specification = conditioned;
         unusedGivens = conditionUnusedGivens;
     }
-    const { specifications: continued, unusedGivens: continuedUnusedGivens } = addMatches(specification, unusedGivens, continuation.matches, continuation.projectionComponents, parity, continuation.parent);
+    const { specifications: continued, unusedGivens: continuedUnusedGivens } = addMatches(specification, unusedGivens, continuation.matches, continuation.projectionComponents, parity, continuation.parent, false);
     specifications.push(...continued);
     return { specifications, unusedGivens: continuedUnusedGivens };
 }
@@ -240,7 +277,7 @@ function addProjections(specification: Specification, unusedGivens: Label[], com
             // components ride along, so `addMatches` extends the component's
             // positive feeds with them in turn.
             const childComponents = component.projection.type === "composite" ? component.projection.components : [];
-            const { specifications: componentFeeds } = addMatches(specification, unusedGivens, component.matches, childComponents, 0, null);
+            const { specifications: componentFeeds } = addMatches(specification, unusedGivens, component.matches, childComponents, 0, null, false);
             specifications.push(...componentFeeds);
         }
     });
