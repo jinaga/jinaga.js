@@ -1,7 +1,7 @@
 # Night shift configuration
 
 The `night-shift-worker`, `night-shift-coordinator`, and `refining-issues`
-skills read this file. Every `##` heading below except `## Branch prefix` is
+skills read this file. Every `##` heading below is
 required. A missing heading is an error, not a default: stop and name the
 heading you could not find. Anything that is not one of these headings is
 protocol, and protocol lives in the skill.

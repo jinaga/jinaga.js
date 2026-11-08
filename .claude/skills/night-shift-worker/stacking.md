@@ -2,14 +2,18 @@
 
 A dispatch names the **issue** you stack on, never the branch, because the branch carries a slug only its own worker chooses. Resolve it by pattern, and expect to wait.
 
-## Resolving a base branch that does not exist yet
+## Resolving a base branch that is not ready yet
+
+The lower branch can fail to serve in two ways: it is absent, or it is present but lacks work your issue needs. Both mean the same thing, that the lower worker is not finished, and both get the same wait. **Re-check every 5 minutes for up to 90 minutes from your first look, re-arming a check-in rather than blocking.** That one window covers both states.
 
 1. `git fetch origin`, then match `origin/claude/issue-<M>-*`. Confirm against the hosting API rather than a cached ref.
-2. No match means the lower worker has not pushed yet. Its session is running concurrently with yours. Re-check every 5 minutes for up to 90 minutes, re-arming a check-in rather than blocking.
-3. Once it matches, branch from it and set it as your pull request base.
-4. If it never appears, report that issue #M produced no branch, and **open no pull request**.
+2. **No match means the lower worker has not pushed yet.** Its session is running concurrently with yours. Re-check inside the window.
+3. **Once it matches, check that it carries what your issue depends on.** For every other issue on your issue's **Depends on** line that has not merged, match its branch the same way and confirm it is an ancestor of #M's branch: `git merge-base --is-ancestor origin/<dependency-branch> origin/<M-branch>`. One that is not means #M's worker based its layer wrongly. It often corrects itself within minutes, so re-check inside the window. **A dependency that has not merged and has no branch is missing work too**: its worker has not pushed yet, or nobody is working it. Re-check it inside the same window.
+4. Once the branch matches and every check passes, branch from it and set it as your pull request base.
+5. If the window closes with no branch, report that issue #M produced no branch, and **open no pull request**.
+6. If the window closes with the branch still missing a dependency, record a question per *When to stop and ask instead* in `SKILL.md`, naming #M and the issue whose work its branch lacks, and **open no pull request**.
 
-Idle waiting is the correct behavior here. A layer that gives up and branches from `main` produces a diff that deletes the layer below it.
+Idle waiting is the correct behavior here. A layer that gives up and branches from `main` produces a diff that deletes the layer below it. A layer that bases on the dependency's branch instead of #M's makes itself a sibling of #M, and the chain forks the moment #M's worker corrects its own base.
 
 ## Registering the stack
 

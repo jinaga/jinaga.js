@@ -1,6 +1,12 @@
 ---
 name: night-shift-worker
 description: Works one GitHub issue through to a stacked pull request, unattended. Reproduces the defect or verifies a fix that already merged, fixes with a regression test, resolves a base branch that may not exist yet, registers the chain as a GitHub stack, drives CI green through one review round, then stops. Use when a scheduled routine or a person hands over a single issue number to work, when a merged pull request already exists and the job is verification rather than repair, when a fix must stack on a lower layer's branch, or when a blocker should become a recorded question instead of a guessed patch.
+metadata:
+    github-path: skills/night-shift-worker
+    github-pinned: cb95c83cebec95a0d7871ac2b27dc9779c064f20
+    github-ref: cb95c83cebec95a0d7871ac2b27dc9779c064f20
+    github-repo: https://github.com/factoryengineering/skills
+    github-tree-sha: 2db1d28897c9995c5d129964d2e9b9d6fcc5f344
 ---
 
 # Night Shift Worker
@@ -106,9 +112,9 @@ When a merged pull request already covers the issue, your job changes from fix t
 
 ## Open the pull request, stacked
 
-Branch name: `claude/issue-<number>-<slug>`, unless the config's optional `## Branch prefix` says otherwise. The session harness may assign a branch of its own. Create this one instead and push only this one, because stacking and the claim check find a worker's branch by its issue number and a harness name carries none. Following this name is the protocol, so the pull request does not report it as a deviation.
+Branch name: `claude/issue-<number>-<slug>`. The session harness may assign a branch of its own. Create this one instead and push only this one, because stacking and the claim check find a worker's branch by its issue number and a harness name carries none. Following this name is the protocol, so the pull request does not report it as a deviation.
 
-With no stacking clause, branch from `origin/main` after fetching. When the dispatch names a lower issue, branch from **that issue's branch** and set it as your pull request base. Read **[stacking.md](stacking.md)** for how to resolve a branch that does not exist yet, how to register the chain, and how to confirm CI actually ran on your layer.
+With no stacking clause, branch from the repository's default branch on `origin` after fetching. When the dispatch names a lower issue, branch from **that issue's branch** and set it as your pull request base. Read **[stacking.md](stacking.md)** for how to resolve a branch that is absent or missing work your issue needs, how to register the chain, and how to confirm CI actually ran on your layer.
 
 **Never fall back to `main`** when a lower layer's branch is absent. Branching from `main` while that work is missing renders it as deletions in your diff, which reads as a revert and passes review by looking small.
 
@@ -184,6 +190,7 @@ Only then run the config's `## After the pull request`. A value of `none` means 
 - Never skip, disable, or quarantine a test to get a green build.
 - Never push an empty commit, and never close and reopen a pull request, to re-trigger CI.
 - Never fall back to `main` as a base when a lower layer's branch is absent.
+- Never base on any branch but the named lower issue's, or the default branch when the dispatch names none. A branch that holds work your issue needs is not a substitute for the one the dispatch named.
 - Never dispatch another issue's worker. You are one layer.
 - Never put a mutating call in a retry or fallback position. A shell `cmd-a || cmd-b` runs `cmd-b` when `cmd-a` merely prints something unexpected, and a "test" invocation of a create endpoint is a real write.
 - End every comment you leave on an issue or a pull request with your agent attribution footer.
