@@ -1,12 +1,12 @@
 ---
 name: refining-issues
-description: Turns a backlog issue in a night-shift repository into one that an unattended agent can implement, and turns a coupled set into a chain that stacks. Use when auditing whether an issue is ready for the queue label, when grouping issues for planning, when an issue's acceptance ends in an unmade decision, when two issues must land together, when an issue asks for a test that guards a redundancy rather than removing it or manufactures one by quoting a document, or when a change to an authority document has just changed how a set of issues is partitioned. Encodes eight checks — five that decide readiness and three that decide independence — plus the five moves that fix a failed check.
+description: Turns a backlog issue in a night-shift repository into one that an unattended agent can implement, and turns a coupled set into a chain that stacks. Use when drafting a new issue from a goal, when auditing whether an issue is ready for the queue label, when an issue comes back from the night shift with a question answered or a pull request returned, when grouping issues for planning, when an issue's acceptance ends in an unmade decision, when two issues must land together, when an issue asks for a test that guards a redundancy rather than removing it or manufactures one by quoting a document, or when a change to an authority document has just changed how a set of issues is partitioned. Encodes eight checks — five that decide readiness and three that decide independence — plus the five moves that fix a failed check.
 metadata:
     github-path: skills/refining-issues
-    github-pinned: cb95c83cebec95a0d7871ac2b27dc9779c064f20
-    github-ref: cb95c83cebec95a0d7871ac2b27dc9779c064f20
+    github-pinned: b4f73c29cceae5740c06359e0788c8c40db91d59
+    github-ref: b4f73c29cceae5740c06359e0788c8c40db91d59
     github-repo: https://github.com/factoryengineering/skills
-    github-tree-sha: adb38a47316a633f840a7219a5604c74ed3cf0e3
+    github-tree-sha: abff8f9f0a94dde478694ca3ce237efc043e1afa
 ---
 
 # Refining issues
@@ -283,6 +283,16 @@ is prose, and prose does not run.
 **Split.** An issue holding more than one concern splits, even when the parts
 share a file. Prefer the split when one part is unblocked today and another
 waits on a dependency, because bundling makes the free part wait.
+
+## When an issue comes back from the night
+
+Two things send an issue back here from the morning review, and both mean the issue body was not yet enough for an agent holding nothing else.
+
+**A worker recorded a question.** It removed the queue label, added `question`, and stated the candidate answers on the issue. Once the maintainer answers, write the answer **into the issue body**, in the section it settles, and say what it rules out. The next worker reads the body and the comments; it does not read the log, and an answer recorded only there is an answer it never sees. A body that still reads as open invites the same question again. Then run the checks the answer touched: an answer often settles R1 and leaves R5 to check, or changes what I1 finds across the set.
+
+**The review returned a pull request.** The pull request did what the issue said and the issue said the wrong thing. Rewrite the acceptance so it states what the maintainer now wants, and say plainly what the issue no longer claims, as *Writing the refined issue* below requires. Name the returned pull request in the body as provenance. Whether that pull request is closed or reworked is the maintainer's decision; the issue has to be right either way, because the next worker that resumes the branch checks the diff against the acceptance and nothing else.
+
+**In both cases, relabelling is the maintainer's call.** Swapping `question` back to the queue label is the same assertion applying it was the first time, so leave the labels to the person who makes it.
 
 ## Worked example
 
