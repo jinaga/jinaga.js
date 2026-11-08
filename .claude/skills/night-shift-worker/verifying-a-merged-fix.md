@@ -9,6 +9,8 @@ A dispatch can hand you an issue that a merged pull request already covers. Your
 5. If part survives, fix that part. Say plainly in the pull request which symptoms the earlier fix handled and which yours addresses.
 6. If the verification is complete but one item still needs evidence you cannot reach, say so in the comment and take the question swap in SKILL.md. An issue no unattended run can advance should not sit in the queue collecting a re-verification every night.
 
+The recommendation reaches the maintainer through `night-shift-review`, which lists every issue a worker recommended closing. Write the comment so it can be acted on from that list: the per-symptom verdicts, the evidence behind each, and the merged pull request that resolved it.
+
 Steps 4 and 6 differ in who is blocked. **Resolved** means recommend closing and leave the label alone, because the maintainer decides. **Blocked on outside evidence** means the swap, because the queue is the wrong place for it either way.
 
 **Never close the issue yourself, and never remove the queue label from an issue you believe is resolved.** Recommend, and let the maintainer decide. The one label change you may make is the question swap.

@@ -6,15 +6,17 @@ The log is a Jinaga application reached through the Factual MCP server. Open a c
 
 ## The whole shape, for orientation
 
-The coordinator performs steps 1 to 5, before your session exists. You perform 6, and 7 when it later applies.
+The coordinator performs steps 1 to 5, before your session exists. You perform 6. A person performs 7 in the morning, through `night-shift-review`.
 
 1. `practicesForAdministrator` — resolve the practice and this repository. *(coordinator)*
-2. `startSweep` — once per repository per sweep. *(coordinator)*
+2. `startNightlySweep` — once per repository per sweep, filed under the night. *(coordinator)*
 3. `correctedVerdicts` and the previous `considerationsInSweep`. *(coordinator)*
 4. `considerIssue`, then exactly one finding action. *(coordinator)*
 5. `dispatchWork` or `skipIssue`. *(coordinator)*
 6. **`openPullRequest`, `raiseQuestion`, or `findNoChange`** — exactly one, when your dispatch finishes. *(you)*
-7. **`answerQuestion`, or `correctVerdictFromWork`** naming the consideration whose work produced the disproof. *(you, later)*
+7. `answerQuestion`, or `correctVerdict`. *(a person, in the morning review)*
+
+`correctVerdictFromWork` stays yours. When your work disproves a conclusion recorded about another issue, record it naming the consideration whose work produced the disproof.
 
 ## Finding your dispatch
 
