@@ -1,13 +1,14 @@
 ---
-description: Scores a design, a specification, or an issue's requirement against the degrees-of-freedom constitution — whether a representation has exactly as many independent variables as the problem it represents. Use when a repository names this constitution under
+name: degrees-of-freedom
+description: Scores a design, a specification, or an issue's requirement against the degrees-of-freedom constitution — whether a representation has exactly as many independent variables as the problem it represents. Use when a repository names this constitution under ## Authority or in its contributor docs, when an issue's Conformance section cites one of its articles, when reviewing a design for invalid states, redundant state, forbidden combinations, or coupling that ripples across sites, or when deciding whether to remove a redundant copy of a fact or to guard it with a check.
 metadata:
     github-path: skills/degrees-of-freedom
     github-pinned: 3722c778facbfccc609a928d25ffb22e1ba461e6
     github-ref: 3722c778facbfccc609a928d25ffb22e1ba461e6
     github-repo: https://github.com/michaellperry/skills
     github-tree-sha: ed70e2780fa415fd55ce25c496fcaa4d192a8220
-name: degrees-of-freedom
 ---
+
 # Degrees of freedom
 
 The constitution is [degrees-of-freedom-constitution.md](degrees-of-freedom-constitution.md), beside this file. Read it in full before you cite it. It is short, and every citation depends on its exact wording.
