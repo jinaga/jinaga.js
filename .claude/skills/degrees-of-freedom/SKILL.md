@@ -1,12 +1,12 @@
 ---
 name: degrees-of-freedom
-description: Scores a design, a specification, or an issue's requirement against the degrees-of-freedom constitution — whether a representation has exactly as many independent variables as the problem it represents. Use when a repository names this constitution under ## Authority or in its contributor docs, when an issue's Conformance section cites one of its articles, when reviewing a design for invalid states, redundant state, forbidden combinations, or coupling that ripples across sites, or when deciding whether to remove a redundant copy of a fact or to guard it with a check.
+description: "Scores a design, a specification, or an issue's requirement against the degrees-of-freedom constitution — whether a representation has exactly as many independent variables as the problem it represents. Use when a repository names this constitution under ## Authority or in its contributor docs, when an issue's Conformance section cites one of its articles, when reviewing a design for invalid states, redundant state, forbidden combinations, or coupling that ripples across sites, or when deciding whether to remove a redundant copy of a fact or to guard it with a check."
 metadata:
     github-path: skills/degrees-of-freedom
-    github-pinned: 3722c778facbfccc609a928d25ffb22e1ba461e6
-    github-ref: 3722c778facbfccc609a928d25ffb22e1ba461e6
+    github-pinned: f528e6bffd7f8660be360f0b302c0a10fecf9acd
+    github-ref: f528e6bffd7f8660be360f0b302c0a10fecf9acd
     github-repo: https://github.com/michaellperry/skills
-    github-tree-sha: ed70e2780fa415fd55ce25c496fcaa4d192a8220
+    github-tree-sha: 530a32d02771d4f0bba904ef7b9bea1c6e552c01
 ---
 
 # Degrees of freedom
