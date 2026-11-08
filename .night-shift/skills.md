@@ -7,9 +7,9 @@ whatever hour the run wakes.
 
 | Skill | Source | Upstream commit |
 |---|---|---|
-| `night-shift-worker` | `factoryengineering/skills` | `2fb85d8297c0a3059365bd809b8242f5657f2740` |
-| `refining-issues` | `factoryengineering/skills` | `9d44b2422f9704e49f13ee2cc61b9a0f0737b07d` |
-| `degrees-of-freedom` | `michaellperry/skills` | `b1dbdfe374847d5a595b0f2a0066feb684fc5219` |
+| `night-shift-worker` | `factoryengineering/skills` | `cb95c83cebec95a0d7871ac2b27dc9779c064f20` |
+| `refining-issues` | `factoryengineering/skills` | `cb95c83cebec95a0d7871ac2b27dc9779c064f20` |
+| `degrees-of-freedom` | `michaellperry/skills` | `3722c778facbfccc609a928d25ffb22e1ba461e6` |
 
 To take an upstream change, re-copy the skill directory from its source, update
 its commit above, and read the diff before you push. Local edits to an installed

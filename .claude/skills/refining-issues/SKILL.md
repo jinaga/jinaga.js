@@ -1,8 +1,13 @@
 ---
-name: refining-issues
 description: Turns a backlog issue in a night-shift repository into one that an unattended agent can implement, and turns a coupled set into a chain that stacks. Use when auditing whether an issue is ready for the queue label, when grouping issues for planning, when an issue's acceptance ends in an unmade decision, when two issues must land together, when an issue asks for a test that guards a redundancy rather than removing it or manufactures one by quoting a document, or when a change to an authority document has just changed how a set of issues is partitioned. Encodes eight checks — five that decide readiness and three that decide independence — plus the five moves that fix a failed check.
+metadata:
+    github-path: skills/refining-issues
+    github-pinned: cb95c83cebec95a0d7871ac2b27dc9779c064f20
+    github-ref: cb95c83cebec95a0d7871ac2b27dc9779c064f20
+    github-repo: https://github.com/factoryengineering/skills
+    github-tree-sha: adb38a47316a633f840a7219a5604c74ed3cf0e3
+name: refining-issues
 ---
-
 # Refining issues
 
 An issue is finished refining when an agent holding no context but the issue
