@@ -3,10 +3,10 @@ name: night-shift-worker
 description: Works one GitHub issue through to a stacked pull request, unattended. Reproduces the defect or verifies a fix that already merged, fixes with a regression test, resolves a base branch that may not exist yet, registers the chain as a GitHub stack, drives CI green through one review round, then stops. Use when a scheduled routine or a person hands over a single issue number to work, when a merged pull request already exists and the job is verification rather than repair, when a fix must stack on a lower layer's branch, or when a blocker should become a recorded question instead of a guessed patch.
 metadata:
     github-path: skills/night-shift-worker
-    github-pinned: cb95c83cebec95a0d7871ac2b27dc9779c064f20
-    github-ref: cb95c83cebec95a0d7871ac2b27dc9779c064f20
+    github-pinned: 915aadd4cbc0ae6768f9b8cec084eefb44f68c34
+    github-ref: 915aadd4cbc0ae6768f9b8cec084eefb44f68c34
     github-repo: https://github.com/factoryengineering/skills
-    github-tree-sha: 2db1d28897c9995c5d129964d2e9b9d6fcc5f344
+    github-tree-sha: 11b64d837ec78a5f43fa781f55ccd17060a9870c
 ---
 
 # Night Shift Worker
@@ -46,13 +46,14 @@ Read `.night-shift/config.md` at the repository root. It carries everything abou
 
 **An open pull request on your issue does not mean a session is working it.** A worker that finished its round stopped with its pull request open, exactly as *Monitor the pull request, then stop* directs, and it now waits on a human to merge. Reading that as a live session is what strands an issue the first attempt left unfinished: the artifact of the partial work becomes the thing that blocks the rest of it.
 
-The cost the check exists to prevent is **two sessions pushing different fixes for one issue**, and a re-fire, a manual dispatch, or a second sweep before the first one's work merges all arrive here looking exactly like a fresh assignment. So test whether a session is **live**, not whether a pull request exists. A live worker touches its pull request — it pushes, it comments, its checks run — and a stopped one cannot. Read the pull request once, and take one of three branches.
+The cost the check exists to prevent is **two sessions pushing different fixes for one issue**, and a re-fire, a manual dispatch, or a second sweep before the first one's work merges all arrive here looking exactly like a fresh assignment. So test whether a session is **live**, not whether a pull request exists. A live worker claims the issue in its first minutes (*Claim the issue*, below), and once it has a pull request it touches it — it pushes, it comments, its checks run. A stopped one does neither. Read the issue's claims, and its pull request if there is one, once, and take one of four branches.
 
-| What the pull request shows | What it means | What to do |
+| What the issue and pull request show | What it means | What to do |
 |---|---|---|
-| A check run in progress, or a push, comment or review inside the last six hours | A session is live | Comment `Duplicate dispatch, no-op.` on the pull request and stop. |
-| None of those for six hours, and some of the issue's acceptance is unmet | A session stopped before the issue was done | **Resume**, below. |
-| None of those for six hours, and the pull request covers the acceptance | The work is done and a human has yet to merge | **Stop.** Leave no comment. |
+| Another run's live claim on the issue, a check run in progress, or a push, comment or review inside the last six hours | A session is live | **Stop.** If a pull request exists, comment `Duplicate dispatch, no-op.` on it. If none does, leave no comment: the claim already shows the issue is held. |
+| No pull request and no live claim | Nobody is working the issue | **Claim it**, below, then work it. |
+| A pull request with none of those for six hours, and some of the issue's acceptance unmet | A session stopped before the issue was done | **Claim it**, then **resume**, below. |
+| A pull request with none of those for six hours, which covers the acceptance | The work is done and a human has yet to merge | **Stop.** Leave no comment. |
 
 Six hours is several times the longest wait this protocol asks a worker to hold, the 90 minutes in `stacking.md`. It is still a guess about a session you cannot see, so err long: too short puts two sessions on one branch, and too long costs one sweep.
 
@@ -64,12 +65,22 @@ Six hours is several times the longest wait this protocol asks a worker to hold,
 
 **Comment the no-op once, not once a sweep.** An issue re-dispatched against a long-lived pull request collects an identical comment on every fire, and they bury the thread a maintainer came to read. If `Duplicate dispatch, no-op.` is already on the pull request, stop without adding another.
 
+**Claim the issue before any other work.** Without a claim, a worker leaves nothing on the hosting platform until it pushes, near the end of its run. A dispatch that arrives in between finds no sign of it and starts a second fix. That dispatch might be a sweep queued behind the last one, a recovery run, or a timer that delivers twice. Claim whether you are starting fresh or resuming, and only after the table above has said to work the issue, so a stop or a no-op adds no comment.
+1. **Pick a random token for this run**, such as 12 hex characters. Every worker comments under the same identity, so the token is how you tell your claim from another run's.
+2. **Comment on the issue:** `Night shift: claimed (<token>).`
+3. **Re-read the issue's comments.** If another run's live claim is older than yours, stand down: edit your own claim to `Night shift: claimed (<token>), stood down.`, and stop. Order claims by comment id, not by timestamp. Timestamps have one-second resolution, so two runs fired together can tie, and ids cannot.
+
+A claim is **live** when it was posted inside the last six hours and has not been edited to say `stood down` or `released`. Six hours is the same window as the pull request's, for the same reason.
+
+**Release the claim when you stop without a pull request**: a repro that fails, a recorded question, nothing to fix. Edit it to `Night shift: claimed (<token>), released.`, so the next dispatch need not wait out the window. Once you have opened a pull request, it carries the evidence, so leave the claim as it is.
+
 Then copy this checklist and work it:
 
 ```
 Task Progress:
 - [ ] Read .night-shift/config.md and the files its `## Read first` names
-- [ ] Check an open pull request on this issue, and no-op, resume or stop
+- [ ] Read the issue's claims and any pull request on it, and stop, no-op, work or resume
+- [ ] Claim the issue, re-read, and stand down if another live claim is older
 - [ ] Open the Night Shift Log and resolve this repository
 - [ ] Establish the work is warranted, per the config's `## Before you fix`
 - [ ] Fix with a regression test that fails before, passes after, and can fail for a reason other than itself
@@ -79,6 +90,7 @@ Task Progress:
 - [ ] Confirm CI ran on this layer, by its `event`
 - [ ] One review round, then stop
 - [ ] Record the outcome, whatever it was
+- [ ] If you stopped with no pull request, release your claim
 - [ ] Close the Night Shift Log console, before anything that can stop the run
 - [ ] If the log was unreachable, send a push notification before stopping
 - [ ] Run the config's `## After the pull request`
