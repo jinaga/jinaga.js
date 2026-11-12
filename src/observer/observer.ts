@@ -802,8 +802,7 @@ export class ObserverImpl<T> implements Observer<T> {
         // Collect the per-feed decisions across all branches so they can be
         // surfaced as diagnostics (issue #207 W5/W6). Array.push from the
         // concurrent branch callbacks is safe on JS's single thread.
-        const decisions: FeedDecision[] = [];
-        await Promise.all(this.branches.map(async branch => {
+        const subscribed = await Promise.all(this.branches.map(async branch => {
             const { feeds, decisions: branchDecisions } = await this.factManager.subscribe(this.given, branch.specification);
             if (this.stopped) {
                 // If stop() was called while we were awaiting subscribe(),
@@ -812,13 +811,26 @@ export class ObserverImpl<T> implements Observer<T> {
                 if (feeds.length > 0) {
                     this.factManager.unsubscribe(feeds);
                 }
-                return;
+                return null;
             }
             branch.feeds = feeds;
-            decisions.push(...branchDecisions);
-            this.registerClearingListeners(feeds, branchDecisions);
+            return { feeds, decisions: branchDecisions };
         }));
+        const held = subscribed.filter((entry): entry is { feeds: string[]; decisions: FeedDecision[] } => entry !== null);
+        const decisions: FeedDecision[] = [];
+        for (const entry of held) {
+            decisions.push(...entry.decisions);
+        }
+        // Raise before any clearing can fire. A feed whose first response
+        // already carried facts has delivered by the time its clearing listener
+        // registers, and `onFeedData` fires such a listener at once, so
+        // registering first would tell a consumer that a diagnostic cleared
+        // before telling it the diagnostic was raised -- and would leave
+        // `diagnostics()` in that order too.
         this.captureDiagnostics(this.operation, decisions);
+        for (const entry of held) {
+            this.registerClearingListeners(entry.feeds, entry.decisions);
+        }
     }
 
     /**
@@ -840,13 +852,19 @@ export class ObserverImpl<T> implements Observer<T> {
      * is, so a row already delivered is not delivered twice.
      */
     private async fetchOnce() {
+        const fetched = await Promise.all(this.branches.map(async branch => ({
+            branch,
+            decisions: await this.factManager.fetch(this.given, branch.specification)
+        })));
         const decisions: FeedDecision[] = [];
-        await Promise.all(this.branches.map(async branch => {
-            const branchDecisions = await this.factManager.fetch(this.given, branch.specification);
-            decisions.push(...branchDecisions);
-            await this.holdPendingFeeds(branch, branchDecisions);
-        }));
+        for (const entry of fetched) {
+            decisions.push(...entry.decisions);
+        }
+        // Raise before holding, for the reason given in `fetch`: holding a feed
+        // can resolve its own race in the same turn, and the clearing must not
+        // reach a consumer ahead of the diagnostic it retires.
         this.captureDiagnostics(this.operation, decisions);
+        await Promise.all(fetched.map(entry => this.holdPendingFeeds(entry.branch, entry.decisions)));
     }
 
     /**

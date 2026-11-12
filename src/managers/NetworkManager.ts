@@ -528,7 +528,10 @@ export class NetworkManager {
 
     /**
      * Hold the named feeds open, the way `subscribe` holds a specification's
-     * feeds, and resolve once each has answered once.
+     * feeds, and resolve once every feed this call started has answered once.
+     * A feed a caller already holds is referenced rather than started again, so
+     * this does not wait on a first response someone else is already waiting
+     * for -- the same bound `subscribe` has always worked to.
      *
      * A `watch` takes this path for the feeds whose decision is a pending
      * authorization (issue #394). Its one pass has already run and registered

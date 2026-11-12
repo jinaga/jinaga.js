@@ -30,6 +30,10 @@ class ControllableNetwork implements Network {
   // are held open and that releasing them actually closed the stream.
   public readonly streamsOpened: string[] = [];
   public readonly streamsClosed: string[] = [];
+  // References carried by a feed's *first* stream response, which is the
+  // response the subscriber's start() waits on. A feed that delivers facts
+  // there has already delivered by the time a clearing listener registers.
+  public initialReferences: FactReference[] = [];
   private streamCallbacks = new Map<string, (refs: FactReference[], bookmark: string) => Promise<void>>();
 
   feeds(): Promise<FeedsResponse> { return Promise.resolve(this.response); }
@@ -44,8 +48,9 @@ class ControllableNetwork implements Network {
   ): () => void {
     this.streamCallbacks.set(feed, onResponse);
     this.streamsOpened.push(feed);
-    // Resolve the subscriber's start() with an initial empty response.
-    Promise.resolve().then(() => onResponse([], bookmark));
+    // Resolve the subscriber's start() with its initial response.
+    const initial = this.initialReferences;
+    Promise.resolve().then(() => onResponse(initial, bookmark));
     // Record the close but keep the callback, so a test can still push through
     // a released feed and assert that nothing reaches the observer.
     return () => { this.streamsClosed.push(feed); };
@@ -258,6 +263,26 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
       expect(network.streamsOpened).toEqual([]);
 
       observer.stop();
+    });
+
+    // Holding a feed can resolve its race in the same turn: if the feed's first
+    // stream response already carries facts, the feed has delivered before a
+    // clearing listener registers, and `onFeedData` fires that listener at
+    // once. The raised diagnostic therefore has to be published before the hold
+    // begins, or a consumer is told a diagnostic cleared before it is told the
+    // diagnostic was raised.
+    it("publishes the raised diagnostic before the clearing, even when the first response delivers facts", async () => {
+      network.initialReferences = [postRef];
+      const received: DistributionDiagnostic[] = [];
+      const observer = j.watch(blogPosts, blog, () => {});
+      observer.onDiagnostic(d => received.push(d));
+      await observer.loaded();
+      // Release the held feed before asserting, so a failure here does not
+      // leave the subscriber's refresh timer running.
+      observer.stop();
+
+      expect(received.map(d => d.cleared === true)).toEqual([false, true]);
+      expect(observer.diagnostics().map(d => d.cleared === true)).toEqual([false, true]);
     });
 
     it("releases the held feed on stop(), after which a delivery emits nothing", async () => {
