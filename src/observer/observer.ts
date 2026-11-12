@@ -1,6 +1,6 @@
 import { computeObjectHash } from "../fact/hash";
 import { FeedDecision } from "../http/messages";
-import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
+import { DistributionDiagnostic, pendingAuthorizationFeeds, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
 import { InverseListener, InverseReadNumbering } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
@@ -818,7 +818,18 @@ export class ObserverImpl<T> implements Observer<T> {
             decisions.push(...branchDecisions);
             this.registerClearingListeners(feeds, branchDecisions);
         }));
-        this.captureDiagnostics('subscribe', decisions);
+        this.captureDiagnostics(this.operation, decisions);
+    }
+
+    /**
+     * The operation every diagnostic from this observer is reported against.
+     * Derived from the `keepAlive` the observer was started with rather than
+     * passed down each call site, so a raised diagnostic and the clearing that
+     * retires it can never disagree about which operation they belong to
+     * (issue #394, criterion 2).
+     */
+    private get operation(): 'watch' | 'subscribe' {
+        return this.keepAlive ? 'subscribe' : 'watch';
     }
 
     /**
@@ -833,8 +844,51 @@ export class ObserverImpl<T> implements Observer<T> {
         await Promise.all(this.branches.map(async branch => {
             const branchDecisions = await this.factManager.fetch(this.given, branch.specification);
             decisions.push(...branchDecisions);
+            await this.holdPendingFeeds(branch, branchDecisions);
         }));
-        this.captureDiagnostics(this.keepAlive ? 'subscribe' : 'watch', decisions);
+        this.captureDiagnostics(this.operation, decisions);
+    }
+
+    /**
+     * Hold open, through the same subscribe path a subscription uses, exactly
+     * the feeds this fetch answered with a pending authorization, and register
+     * the same clearing listener on each (issue #394).
+     *
+     * One pass is enough for every other decision. An authorized feed has
+     * already delivered what it has, and a structural denial says the shapes
+     * never matched, which no arriving fact can change. A pending one is the
+     * only decision a later fact resolves, so it is the only one worth holding,
+     * and `pendingAuthorizationFeeds` is where that is decided for both
+     * operations.
+     *
+     * Which feeds are held is therefore computed from the decisions. There is
+     * no option on `watch` and no stored flag: `keepAlive` still decides
+     * whether *authorized* feeds are held, and no longer decides whether a
+     * pending one ever resolves.
+     *
+     * A feed this branch already holds -- every feed of a subscription, and
+     * every feed a previous `refresh()` held -- is skipped, so a repeated fetch
+     * does not take a second reference to it.
+     */
+    private async holdPendingFeeds(branch: ObserverBranch, decisions: FeedDecision[]) {
+        if (this.stopped) {
+            return;
+        }
+        const pending = pendingAuthorizationFeeds(decisions)
+            .filter(feed => !branch.feeds.includes(feed));
+        if (pending.length === 0) {
+            return;
+        }
+        await this.factManager.holdFeeds(pending);
+        if (this.stopped) {
+            // stop() ran while the feeds were being held, so it saw none of
+            // them on the branch and released nothing. Release them here
+            // rather than leaving subscribers nobody holds.
+            this.factManager.unsubscribe(pending);
+            return;
+        }
+        branch.feeds = [...branch.feeds, ...pending];
+        this.registerClearingListeners(pending, decisions);
     }
 
     /**
@@ -908,7 +962,7 @@ export class ObserverImpl<T> implements Observer<T> {
             return;
         }
         try {
-            const cleared = toClearingDiagnostic('subscribe', this.specificationString, decision);
+            const cleared = toClearingDiagnostic(this.operation, this.specificationString, decision);
             this._diagnostics.push(cleared);
             for (const handler of this.diagnosticHandlers) {
                 this.safelyInvokeDiagnostic(handler, cleared);

@@ -25,6 +25,11 @@ import { Blog, Post, model } from "../blogModel";
 class ControllableNetwork implements Network {
   public response: FeedsResponse = { feeds: [] };
   public loadResult: FactEnvelope[] = [];
+  // Every feed a stream was opened for, and every feed whose stream was closed
+  // again, in the order each happened. A test reads these to assert which feeds
+  // are held open and that releasing them actually closed the stream.
+  public readonly streamsOpened: string[] = [];
+  public readonly streamsClosed: string[] = [];
   private streamCallbacks = new Map<string, (refs: FactReference[], bookmark: string) => Promise<void>>();
 
   feeds(): Promise<FeedsResponse> { return Promise.resolve(this.response); }
@@ -38,9 +43,12 @@ class ControllableNetwork implements Network {
     _feedRefreshIntervalSeconds: number
   ): () => void {
     this.streamCallbacks.set(feed, onResponse);
+    this.streamsOpened.push(feed);
     // Resolve the subscriber's start() with an initial empty response.
     Promise.resolve().then(() => onResponse([], bookmark));
-    return () => {};
+    // Record the close but keep the callback, so a test can still push through
+    // a released feed and assert that nothing reaches the observer.
+    return () => { this.streamsClosed.push(feed); };
   }
 
   load(_factReferences: FactReference[]): Promise<FactEnvelope[]> { return Promise.resolve(this.loadResult); }
@@ -167,6 +175,110 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
     await network.deliver(FEED, [postRef]);
 
     expect(received.filter(d => d.cleared)).toHaveLength(0);
+  });
+
+  // A `watch` makes one pass over its feeds. When a feed answers that pass with
+  // a pending authorization -- the authorizing fact has not reached the
+  // replicator yet -- nothing used to fetch it again, so the watch stayed empty
+  // after the race resolved (issue #394). It now holds exactly those feeds open
+  // through the same subscribe path, and clears them through the same listener.
+  describe("a watch holding a pending-authorization feed open (issue #394)", () => {
+    it("delivers the rows once the pending feed delivers facts, with no refresh", async () => {
+      const added: string[] = [];
+      const observer = j.watch(blogPosts, blog, post => { added.push(j.hash(post)); });
+      await observer.loaded();
+      expect(added).toHaveLength(0);
+
+      // The race resolves: the feed the watch held open delivers real facts.
+      await network.deliver(FEED, [postRef]);
+      await observer.processed();
+
+      expect(added).toEqual([postRef.hash]);
+
+      observer.stop();
+    });
+
+    it("emits one clearing diagnostic for the feed, reported against the watch", async () => {
+      const received: DistributionDiagnostic[] = [];
+      const observer = j.watch(blogPosts, blog, () => {});
+      observer.onDiagnostic(d => received.push(d));
+      await observer.loaded();
+
+      expect(received).toHaveLength(1);
+      expect(received[0].reactive).toBe(true);
+      expect(received[0].cleared).toBeFalsy();
+      expect(received[0].operation).toBe("watch");
+
+      await network.deliver(FEED, [postRef]);
+      await network.deliver(FEED, [postRef]);
+
+      const cleared = received.filter(d => d.cleared);
+      expect(cleared).toHaveLength(1);
+      expect(cleared[0].feed).toBe(FEED);
+      expect(cleared[0].cleared).toBe(true);
+      expect(cleared[0].reactive).toBe(false);
+      expect(cleared[0].operation).toBe("watch");
+      expect(observer.diagnostics().filter(d => d.cleared)).toEqual(cleared);
+
+      observer.stop();
+    });
+
+    // A structural denial says the shapes never matched, which no arriving fact
+    // can change, so holding the feed open would wait on a race that cannot
+    // resolve. The third case is a replicator that calls a structurally denied
+    // feed reactive (observed on jinaga-replicator 3.7.7, issue #242): the code
+    // is the narrower claim and it wins here too.
+    it.each([
+      ["denied with no-matching-rule", "denied" as const, "no-matching-rule" as const],
+      ["denied with spec-more-restrictive-than-rule", "denied" as const, "spec-more-restrictive-than-rule" as const],
+      ["reactive with a structural code", "reactive" as const, "no-matching-rule" as const],
+    ])("opens no stream for a feed %s", async (_name, decision, code) => {
+      network.response = {
+        feeds: [FEED],
+        decisions: [{ feed: FEED, decision, code, reason: "structurally denied" }],
+      };
+
+      const observer = j.watch(blogPosts, blog, () => {});
+      await observer.loaded();
+
+      expect(network.streamsOpened).toEqual([]);
+
+      observer.stop();
+    });
+
+    it("opens no stream when every feed is authorized", async () => {
+      network.response = {
+        feeds: [FEED],
+        decisions: [{ feed: FEED, decision: "authorized", reason: "authorized" }],
+      };
+
+      const observer = j.watch(blogPosts, blog, () => {});
+      await observer.loaded();
+
+      expect(network.streamsOpened).toEqual([]);
+
+      observer.stop();
+    });
+
+    it("releases the held feed on stop(), after which a delivery emits nothing", async () => {
+      const added: string[] = [];
+      const received: DistributionDiagnostic[] = [];
+      const observer = j.watch(blogPosts, blog, post => { added.push(j.hash(post)); });
+      observer.onDiagnostic(d => received.push(d));
+      await observer.loaded();
+
+      expect(network.streamsOpened).toEqual([FEED]);
+      expect(network.streamsClosed).toEqual([]);
+
+      observer.stop();
+
+      expect(network.streamsClosed).toEqual([FEED]);
+
+      await network.deliver(FEED, [postRef]);
+
+      expect(added).toEqual([]);
+      expect(received.filter(d => d.cleared)).toHaveLength(0);
+    });
   });
 
   describe("NetworkManager.onFeedData", () => {

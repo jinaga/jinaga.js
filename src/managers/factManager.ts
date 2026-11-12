@@ -150,6 +150,15 @@ export class FactManager {
         return await this.networkManager.subscribe(start, specification, feedTimeoutMs);
     }
 
+    /**
+     * Hold the named feeds open, without registering a specification. An
+     * observer takes this path for the feeds whose decision is a pending
+     * authorization, so a `watch` notices when the race resolves (issue #394).
+     */
+    async holdFeeds(feeds: string[]): Promise<void> {
+        await this.networkManager.holdFeeds(feeds);
+    }
+
     async intersectForSubscribe(start: FactReference[], specification: Specification): Promise<DistributionIntersectionBranch[]> {
         return await this.networkManager.intersectForSubscribe(start, specification);
     }

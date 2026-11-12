@@ -67,6 +67,35 @@ function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
 }
 
 /**
+ * True when a decision reports a *pending authorization*: the replicator calls
+ * the feed reactive, and its code does not say the shapes never matched. The
+ * feed delivers if an authorizing fact arrives, and nothing here predicts that
+ * one will.
+ *
+ * This is the one rule that decides the `reactive` field of a diagnostic and,
+ * with it, which feeds an observer holds open so the race can resolve (issue
+ * #394). Both read it from here rather than each re-deriving it from a
+ * decision, so a `watch` and a `subscribe` follow a pending feed by the same
+ * rule.
+ */
+export function isPendingAuthorization(decision: FeedDecision): boolean {
+    return decision.decision === 'reactive' && !isStructuralCode(decision.code);
+}
+
+/**
+ * The feeds named by the pending-authorization decisions of one fetch, derived
+ * from those decisions rather than from a stored flag or a caller option
+ * (issue #394). A decision that names no feed cannot be held open, so it is
+ * dropped; a feed named twice is held once.
+ */
+export function pendingAuthorizationFeeds(decisions: FeedDecision[]): string[] {
+    const feeds = decisions
+        .filter(d => isPendingAuthorization(d) && d.feed)
+        .map(d => d.feed);
+    return Array.from(new Set(feeds));
+}
+
+/**
  * Map the replicator's per-feed decisions (issue #207 W4) to developer-facing
  * diagnostics. Only `denied` and `reactive` feeds produce a diagnostic;
  * `authorized` feeds are silent. Old replicators report no decisions, so this
@@ -92,7 +121,7 @@ export function toDistributionDiagnostics(
             specification,
             decision: d.decision as 'reactive' | 'denied',
             code: d.code,
-            reactive: d.decision === 'reactive' && !isStructuralCode(d.code),
+            reactive: isPendingAuthorization(d),
             reason: d.reason,
             feed: d.feed
         }));
