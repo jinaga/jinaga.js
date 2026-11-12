@@ -1,6 +1,7 @@
+import { isRefusal } from "../http/errors";
 import { WebClient } from "../http/web-client";
 import { Saver } from "../managers/QueueProcessor";
-import { FactEnvelope, Queue } from "../storage";
+import { FactEnvelope, FactRecord, FactReference, Queue } from "../storage";
 import { Trace } from "../util/trace";
 
 /**
@@ -113,6 +114,47 @@ export function batchEnvelopes(envelopes: FactEnvelope[], maxBatchBytes: number,
 }
 
 /**
+ * Identify a fact within one flush, so a refused fact can be recognized as the
+ * predecessor of a later one. Type and hash together, because a hash is only
+ * unique within a type.
+ */
+function factKey(reference: FactReference): string {
+    return `${reference.type}:${reference.hash}`;
+}
+
+/**
+ * The keys of every fact this one names as a predecessor, in any role.
+ */
+function predecessorKeys(fact: FactRecord): string[] {
+    const keys: string[] = [];
+    for (const role in fact.predecessors) {
+        const value = fact.predecessors[role];
+        if (Array.isArray(value)) {
+            value.forEach(reference => keys.push(factKey(reference)));
+        }
+        else if (value) {
+            keys.push(factKey(value));
+        }
+    }
+    return keys;
+}
+
+/**
+ * What one pass over the pending envelopes achieved.
+ *
+ * `accepted` drives whether another pass is worth making: a pass that accepted
+ * something grew the replicator's graph, so a fact it refused may be authorized
+ * now. `remaining` is the envelopes still queued, in queue order.
+ */
+interface FlushPass {
+    accepted: number;
+    remaining: FactEnvelope[];
+    /** A connection failure ended the flush; no further request was made. */
+    stopped: boolean;
+    lastError: unknown;
+}
+
+/**
  * A Saver implementation that uses a WebClient to save facts.
  */
 export class WebClientSaver implements Saver {
@@ -145,20 +187,40 @@ export class WebClientSaver implements Saver {
      * client and the replicator, every later write made the next attempt larger
      * and more certain to fail, so the queue could only grow.
      *
-     * The flush stops at the first batch that fails rather than skipping past
-     * it. A fact behind the failed batch may name one of its facts as a
-     * predecessor, and sending it first would leave a dangling reference.
-     * Stopping still makes progress -- everything ahead of the blocking batch
-     * has drained -- so the queue shrinks instead of growing without bound.
+     * A batch that fails is one of two things, and they need opposite responses
+     * (issue #395).
+     *
+     * A **connection failure** -- a transient status that outlived its retries,
+     * an authentication challenge reauthentication did not cure, or an error
+     * with no status at all -- says nothing about these facts. Every later
+     * request in the flush would fail the same way, so the flush stops.
+     *
+     * A **refusal** is the replicator's judgment of these facts, and it is
+     * judgment on the batch as a whole: `/save` authorizes a request as one
+     * unit, and an authorization rule's successor walk reads only the store, so
+     * a fact authorized by another fact in the same request is refused however
+     * the request is ordered. Stopping the flush there made the queue
+     * undrainable: the same batch was rebuilt and refused on every later flush,
+     * and every fact behind it stayed queued across reloads, though the
+     * replicator would have accepted them all in two requests.
+     *
+     * So a refused batch is narrowed to one fact per request, in queue order,
+     * which commits each fact the replicator accepts before the facts after it
+     * are tried. A fact that is still refused holds back only the queued facts
+     * that descend from it; the rest continue to be sent. When a pass accepts
+     * anything, the facts still refused are tried once more, because an
+     * acceptance may have been the fact that authorizes them.
+     *
+     * Nothing is dropped. A refusal is not proof a fact is bad -- it is
+     * evaluated against the replicator's graph, which may later gain the fact
+     * that authorizes it -- so a fact still refused at the end of the flush
+     * stays queued and is tried again on the next one.
      */
     async save(): Promise<void> {
         const envelopes = await this.queue.peek();
         if (envelopes.length === 0) {
             return;
         }
-
-        const batches = batchEnvelopes(envelopes, this.maxBatchBytes, this.maxBatchCount);
-        let sent = 0;
 
         this.client.notifySyncStatus({
             sending: true,
@@ -167,37 +229,158 @@ export class WebClientSaver implements Saver {
             warning: ""
         });
 
+        let pending = envelopes;
+        let lastError: unknown = undefined;
+        // The first pass batches as it always has, so a flush in which every
+        // request succeeds sends exactly the requests it sent before.
+        let batched = true;
+
+        // A pass only earns another one by accepting something, so the queue is
+        // strictly shorter every time round and the loop terminates.
+        while (pending.length > 0) {
+            const pass = await this.flushPass(pending, batched);
+            pending = pass.remaining;
+            if (pass.lastError !== undefined) {
+                lastError = pass.lastError;
+            }
+            if (pass.stopped || pass.accepted === 0) {
+                break;
+            }
+            // Something was accepted, so the replicator's graph has grown and a
+            // fact it refused may be authorized now. Try the rest one request
+            // at a time, so a refused fact never travels with a fact that
+            // descends from it.
+            batched = false;
+        }
+
+        if (pending.length === 0) {
+            this.client.notifySyncStatus({
+                sending: false,
+                retrying: false,
+                retryInSeconds: 0,
+                warning: ""
+            });
+        }
+        else {
+            // Report the stall rather than only logging it. Without this an
+            // application sees every write resolve normally while its local
+            // store diverges from the replicator, with nothing anywhere to
+            // tell it -- the failure that made the reported incident
+            // invisible for as long as it was.
+            const reason = lastError instanceof Error ? lastError.message : `${lastError}`;
+            this.client.notifySyncStatus({
+                sending: false,
+                retrying: false,
+                retryInSeconds: 0,
+                warning: `${pending.length} fact(s) could not be sent to the replicator: ${reason}`
+            });
+        }
+    }
+
+    /**
+     * One pass over the envelopes still queued, in queue order.
+     *
+     * `batched` groups them under the size and count bounds, as an ordinary
+     * flush does. Without it each envelope gets a request of its own, which is
+     * what a pass after a refusal needs: a fact must never share a request with
+     * a fact that descends from it, because the refusal of one would be read as
+     * the refusal of both.
+     */
+    private async flushPass(pending: FactEnvelope[], batched: boolean): Promise<FlushPass> {
+        const batches = batched
+            ? batchEnvelopes(pending, this.maxBatchBytes, this.maxBatchCount)
+            : pending.map(envelope => [envelope]);
+
+        const sent = new Set<string>();
+        // Facts the replicator refused in this pass, and the queued facts that
+        // descend from them. Queue order is topological, so by the time a fact
+        // is reached every queued predecessor of it has been decided.
+        const held = new Set<string>();
+        let accepted = 0;
+        let lastError: unknown = undefined;
+
+        const remaining = () => pending.filter(envelope => !sent.has(factKey(envelope.fact)));
+
         for (const batch of batches) {
+            const sendable: FactEnvelope[] = [];
+            for (const envelope of batch) {
+                if (this.isHeldBack(envelope, held)) {
+                    held.add(factKey(envelope.fact));
+                }
+                else {
+                    sendable.push(envelope);
+                }
+            }
+            if (sendable.length === 0) {
+                continue;
+            }
+
+            let refused = false;
             try {
-                await this.client.saveWithRetry(batch);
-                await this.queue.dequeue(batch);
-                sent += batch.length;
-                await this.onQueueChanged();
+                await this.send(sendable, sent);
+                accepted += sendable.length;
             }
             catch (error) {
-                Trace.error(error);
-                // Report the stall rather than only logging it. Without this an
-                // application sees every write resolve normally while its local
-                // store diverges from the replicator, with nothing anywhere to
-                // tell it -- the failure that made the reported incident
-                // invisible for as long as it was.
-                const remaining = envelopes.length - sent;
-                const reason = error instanceof Error ? error.message : `${error}`;
-                this.client.notifySyncStatus({
-                    sending: false,
-                    retrying: false,
-                    retryInSeconds: 0,
-                    warning: `${remaining} fact(s) could not be sent to the replicator: ${reason}`
-                });
-                return;
+                lastError = error;
+                if (!isRefusal(error)) {
+                    // The flush ends here, so this is the failure the caller
+                    // needs to see.
+                    Trace.error(error);
+                    return { accepted, remaining: remaining(), stopped: true, lastError };
+                }
+                // A refusal is worked around by narrowing, and may be cured
+                // before the flush ends, so it is not reported as an error.
+                // What survives the flush is reported through the sync status.
+                Trace.warn(`The replicator refused ${sendable.length} fact(s): ${error instanceof Error ? error.message : error}`);
+                refused = true;
+            }
+            if (!refused) {
+                continue;
+            }
+            if (sendable.length === 1) {
+                // Already as narrow as a request gets.
+                held.add(factKey(sendable[0].fact));
+                continue;
+            }
+
+            // Narrow the refused batch. A fact refused only because it
+            // travelled with others is accepted once they are committed.
+            for (const envelope of sendable) {
+                if (this.isHeldBack(envelope, held)) {
+                    held.add(factKey(envelope.fact));
+                    continue;
+                }
+                try {
+                    await this.send([envelope], sent);
+                    accepted++;
+                }
+                catch (error) {
+                    lastError = error;
+                    if (!isRefusal(error)) {
+                        Trace.error(error);
+                        return { accepted, remaining: remaining(), stopped: true, lastError };
+                    }
+                    Trace.warn(`The replicator refused ${factKey(envelope.fact)}: ${error instanceof Error ? error.message : error}`);
+                    held.add(factKey(envelope.fact));
+                }
             }
         }
 
-        this.client.notifySyncStatus({
-            sending: false,
-            retrying: false,
-            retryInSeconds: 0,
-            warning: ""
-        });
+        return { accepted, remaining: remaining(), stopped: false, lastError };
+    }
+
+    /**
+     * Is one of this fact's queued predecessors still refused? Sending it would
+     * leave a dangling reference, so it stays queued with them.
+     */
+    private isHeldBack(envelope: FactEnvelope, held: Set<string>): boolean {
+        return predecessorKeys(envelope.fact).some(key => held.has(key));
+    }
+
+    private async send(envelopes: FactEnvelope[], sent: Set<string>): Promise<void> {
+        await this.client.saveWithRetry(envelopes);
+        await this.queue.dequeue(envelopes);
+        envelopes.forEach(envelope => sent.add(factKey(envelope.fact)));
+        await this.onQueueChanged();
     }
 }
