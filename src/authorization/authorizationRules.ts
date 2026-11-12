@@ -1,9 +1,10 @@
 import { AuthorizationRuleError } from './errors';
+import { AuthorizationStrata, TypeDependency, computeStrata, tailDependencies } from './authorization-strata';
 import { getPredecessors } from '../memory/memory-store';
 import { Device, User } from '../model/user';
 import { describeSpecification } from '../specification/description';
 import { FactConstructor, FactRepository, LabelOf, Model, Traversal, getPayload } from '../specification/model';
-import { Condition, Label, Match, PathCondition, Specification, WellFormedSpecification, splitBeforeFirstSuccessor } from '../specification/specification';
+import { Condition, Label, Match, PathCondition, Specification, WellFormedSpecification, getAllRoles, splitBeforeFirstSuccessor } from '../specification/specification';
 import { SpecificationParser } from '../specification/specification-parser';
 import { assertWellFormed } from '../specification/specification-validation';
 import { FactEnvelope, FactRecord, FactReference, ReferencesByName, Storage, factReferenceEquals } from '../storage';
@@ -196,6 +197,11 @@ function startReferences(tuple: ReferencesByName, tail: Specification): FactRefe
 
 interface AuthorizationRule {
     describe(type: string): string;
+    /**
+     * The edges this rule contributes to the dependency graph over fact types,
+     * for a rule registered on `type`.
+     */
+    dependencies(type: string): TypeDependency[];
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean>;
     getAuthorizedPopulation(candidateKeys: string[], envelope: FactEnvelope, graph: FactGraph, store: Storage): Promise<AuthorizationPopulation>;
 }
@@ -203,6 +209,11 @@ interface AuthorizationRule {
 export class AuthorizationRuleAny implements AuthorizationRule {
     describe(type: string) {
         return `    any ${type}\n`;
+    }
+
+    dependencies(type: string): TypeDependency[] {
+        // The rule reads nothing, so the verdict on this type depends on no other.
+        return [];
     }
 
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage) {
@@ -219,6 +230,10 @@ export class AuthorizationRuleAny implements AuthorizationRule {
 export class AuthorizationRuleNone implements AuthorizationRule {
     describe(type: string) {
         return `    no ${type}\n`;
+    }
+
+    dependencies(type: string): TypeDependency[] {
+        return [];
     }
 
     isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
@@ -276,6 +291,19 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
     describe(type: string): string {
         const description = describeSpecification(this.specification, 1);
         return description;
+    }
+
+    dependencies(type: string): TypeDependency[] {
+        // Every role path the rule writes carries its types, so a predecessor
+        // role no model declares is still seen here.
+        const roleDependencies: TypeDependency[] = getAllRoles(this.specification).map(role => ({
+            from: role.predecessorType,
+            to: role.successorType,
+            negative: false,
+            fromRule: false
+        }));
+        const tail = this.tail === undefined ? [] : tailDependencies(type, this.tail);
+        return [ ...roleDependencies, ...tail ];
     }
 
     async isAuthorized(userFact: FactReference | null, fact: FactRecord, graph: FactGraph, store: Storage): Promise<boolean> {
@@ -360,10 +388,23 @@ export class AuthorizationRules {
     static empty: AuthorizationRules = new AuthorizationRules(undefined);
 
     private rulesByType: {[type: string]: AuthorizationRule[]} = {};
+    private readonly modelDependencies: readonly TypeDependency[];
+    private readonly modelTypes: readonly string[];
+    private ruleDependencies: readonly TypeDependency[] = [];
+    private strata: AuthorizationStrata;
 
     constructor(
         private model: Model | undefined
-    ) { }
+    ) {
+        this.modelDependencies = model === undefined ? [] : model.predecessorRoles().map(role => ({
+            from: role.predecessorType,
+            to: role.successorType,
+            negative: false,
+            fromRule: false
+        }));
+        this.modelTypes = model === undefined ? [] : model.factTypes();
+        this.strata = computeStrata(this.modelDependencies, this.modelTypes);
+    }
 
     with(rules: (r: AuthorizationRules) => AuthorizationRules) {
         return rules(this);
@@ -489,7 +530,51 @@ export class AuthorizationRules {
         const newRulesByType = { ...this.rulesByType, [type]: newRules };
         const result = new AuthorizationRules(this.model);
         result.rulesByType = newRulesByType;
+        result.ruleDependencies = [ ...this.ruleDependencies, ...rule.dependencies(type) ];
+        // A negative edge inside a component leaves no order of evaluation that
+        // settles the batch, so the call that closes the cycle is refused. Every
+        // way of adding a rule arrives here, so `type`, `any`, `no`, `merge` and
+        // `loadFromDescription` all refuse it.
+        result.strata = computeStrata(result.allDependencies(), result.allTypes());
         return result;
+    }
+
+    private allDependencies(): TypeDependency[] {
+        return [ ...this.modelDependencies, ...this.ruleDependencies ];
+    }
+
+    private allTypes(): string[] {
+        return [ ...this.modelTypes, ...Object.keys(this.rulesByType) ];
+    }
+
+    /**
+     * The strata of this rule set's type dependency graph, extended with the
+     * predecessor roles the facts of a batch carry. A predecessor role that
+     * neither the model nor any rule declares is first seen in a batch, so a
+     * negative cycle it closes is refused here rather than at declaration.
+     */
+    strataForBatch(facts: FactRecord[]): AuthorizationStrata {
+        const batchDependencies: TypeDependency[] = [];
+        const batchTypes: string[] = [];
+        for (const fact of facts) {
+            batchTypes.push(fact.type);
+            for (const role in fact.predecessors) {
+                for (const predecessor of getPredecessors(fact, role)) {
+                    batchDependencies.push({
+                        from: predecessor.type,
+                        to: fact.type,
+                        negative: false,
+                        fromRule: false
+                    });
+                }
+            }
+        }
+        if (batchDependencies.length === 0 && batchTypes.every(type => this.strata.stratumOf(type) < this.strata.count)) {
+            return this.strata;
+        }
+        return computeStrata(
+            [ ...this.allDependencies(), ...batchDependencies ],
+            [ ...this.allTypes(), ...batchTypes ]);
     }
 
     hasRule(type: string) {
@@ -559,4 +644,4 @@ export class AuthorizationRules {
 export function describeAuthorizationRules(model: Model, authorization: (a: AuthorizationRules) => AuthorizationRules) {
     const rules = authorization(new AuthorizationRules(model));
     return rules.saveToDescription();
-}
+}

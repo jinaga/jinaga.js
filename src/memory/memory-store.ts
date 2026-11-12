@@ -106,6 +106,29 @@ export class MemoryStore implements Storage {
         return this.runnerFor(this.factEnvelopes).read(start, specification);
     }
 
+    readAsIfSaved(staged: FactEnvelope[], start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        // Captured once, as `read` does, so a save that lands while the
+        // specification is being run cannot move the graph underneath it.
+        const factEnvelopes = this.factEnvelopes;
+        if (staged.length === 0) {
+            return this.runnerFor(factEnvelopes).read(start, specification);
+        }
+        const timestamp = this.timeProvider();
+        const combined: TimestampedFactEnvelope[] = [ ...factEnvelopes ];
+        for (const envelope of staged) {
+            const isFact = factReferenceEquals(envelope.fact);
+            if (!combined.some(e => isFact(e.fact))) {
+                combined.push({
+                    fact: { ...envelope.fact, timestamp },
+                    signatures: envelope.signatures
+                });
+            }
+        }
+        // `combined` is this call's own array and nothing else holds it, so the
+        // staged facts never become visible to another read.
+        return this.runnerFor(combined).read(start, specification);
+    }
+
     async feed(feed: Specification, start: FactReference[], _bookmark: string): Promise<FactFeed> {
         // TODO: Implement monotonic bookmarks defined by the store.
         // Bookmarks must be monotonically increasing quantities with a store-defined

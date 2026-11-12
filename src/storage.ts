@@ -50,6 +50,19 @@ export interface Storage {
     close(): Promise<void>;
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
+    /**
+     * Read as though `staged` had been saved, without saving it.
+     *
+     * A store implements this so that a batch can be authorized as one unit: a
+     * rule's tail reads the store plus the facts of the batch accepted so far,
+     * rather than the store alone. Without it the verdict on a fact depends on
+     * how the sender cut its requests, because nothing in a batch is in the
+     * store until the whole batch has been authorized.
+     *
+     * The staged facts are not saved, and a store that does not implement this
+     * method gets a single pass in which every tail reads the store alone.
+     */
+    readAsIfSaved?(staged: FactEnvelope[], start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
     feed(feed: Specification, start: FactReference[], bookmark: string): Promise<FactFeed>;
     whichExist(references: FactReference[]): Promise<FactReference[]>;
     load(references: FactReference[]): Promise<FactEnvelope[]>;
