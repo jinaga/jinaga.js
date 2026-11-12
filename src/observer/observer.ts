@@ -1,6 +1,6 @@
 import { computeObjectHash } from "../fact/hash";
 import { FeedDecision } from "../http/messages";
-import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
+import { DistributionDiagnostic, pendingAuthorizationFeeds, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
 import { InverseListener, InverseReadNumbering } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
@@ -802,8 +802,7 @@ export class ObserverImpl<T> implements Observer<T> {
         // Collect the per-feed decisions across all branches so they can be
         // surfaced as diagnostics (issue #207 W5/W6). Array.push from the
         // concurrent branch callbacks is safe on JS's single thread.
-        const decisions: FeedDecision[] = [];
-        await Promise.all(this.branches.map(async branch => {
+        const subscribed = await Promise.all(this.branches.map(async branch => {
             const { feeds, decisions: branchDecisions } = await this.factManager.subscribe(this.given, branch.specification);
             if (this.stopped) {
                 // If stop() was called while we were awaiting subscribe(),
@@ -812,13 +811,37 @@ export class ObserverImpl<T> implements Observer<T> {
                 if (feeds.length > 0) {
                     this.factManager.unsubscribe(feeds);
                 }
-                return;
+                return null;
             }
             branch.feeds = feeds;
-            decisions.push(...branchDecisions);
-            this.registerClearingListeners(feeds, branchDecisions);
+            return { feeds, decisions: branchDecisions };
         }));
-        this.captureDiagnostics('subscribe', decisions);
+        const held = subscribed.filter((entry): entry is { feeds: string[]; decisions: FeedDecision[] } => entry !== null);
+        const decisions: FeedDecision[] = [];
+        for (const entry of held) {
+            decisions.push(...entry.decisions);
+        }
+        // Raise before any clearing can fire. A feed whose first response
+        // already carried facts has delivered by the time its clearing listener
+        // registers, and `onFeedData` fires such a listener at once, so
+        // registering first would tell a consumer that a diagnostic cleared
+        // before telling it the diagnostic was raised -- and would leave
+        // `diagnostics()` in that order too.
+        this.captureDiagnostics(this.operation, decisions);
+        for (const entry of held) {
+            this.registerClearingListeners(entry.feeds, entry.decisions);
+        }
+    }
+
+    /**
+     * The operation every diagnostic from this observer is reported against.
+     * Derived from the `keepAlive` the observer was started with rather than
+     * passed down each call site, so a raised diagnostic and the clearing that
+     * retires it can never disagree about which operation they belong to
+     * (issue #394, criterion 2).
+     */
+    private get operation(): 'watch' | 'subscribe' {
+        return this.keepAlive ? 'subscribe' : 'watch';
     }
 
     /**
@@ -829,12 +852,61 @@ export class ObserverImpl<T> implements Observer<T> {
      * is, so a row already delivered is not delivered twice.
      */
     private async fetchOnce() {
+        const fetched = await Promise.all(this.branches.map(async branch => ({
+            branch,
+            decisions: await this.factManager.fetch(this.given, branch.specification)
+        })));
         const decisions: FeedDecision[] = [];
-        await Promise.all(this.branches.map(async branch => {
-            const branchDecisions = await this.factManager.fetch(this.given, branch.specification);
-            decisions.push(...branchDecisions);
-        }));
-        this.captureDiagnostics(this.keepAlive ? 'subscribe' : 'watch', decisions);
+        for (const entry of fetched) {
+            decisions.push(...entry.decisions);
+        }
+        // Raise before holding, for the reason given in `fetch`: holding a feed
+        // can resolve its own race in the same turn, and the clearing must not
+        // reach a consumer ahead of the diagnostic it retires.
+        this.captureDiagnostics(this.operation, decisions);
+        await Promise.all(fetched.map(entry => this.holdPendingFeeds(entry.branch, entry.decisions)));
+    }
+
+    /**
+     * Hold open, through the same subscribe path a subscription uses, exactly
+     * the feeds this fetch answered with a pending authorization, and register
+     * the same clearing listener on each (issue #394).
+     *
+     * One pass is enough for every other decision. An authorized feed has
+     * already delivered what it has, and a structural denial says the shapes
+     * never matched, which no arriving fact can change. A pending one is the
+     * only decision a later fact resolves, so it is the only one worth holding,
+     * and `pendingAuthorizationFeeds` is where that is decided for both
+     * operations.
+     *
+     * Which feeds are held is therefore computed from the decisions. There is
+     * no option on `watch` and no stored flag: `keepAlive` still decides
+     * whether *authorized* feeds are held, and no longer decides whether a
+     * pending one ever resolves.
+     *
+     * A feed this branch already holds -- every feed of a subscription, and
+     * every feed a previous `refresh()` held -- is skipped, so a repeated fetch
+     * does not take a second reference to it.
+     */
+    private async holdPendingFeeds(branch: ObserverBranch, decisions: FeedDecision[]) {
+        if (this.stopped) {
+            return;
+        }
+        const pending = pendingAuthorizationFeeds(decisions)
+            .filter(feed => !branch.feeds.includes(feed));
+        if (pending.length === 0) {
+            return;
+        }
+        await this.factManager.holdFeeds(pending);
+        if (this.stopped) {
+            // stop() ran while the feeds were being held, so it saw none of
+            // them on the branch and released nothing. Release them here
+            // rather than leaving subscribers nobody holds.
+            this.factManager.unsubscribe(pending);
+            return;
+        }
+        branch.feeds = [...branch.feeds, ...pending];
+        this.registerClearingListeners(pending, decisions);
     }
 
     /**
@@ -908,7 +980,7 @@ export class ObserverImpl<T> implements Observer<T> {
             return;
         }
         try {
-            const cleared = toClearingDiagnostic('subscribe', this.specificationString, decision);
+            const cleared = toClearingDiagnostic(this.operation, this.specificationString, decision);
             this._diagnostics.push(cleared);
             for (const handler of this.diagnosticHandlers) {
                 this.safelyInvokeDiagnostic(handler, cleared);

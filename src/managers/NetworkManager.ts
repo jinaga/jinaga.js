@@ -511,6 +511,62 @@ export class NetworkManager {
             this.getFeedsFromCache(start, reducedSpecification), deadline,
             "register the feeds for a subscription");
 
+        try {
+            await this.startSubscribers(feeds, deadline);
+        }
+        catch (e) {
+            // If any feed fails, then remove the specification from the cache.
+            this.removeFeedsFromCache(start, reducedSpecification);
+            this.unsubscribe(feeds);
+            throw e;
+        }
+        // Return the feed hashes alongside the per-feed decisions so the observer
+        // can surface diagnostics (issue #207 W5/W6) while still using `feeds`
+        // for its keep-alive/unsubscribe bookkeeping.
+        return { feeds, decisions };
+    }
+
+    /**
+     * Hold the named feeds open, the way `subscribe` holds a specification's
+     * feeds, and resolve once every feed this call started has answered once.
+     * A feed a caller already holds is referenced rather than started again, so
+     * this does not wait on a first response someone else is already waiting
+     * for -- the same bound `subscribe` has always worked to.
+     *
+     * A `watch` takes this path for the feeds whose decision is a pending
+     * authorization (issue #394). Its one pass has already run and registered
+     * the feeds, so what remains is a subscriber on each named feed — not a
+     * second registration of the specification, which would re-request feeds
+     * the caller already holds hashes for.
+     *
+     * A feed another caller already holds is ref-counted, exactly as it is
+     * under `subscribe`, so `unsubscribe` releases this hold without stopping
+     * a subscriber someone else still needs.
+     */
+    async holdFeeds(feeds: string[]): Promise<void> {
+        if (feeds.length === 0) {
+            return;
+        }
+        await this.trackLoad(async () => {
+            try {
+                await this.startSubscribers(feeds, undefined);
+            }
+            catch (e) {
+                // Release what this call referenced, so a feed whose first
+                // response failed does not leave a subscriber nobody holds.
+                this.unsubscribe(feeds);
+                throw e;
+            }
+        });
+    }
+
+    /**
+     * Create a subscriber for each feed that has none, reference it for this
+     * caller, and wait for the first response from every feed this call started.
+     * Shared by `subscribe` and `holdFeeds`, so a feed is held the same way
+     * whichever asked for it.
+     */
+    private async startSubscribers(feeds: string[], deadline: FeedDeadline | undefined): Promise<void> {
         const subscribers = feeds.map(feed => {
             let subscriber = this.subscribers.get(feed);
             if (!subscriber) {
@@ -538,21 +594,8 @@ export class NetworkManager {
                 await subscriber.start();
             }
         });
-
-        try {
-            await this.withDeadline(Promise.all(promises), deadline,
-                "receive the first response from a subscribed feed");
-        }
-        catch (e) {
-            // If any feed fails, then remove the specification from the cache.
-            this.removeFeedsFromCache(start, reducedSpecification);
-            this.unsubscribe(feeds);
-            throw e;
-        }
-        // Return the feed hashes alongside the per-feed decisions so the observer
-        // can surface diagnostics (issue #207 W5/W6) while still using `feeds`
-        // for its keep-alive/unsubscribe bookkeeping.
-        return { feeds, decisions };
+        await this.withDeadline(Promise.all(promises), deadline,
+            "receive the first response from a subscribed feed");
     }
 
     /**
