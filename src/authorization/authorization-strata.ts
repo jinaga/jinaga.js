@@ -74,12 +74,25 @@ export class AuthorizationStrata {
  *
  * A type read beneath a negative existential condition yields no edge, at any
  * depth, because nothing beneath such a condition sees the facts of the batch.
+ *
+ * A condition on one of the tail's givens is read too, because the runner
+ * evaluates those before the matches. Today an authorization rule's tail never
+ * carries one: the only given that can is the fact being authorized, and a tail
+ * that reads it is refused where the rule is written, while the split labels the
+ * tail is otherwise given carry no conditions. Walked here all the same, so that
+ * what this function reports follows from the tail in front of it rather than
+ * from that coincidence.
  */
 export function tailDependencies(type: string, tail: Specification): TypeDependency[] {
     const dependencies: TypeDependency[] = [];
     const add = (from: string) => {
         dependencies.push({ from, to: type, fromRule: true });
     };
+    for (const given of tail.given) {
+        for (const condition of given.conditions) {
+            collectFromCondition(condition, add);
+        }
+    }
     collectFromMatches(tail.matches, add);
     return dependencies;
 }

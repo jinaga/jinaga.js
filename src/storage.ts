@@ -70,6 +70,16 @@ export interface Storage {
      * positive conditions and can never withdraw a negative one, which is what
      * makes a batch's verdict independent of the order it arrived in.
      *
+     * One call reads one graph, as `read` does: a save that lands while the
+     * specification is being run cannot move the graph underneath it. Two calls
+     * are two reads, so a save that lands between them is visible to the later
+     * one, and a batch decided over several calls can see a fact appear beneath
+     * a negative condition partway through. That is the behavior every read in
+     * this library has, rather than anything this method introduces, and
+     * closing it would take a snapshot that outlives a call, which this
+     * interface has no way to name. A negation over one replica's graph is
+     * provisional in any case: no witness here is not no witness anywhere.
+     *
      * The staged facts are not saved, and a store that does not implement this
      * method gets a single pass in which every tail reads the store alone.
      */

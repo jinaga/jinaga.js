@@ -182,6 +182,59 @@ describe("The edges a rule's tail yields", () => {
         ]));
     });
 
+    describe("a condition on one of the tail's givens", () => {
+        // The runner evaluates a given's conditions before the matches, so a
+        // type one of them reads is read from the store too. An authorization
+        // rule's tail never carries such a condition today: the split puts the
+        // given's conditions in the head, and a tail that reads the fact being
+        // authorized is refused where the rule is written. These two reach
+        // `tailDependencies` with a tail that carries one anyway, so that the
+        // walk is covered rather than taken on trust.
+        function tailWithGivenCondition(exists: boolean): Specification {
+            const specification = model.given(Answer)
+                .match((ans, facts) => facts.ofType(Attendee)
+                    .join(att => att.tenant, ans.tenant)
+                    .selectMany(att => facts.ofType(User)
+                        .join(u => u, att.user)))
+                .specification;
+            const { tail } = splitBeforeFirstSuccessor(assertWellFormed(specification, "A rule under test"));
+            const condition = model.given(Tenant)
+                .match((t, facts) => facts.ofType(Confirmation)
+                    .join(c => c.attendee.tenant, t))
+                .specification;
+            return {
+                ...tail!,
+                given: tail!.given.map((given, index) => index > 0 ? given : {
+                    ...given,
+                    conditions: [ {
+                        type: "existential" as const,
+                        exists,
+                        matches: condition.matches.map(match => ({
+                            ...match,
+                            conditions: match.conditions.map(c => c.type === "path"
+                                ? { ...c, labelRight: given.label.name }
+                                : c)
+                        }))
+                    } ]
+                })
+            };
+        }
+
+        it("names the type a positive one reads", () => {
+            const edges = tailDependencies(Answer.Type, tailWithGivenCondition(true));
+
+            expect(sorted(edges.map(e => e.from).filter((f, i, all) => all.indexOf(f) === i)))
+                .toEqual(sorted([ Attendee.Type, Confirmation.Type, Tenant.Type, User.Type ]));
+        });
+
+        it("names no type a negative one reads", () => {
+            const edges = tailDependencies(Answer.Type, tailWithGivenCondition(false));
+
+            expect(sorted(edges.map(e => e.from).filter((f, i, all) => all.indexOf(f) === i)))
+                .toEqual(sorted([ Attendee.Type, Tenant.Type, User.Type ]));
+        });
+    });
+
     it("names the governed type itself when a rule reads its own type", () => {
         // The shape of criterion 3: a member may be added by the user of
         // another member of the same group. The edge into the governed type
