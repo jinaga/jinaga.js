@@ -51,13 +51,24 @@ export interface Storage {
     save(envelopes: FactEnvelope[]): Promise<FactEnvelope[]>;
     read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]>;
     /**
-     * Read as though `staged` had been saved, without saving it.
+     * Read as though `staged` had been saved, except beneath a negative
+     * existential condition, which sees only the facts actually saved. Saves
+     * nothing.
      *
      * A store implements this so that a batch can be authorized as one unit: a
      * rule's tail reads the store plus the facts of the batch accepted so far,
      * rather than the store alone. Without it the verdict on a fact depends on
      * how the sender cut its requests, because nothing in a batch is in the
      * store until the whole batch has been authorized.
+     *
+     * The facts of a batch are concurrent, so a fact that a negative condition
+     * forbids takes effect for facts that arrive in a later call, never for
+     * facts that arrive with it. The matches and the positive existential
+     * conditions see `staged`; everything beneath a negative existential
+     * condition, at any depth, and the conditions nested inside it, see only
+     * the facts the store holds. Accepting a fact can then satisfy more
+     * positive conditions and can never withdraw a negative one, which is what
+     * makes a batch's verdict independent of the order it arrived in.
      *
      * The staged facts are not saved, and a store that does not implement this
      * method gets a single pass in which every tail reads the store alone.

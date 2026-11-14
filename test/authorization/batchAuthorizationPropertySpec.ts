@@ -8,10 +8,18 @@ import { AuthorizationEngine, AuthorizationRuleError, AuthorizationRules, FactEn
 // The rules are built as text and parsed, so the specifications the engine runs
 // are real ones.
 //
-// The expectation is computed independently of the engine. A set S of batch
-// facts is a ground-truth set when S is exactly the facts admitted against the
-// store plus S, and when some order of one-fact requests reaches it. The engine
-// has to accept exactly that set, whatever order the batch arrives in.
+// The expectation is computed independently of the engine, by brute force over
+// the subsets of the batch. A fact is admitted when its predecessors are stored
+// or accepted, its positive clauses are satisfied by the store plus the facts
+// accepted so far, and its negative clauses are satisfied by the store as it
+// was before the batch. A subset S is a fixpoint when S is exactly the facts of
+// the batch admitted with that positive view; the engine has to accept the
+// least such S, whatever order the batch arrives in.
+//
+// The negative view is fixed, so accepting a fact can only satisfy more
+// positive clauses and never withdraw a negative one. The operator is therefore
+// monotone and the least fixpoint is unique, which this suite asserts rather
+// than assumes.
 
 const ROOT_TYPE = "P.Root";
 const USER_TYPE = "Jinaga.User";
@@ -202,12 +210,15 @@ function generateInstance(random: () => number, index: number): Instance {
 }
 
 /**
- * Whether the rules admit `fact` against a view of the facts that exist. The
- * clauses are read off the generated rule rather than from the engine, and the
- * relation is "under the same root", which every generated fact satisfies.
+ * Whether the rules admit `fact`. Its predecessors and its positive clauses
+ * read `positive`, the store plus the facts accepted so far; its negative
+ * clauses, and the condition nested inside one, read `negative`, the store as
+ * it was before the batch. The clauses are read off the generated rule rather
+ * than from the engine, and the relation is "under the same root", which every
+ * generated fact satisfies.
  */
-function admitted(fact: FactRecord, view: FactRecord[], types: GeneratedType[]): boolean {
-    const keys = new Set(view.map(factKey));
+function admitted(fact: FactRecord, positive: FactRecord[], negative: FactRecord[], types: GeneratedType[]): boolean {
+    const keys = new Set(positive.map(factKey));
     for (const reference of predecessorsOf(fact)) {
         if (reference.type === ROOT_TYPE || reference.type === USER_TYPE) {
             continue;
@@ -219,18 +230,18 @@ function admitted(fact: FactRecord, view: FactRecord[], types: GeneratedType[]):
     const rule = types.find(t => t.name === fact.type)!;
     for (const clause of rule.clauses) {
         if (clause.kind === "pos") {
-            if (!view.some(f => f.type === clause.type)) {
+            if (!positive.some(f => f.type === clause.type)) {
                 return false;
             }
         }
         else if (clause.kind === "neg") {
-            if (view.some(f => f.type === clause.type)) {
+            if (negative.some(f => f.type === clause.type)) {
                 return false;
             }
         }
         else {
-            const witness = view.some(f => f.type === clause.outer) &&
-                !view.some(f => f.type === clause.inner);
+            const witness = negative.some(f => f.type === clause.outer) &&
+                !negative.some(f => f.type === clause.inner);
             if (witness) {
                 return false;
             }
@@ -239,8 +250,8 @@ function admitted(fact: FactRecord, view: FactRecord[], types: GeneratedType[]):
     return true;
 }
 
-function admittedSet(candidates: FactRecord[], view: FactRecord[], types: GeneratedType[]): FactRecord[] {
-    return candidates.filter(fact => admitted(fact, view, types));
+function admittedSet(candidates: FactRecord[], positive: FactRecord[], negative: FactRecord[], types: GeneratedType[]): FactRecord[] {
+    return candidates.filter(fact => admitted(fact, positive, negative, types));
 }
 
 function sameSet(a: FactRecord[], b: FactRecord[]): boolean {
@@ -249,25 +260,6 @@ function sameSet(a: FactRecord[], b: FactRecord[]): boolean {
     }
     const keys = new Set(a.map(factKey));
     return b.every(fact => keys.has(factKey(fact)));
-}
-
-/** Whether one fact at a time, in some order, reaches every fact of `subset`. */
-function supported(subset: FactRecord[], stored: FactRecord[], types: GeneratedType[]): boolean {
-    const accepted: FactRecord[] = [];
-    let changed = true;
-    while (changed) {
-        changed = false;
-        for (const fact of subset) {
-            if (accepted.some(a => factKey(a) === factKey(fact))) {
-                continue;
-            }
-            if (admitted(fact, [ ...stored, ...accepted ], types)) {
-                accepted.push(fact);
-                changed = true;
-            }
-        }
-    }
-    return accepted.length === subset.length;
 }
 
 function subsetsOf(facts: FactRecord[]): FactRecord[][] {
@@ -280,12 +272,39 @@ function subsetsOf(facts: FactRecord[]): FactRecord[][] {
     return subsets;
 }
 
-function groundTruthSets(instance: Instance): FactRecord[][] {
+/** Every subset of the batch that is exactly the set it admits. */
+function fixpoints(instance: Instance): FactRecord[][] {
+    const negative = instance.storedGenerated;
     return subsetsOf(instance.batch).filter(subset => {
-        const view = [ ...instance.storedGenerated, ...subset ];
-        return sameSet(subset, admittedSet(instance.batch, view, instance.types)) &&
-            supported(subset, instance.storedGenerated, instance.types);
+        const positive = [ ...instance.storedGenerated, ...subset ];
+        return sameSet(subset, admittedSet(instance.batch, positive, negative, instance.types));
     });
+}
+
+function isSubset(a: FactRecord[], b: FactRecord[]): boolean {
+    const keys = new Set(b.map(factKey));
+    return a.every(fact => keys.has(factKey(fact)));
+}
+
+/**
+ * The fixpoint contained in every other, which is the set the engine has to
+ * accept. Returns null when there is none, so the suite reports that rather
+ * than picking one.
+ */
+function leastFixpoint(instance: Instance): FactRecord[] | null {
+    const sets = fixpoints(instance);
+    const least = sets.filter(candidate => sets.every(other => isSubset(candidate, other)));
+    return least.length === 1 ? least[0] : null;
+}
+
+/**
+ * Whether the accepted set holds a fact whose own prohibition was accepted
+ * alongside it. That is the trade this semantics makes, and a run that never
+ * reaches one is not evidence about it.
+ */
+function admitsAFactItsOwnBatchForbids(accepted: FactRecord[], instance: Instance): boolean {
+    const full = [ ...instance.storedGenerated, ...accepted ];
+    return accepted.some(fact => !admitted(fact, full, full, instance.types));
 }
 
 function permutations<T>(items: T[]): T[][] {
@@ -325,11 +344,11 @@ async function runEngine(rules: AuthorizationRules, instance: Instance, order: F
 }
 
 describe("Authorization of a batch, against brute-force ground truth", () => {
-    it("accepts exactly the ground-truth set, whatever order the batch arrives in", async () => {
+    it("accepts exactly the least fixpoint, whatever order the batch arrives in", async () => {
         const random = seededRandom(0x396f1c);
         let checked = 0;
-        let refusedRuleSets = 0;
         let partiallyAccepted = 0;
+        let forbiddenByTheirOwnBatch = 0;
 
         for (let index = 0; index < 150; index++) {
             const instance = generateInstance(random, index);
@@ -337,38 +356,26 @@ describe("Authorization of a batch, against brute-force ground truth", () => {
                 continue;
             }
 
-            let rules: AuthorizationRules;
-            try {
-                rules = AuthorizationRules.loadFromDescription(instance.description);
-            }
-            catch (error) {
-                // A negative cycle has no order of evaluation that settles it,
-                // so the rule set is refused where it is written.
-                expect(error).toBeInstanceOf(AuthorizationRuleError);
-                refusedRuleSets++;
-                continue;
-            }
+            // Criterion 6. No shape is refused, however its negative clauses
+            // run, so every generated rule set declares.
+            const rules: AuthorizationRules = AuthorizationRules.loadFromDescription(instance.description);
 
             const orders = topologicalOrders(instance.batch, 4);
-            const first = await runEngine(rules, instance, orders[0]);
-            if (first instanceof AuthorizationRuleError) {
-                // A predecessor role that no rule writes is first seen in the
-                // batch, and this one closes a cycle the description could not.
-                refusedRuleSets++;
-                continue;
-            }
-
-            const truth = groundTruthSets(instance);
-            expect(truth.length).toEqual(1);
-            const expected = truth[0];
-            const refused = instance.batch.filter(fact => !expected.some(e => factKey(e) === factKey(fact)));
+            const expected = leastFixpoint(instance);
+            expect(expected).not.toBeNull();
+            const refused = instance.batch.filter(fact => !expected!.some(e => factKey(e) === factKey(fact)));
             checked++;
             if (refused.length > 0) {
                 partiallyAccepted++;
             }
+            if (admitsAFactItsOwnBatchForbids(expected!, instance)) {
+                forbiddenByTheirOwnBatch++;
+            }
 
             for (const order of orders) {
-                const result = index === 0 && order === orders[0] ? first : await runEngine(rules, instance, order);
+                const result = await runEngine(rules, instance, order);
+                // Nothing is refused for its shape, at declaration or here.
+                expect(result).not.toBeInstanceOf(AuthorizationRuleError);
                 if (refused.length === 0) {
                     expect(Array.isArray(result)).toBe(true);
                     const verdicts = result as unknown as { verdict: string }[];
@@ -385,10 +392,10 @@ describe("Authorization of a batch, against brute-force ground truth", () => {
                 }
             }
 
-            // The ground-truth set is closed under predecessors, so it is a
-            // batch of its own, and every fact in it is accepted.
-            if (expected.length > 0) {
-                const accepted = await runEngine(rules, instance, expected);
+            // The least fixpoint is closed under predecessors, so it is a batch
+            // of its own, and every fact in it is accepted.
+            if (expected!.length > 0) {
+                const accepted = await runEngine(rules, instance, expected!);
                 expect(Array.isArray(accepted)).toBe(true);
                 const verdicts = accepted as unknown as { verdict: string }[];
                 expect(verdicts.every(v => v.verdict === "Accept")).toBe(true);
@@ -396,9 +403,12 @@ describe("Authorization of a batch, against brute-force ground truth", () => {
         }
 
         // The run is only evidence if it reached a useful number of rule sets,
-        // and if some of them refused part of their batch.
+        // if some of them refused part of their batch, and if some admitted a
+        // fact whose prohibition travelled with it. That last one is the trade
+        // the issue's answer chooses, and a run that never hit it would pass
+        // whichever way negation read the batch.
         expect(checked).toBeGreaterThan(40);
         expect(partiallyAccepted).toBeGreaterThan(5);
-        expect(refusedRuleSets).toBeGreaterThan(0);
+        expect(forbiddenByTheirOwnBatch).toBeGreaterThan(0);
     }, 60000);
 });

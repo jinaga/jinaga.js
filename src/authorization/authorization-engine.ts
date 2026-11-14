@@ -75,9 +75,10 @@ function groupByStratum(sorted: FactRecord[], strata: AuthorizationStrata): { st
 
 /**
  * A store that reads as though the facts of a batch accepted so far had been
- * saved. Every other operation is the underlying store's own: nothing is
- * written, and the staged facts are visible only to reads made through this
- * decorator.
+ * saved, except beneath a negative existential condition, which reads the facts
+ * the store actually holds. Every other operation is the underlying store's
+ * own: nothing is written, and the staged facts are visible only to reads made
+ * through this decorator.
  *
  * Only a store that implements `readAsIfSaved` can be staged. One that does not
  * is used directly, and every tail then reads the store alone, exactly as it
@@ -162,9 +163,9 @@ export class AuthorizationEngine {
         const existing = await this.store.whichExist([...facts, ...externalReferences]);
 
         // Resolve the order in which the batch is decided before deciding any
-        // of it. A rule set whose negative conditions form a cycle has no such
-        // order, and this is where a cycle closed by a predecessor role that
-        // neither the model nor a rule declares is first visible.
+        // of it. The batch's own predecessor roles belong in that order, and
+        // this is where a role that neither the model nor a rule declares is
+        // first visible.
         const strata = this.authorizationRules.strataForBatch(facts);
 
         const sorter = new TopologicalSorter<FactRecord>();
@@ -237,11 +238,16 @@ export class AuthorizationEngine {
      * whose component holds a rule edge is decided again until a pass accepts
      * nothing new, because one fact in it can be admitted by another.
      *
-     * Every type a tail reads lies in an earlier stratum or in the same
-     * component, and a component with a negative edge was refused, so each read
-     * sees exactly the facts of those types that this batch will commit:
-     * a positive condition finds a fact accepted earlier in the batch, and a
-     * negative condition forbids only a fact that will be saved.
+     * The facts of a batch are concurrent. A rule's matches and its positive
+     * existential conditions read the store plus the facts accepted so far;
+     * everything beneath a negative existential condition reads the store as it
+     * was before the batch. So accepting a fact can only satisfy more positive
+     * conditions and never withdraw a negative one, and repeating a pass until
+     * it accepts nothing reaches the least set of facts that admit each other.
+     * That set is the same for every order of the batch, which is what the
+     * strata make cheap rather than what makes them correct: every type a tail
+     * reads outside a negative condition lies in an earlier stratum or in the
+     * same component, so a stratum settles before the next one begins.
      */
     private async decide(
         sorted: FactRecord[],
@@ -326,7 +332,8 @@ export class AuthorizationEngine {
 
         // The fact being decided is not among the staged facts: its own rule
         // walks successors of it, and a rule whose tail reads the fact itself is
-        // refused where it is written.
+        // refused where it is written. Nor are the facts refused so far: only
+        // what the batch will commit is read back.
         const store = (accepted !== null && accepted.length > 0)
             ? new StagedStorage(this.store, [ ...accepted ])
             : this.store;

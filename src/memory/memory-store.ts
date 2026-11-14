@@ -1,6 +1,6 @@
 import { hydrateFromTree } from '../fact/hydrate';
 import { Specification } from "../specification/specification";
-import { SpecificationRunner } from '../specification/specification-runner';
+import { FactSource, SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals, FactTuple, uniqueFactReferences } from '../storage';
 
 // Internal types for time projection support
@@ -125,8 +125,10 @@ export class MemoryStore implements Storage {
             }
         }
         // `combined` is this call's own array and nothing else holds it, so the
-        // staged facts never become visible to another read.
-        return this.runnerFor(combined).read(start, specification);
+        // staged facts never become visible to another read. Beneath a negative
+        // existential condition the runner reads `factEnvelopes` instead, so a
+        // staged fact is no witness there, at any depth.
+        return this.runnerFor(combined, factEnvelopes).read(start, specification);
     }
 
     async feed(feed: Specification, start: FactReference[], _bookmark: string): Promise<FactFeed> {
@@ -211,16 +213,27 @@ export class MemoryStore implements Storage {
     }
 
     // Bound to one array rather than to the store, so every step of the
-    // specification it runs reads the same graph.
-    private runnerFor(factEnvelopes: readonly TimestampedFactEnvelope[]): SpecificationRunner {
-        return new SpecificationRunner({
+    // specification it runs reads the same graph. A second array, where one is
+    // given, is the graph the matches beneath a negative existential condition
+    // read.
+    private runnerFor(
+        factEnvelopes: readonly TimestampedFactEnvelope[],
+        negativeFactEnvelopes?: readonly TimestampedFactEnvelope[]
+    ): SpecificationRunner {
+        return new SpecificationRunner(
+            this.sourceFor(factEnvelopes),
+            negativeFactEnvelopes === undefined ? undefined : this.sourceFor(negativeFactEnvelopes));
+    }
+
+    private sourceFor(factEnvelopes: readonly TimestampedFactEnvelope[]): FactSource {
+        return {
             getPredecessors: (reference, name, predecessorType) =>
                 this.getPredecessors(factEnvelopes, reference, name, predecessorType),
             getSuccessors: (reference, name, successorType) =>
                 this.getSuccessors(factEnvelopes, reference, name, successorType),
             findFact: reference => this.findFact(factEnvelopes, reference),
             hydrate: reference => this.hydrate(factEnvelopes, reference)
-        });
+        };
     }
 
     private findFact(factEnvelopes: readonly TimestampedFactEnvelope[], reference: FactReference): Promise<FactRecord | null> {

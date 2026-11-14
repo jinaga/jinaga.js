@@ -2,10 +2,12 @@ import { Specification, User, assertWellFormed, buildModel, splitBeforeFirstSucc
 import { tailDependencies } from "../../src/authorization/authorization-strata";
 
 // Issue #396, criterion 7. The strata are derived from the rules rather than
-// configured, so the edges a real specification yields have to name the types
-// its tail reads, negative exactly where they sit beneath a negative
-// existential condition. The simulation in the issue abstracts a tail's join to
-// a relation; this suite pins the extraction from an actual specification.
+// configured, so the edges a real specification yields have to name exactly the
+// types its tail reads outside every negative existential condition. A type
+// read beneath one yields no edge: nothing beneath a negative condition sees
+// the facts of the batch, so no verdict in the batch depends on it. The
+// simulation in the issue abstracts a tail's join to a relation; this suite
+// pins the extraction from an actual specification.
 
 class Tenant {
     static Type = "D.Tenant";
@@ -75,20 +77,23 @@ const model = buildModel(b => b
         .predecessor("author", User))
 );
 
-/** The distinct types a rule's tail reads, with the polarity it reads them at. */
-function tailEdges(type: string, specification: Specification): { from: string, negative: boolean }[] {
+/** The distinct types a rule's tail yields an edge from. */
+function tailEdges(type: string, specification: Specification): string[] {
     const { tail } = splitBeforeFirstSuccessor(assertWellFormed(specification, "A rule under test"));
     if (tail === undefined) {
         return [];
     }
-    const edges = tailDependencies(type, tail).map(d => ({ from: d.from, negative: d.negative }));
-    return edges
-        .filter((edge, index) => edges.findIndex(e => e.from === edge.from && e.negative === edge.negative) === index)
-        .sort((a, b) => a.from.localeCompare(b.from) || Number(a.negative) - Number(b.negative));
+    const edges = tailDependencies(type, tail);
+    // Every edge runs into the type the rule governs.
+    expect(edges.every(edge => edge.to === type)).toBe(true);
+    // Every edge from a tail is a rule edge, which is what makes a component
+    // recursive; a predecessor role contributes the other kind.
+    expect(edges.every(edge => edge.fromRule)).toBe(true);
+    return sorted(edges.map(edge => edge.from).filter((from, index, all) => all.indexOf(from) === index));
 }
 
-function sorted(edges: { from: string, negative: boolean }[]) {
-    return edges.slice().sort((a, b) => a.from.localeCompare(b.from) || Number(a.negative) - Number(b.negative));
+function sorted(types: string[]) {
+    return types.slice().sort((a, b) => a.localeCompare(b));
 }
 
 describe("The edges a rule's tail yields", () => {
@@ -112,13 +117,13 @@ describe("The edges a rule's tail yields", () => {
             .specification;
 
         expect(tailEdges(Answer.Type, specification)).toEqual(sorted([
-            { from: Attendee.Type, negative: false },
-            { from: Tenant.Type, negative: false },
-            { from: User.Type, negative: false }
+            Attendee.Type,
+            Tenant.Type,
+            User.Type
         ]));
     });
 
-    it("keeps a positive existential condition positive", () => {
+    it("names the types a positive existential condition reads", () => {
         const specification = model.given(Answer)
             .match((ans, facts) => facts.ofType(Attendee)
                 .join(att => att.tenant, ans.tenant)
@@ -129,14 +134,14 @@ describe("The edges a rule's tail yields", () => {
             .specification;
 
         expect(tailEdges(Answer.Type, specification)).toEqual(sorted([
-            { from: Attendee.Type, negative: false },
-            { from: Confirmation.Type, negative: false },
-            { from: Tenant.Type, negative: false },
-            { from: User.Type, negative: false }
+            Attendee.Type,
+            Confirmation.Type,
+            Tenant.Type,
+            User.Type
         ]));
     });
 
-    it("marks every type beneath a negative existential condition negative", () => {
+    it("names no type that only a negative existential condition reads", () => {
         const specification = model.given(Answer)
             .match((ans, facts) => facts.ofType(Attendee)
                 .join(att => att.tenant, ans.tenant)
@@ -146,22 +151,19 @@ describe("The edges a rule's tail yields", () => {
                     .join(u => u, att.user)))
             .specification;
 
-        // Attendee and Tenant are read both above the condition and beneath it,
-        // so each yields an edge of either polarity.
+        // Withdrawal is read only beneath the condition, so it yields no edge.
+        // Attendee and Tenant are read above it as well, and keep theirs.
         expect(tailEdges(Answer.Type, specification)).toEqual(sorted([
-            { from: Attendee.Type, negative: false },
-            { from: Attendee.Type, negative: true },
-            { from: Tenant.Type, negative: false },
-            { from: Tenant.Type, negative: true },
-            { from: Withdrawal.Type, negative: true },
-            { from: User.Type, negative: false }
+            Attendee.Type,
+            Tenant.Type,
+            User.Type
         ]));
     });
 
-    it("keeps a condition nested inside a negative one negative", () => {
+    it("names no type a condition nested inside a negative one reads", () => {
         // "No withdrawal that has no undo". The inner condition is positive in
-        // form, and the types beneath it stay negative: a fact found there
-        // withholds the verdict rather than granting it.
+        // form, and sits beneath a negative one, so the facts of the batch are
+        // invisible to it too and Rejoin yields no edge either.
         const specification = model.given(Answer)
             .match((ans, facts) => facts.ofType(Attendee)
                 .join(att => att.tenant, ans.tenant)
@@ -174,13 +176,9 @@ describe("The edges a rule's tail yields", () => {
             .specification;
 
         expect(tailEdges(Answer.Type, specification)).toEqual(sorted([
-            { from: Attendee.Type, negative: false },
-            { from: Attendee.Type, negative: true },
-            { from: Rejoin.Type, negative: true },
-            { from: Tenant.Type, negative: false },
-            { from: Tenant.Type, negative: true },
-            { from: Withdrawal.Type, negative: true },
-            { from: User.Type, negative: false }
+            Attendee.Type,
+            Tenant.Type,
+            User.Type
         ]));
     });
 
@@ -197,9 +195,9 @@ describe("The edges a rule's tail yields", () => {
             .specification;
 
         expect(tailEdges(Answer.Type, specification)).toEqual(sorted([
-            { from: Answer.Type, negative: false },
-            { from: Tenant.Type, negative: false },
-            { from: User.Type, negative: false }
+            Answer.Type,
+            Tenant.Type,
+            User.Type
         ]));
     });
 });

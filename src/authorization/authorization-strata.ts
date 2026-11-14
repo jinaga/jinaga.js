@@ -1,5 +1,4 @@
 import { Condition, Match, Specification } from '../specification/specification';
-import { AuthorizationRuleError } from './errors';
 
 /**
  * An edge in the dependency graph over fact types. The verdict on a fact of
@@ -10,17 +9,17 @@ import { AuthorizationRuleError } from './errors';
  * rule: the tail reads the store, so what it finds there decides the verdict.
  * A **predecessor edge** comes from a predecessor role: a fact is accepted only
  * when its predecessors are.
+ *
+ * A type read beneath a negative existential condition yields no edge. Nothing
+ * beneath such a condition sees the facts of the batch, so no verdict in the
+ * batch depends on one, and the order in which the batch is decided owes it
+ * nothing.
  */
 export interface TypeDependency {
     /** The type whose facts are decided first. */
     from: string;
     /** The type whose verdict depends on them. */
     to: string;
-    /**
-     * True when `from` is read beneath a negative existential condition, so a
-     * fact of that type withholds the verdict rather than granting it.
-     */
-    negative: boolean;
     /**
      * True for an edge from a rule's tail, false for one from a predecessor
      * role. A component that holds a rule edge needs more than one pass.
@@ -30,9 +29,10 @@ export interface TypeDependency {
 
 /**
  * The strata of a dependency graph over fact types: its strongly connected
- * components, in topological order. Every type a rule's tail reads lies in an
- * earlier stratum, or in the same component, so a batch decided stratum by
- * stratum reads exactly the facts of those types that the batch will commit.
+ * components, in topological order. Every type a rule's tail reads outside a
+ * negative existential condition lies in an earlier stratum, or in the same
+ * component, so a batch decided stratum by stratum reads back every fact of
+ * those types that the batch will commit.
  */
 export class AuthorizationStrata {
     constructor(
@@ -68,41 +68,46 @@ export class AuthorizationStrata {
 }
 
 /**
- * The types a rule's tail reads from the store, as edges into the type the rule
- * governs. An edge is negative when the type sits beneath a negative
- * existential condition, at any depth: a fact found there withholds the
- * verdict, so the verdict on it has to be settled first.
+ * The types a rule's tail reads from the store outside every negative
+ * existential condition, as edges into the type the rule governs. A fact of one
+ * of those types can admit a fact of this type, so it is decided first.
+ *
+ * A type read beneath a negative existential condition yields no edge, at any
+ * depth, because nothing beneath such a condition sees the facts of the batch.
  */
 export function tailDependencies(type: string, tail: Specification): TypeDependency[] {
     const dependencies: TypeDependency[] = [];
-    const add = (from: string, negative: boolean) => {
-        dependencies.push({ from, to: type, negative, fromRule: true });
+    const add = (from: string) => {
+        dependencies.push({ from, to: type, fromRule: true });
     };
-    collectFromMatches(tail.matches, true, add);
+    collectFromMatches(tail.matches, add);
     return dependencies;
 }
 
-function collectFromMatches(matches: Match[], positive: boolean, add: (from: string, negative: boolean) => void) {
+function collectFromMatches(matches: Match[], add: (from: string) => void) {
     for (const match of matches) {
-        add(match.unknown.type, !positive);
+        add(match.unknown.type);
         for (const condition of match.conditions) {
-            collectFromCondition(condition, positive, add);
+            collectFromCondition(condition, add);
         }
     }
 }
 
-function collectFromCondition(condition: Condition, positive: boolean, add: (from: string, negative: boolean) => void) {
+function collectFromCondition(condition: Condition, add: (from: string) => void) {
     if (condition.type === "existential") {
-        // Once beneath a negative existential condition, every type nested
-        // inside it is negative, however many conditions are nested within.
-        collectFromMatches(condition.matches, positive && condition.exists, add);
+        // A negative condition stops the walk. Every type nested inside it,
+        // however many conditions are nested within, is read from the store as
+        // it was before the batch, so no verdict in the batch depends on it.
+        if (condition.exists) {
+            collectFromMatches(condition.matches, add);
+        }
     }
     else {
         for (const role of condition.rolesLeft) {
-            add(role.predecessorType, !positive);
+            add(role.predecessorType);
         }
         for (const role of condition.rolesRight) {
-            add(role.predecessorType, !positive);
+            add(role.predecessorType);
         }
     }
 }
@@ -110,9 +115,11 @@ function collectFromCondition(condition: Condition, positive: boolean, add: (fro
 /**
  * The strata of the graph the dependencies describe, in topological order.
  *
- * Throws `AuthorizationRuleError` when a negative edge joins two types of one
- * component. Whether one fact is admitted would then depend on whether another
- * is, through a negation, and no order of evaluation settles that.
+ * No rule set is refused for its shape. A cycle is ordinary: its types form one
+ * component, and a component that holds a rule edge is decided again until a
+ * pass accepts nothing new. Negative conditions take no part in that iteration,
+ * because they read the store as it was before the batch, so a cycle through a
+ * negation cannot leave a verdict ambiguous.
  */
 export function computeStrata(dependencies: readonly TypeDependency[], types: readonly string[]): AuthorizationStrata {
     // Sorted so that the component order, and therefore the stratum numbers, do
@@ -145,12 +152,6 @@ export function computeStrata(dependencies: readonly TypeDependency[], types: re
         }
     });
 
-    for (const dependency of dependencies) {
-        if (dependency.negative && stratumByType[dependency.from] === stratumByType[dependency.to]) {
-            throw new AuthorizationRuleError(negativeCycleMessage(dependency, components[stratumByType[dependency.to]]));
-        }
-    }
-
     const recursive = components.map(() => false);
     for (const dependency of dependencies) {
         if (dependency.fromRule && stratumByType[dependency.from] === stratumByType[dependency.to]) {
@@ -159,16 +160,6 @@ export function computeStrata(dependencies: readonly TypeDependency[], types: re
     }
 
     return new AuthorizationStrata(stratumByType, recursive);
-}
-
-function negativeCycleMessage(dependency: TypeDependency, component: readonly string[]): string {
-    const cycle = component.slice().sort().join(", ");
-    const forbids = dependency.from === dependency.to
-        ? `The authorization rule for ${dependency.to} forbids a fact of its own type ${dependency.from}.`
-        : `The authorization rule for ${dependency.to} forbids a fact of type ${dependency.from}, whose own verdict depends in turn on ${dependency.to}.`;
-    return `${forbids} The types on the cycle are ${cycle}. ` +
-        `Whether one fact is admitted would depend on whether another is, through a negation, so no order of evaluation settles it. ` +
-        `Name the principal who makes the decision in a rule of their own instead.`;
 }
 
 /**

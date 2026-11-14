@@ -10,9 +10,20 @@ export interface FactSource {
 }
 
 export class SpecificationRunner {
+  /**
+   * The runner that evaluates the matches beneath a negative existential
+   * condition. It is this runner itself unless a second source was given, and
+   * it has no second source of its own, so every condition nested inside a
+   * negative one is evaluated against that source too, at any depth.
+   */
+  private readonly negative: SpecificationRunner;
+
   constructor(
-    private readonly source: FactSource
-  ) { }
+    private readonly source: FactSource,
+    negativeSource?: FactSource
+  ) {
+    this.negative = negativeSource === undefined ? this : new SpecificationRunner(negativeSource);
+  }
 
   async read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
     if (start.length !== specification.given.length) {
@@ -43,7 +54,7 @@ export class SpecificationRunner {
 
       for (const condition of given.conditions) {
         if (condition.type === "existential") {
-          const matches = await this.executeMatches(
+          const matches = await this.runnerFor(condition.exists).executeMatches(
             references,
             condition.matches
           );
@@ -66,6 +77,14 @@ export class SpecificationRunner {
     const tuples: ReferencesByName[] = await this.executeMatches(references, matches);
     const products = mapAsync(tuples, tuple => this.createProduct(tuple, projection));
     return products;
+  }
+
+  /**
+   * This runner for a positive existential condition, and the negative one for
+   * a negative existential condition.
+   */
+  private runnerFor(exists: boolean): SpecificationRunner {
+    return exists ? this : this.negative;
   }
 
   private async executeMatches(references: ReferencesByName, matches: Match[]): Promise<ReferencesByName[]> {
@@ -134,8 +153,9 @@ export class SpecificationRunner {
     }
     else if (condition.type === "existential") {
       const matchingReferences: ReferencesByName[] = [];
+      const runner = this.runnerFor(condition.exists);
       for (const result of results) {
-        const matches = await this.executeMatches(result, condition.matches);
+        const matches = await runner.executeMatches(result, condition.matches);
         const include = condition.exists ?
           matches.length > 0 :
           matches.length === 0;

@@ -4,7 +4,13 @@ import { AuthorizationEngine, AuthorizationRules, FactEnvelope, FactFeed, FactRe
 // read from the store alone. Nothing in a batch is in the store until the whole
 // batch has been authorized, so the verdict on a fact depended on how the
 // sender cut its requests: a positive condition that reached a fact in the same
-// batch refused it, and a negative condition that forbade one admitted it.
+// batch refused it.
+//
+// The facts of a batch are concurrent. A rule's matches and its positive
+// existential conditions read the store plus the facts accepted so far;
+// everything beneath a negative existential condition reads the store as it was
+// before the batch. So a prohibition takes effect for facts that arrive in a
+// later request, never for facts that arrive with it.
 
 class Tenant {
     static Type = "H.Tenant";
@@ -36,6 +42,14 @@ class Rejoin {
     type = Rejoin.Type;
     constructor(
         public withdrawal: Withdrawal
+    ) { }
+}
+
+class Ban {
+    static Type = "H.Ban";
+    type = Ban.Type;
+    constructor(
+        public tenant: Tenant
     ) { }
 }
 
@@ -510,7 +524,11 @@ describe("Authorization of a batch", () => {
                 .selectMany(att => facts.ofType(User)
                     .join(u => u, att.user)));
 
-        it("refuses the answer when the withdrawal in the same batch is accepted", async () => {
+        it("accepts the answer and the withdrawal that forbids it, in every order", async () => {
+            // The first case of criterion 5. The withdrawal is accepted, and
+            // the answer with it: a replica that had received the answer a
+            // moment earlier would have accepted it, so refusing it here buys
+            // the system no guarantee.
             const creator = new User("creator-key");
             const attendeeUser = new User("attendee-key");
             const tenant = new Tenant(creator);
@@ -525,13 +543,38 @@ describe("Authorization of a batch", () => {
             for (const order of orders) {
                 const store = await storeWith(stored);
 
-                const promise = authorize(withdrawalAuthorization(new AuthorizationRules(model)), store, order, attendeeUser);
+                const results = await authorize(withdrawalAuthorization(new AuthorizationRules(model)), store, order, attendeeUser);
 
-                await expect(promise).rejects.toThrow("Rejected 1 fact of type H.Answer.");
+                expect(verdictsByType(results)).toEqual({
+                    [Withdrawal.Type]: "Accept",
+                    [Answer.Type]: "Accept"
+                });
             }
         });
 
+        it("refuses the answer when the withdrawal was saved by an earlier call", async () => {
+            // The second case of criterion 5, which is the behavior of every
+            // release so far and has to stay. The prohibition is in the store
+            // this replica held before the batch, so it bites.
+            const creator = new User("creator-key");
+            const attendeeUser = new User("attendee-key");
+            const tenant = new Tenant(creator);
+            const attendee = new Attendee(attendeeUser, tenant);
+            const withdrawal = new Withdrawal(attendee);
+            const answer = new Answer(tenant, attendeeUser);
+            const stored = recordsOf(creator, attendeeUser, tenant, attendee, withdrawal);
+            const store = await storeWith(stored);
+            const batch = batchOf(stored, answer);
+
+            const promise = authorize(withdrawalAuthorization(new AuthorizationRules(model)), store, batch, attendeeUser);
+
+            await expect(promise).rejects.toBeInstanceOf(Forbidden);
+            await expect(promise).rejects.toThrow(`Rejected 1 fact of type ${Answer.Type}.`);
+        });
+
         it("accepts the answer when the withdrawal in the same batch is refused", async () => {
+            // The answer's verdict does not read the withdrawal's. One refusal
+            // in a batch does not drag the rest of it down.
             const creator = new User("creator-key");
             const attendeeUser = new User("attendee-key");
             const otherUser = new User("other-key");
@@ -551,62 +594,123 @@ describe("Authorization of a batch", () => {
 
                 const promise = authorize(withdrawalAuthorization(new AuthorizationRules(model)), store, order, attendeeUser);
 
-                // Only the withdrawal is refused: the answer's negative
-                // condition forbids a withdrawal that will be saved, and this
-                // one will not be.
-                await expect(promise).rejects.toThrow("Rejected 1 fact of type H.Withdrawal.");
+                await expect(promise).rejects.toThrow(`Rejected 1 fact of type ${Withdrawal.Type}.`);
             }
         });
 
-        it("accepts the answer when the undo in the same batch is accepted", async () => {
+        describe("joined through a fact that arrives in the same batch", () => {
+            // A consequence of reading the pre-batch store beneath a negative
+            // condition, rather than a criterion of the issue. The condition
+            // joins the ban through the attendee the match found, and that
+            // attendee is in the batch. Beneath the condition the attendee is
+            // not in the store, so the walk from it reaches no tenant and no
+            // ban: the condition holds vacuously and the answer is accepted,
+            // although the store this replica held before the batch carries a
+            // ban on that tenant. An attendee already in the store refuses it.
+            //
+            // The rule cannot be written any other way. Joining the ban
+            // through the given instead is refused where the rule is written,
+            // because a tail may not read the fact being authorized. So a
+            // negative condition reached through a batch-fresh fact does not
+            // bite, whatever the store holds. Pinned here so that a change to
+            // it is deliberate.
+            const { Answer } = conferenceModel("H.Answer");
+
+            const banModel = buildModel(b => b
+                .type(User)
+                .type(Tenant, x => x
+                    .predecessor("creator", User))
+                .type(Ban, x => x
+                    .predecessor("tenant", Tenant))
+                .type(Attendee, x => x
+                    .predecessor("user", User)
+                    .predecessor("tenant", Tenant))
+                .type(Answer, x => x
+                    .predecessor("tenant", Tenant)
+                    .predecessor("author", User))
+            );
+
+            const banAuthorization = (a: AuthorizationRules) => a
+                .any(User)
+                .type(Tenant, t => t.creator)
+                .type(Attendee, att => att.user)
+                .type(Answer, (ans, facts) => facts.ofType(Attendee)
+                    .join(att => att.tenant, ans.tenant)
+                    .notExists(att => facts.ofType(Ban)
+                        .join(bn => bn.tenant, att.tenant))
+                    .selectMany(att => facts.ofType(User)
+                        .join(u => u, att.user)));
+
+            async function fixture(attendeeIsStored: boolean) {
+                const creator = new User("creator-key");
+                const attendeeUser = new User("attendee-key");
+                const tenant = new Tenant(creator);
+                const ban = new Ban(tenant);
+                const attendee = new Attendee(attendeeUser, tenant);
+                const answer = new Answer(tenant, attendeeUser);
+                const stored = attendeeIsStored
+                    ? recordsOf(creator, attendeeUser, tenant, ban, attendee)
+                    : recordsOf(creator, attendeeUser, tenant, ban);
+                const store = await storeWith(stored);
+                const batch = batchOf(stored, attendee, answer);
+                const rules = banAuthorization(new AuthorizationRules(banModel));
+                return { store, batch, attendeeUser, rules };
+            }
+
+            it("does not reach the ban, and accepts the answer", async () => {
+                const { store, batch, attendeeUser, rules } = await fixture(false);
+
+                const results = await authorize(rules, store, batch, attendeeUser);
+
+                expect(verdictsByType(results)).toEqual({
+                    [Attendee.Type]: "Accept",
+                    [Answer.Type]: "Accept"
+                });
+            });
+
+            it("reaches the ban, and refuses the answer, once the attendee is stored", async () => {
+                const { store, batch, attendeeUser, rules } = await fixture(true);
+
+                const promise = authorize(rules, store, batch, attendeeUser);
+
+                await expect(promise).rejects.toThrow(`Rejected 1 fact of type ${Answer.Type}.`);
+            });
+        });
+
+        it("refuses the answer when the undo of a saved withdrawal arrives in the same batch, and accepts it in a later call", async () => {
+            // The third case of criterion 5. The undo is accepted, and takes
+            // effect for the next request rather than for this one: at the
+            // moment the batch is decided, the store this replica holds carries
+            // a withdrawal with no undo.
             const creator = new User("creator-key");
             const tenant = new Tenant(creator);
             const attendee = new Attendee(creator, tenant);
             const withdrawal = new Withdrawal(attendee);
             const rejoin = new Rejoin(withdrawal);
             const answer = new Answer(tenant, creator);
-            const stored = recordsOf(creator, tenant, attendee);
-            const batch = batchOf(stored, withdrawal, rejoin, answer);
+            const stored = recordsOf(creator, tenant, attendee, withdrawal);
+            const batch = batchOf(stored, rejoin, answer);
             const orders = topologicalOrders(batch);
             expect(orders.length).toBeGreaterThan(1);
 
             for (const order of orders) {
                 const store = await storeWith(stored);
+                const rules = rejoinAuthorization(new AuthorizationRules(model));
 
-                const results = await authorize(rejoinAuthorization(new AuthorizationRules(model)), store, order, creator);
+                const promise = authorize(rules, store, order, creator);
 
-                expect(verdictsByType(results)).toEqual({
-                    [Withdrawal.Type]: "Accept",
-                    [Rejoin.Type]: "Accept",
-                    [Answer.Type]: "Accept"
-                });
-            }
-        });
+                await expect(promise).rejects.toBeInstanceOf(Forbidden);
+                await expect(promise).rejects.toThrow(`Rejected 1 fact of type ${Answer.Type}.`);
 
-        it("refuses the answer when the undo in the same batch is refused", async () => {
-            const creator = new User("creator-key");
-            const attendeeUser = new User("attendee-key");
-            const tenant = new Tenant(creator);
-            const attendee = new Attendee(attendeeUser, tenant);
-            const withdrawal = new Withdrawal(attendee);
-            // Only the tenant's creator may undo a withdrawal.
-            const rejoin = new Rejoin(withdrawal);
-            const answer = new Answer(tenant, attendeeUser);
-            const stored = recordsOf(creator, attendeeUser, tenant, attendee);
-            const batch = batchOf(stored, withdrawal, rejoin, answer);
-            const orders = topologicalOrders(batch);
-            expect(orders.length).toBeGreaterThan(1);
+                // The undo itself is admitted, so a sender that splits the
+                // request gets the answer through on the second call.
+                const undoOnly = batchOf(stored, rejoin);
+                const undoResults = await authorize(rules, store, undoOnly, creator);
+                expect(undoResults.every(r => r.verdict === "Accept")).toBe(true);
+                await store.save(undoOnly.map(fact => ({ fact, signatures: [] })));
 
-            for (const order of orders) {
-                const store = await storeWith(stored);
-
-                const promise = authorize(rejoinAuthorization(new AuthorizationRules(model)), store, order, attendeeUser);
-                const error = await promise.catch(e => e);
-
-                expect(error).toBeInstanceOf(Forbidden);
-                expect(error.message).toContain("Rejected 2 facts of type");
-                expect(error.message).toContain(Rejoin.Type);
-                expect(error.message).toContain(Answer.Type);
+                const answerResults = await authorize(rules, store, batchOf([ ...stored, ...undoOnly ], answer), creator);
+                expect(answerResults.every(r => r.verdict === "Accept")).toBe(true);
             }
         });
     });

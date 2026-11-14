@@ -299,7 +299,6 @@ export class AuthorizationRuleSpecification implements AuthorizationRule {
         const roleDependencies: TypeDependency[] = getAllRoles(this.specification).map(role => ({
             from: role.predecessorType,
             to: role.successorType,
-            negative: false,
             fromRule: false
         }));
         const tail = this.tail === undefined ? [] : tailDependencies(type, this.tail);
@@ -399,7 +398,6 @@ export class AuthorizationRules {
         this.modelDependencies = model === undefined ? [] : model.predecessorRoles().map(role => ({
             from: role.predecessorType,
             to: role.successorType,
-            negative: false,
             fromRule: false
         }));
         this.modelTypes = model === undefined ? [] : model.factTypes();
@@ -531,10 +529,9 @@ export class AuthorizationRules {
         const result = new AuthorizationRules(this.model);
         result.rulesByType = newRulesByType;
         result.ruleDependencies = [ ...this.ruleDependencies, ...rule.dependencies(type) ];
-        // A negative edge inside a component leaves no order of evaluation that
-        // settles the batch, so the call that closes the cycle is refused. Every
-        // way of adding a rule arrives here, so `type`, `any`, `no`, `merge` and
-        // `loadFromDescription` all refuse it.
+        // The order in which a batch is decided follows from the rules, so it is
+        // derived here rather than configured. No shape is refused: a cycle is
+        // one component, decided again until a pass accepts nothing new.
         result.strata = computeStrata(result.allDependencies(), result.allTypes());
         return result;
     }
@@ -550,8 +547,9 @@ export class AuthorizationRules {
     /**
      * The strata of this rule set's type dependency graph, extended with the
      * predecessor roles the facts of a batch carry. A predecessor role that
-     * neither the model nor any rule declares is first seen in a batch, so a
-     * negative cycle it closes is refused here rather than at declaration.
+     * neither the model nor any rule declares is first seen in a batch, and a
+     * fact is accepted only once its predecessors are, so the batch's own roles
+     * belong in the graph that orders it.
      */
     strataForBatch(facts: FactRecord[]): AuthorizationStrata {
         const batchDependencies: TypeDependency[] = [];
@@ -563,7 +561,6 @@ export class AuthorizationRules {
                     batchDependencies.push({
                         from: predecessor.type,
                         to: fact.type,
-                        negative: false,
                         fromRule: false
                     });
                 }

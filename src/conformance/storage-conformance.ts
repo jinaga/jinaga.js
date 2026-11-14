@@ -67,7 +67,7 @@ function buildFixture() {
 
     const envelopes = envelopesOf([creator, company, office, closedOffice, closed, anotherClosedOffice, anotherClosed, reopened]);
 
-    return { company, office, closedOffice, anotherClosedOffice, envelopes };
+    return { company, office, closedOffice, anotherClosedOffice, anotherClosed, envelopes };
 }
 
 /**
@@ -448,7 +448,9 @@ export function describeStorageConformance(
         // seam skips this section rather than failing it. Authorization of a
         // whole batch rests on it: a rule's tail reads the store plus the facts
         // of the batch accepted so far, so what it finds there decides a
-        // verdict without anything being written.
+        // verdict without anything being written. Beneath a negative
+        // existential condition it reads the facts the store actually holds, so
+        // that accepting a fact can never withdraw a verdict already given.
         describe("readAsIfSaved", () => {
             const offices = `
                 (company: Company) {
@@ -512,7 +514,7 @@ export function describeStorageConformance(
                 expect(identifiers(results)).toEqual([ "AnotherClosedOffice", "ClosedOffice", "StagedOffice", "TestOffice" ]);
             });
 
-            it("lets a staged fact fail a negative condition the store alone satisfies", async () => {
+            it("keeps a staged fact out of a negative condition", async () => {
                 if (!store || !store.readAsIfSaved) {
                     return;
                 }
@@ -524,9 +526,50 @@ export function describeStorageConformance(
                     date: new Date("2026-02-01T00:00:00.000Z")
                 };
 
+                // The staged closure would be the only witness of the negative
+                // condition, and the row comes back as though it were absent.
                 const results = await staged(openOffices, [ fixture.company ], envelopesOf([ closure ]));
 
-                expect(identifiers(results)).toEqual([]);
+                expect(identifiers(results)).toEqual([ "TestOffice" ]);
+            });
+
+            it("keeps a staged fact out of a condition nested inside a negative one", async () => {
+                if (!store || !store.readAsIfSaved) {
+                    return;
+                }
+                // "An office with no closure that has not been reopened." The
+                // inner condition is positive in form, and sits beneath a
+                // negative one, so the facts of the batch are invisible to it
+                // too: a staged reopening does not bring a closed office back.
+                const closedOffices = `
+                    (company: Company) {
+                        office: Office [
+                            office->company: Company = company
+                            !E {
+                                closed: Office.Closed [
+                                    closed->office: Office = office
+                                    !E {
+                                        reopened: Office.Reopened [
+                                            reopened->officeClosed: Office.Closed = closed
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    } => office
+                `;
+                const before = await staged(closedOffices, [ fixture.company ], []);
+                expect(identifiers(before)).toEqual([ "ClosedOffice", "TestOffice" ]);
+                // The one closure with no reopening. A reopening of it would
+                // bring AnotherClosedOffice back, through the inner condition.
+                const reopening: HashMap = {
+                    type: "Office.Reopened",
+                    officeClosed: fixture.anotherClosed
+                };
+
+                const results = await staged(closedOffices, [ fixture.company ], envelopesOf([ reopening ]));
+
+                expect(identifiers(results)).toEqual([ "ClosedOffice", "TestOffice" ]);
             });
 
             it("counts a staged fact the store already holds once", async () => {
