@@ -69,6 +69,28 @@ export class Model {
     given<T extends FactConstructor<unknown>[]>(...factConstructors: T) {
         return new Given<ExtractFactConstructors<T>>(factConstructors.map(c => c.Type), this.factTypeMap);
     }
+
+    /**
+     * Every predecessor role the model declares, as the successor type, the role
+     * name, and the predecessor type. Authorization derives the order in which a
+     * batch is decided from these, because a fact is accepted only when its
+     * predecessors are.
+     */
+    predecessorRoles(): { successorType: string, name: string, predecessorType: string }[] {
+        const roles: { successorType: string, name: string, predecessorType: string }[] = [];
+        for (const successorType in this.factTypeMap) {
+            const roleMap = this.factTypeMap[successorType];
+            for (const name in roleMap) {
+                roles.push({ successorType, name, predecessorType: roleMap[name] });
+            }
+        }
+        return roles;
+    }
+
+    /** Every fact type the model declares. */
+    factTypes(): string[] {
+        return Object.keys(this.factTypeMap);
+    }
 }
 
 export class SpecificationOf<T, U> {

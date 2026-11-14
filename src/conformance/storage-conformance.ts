@@ -67,7 +67,7 @@ function buildFixture() {
 
     const envelopes = envelopesOf([creator, company, office, closedOffice, closed, anotherClosedOffice, anotherClosed, reopened]);
 
-    return { company, office, closedOffice, anotherClosedOffice, envelopes };
+    return { company, office, closedOffice, anotherClosedOffice, anotherClosed, envelopes };
 }
 
 /**
@@ -442,6 +442,162 @@ export function describeStorageConformance(
                 const afterwards = await store.read(given, specification);
                 expect(afterwards.length).toBe(4);
             }
+        });
+
+        // `readAsIfSaved` is optional, so a store that has not taken up the
+        // seam skips this section rather than failing it. Authorization of a
+        // whole batch rests on it: a rule's tail reads the store plus the facts
+        // of the batch accepted so far, so what it finds there decides a
+        // verdict without anything being written. Beneath a negative
+        // existential condition it reads the facts the store actually holds, so
+        // that accepting a fact can never withdraw a verdict already given.
+        describe("readAsIfSaved", () => {
+            const offices = `
+                (company: Company) {
+                    office: Office [
+                        office->company: Company = company
+                    ]
+                } => office
+            `;
+            const openOffices = `
+                (company: Company) {
+                    office: Office [
+                        office->company: Company = company
+                        !E {
+                            closed: Office.Closed [
+                                closed->office: Office = office
+                            ]
+                        }
+                    ]
+                } => office
+            `;
+
+            function parse(specText: string) {
+                const parser = new SpecificationParser(specText);
+                parser.skipWhitespace();
+                return parser.parseSpecification();
+            }
+
+            async function staged(specText: string, given: HashMap[], toStage: FactEnvelope[]) {
+                if (!store || !store.readAsIfSaved) {
+                    throw new Error("The store under test does not implement readAsIfSaved.");
+                }
+                return await store.readAsIfSaved(toStage, given.map(o => dehydrateReference(o)), parse(specText));
+            }
+
+            function identifiers(results: ProjectedResult[]): string[] {
+                return results.map(r => r.result.identifier).sort();
+            }
+
+            it("reads exactly as read does, when nothing is staged", async () => {
+                if (!store || !store.readAsIfSaved) {
+                    return;
+                }
+
+                const results = await staged(offices, [ fixture.company ], []);
+
+                expect(identifiers(results)).toEqual([ "AnotherClosedOffice", "ClosedOffice", "TestOffice" ]);
+            });
+
+            it("lets a staged fact satisfy a condition the store alone does not", async () => {
+                if (!store || !store.readAsIfSaved) {
+                    return;
+                }
+                const newOffice: HashMap = {
+                    type: "Office",
+                    company: fixture.company,
+                    identifier: "StagedOffice"
+                };
+
+                const results = await staged(offices, [ fixture.company ], envelopesOf([ newOffice ]));
+
+                expect(identifiers(results)).toEqual([ "AnotherClosedOffice", "ClosedOffice", "StagedOffice", "TestOffice" ]);
+            });
+
+            it("keeps a staged fact out of a negative condition", async () => {
+                if (!store || !store.readAsIfSaved) {
+                    return;
+                }
+                const before = await staged(openOffices, [ fixture.company ], []);
+                expect(identifiers(before)).toEqual([ "TestOffice" ]);
+                const closure: HashMap = {
+                    type: "Office.Closed",
+                    office: fixture.office,
+                    date: new Date("2026-02-01T00:00:00.000Z")
+                };
+
+                // The staged closure would be the only witness of the negative
+                // condition, and the row comes back as though it were absent.
+                const results = await staged(openOffices, [ fixture.company ], envelopesOf([ closure ]));
+
+                expect(identifiers(results)).toEqual([ "TestOffice" ]);
+            });
+
+            it("keeps a staged fact out of a condition nested inside a negative one", async () => {
+                if (!store || !store.readAsIfSaved) {
+                    return;
+                }
+                // "An office with no closure that has not been reopened." The
+                // inner condition is positive in form, and sits beneath a
+                // negative one, so the facts of the batch are invisible to it
+                // too: a staged reopening does not bring a closed office back.
+                const closedOffices = `
+                    (company: Company) {
+                        office: Office [
+                            office->company: Company = company
+                            !E {
+                                closed: Office.Closed [
+                                    closed->office: Office = office
+                                    !E {
+                                        reopened: Office.Reopened [
+                                            reopened->officeClosed: Office.Closed = closed
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    } => office
+                `;
+                const before = await staged(closedOffices, [ fixture.company ], []);
+                expect(identifiers(before)).toEqual([ "ClosedOffice", "TestOffice" ]);
+                // The one closure with no reopening. A reopening of it would
+                // bring AnotherClosedOffice back, through the inner condition.
+                const reopening: HashMap = {
+                    type: "Office.Reopened",
+                    officeClosed: fixture.anotherClosed
+                };
+
+                const results = await staged(closedOffices, [ fixture.company ], envelopesOf([ reopening ]));
+
+                expect(identifiers(results)).toEqual([ "ClosedOffice", "TestOffice" ]);
+            });
+
+            it("counts a staged fact the store already holds once", async () => {
+                if (!store || !store.readAsIfSaved) {
+                    return;
+                }
+                // The batch carries a fact's predecessors, which are usually
+                // already in the store, so staging has to be idempotent.
+                const results = await staged(offices, [ fixture.company ], fixture.envelopes);
+
+                expect(identifiers(results)).toEqual([ "AnotherClosedOffice", "ClosedOffice", "TestOffice" ]);
+            });
+
+            it("saves nothing", async () => {
+                if (!store || !store.readAsIfSaved) {
+                    return;
+                }
+                const newOffice: HashMap = {
+                    type: "Office",
+                    company: fixture.company,
+                    identifier: "UnsavedOffice"
+                };
+                await staged(offices, [ fixture.company ], envelopesOf([ newOffice ]));
+
+                const results = await store.read([ dehydrateReference(fixture.company) ], parse(offices));
+
+                expect(identifiers(results)).toEqual([ "AnotherClosedOffice", "ClosedOffice", "TestOffice" ]);
+            });
         });
     });
 }
