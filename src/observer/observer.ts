@@ -560,7 +560,42 @@ export class ObserverImpl<T> implements Observer<T> {
                         // The data is not yet cached.
                         cacheResolve(false);
                         // Fetch from the server and then read from local storage.
-                        await this.fetch(keepAlive);
+                        try {
+                            await this.fetch(keepAlive);
+                        }
+                        catch (fetchError) {
+                            // A fetch that fails -- no connection, a refused
+                            // request -- leaves the local graph the only answer
+                            // there is, and it is an exact one for this
+                            // replica. So read it and deliver it before the
+                            // load rejects, exactly as the load would have read
+                            // after a successful fetch. Without this, a view
+                            // first opened on a device with no connection shows
+                            // none of the facts that device holds, including the
+                            // ones it wrote itself, because the listeners
+                            // installed above carry only facts that arrive
+                            // after the failure.
+                            //
+                            // `cached()` stays false and no cache date is
+                            // written: `loadCompleted` is never set on this
+                            // path, so `writeCacheDateIfComplete` returns
+                            // whenever it is called, including from a clearing
+                            // listener later. The next start therefore takes
+                            // this same path. The read is not a load.
+                            if (this.stopped) return;
+                            try {
+                                await this.read();
+                            }
+                            catch (readError) {
+                                // The local graph could not be read either.
+                                // The load still rejects with the fetch's
+                                // error, which is the failure the caller asked
+                                // about, so report this one where it is not
+                                // lost.
+                                Trace.error(`[Observer] OFFLINE READ ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${readError}`);
+                            }
+                            throw fetchError;
+                        }
                         if (this.stopped) return;
                         await this.read();
                         settleLoad();
@@ -588,11 +623,15 @@ export class ObserverImpl<T> implements Observer<T> {
                     // fetch -- a failing network, a distribution refusal, an
                     // intersection error -- would otherwise leave this observer
                     // subscribed and permanently silent, adding every later
-                    // report to a buffer nothing releases. `held` is empty,
-                    // which is exactly what has been delivered, so the reports
-                    // apply against it as any later batch's do; the starting
-                    // read never answered, so no number floors them. Idempotent on
-                    // the cached path, where `read()` has already closed it.
+                    // report to a buffer nothing releases. The reports apply
+                    // against `held`, which is exactly what has been delivered:
+                    // empty where no read ran, or the local graph where the
+                    // uncached path read it after its fetch failed. Either way
+                    // they apply as any later batch's do, floored by whatever
+                    // read answered about every row -- none where no read ran,
+                    // and that offline read where one did. Idempotent wherever
+                    // `read()` has already closed the window: the cached path,
+                    // and that offline read.
                     this.endStartup().catch(error =>
                         Trace.error(`[Observer] STARTUP RELEASE ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${error}`));
                     this.loadSettled = true;
