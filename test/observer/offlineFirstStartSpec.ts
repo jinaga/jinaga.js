@@ -7,7 +7,8 @@ import { Network } from "../../src/managers/NetworkManager";
 import { MemoryStore } from "../../src/memory/memory-store";
 import { ObservableSource } from "../../src/observable/observable";
 import { Specification } from "../../src/specification/specification";
-import { FactEnvelope, FactReference } from "../../src/storage";
+import { FactEnvelope, FactReference, ProjectedResult } from "../../src/storage";
+import { NoOpTracer, Trace, Tracer } from "../../src/util/trace";
 import { User } from "@src";
 import { Company, Office, model } from "../companyModel";
 
@@ -78,6 +79,31 @@ class TogglingNetwork implements Network {
     }
 }
 
+/**
+ * A store whose read can be made to fail, so the path where neither the
+ * replicator nor the local graph can answer is reachable. `failRead` is set
+ * after the seed has been saved, so only the observer's read fails.
+ */
+class ReadFailingStore extends MemoryStore {
+    public failRead = false;
+
+    read(start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        if (this.failRead) {
+            return Promise.reject(new Error("local read unavailable"));
+        }
+        return super.read(start, specification);
+    }
+}
+
+/** Collects what the library reports through `Trace.error`. */
+class CapturingTracer extends NoOpTracer implements Tracer {
+    public readonly errors: string[] = [];
+
+    error(error: any): void {
+        this.errors.push(String(error));
+    }
+}
+
 function envelopes(dehydration: Dehydration): FactEnvelope[] {
     return dehydration.factRecords().map(fact => <FactEnvelope>{ fact, signatures: [] });
 }
@@ -94,8 +120,7 @@ function office(company: Company, identifier: string) {
  * device's own graph: facts it fetched on an earlier connected run, or wrote
  * itself while offline.
  */
-async function seedStore(identifiers: string[]) {
-    const store = new MemoryStore();
+async function seedStore(identifiers: string[], store: MemoryStore = new MemoryStore()) {
     const creator = new User("--- PUBLIC KEY GOES HERE ---");
     const company = new Company(creator, "TestCo");
     const dehydration = new Dehydration();
@@ -232,6 +257,38 @@ describe("observer first start with no connection (issue #403)", () => {
         }
         finally {
             observer.stop();
+        }
+    });
+
+    it("rejects with the fetch's error when the local read fails too, and reports the read", async () => {
+        const store = new ReadFailingStore();
+        const { companyReference } = await seedStore(["Dallas"], store);
+        const network = new TogglingNetwork();
+        // Only the observer's read fails: the seed above is already saved.
+        store.failRead = true;
+
+        const previousTracer = Trace.getTracer();
+        const tracer = new CapturingTracer();
+        Trace.configure(tracer);
+        try {
+            const { observer, rejection, deliveredAtSettle } =
+                await startAndSettle(network, store, companyReference);
+            try {
+                // The fetch's error is what the caller asked about, so it is
+                // the one the load rejects with -- not the read's.
+                expect(rejection).toBeInstanceOf(Error);
+                expect((rejection as Error).message).toBe("offline: feeds unreachable");
+                // Nothing could be delivered, since neither side answered.
+                expect(deliveredAtSettle!).toEqual([]);
+                // The read's failure is not swallowed.
+                expect(tracer.errors.some(e => e.includes("local read unavailable"))).toBe(true);
+            }
+            finally {
+                observer.stop();
+            }
+        }
+        finally {
+            Trace.configure(previousTracer);
         }
     });
 
