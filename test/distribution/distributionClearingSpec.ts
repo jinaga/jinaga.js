@@ -3,6 +3,7 @@ import {
   dehydrateFact,
   DistributionDiagnostic,
   FactEnvelope,
+  FeedDecision,
   FactManager,
   FactReference,
   FeedResponse,
@@ -15,6 +16,7 @@ import {
   User,
 } from "@src";
 import { Network, NetworkManager } from "../../src/managers/NetworkManager";
+import { isPendingAuthorization, toDistributionDiagnostics } from "../../src/managers/distributionDiagnostic";
 import { DistributionIntersectionBranch } from "../../src/distribution/distribution-engine";
 import { Blog, Post, model } from "../blogModel";
 
@@ -182,5 +184,176 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
       // Release the subscriber so its refresh timer doesn't leak.
       manager.unsubscribe(feeds);
     });
+  });
+});
+
+describe("cache date withheld while a feed is pending authorization (issue #402)", () => {
+  const blog = new Blog(new User("creator"), "domain");
+  const blogPosts = model.given(Blog).match((blog, facts) =>
+    facts.ofType(Post).join(post => post.blog, blog)
+  );
+
+  const post = new Post(blog, new User("author"), "2020-01-01T00:00:00Z");
+  const postRecords = dehydrateFact(post);
+  const postEnvelopes: FactEnvelope[] = postRecords.map(f => ({ fact: f, signatures: [] }));
+  const postRef: FactReference = { type: postRecords[postRecords.length - 1].type, hash: postRecords[postRecords.length - 1].hash };
+
+  let network: ControllableNetwork;
+  let store: MemoryStore;
+  let j: Jinaga;
+
+  beforeEach(() => {
+    network = new ControllableNetwork();
+    network.loadResult = postEnvelopes;
+    store = new MemoryStore();
+    const factManager = new FactManager(new PassThroughFork(store), new ObservableSource(store), store, network, []);
+    j = new Jinaga(new AuthenticationNoOp(), factManager, null);
+  });
+
+  // Criterion 1. The pending feed sent none of its facts, so the local graph
+  // does not hold the answer and the next start must fetch before it reads.
+  it("writes no date for a watch whose only feed is pending", async () => {
+    network.response = {
+      feeds: [FEED],
+      decisions: [{ feed: FEED, decision: "reactive", reason: "pending authorization" }],
+    };
+
+    const first = j.watch(blogPosts, blog, () => {});
+    await first.loaded();
+    first.stop();
+
+    const second = j.watch(blogPosts, blog, () => {});
+    expect(await second.cached()).toBe(false);
+    await second.loaded();
+    second.stop();
+  });
+
+  // Criterion 2. A subscription holds the feed open, so the pending state
+  // retires when the feed delivers, and that is when the load counts as
+  // complete.
+  it("writes the date for a subscription when its pending feed clears", async () => {
+    network.response = {
+      feeds: [FEED],
+      decisions: [{ feed: FEED, decision: "reactive", reason: "pending authorization" }],
+    };
+
+    const observer = j.subscribe(blogPosts, blog, () => {});
+    await observer.loaded();
+
+    const beforeClearing = j.subscribe(blogPosts, blog, () => {});
+    expect(await beforeClearing.cached()).toBe(false);
+    await beforeClearing.loaded();
+    beforeClearing.stop();
+
+    // The race resolves: the feed delivers its facts into the local graph.
+    await network.deliver(FEED, [postRef]);
+
+    const afterClearing = j.subscribe(blogPosts, blog, () => {});
+    expect(await afterClearing.cached()).toBe(true);
+    await afterClearing.loaded();
+    afterClearing.stop();
+    observer.stop();
+  });
+
+  // Criterion 3, authorized.
+  it("writes the date when every feed is authorized", async () => {
+    network.response = {
+      feeds: [FEED],
+      decisions: [{ feed: FEED, decision: "authorized", reason: "authorized" }],
+    };
+
+    const first = j.subscribe(blogPosts, blog, () => {});
+    await first.loaded();
+    first.stop();
+
+    const second = j.subscribe(blogPosts, blog, () => {});
+    expect(await second.cached()).toBe(true);
+    await second.loaded();
+    second.stop();
+  });
+
+  // Criterion 3, structurally denied. No arriving fact changes the verdict, so
+  // there is nothing to wait for.
+  it("writes the date when a feed is denied structurally", async () => {
+    network.response = {
+      feeds: [FEED],
+      decisions: [{ feed: FEED, decision: "denied", code: "no-matching-rule", reason: "no rule matches" }],
+    };
+
+    const first = j.subscribe(blogPosts, blog, () => {});
+    await first.loaded();
+    first.stop();
+
+    const second = j.subscribe(blogPosts, blog, () => {});
+    expect(await second.cached()).toBe(true);
+    await second.loaded();
+    second.stop();
+  });
+
+  // Criterion 5. `reactive` and the date come from one rule, so a replicator
+  // that calls a structural denial reactive withholds nothing.
+  it("writes the date when a reactive decision carries a structural code", async () => {
+    network.response = {
+      feeds: [FEED],
+      decisions: [{ feed: FEED, decision: "reactive", code: "spec-more-restrictive-than-rule", reason: "narrowed past the rule" }],
+    };
+
+    const first = j.subscribe(blogPosts, blog, () => {});
+    await first.loaded();
+    expect(first.diagnostics()[0].reactive).toBe(false);
+    first.stop();
+
+    const second = j.subscribe(blogPosts, blog, () => {});
+    expect(await second.cached()).toBe(true);
+    await second.loaded();
+    second.stop();
+  });
+
+  // Criterion 4. Unchanged by this issue, pinned so the pending rule does not
+  // become the only thing that withholds the date.
+  it("writes no date when the load is rejected", async () => {
+    network.response = { feeds: [FEED], decisions: [] };
+    network.feeds = () => Promise.reject(new Error("network is down"));
+
+    const first = j.subscribe(blogPosts, blog, () => {});
+    await expect(first.loaded()).rejects.toThrow("network is down");
+    first.stop();
+
+    network.feeds = () => Promise.resolve({
+      feeds: [FEED],
+      decisions: [{ feed: FEED, decision: "authorized", reason: "authorized" }],
+    });
+
+    const second = j.subscribe(blogPosts, blog, () => {});
+    expect(await second.cached()).toBe(false);
+    await second.loaded();
+    second.stop();
+  });
+});
+
+describe("isPendingAuthorization (issue #402)", () => {
+  // The predicate is the one rule, so the `reactive` field of a diagnostic is
+  // derived from it rather than carrying a second copy of the decision.
+  it("is true only for a reactive decision with no structural code", () => {
+    expect(isPendingAuthorization({ feed: "f", decision: "reactive", reason: "" })).toBe(true);
+    expect(isPendingAuthorization({ feed: "f", decision: "reactive", code: "not-authenticated", reason: "" })).toBe(true);
+    expect(isPendingAuthorization({ feed: "f", decision: "reactive", code: "no-matching-rule", reason: "" })).toBe(false);
+    expect(isPendingAuthorization({ feed: "f", decision: "reactive", code: "spec-more-restrictive-than-rule", reason: "" })).toBe(false);
+    expect(isPendingAuthorization({ feed: "f", decision: "authorized", reason: "" })).toBe(false);
+    expect(isPendingAuthorization({ feed: "f", decision: "denied", code: "principal-excluded", reason: "" })).toBe(false);
+  });
+
+  // The field and the predicate agree by construction, not by coincidence.
+  it("decides the reactive field of every diagnostic it raises", () => {
+    const decisions: FeedDecision[] = [
+      { feed: "a", decision: "reactive", reason: "" },
+      { feed: "b", decision: "reactive", code: "no-matching-rule", reason: "" },
+      { feed: "c", decision: "denied", code: "not-authenticated", reason: "" },
+    ];
+    const diagnostics = toDistributionDiagnostics("subscribe", "spec", decisions);
+    for (const diagnostic of diagnostics) {
+      const decision = decisions.find(d => d.feed === diagnostic.feed)!;
+      expect(diagnostic.reactive).toBe(isPendingAuthorization(decision));
+    }
   });
 });
