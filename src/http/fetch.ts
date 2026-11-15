@@ -1,7 +1,7 @@
 import { Trace } from "../util/trace";
 import { HttpHeaders } from "./authenticationProvider";
 import { PostAccept, PostContentType, ContentTypeJson } from "./ContentType";
-import { ForbiddenError, forbiddenReason, HttpError, responseReason } from "./errors";
+import { ForbiddenError, forbiddenReason, HttpError, isAuthenticationChallenge, isRetryableStatus, responseReason } from "./errors";
 import { RetryOptions, RetryWaits, resolveRetrySchedule } from "./retry";
 import { HttpConnection, HttpResponse } from "./web-client";
 
@@ -10,17 +10,6 @@ interface FetchHttpResponse {
     statusMessage: string | undefined;
     responseType: string;
     response: any;
-}
-
-/**
- * Decide whether a POST that failed with this status is worth retrying
- * (issue #234). 5xx is transient by definition. Of the 4xx, only 408 — which
- * this connection also synthesizes for its own timeout — and 429 ask to be
- * retried. Every other 4xx is deterministic: the same request will fail the
- * same way, so retrying only delays the failure the caller needs to act on.
- */
-function isRetryableStatus(statusCode: number): boolean {
-    return statusCode >= 500 || statusCode === 408 || statusCode === 429;
 }
 
 export class FetchConnection implements HttpConnection {
@@ -42,7 +31,7 @@ export class FetchConnection implements HttpConnection {
         return Trace.dependency('GET', path, async () => {
             let headers = await this.getHeaders();
             let response = await this.httpGet(path, headers);
-            if (response.statusCode === 401 || response.statusCode === 407 || response.statusCode === 419) {
+            if (isAuthenticationChallenge(response.statusCode)) {
                 const retry = await this.reauthenticate();
                 if (retry) {
                     headers = await this.getHeaders();
@@ -294,7 +283,7 @@ export class FetchConnection implements HttpConnection {
         return Trace.dependency('POST', path, async () => {
             let headers = await this.getHeaders();
             let response = await this.httpPost(path, headers, contentType, accept, body, timeoutSeconds);
-            if (response.statusCode === 401 || response.statusCode === 407 || response.statusCode === 419) {
+            if (isAuthenticationChallenge(response.statusCode)) {
                 const reauthenticated = await this.reauthenticate();
                 if (reauthenticated) {
                     headers = await this.getHeaders();

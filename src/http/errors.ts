@@ -66,3 +66,55 @@ export function responseReason(body: unknown, statusMessage: string | undefined,
 export function forbiddenReason(body: unknown, fallback: string | undefined): string {
     return responseReason(body, fallback, 'Forbidden');
 }
+
+/**
+ * Decide whether a POST that failed with this status is worth retrying
+ * (issue #234). 5xx is transient by definition. Of the 4xx, only 408 — which
+ * `FetchConnection` also synthesizes for its own timeout — and 429 ask to be
+ * retried. Every other 4xx is deterministic: the same request will fail the
+ * same way, so retrying only delays the failure the caller needs to act on.
+ *
+ * It lives here, beside the errors it classifies, so the connection that
+ * decides whether to retry and the saver that decides whether a batch was
+ * refused read the same rule rather than two copies of it (issue #395).
+ */
+export function isRetryableStatus(statusCode: number): boolean {
+    return statusCode >= 500 || statusCode === 408 || statusCode === 429;
+}
+
+/**
+ * The statuses that ask the caller to authenticate and try again: 401
+ * Unauthorized, 407 Proxy Authentication Required, and 419, which some
+ * deployments return for an expired session. A connection reattempts the
+ * request once it has reauthenticated, so one of these reaching a caller means
+ * reauthentication did not cure it.
+ */
+export function isAuthenticationChallenge(statusCode: number): boolean {
+    return statusCode === 401 || statusCode === 407 || statusCode === 419;
+}
+
+/**
+ * Did the replicator judge these facts and refuse them, or did the request
+ * never reach a replicator that could judge them (issue #395)?
+ *
+ * The distinction decides what a failed `POST /save` means for the rest of the
+ * queue. A refusal is about *these* facts, so other facts may still be
+ * accepted, and the same facts sent in smaller requests may be accepted too.
+ * A connection failure is about the request, so every later request in the
+ * flush would fail the same way.
+ *
+ * Derived from {@link isRetryableStatus} and {@link isAuthenticationChallenge}
+ * rather than from a list of statuses of its own: a refusal is a response the
+ * replicator will repeat, which is exactly a status that is neither worth
+ * retrying nor curable by authenticating. An error that carries no status never
+ * reached a replicator at all.
+ */
+export function isRefusal(error: unknown): boolean {
+    if (!(error instanceof HttpError)) {
+        return false;
+    }
+    const statusCode = error.statusCode;
+    return statusCode >= 400
+        && !isRetryableStatus(statusCode)
+        && !isAuthenticationChallenge(statusCode);
+}
