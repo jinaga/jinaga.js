@@ -1,6 +1,6 @@
 import { hydrateFromTree } from '../fact/hydrate';
 import { Specification } from "../specification/specification";
-import { SpecificationRunner } from '../specification/specification-runner';
+import { FactSource, SpecificationRunner } from '../specification/specification-runner';
 import { FactEnvelope, FactFeed, FactRecord, FactReference, ProjectedResult, Storage, factEnvelopeEquals, factReferenceEquals, FactTuple, uniqueFactReferences } from '../storage';
 
 // Internal types for time projection support
@@ -106,6 +106,32 @@ export class MemoryStore implements Storage {
         return this.runnerFor(this.factEnvelopes).read(start, specification);
     }
 
+    readAsIfSaved(staged: FactEnvelope[], start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        // Captured once, as `read` does, so a save that lands while the
+        // specification is being run cannot move the graph underneath it.
+        const factEnvelopes = this.factEnvelopes;
+        if (staged.length === 0) {
+            return this.runnerFor(factEnvelopes).read(start, specification);
+        }
+        const timestamp = this.timeProvider();
+        const combined: TimestampedFactEnvelope[] = [ ...factEnvelopes ];
+        for (const envelope of staged) {
+            const isFact = factReferenceEquals(envelope.fact);
+            if (!combined.some(e => isFact(e.fact))) {
+                combined.push({
+                    fact: { ...envelope.fact, timestamp },
+                    signatures: envelope.signatures
+                });
+            }
+        }
+        // `combined` is this call's own array and nothing else holds it, so the
+        // staged facts never become visible to another read.
+        return new SpecificationRunner(
+            this.sourceFor(combined),
+            this.negativeSourceFor(combined, factEnvelopes)
+        ).read(start, specification);
+    }
+
     async feed(feed: Specification, start: FactReference[], _bookmark: string): Promise<FactFeed> {
         // TODO: Implement monotonic bookmarks defined by the store.
         // Bookmarks must be monotonically increasing quantities with a store-defined
@@ -190,14 +216,39 @@ export class MemoryStore implements Storage {
     // Bound to one array rather than to the store, so every step of the
     // specification it runs reads the same graph.
     private runnerFor(factEnvelopes: readonly TimestampedFactEnvelope[]): SpecificationRunner {
-        return new SpecificationRunner({
+        return new SpecificationRunner(this.sourceFor(factEnvelopes));
+    }
+
+    private sourceFor(factEnvelopes: readonly TimestampedFactEnvelope[]): FactSource {
+        return {
             getPredecessors: (reference, name, predecessorType) =>
                 this.getPredecessors(factEnvelopes, reference, name, predecessorType),
             getSuccessors: (reference, name, successorType) =>
                 this.getSuccessors(factEnvelopes, reference, name, successorType),
             findFact: reference => this.findFact(factEnvelopes, reference),
             hydrate: reference => this.hydrate(factEnvelopes, reference)
-        });
+        };
+    }
+
+    /**
+     * The graph the matches beneath a negative existential condition read, at
+     * any depth. A successor walk draws from `saved` alone, so a staged fact is
+     * no witness there. A predecessor walk reads `combined`, so a condition
+     * that joins through the fact a match found walks out of a staged fact into
+     * its own predecessors and reaches the witnesses saved beneath them. A fact
+     * in `saved` never has a staged predecessor, because a fact never arrives
+     * before its predecessors, so reading predecessors from `combined`
+     * withdraws no witness that `saved` carries.
+     */
+    private negativeSourceFor(
+        combined: readonly TimestampedFactEnvelope[],
+        saved: readonly TimestampedFactEnvelope[]
+    ): FactSource {
+        return {
+            ...this.sourceFor(combined),
+            getSuccessors: (reference, name, successorType) =>
+                this.getSuccessors(saved, reference, name, successorType)
+        };
     }
 
     private findFact(factEnvelopes: readonly TimestampedFactEnvelope[], reference: FactReference): Promise<FactRecord | null> {
