@@ -357,3 +357,58 @@ describe("isPendingAuthorization (issue #402)", () => {
     }
   });
 });
+
+describe("the clearing feed's cache date lands before its delivery completes (issue #402)", () => {
+  const blog = new Blog(new User("creator"), "domain");
+  const blogPosts = model.given(Blog).match((blog, facts) =>
+    facts.ofType(Post).join(post => post.blog, blog)
+  );
+
+  const post = new Post(blog, new User("author"), "2020-01-01T00:00:00Z");
+  const postRecords = dehydrateFact(post);
+  const postEnvelopes: FactEnvelope[] = postRecords.map(f => ({ fact: f, signatures: [] }));
+  const postRef: FactReference = { type: postRecords[postRecords.length - 1].type, hash: postRecords[postRecords.length - 1].hash };
+
+  // A store whose cache-date write does not land in the tick it was started in,
+  // which is what IndexedDB's transaction does and what `MemoryStore` -- whose
+  // write is a synchronous assignment -- cannot show. `events` records the
+  // order, so the test asserts the ordering itself rather than polling for it.
+  class DeferredMruStore extends MemoryStore {
+    public readonly events: string[] = [];
+    async setMruDate(specificationHash: string, mruDate: Date): Promise<void> {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      await super.setMruDate(specificationHash, mruDate);
+      this.events.push("date written");
+    }
+  }
+
+  it("so the next start sees the date a cleared feed wrote", async () => {
+    const network = new ControllableNetwork();
+    network.response = {
+      feeds: [FEED],
+      decisions: [{ feed: FEED, decision: "reactive", reason: "pending authorization" }],
+    };
+    network.loadResult = postEnvelopes;
+    const store = new DeferredMruStore();
+    const factManager = new FactManager(new PassThroughFork(store), new ObservableSource(store), store, network, []);
+    const j = new Jinaga(new AuthenticationNoOp(), factManager, null);
+
+    const observer = j.subscribe(blogPosts, blog, () => {});
+    await observer.loaded();
+    // Nothing written yet: the feed is pending.
+    expect(store.events).toEqual([]);
+
+    // The race resolves. The delivery must not complete until the date it
+    // caused has landed, because the clearing diagnostic is raised
+    // synchronously and a consumer can start the next observer from it.
+    await network.deliver(FEED, [postRef]);
+    store.events.push("delivery resolved");
+    expect(store.events).toEqual(["date written", "delivery resolved"]);
+
+    const next = j.subscribe(blogPosts, blog, () => {});
+    expect(await next.cached()).toBe(true);
+    await next.loaded();
+    next.stop();
+    observer.stop();
+  });
+});

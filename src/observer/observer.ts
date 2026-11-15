@@ -954,15 +954,31 @@ export class ObserverImpl<T> implements Observer<T> {
      * now (issue #402). This is the point at which the load has completed in
      * the sense `cached()` reports: every feed answered, and its facts in the
      * local graph.
+     *
+     * `handleFeedData` awaits this, so the date has landed in the store before
+     * the delivery that triggered it completes. Without that, a caller that
+     * starts another observer the moment this feed delivers -- from the
+     * clearing diagnostic, which is raised synchronously -- could read the date
+     * back before an IndexedDB transaction had committed, and see `cached()`
+     * false on a feed that has cleared.
+     *
+     * The write is still isolated, because a cache date is an optimization and
+     * losing one costs a fetch. A store that refuses it must not fail the save
+     * path that delivered these facts, so a rejection is logged here rather
+     * than propagated to the awaiting caller.
      */
-    private onFeedCleared(decision: FeedDecision) {
+    private async onFeedCleared(decision: FeedDecision) {
         this.emitFeedCleared(decision);
         if (this.stopped) {
             return;
         }
         this.pendingFeeds.delete(decision.feed);
-        this.writeCacheDateIfComplete().catch(e =>
-            Trace.error(`[Observer] CACHE DATE ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`));
+        try {
+            await this.writeCacheDateIfComplete();
+        }
+        catch (e) {
+            Trace.error(`[Observer] CACHE DATE ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`);
+        }
     }
 
     /**

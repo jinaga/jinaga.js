@@ -11,6 +11,15 @@ import { FeedTimeoutError, ValidationError } from "../util/errors";
 import { TIMED_OUT, withTimeout } from "../util/promise";
 import { Trace } from "../util/trace";
 
+/**
+ * A listener for a feed's "began delivering data" signal (issue #207 W9).
+ *
+ * It may return a promise, and `handleFeedData` awaits it, so work the listener
+ * must have finished before the delivery completes -- an observer's cache-date
+ * write (issue #402) -- is ordered against that delivery rather than racing it.
+ */
+export type FeedDataListener = () => void | Promise<void>;
+
 export interface Network {
     /**
      * Request the feed hashes for a specification from the replicator's
@@ -293,7 +302,7 @@ export class NetworkManager {
     // fires immediately; `feedDataListeners` holds observers waiting to clear a
     // reactive diagnostic when the feed's race resolves.
     private readonly feedsDelivered = new Set<string>();
-    private readonly feedDataListeners = new Map<string, Set<() => void>>();
+    private readonly feedDataListeners = new Map<string, Set<FeedDataListener>>();
     // Loading is reported from the set of load operations in flight, never from
     // a flag kept beside them (issue #306): `true` on the transition from none
     // to one, `false` on the return to none, so overlapping fetches produce one
@@ -390,10 +399,14 @@ export class NetworkManager {
      * Returns an unregister function. The observer uses this to clear a
      * `reactive` diagnostic once the subscription race resolves.
      */
-    onFeedData(feed: string, listener: () => void): () => void {
+    onFeedData(feed: string, listener: FeedDataListener): () => void {
         if (this.feedsDelivered.has(feed)) {
             // Already delivered — fire immediately (isolated) and don't retain.
-            try { listener(); } catch (e) { Trace.error(e); }
+            // There is no caller to await on this path: `onFeedData` returns an
+            // unsubscribe function, not a promise. A listener that needs its
+            // work ordered against a delivery is ordered by `handleFeedData`
+            // below, which runs inside the save path that awaits it.
+            try { Promise.resolve(listener()).catch(e => Trace.error(e)); } catch (e) { Trace.error(e); }
             return () => { };
         }
         let listeners = this.feedDataListeners.get(feed);
@@ -413,7 +426,15 @@ export class NetworkManager {
 
     // Called when a feed's subscriber saves new facts. Fires waiting listeners
     // once, on the first delivery for that feed.
-    private handleFeedData(feed: string) {
+    //
+    // Awaits each listener, so a listener's own write lands before the delivery
+    // that triggered it completes. An observer writes its cache date here
+    // (issue #402), and a caller that starts another observer the moment this
+    // feed delivers would otherwise read the date back before the store's
+    // transaction had committed and see `cached()` false on a feed that has
+    // cleared. Each listener is still isolated: one that throws or rejects is
+    // logged and never fails the save path that delivered the facts.
+    private async handleFeedData(feed: string) {
         if (this.feedsDelivered.has(feed)) {
             return;
         }
@@ -422,7 +443,7 @@ export class NetworkManager {
         if (listeners) {
             this.feedDataListeners.delete(feed);
             for (const listener of listeners) {
-                try { listener(); } catch (e) { Trace.error(e); }
+                try { await listener(); } catch (e) { Trace.error(e); }
             }
         }
     }
@@ -524,7 +545,7 @@ export class NetworkManager {
                 const notify = async (envelopes: FactEnvelope[]) => {
                     await this.notifyFactsAdded(envelopes);
                     if (envelopes.length > 0) {
-                        this.handleFeedData(feed);
+                        await this.handleFeedData(feed);
                     }
                 };
                 subscriber = new Subscriber(feed, this.network, this.store, notify, this.feedRefreshIntervalSeconds,
