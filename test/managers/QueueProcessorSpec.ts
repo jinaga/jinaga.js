@@ -1,4 +1,4 @@
-import { delay, QueueProcessor, Saver, Trace, Tracer } from "@src";
+import { delay, QueueProcessor, SaveOutcome, Saver, Trace, Tracer } from "@src";
 
 describe("QueueProcessor", () => {
     // Mock implementation of the Saver interface
@@ -9,7 +9,7 @@ describe("QueueProcessor", () => {
         public savePromise: Promise<void> | null = null;
         public delayMs = 0;
 
-        async save(): Promise<void> {
+        async save(): Promise<SaveOutcome> {
             this.saveCount++;
             this.lastSaveTime = Date.now();
             this.saveTimes.push(this.lastSaveTime);
@@ -19,10 +19,11 @@ describe("QueueProcessor", () => {
             }
             
             if (this.savePromise) {
-                return this.savePromise;
+                await this.savePromise;
             }
             
-            return Promise.resolve();
+            // Nothing here stalls on a connection, so no backoff is armed.
+            return { stalledOnConnection: false };
         }
 
         reset(): void {

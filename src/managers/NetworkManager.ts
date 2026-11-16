@@ -12,6 +12,14 @@ import { TIMED_OUT, withTimeout } from "../util/promise";
 import { Trace } from "../util/trace";
 
 /**
+ * How often a feed stream refreshes when nothing else drives it, in seconds.
+ * It is also the ceiling the stream's reconnect backoff climbs to, and the
+ * ceiling the outgoing queue's backoff climbs to (issue #400), so it is stated
+ * here once rather than at each of those sites.
+ */
+export const DEFAULT_FEED_REFRESH_INTERVAL_SECONDS = 90;
+
+/**
  * A listener for a feed's "began delivering data" signal (issue #207 W9).
  *
  * It may return a promise, and `handleFeedData` awaits it, so work the listener
@@ -317,7 +325,8 @@ export class NetworkManager {
         private readonly notifyFactsAdded: (factsAdded: FactEnvelope[]) => Promise<void>,
         feedRefreshIntervalSeconds?: number
     ) {
-        this.feedRefreshIntervalSeconds = feedRefreshIntervalSeconds || 90; // Default to 90 seconds
+        this.feedRefreshIntervalSeconds = feedRefreshIntervalSeconds ||
+            DEFAULT_FEED_REFRESH_INTERVAL_SECONDS;
     }
 
     /**

@@ -1,4 +1,5 @@
 import { TopologicalSorter } from '../fact/sorter';
+import { RetryOptions } from '../http/retry';
 import { WebClient } from '../http/web-client';
 import { QueueProcessor } from '../managers/QueueProcessor';
 import { FactEnvelope, factEnvelopeEquals, FactRecord, FactReference, Queue, Storage } from '../storage';
@@ -8,23 +9,52 @@ import { ProgressNotifier } from './progress';
 import { serializeLoad } from './serialize';
 import { WebClientSaver, WebClientSaverOptions } from './web-client-saver';
 
+/**
+ * Options for the fork's outgoing queue: how a flush is batched, and how long
+ * it waits before retrying one that stalled on the connection (issue #400).
+ */
+export interface PersistentForkOptions extends WebClientSaverOptions {
+    /**
+     * The retry schedule the backoff draws its delays from. It is the schedule
+     * `WebClient` retries a POST on and the feed stream reconnects on, so a
+     * deployment states its tolerance for waiting once.
+     */
+    retry?: RetryOptions;
+    /**
+     * Ceiling for the backoff, in seconds, where `retry.maxDelayMs` is unset.
+     * The feed stream backs off to the same ceiling.
+     */
+    feedRefreshIntervalSeconds?: number;
+}
+
 export class PersistentFork implements Fork {
     private queueProcessor: QueueProcessor;
     private readonly progress = new ProgressNotifier();
+    private readonly stopListeningForResponses: () => void;
 
     constructor(
         private storage: Storage,
         private queue: Queue,
         private client: WebClient,
         private delayMilliseconds: number,
-        saverOptions: WebClientSaverOptions = {}
+        options: PersistentForkOptions = {}
     ) {
         // The saver reports after each batch leaves the queue, so the count an
         // application sees follows the queue down as it drains rather than only
         // at the end of a flush (issue #306).
-        const saver = new WebClientSaver(client, queue, saverOptions,
+        const saver = new WebClientSaver(client, queue, options,
             () => this.reportQueueLength());
-        this.queueProcessor = new QueueProcessor(saver, delayMilliseconds);
+        this.queueProcessor = new QueueProcessor(saver, delayMilliseconds, {
+            retry: options.retry,
+            feedRefreshIntervalSeconds: options.feedRefreshIntervalSeconds
+        });
+        // A flush that the connection stopped left facts queued, and nothing
+        // used to send them until the application wrote again (issue #400). A
+        // client cannot tell whether it is offline, so the evidence it acts on
+        // is the only evidence it has: the replicator answered a request. The
+        // processor decides whether that is worth a flush.
+        this.stopListeningForResponses = client.onResponse(
+            () => this.queueProcessor.flushIfStalled());
     }
 
     initialize() {
@@ -33,6 +63,9 @@ export class PersistentFork implements Fork {
     }
 
     async close(): Promise<void> {
+        // Stop listening first, so the closing flush's own responses cannot
+        // schedule another one behind it.
+        this.stopListeningForResponses();
         // Process any pending facts before closing
         try {
             await this.processQueueNow();
