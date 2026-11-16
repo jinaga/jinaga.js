@@ -21,8 +21,19 @@ import { useFakeTimers } from "../utils/fake-timers";
  * `connectionFailure` is the case the fork used to get stuck on: the request
  * never reached a replicator that could judge the facts, so nothing about them
  * is wrong and nothing about them has been decided.
+ *
+ * Each failure comes in two shapes, because `FetchConnection` uses both: most
+ * error statuses come back as an `HttpFailure`, while a 403 is thrown as a
+ * `ForbiddenError` so the replicator's forbidden reason survives. A refusal
+ * classified only on the returned shape would miss the status most likely to
+ * carry one, so both are scripted here.
  */
-type Answer = "success" | "refusal" | "connectionFailure";
+type Answer =
+    | "success"
+    | "refusal"
+    | "thrownRefusal"
+    | "connectionFailure"
+    | "thrownConnectionFailure";
 
 /**
  * A connection whose answers a test scripts per path, so the triggering
@@ -93,6 +104,11 @@ class ScriptedConnection implements HttpConnection {
                 // as a failure rather than a retry, which is what a connection
                 // says when it has already given up on the request.
                 return { result: "failure", error: "Network request failed", statusCode: 500, body: "" };
+            case "thrownRefusal":
+            case "thrownConnectionFailure":
+                // The shape `FetchConnection.post` raises for a 403, and for a
+                // status it cannot classify.
+                throw this.raise(answer);
         }
     }
 
@@ -101,14 +117,16 @@ class ScriptedConnection implements HttpConnection {
     }
 
     private async answerGet(answer: Answer): Promise<{}> {
-        switch (answer) {
-            case "success":
-                return {};
-            case "refusal":
-                throw new ForbiddenError("Forbidden", null);
-            case "connectionFailure":
-                throw new HttpError("Network request failed", 500, null);
+        if (answer === "success") {
+            return {};
         }
+        throw this.raise(answer);
+    }
+
+    private raise(answer: Answer): Error {
+        return answer === "refusal" || answer === "thrownRefusal"
+            ? new ForbiddenError("Forbidden", null)
+            : new HttpError("Network request failed", 500, null);
     }
 }
 
@@ -214,9 +232,14 @@ describe("Flushing a queue that stalled on the connection (issue #400)", () => {
         expect(connection.saveCount).toBeGreaterThan(stalledAfter);
     });
 
-    it("sends the queued facts when the replicator refuses another request", async () => {
+    it.each<[string, Answer]>([
+        ["returned as a failure", "refusal"],
+        ["thrown, as FetchConnection raises a 403", "thrownRefusal"]
+    ])("sends the queued facts when the replicator refuses another request, %s", async (_shape, refusal) => {
         // Criterion 2. A refusal is the replicator answering. It says the
         // request arrived, which is the whole of what the flush needs to know.
+        // Both shapes are exercised because the production connection uses
+        // both, and a 403 -- the refusal the issue names -- is the thrown one.
         createFork();
         connection.save = "connectionFailure";
 
@@ -224,7 +247,7 @@ describe("Flushing a queue that stalled on the connection (issue #400)", () => {
 
         const stalledAfter = connection.saveCount;
         connection.save = "success";
-        connection.feeds = "refusal";
+        connection.feeds = refusal;
 
         await expect(client.feeds("a feed request")).rejects.toThrow();
         await drain();
@@ -233,9 +256,13 @@ describe("Flushing a queue that stalled on the connection (issue #400)", () => {
         expect(connection.saveCount).toBeGreaterThan(stalledAfter);
     });
 
-    it("stays stalled when another request fails on the connection", async () => {
+    it.each<[string, Answer]>([
+        ["returned as a failure", "connectionFailure"],
+        ["thrown", "thrownConnectionFailure"]
+    ])("stays stalled when another request fails on the connection, %s", async (_shape, failure) => {
         // Criterion 3. A request that never reached the replicator shows
-        // nothing, so it is not evidence to act on.
+        // nothing, so it is not evidence to act on -- in either shape the
+        // connection reports it.
         createFork();
         connection.save = "connectionFailure";
 
@@ -243,7 +270,7 @@ describe("Flushing a queue that stalled on the connection (issue #400)", () => {
 
         const stalledAfter = connection.saveCount;
         connection.save = "success";
-        connection.feeds = "connectionFailure";
+        connection.feeds = failure;
 
         await expect(client.feeds("a feed request")).rejects.toThrow();
         await drain();

@@ -172,6 +172,26 @@ export class WebClient {
     }
 
     /**
+     * `POST` through the connection, reporting a refusal it raised by throwing.
+     *
+     * An `HttpConnection` reports a failure in either of two shapes, and
+     * `FetchConnection` uses both: most error statuses come back as an
+     * `HttpFailure`, while a 403 is thrown as a `ForbiddenError` so the
+     * replicator's forbidden reason survives. A refusal classified only on the
+     * returned shape would therefore miss the one status most likely to carry
+     * it, so the thrown shape is classified here and the returned one at each
+     * caller's own exit.
+     */
+    private async postReporting(path: string, contentType: PostContentType, accept: PostAccept, body: string): Promise<HttpResponse> {
+        try {
+            return await this.httpConnection.post(path, contentType, accept, body, this.config.timeoutSeconds);
+        }
+        catch (error) {
+            throw this.reported(error);
+        }
+    }
+
+    /**
      * `GET` a path, reporting the response the replicator gave. The connection
      * reports a failure by throwing, so both outcomes are classified here.
      */
@@ -251,7 +271,7 @@ export class WebClient {
     }
 
     private async post(path: string, contentType: PostContentType, accept: PostAccept, body: string) {
-        const response = await this.httpConnection.post(path, contentType, accept, body, this.config.timeoutSeconds);
+        const response = await this.postReporting(path, contentType, accept, body);
         if (response.result === 'success') {
             this.notifyResponse();
             return response.response;
@@ -296,7 +316,7 @@ export class WebClient {
         const waits = new RetryWaits(this.retrySchedule);
 
         while (true) {
-            const response = await this.httpConnection.post(path, contentType, accept, body, this.config.timeoutSeconds);
+            const response = await this.postReporting(path, contentType, accept, body);
             if (response.result === 'success') {
                 this.notifyResponse();
                 return response.response;
