@@ -1,7 +1,8 @@
-import { AuthorizationEngine, AuthorizationRules, FactRecord, Forbidden, ForbiddenError, HttpError, MemoryStore, SyncStatus, SyncStatusNotifier, User, WebClient, buildModel, dehydrateFact } from "@src";
+import { AuthorizationEngine, AuthorizationRules, FactRecord, FetchConnection, Forbidden, ForbiddenError, HttpError, MemoryStore, SyncStatus, SyncStatusNotifier, User, WebClient, buildModel, dehydrateFact } from "@src";
 import { ContentTypeJson, PostAccept, PostContentType } from "../../src/http/ContentType";
 import { HttpConnection, HttpResponse } from "../../src/http/web-client";
 import { WebClientSaver } from "../../src/fork/web-client-saver";
+import { RetryOptions } from "../../src/http/retry";
 import { FactEnvelope, Queue } from "../../src/storage";
 
 /**
@@ -636,5 +637,287 @@ describe("Save queue flush under the replicator's authorization (issue #395)", (
         expect(saved.map(r => r.type).sort()).toEqual(["H.Attendee", answerType].sort());
         expect(queue.envelopes).toHaveLength(0);
         expect(statuses[statuses.length - 1].warning).toBe("");
+    });
+});
+
+/**
+ * A connection that hands back a scripted sequence of results, so the retry
+ * loop can be driven without a replicator. The last entry repeats, which is how
+ * a test says "every attempt from here on answers the same way".
+ */
+class ScriptedConnection implements HttpConnection {
+    public readonly paths: string[] = [];
+
+    constructor(private readonly responses: HttpResponse[]) { }
+
+    get(path: string): Promise<{}> {
+        throw new Error("not used");
+    }
+
+    getStream(): () => void {
+        throw new Error("not used");
+    }
+
+    async post(path: string, contentType: PostContentType, accept: PostAccept, body: string, timeoutSeconds: number): Promise<HttpResponse> {
+        this.paths.push(path);
+        return this.responses[Math.min(this.paths.length - 1, this.responses.length - 1)];
+    }
+
+    async getAcceptedContentTypes(path: string): Promise<string[]> {
+        return [ContentTypeJson];
+    }
+}
+
+// A result the connection asks the caller to retry, which is what it reports
+// for a 5xx, a 429, and -- in `FetchConnection` -- a network error or a timeout
+// of its own.
+function transient(error: string, statusCode: number): HttpResponse {
+    return { result: "retry", error, statusCode, body: null };
+}
+
+const succeeded: HttpResponse = { result: "success", response: {} };
+
+// A fetch Response stand-in with the shape `FetchConnection` reads.
+function createdResponse() {
+    return {
+        status: 201,
+        statusText: "Created",
+        headers: { get: (_header: string): string | null => null },
+        json: async () => ({}),
+        text: async () => ""
+    };
+}
+
+// The two ways `FetchConnection.httpPost` learns that the request never reached
+// a replicator: the fetch rejected, or its own abort fired.
+/**
+ * Let every pending microtask run, without advancing any clock. A hundred turns
+ * is well past the handful of awaits between a flush starting and the retry
+ * loop reaching its first wait, and it is not a delay: nothing here waits on
+ * wall-clock time, so the only thing that can still be outstanding afterwards
+ * is work blocked on a timer.
+ */
+async function settle(): Promise<void> {
+    for (let turn = 0; turn < 100; turn++) {
+        await Promise.resolve();
+    }
+}
+
+const connectionFailures: [string, () => Error][] = [
+    ["a network error", () => new Error("socket hang up")],
+    ["a request timeout", () => Object.assign(new Error("aborted"), { name: "AbortError" })]
+];
+
+describe("A save that is retrying (issue #399)", () => {
+    const realFetch = global.fetch;
+
+    let notifier: SyncStatusNotifier;
+    let statuses: SyncStatus[];
+
+    beforeEach(() => {
+        notifier = new SyncStatusNotifier();
+        statuses = [];
+        notifier.onSyncStatus(status => statuses.push(status));
+        // The schedule adds jitter so that clients which have all reached the
+        // ceiling still spread their attempts. Pinning it makes the wait the
+        // loop takes exactly the wait the schedule plans, so a test can name
+        // the seconds it expects to be reported.
+        jest.spyOn(Math, "random").mockReturnValue(0);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+        global.fetch = realFetch;
+    });
+
+    function saverOver(connection: HttpConnection, retry: RetryOptions, queue = new FakeQueue([plain("A")])) {
+        const client = new WebClient(connection, notifier, { timeoutSeconds: 30, retry });
+        return new WebClientSaver(client, queue);
+    }
+
+    it("reports the retry, the wait it is about to take, and the error behind it", async () => {
+        // Criterion 1. Today the retry is logged and nothing else learns of it,
+        // so a consumer watching `onSyncStatus` sees `sending: true,
+        // retrying: false` throughout and cannot tell a stalled save from a
+        // slow one.
+        const connection = new ScriptedConnection([
+            transient("Service Unavailable", 503),
+            succeeded
+        ]);
+
+        await saverOver(connection, { initialDelayMs: 20, maxDelayMs: 20 }).save();
+
+        expect(statuses).toEqual([
+            { sending: true, retrying: false, retryInSeconds: 0, warning: "" },
+            { sending: true, retrying: true, retryInSeconds: 0.02, warning: "Service Unavailable" },
+            { sending: false, retrying: false, retryInSeconds: 0, warning: "" }
+        ]);
+    });
+
+    it("reports the retry before the wait elapses, not after it", async () => {
+        // Criterion 2. A report that arrives once the wait is over names a
+        // delay the consumer can no longer act on. Holding the wait open is
+        // what makes the difference observable without timing anything: the
+        // loop's own `setTimeout` is captured here rather than scheduled, so
+        // nothing read below can have happened after the wait, and the attempt
+        // the wait precedes has not been made.
+        //
+        // Jest's fake timers would say the same thing, and cannot be used:
+        // under Node's read-only `performance` the modern implementation
+        // throws from `useFakeTimers` with the clock half installed, which
+        // strands every test after it.
+        const connection = new ScriptedConnection([
+            transient("Service Unavailable", 503),
+            succeeded
+        ]);
+        const waiting: (() => void)[] = [];
+        jest.spyOn(global, "setTimeout").mockImplementation(((callback: () => void) => {
+            waiting.push(callback);
+            return 0;
+        }) as unknown as typeof setTimeout);
+
+        const flush = saverOver(connection, { initialDelayMs: 20, maxDelayMs: 20 }).save();
+
+        // What had been reported, and what had been attempted, at the moment
+        // the loop settled into its wait.
+        await settle();
+        const reportedBeforeTheWait = statuses.filter(status => status.retrying);
+        const attemptedBeforeTheWait = [...connection.paths];
+
+        // Release the wait and let the flush finish before asserting, so the
+        // test leaves nothing outstanding whichever way it goes.
+        expect(waiting).toHaveLength(1);
+        waiting[0]();
+        await flush;
+
+        expect(reportedBeforeTheWait).toEqual([
+            { sending: true, retrying: true, retryInSeconds: 0.02, warning: "Service Unavailable" }
+        ]);
+        expect(attemptedBeforeTheWait).toEqual(["/save"]);
+        expect(connection.paths).toEqual(["/save", "/save"]);
+        expect(statuses[statuses.length - 1]).toEqual(
+            { sending: false, retrying: false, retryInSeconds: 0, warning: "" });
+    });
+
+    it.each(connectionFailures)("reports %s the way FetchConnection maps it", async (_description, failure) => {
+        // Criterion 3. An unreachable replicator has to reach the same report,
+        // and whether it does depends on the mapping `FetchConnection` applies
+        // -- a rejected fetch becomes a 500 and an abort a 408, both of which
+        // the loop reads as transient. So this drives that connection rather
+        // than restating the mapping here.
+        let posts = 0;
+        global.fetch = jest.fn(async (_url: any, init?: any) => {
+            if (init?.method === "OPTIONS") {
+                // What `/save` accepts, which the client asks for first.
+                return { headers: { get: (_header: string): string | null => ContentTypeJson } };
+            }
+            posts++;
+            if (posts === 1) {
+                throw failure();
+            }
+            return createdResponse();
+        }) as any;
+
+        const connection = new FetchConnection(
+            "http://localhost",
+            () => Promise.resolve({}),
+            () => Promise.resolve(false));
+
+        await saverOver(connection, { initialDelayMs: 20, maxDelayMs: 20 }).save();
+
+        expect(posts).toBe(2);
+        expect(statuses).toHaveLength(3);
+        expect(statuses[0]).toEqual({ sending: true, retrying: false, retryInSeconds: 0, warning: "" });
+        expect(statuses[1].sending).toBe(true);
+        expect(statuses[1].retrying).toBe(true);
+        expect(statuses[1].retryInSeconds).toBe(0.02);
+        // Whatever the connection called it, the transient error reaches the
+        // consumer rather than an empty warning.
+        expect(statuses[1].warning).not.toBe("");
+        expect(statuses[2]).toEqual({ sending: false, retrying: false, retryInSeconds: 0, warning: "" });
+    });
+
+    it("reports every retry under an unbounded schedule, each with its own wait", async () => {
+        // Criterion 4. `timeoutMs: 0` is the schedule a save that must
+        // eventually land wants, and it is the schedule under which the stall
+        // warning never arrives at all: these reports are the only account of
+        // an unreachable replicator a consumer gets. So `retryInSeconds` has to
+        // stay current, which means reporting on each retry rather than once.
+        const connection = new ScriptedConnection([
+            transient("Service Unavailable", 503),
+            transient("Service Unavailable", 503),
+            transient("Service Unavailable", 503),
+            succeeded
+        ]);
+
+        await saverOver(connection, {
+            initialDelayMs: 10,
+            maxDelayMs: 1000,
+            backoffMultiplier: 2,
+            timeoutMs: 0
+        }).save();
+
+        // The waits the schedule plans, in order, rather than the first one
+        // repeated.
+        expect(statuses.filter(status => status.retrying).map(status => status.retryInSeconds))
+            .toEqual([0.01, 0.02, 0.04]);
+        expect(statuses[statuses.length - 1]).toEqual(
+            { sending: false, retrying: false, retryInSeconds: 0, warning: "" });
+    });
+
+    it("still warns that the save stalled once the schedule runs out", async () => {
+        // Criterion 5. The stall warning is what a consumer had before this
+        // change, and it arrives after the last retry report rather than in
+        // place of it.
+        const connection = new ScriptedConnection([transient("Service Unavailable", 503)]);
+        const queue = new FakeQueue([plain("A")]);
+
+        await saverOver(connection, { initialDelayMs: 10, maxDelayMs: 10, timeoutMs: 25 }, queue).save();
+
+        // A budget of 25ms admits two waits of 10ms and refuses a third.
+        expect(statuses.filter(status => status.retrying).map(status => status.retryInSeconds))
+            .toEqual([0.01, 0.01]);
+        expect(statuses[statuses.length - 2].retrying).toBe(true);
+        const stalled = statuses[statuses.length - 1];
+        expect(stalled.sending).toBe(false);
+        expect(stalled.retrying).toBe(false);
+        expect(stalled.warning).toContain("1 fact(s) could not be sent");
+        expect(queue.envelopes.map(e => e.fact.hash)).toEqual(["A"]);
+    });
+
+    it("reports nothing for a /load that retries", async () => {
+        // Criterion 6. `loadWithRetry` takes the same loop, but `SyncStatus`
+        // describes outgoing facts, so a retried read has nothing to say
+        // through it.
+        const connection = new ScriptedConnection([
+            transient("Service Unavailable", 503),
+            { result: "success", response: { facts: [] } }
+        ]);
+        const client = new WebClient(connection, notifier, {
+            timeoutSeconds: 30,
+            retry: { initialDelayMs: 10, maxDelayMs: 10 }
+        });
+
+        const response = await client.loadWithRetry({ references: [] });
+
+        expect(response.facts).toEqual([]);
+        expect(connection.paths).toEqual(["/load", "/load"]);
+        expect(statuses).toEqual([]);
+    });
+
+    it("reports no retry for a save the replicator refused", async () => {
+        // Criterion 7. A non-retryable status is the replicator's judgment of
+        // these facts, and no wait changes it, so there is no retry to report
+        // -- only what is still queued when the flush ends.
+        const connection = new ScriptedConnection([
+            { result: "failure", error: "Bad Request", statusCode: 400, body: null }
+        ]);
+        const queue = new FakeQueue([plain("A")]);
+
+        await saverOver(connection, { initialDelayMs: 10, maxDelayMs: 10 }, queue).save();
+
+        expect(statuses.some(status => status.retrying)).toBe(false);
+        expect(connection.paths).toEqual(["/save"]);
+        expect(statuses[statuses.length - 1].warning).toContain("1 fact(s) could not be sent");
     });
 });

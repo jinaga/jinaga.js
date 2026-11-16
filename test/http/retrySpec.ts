@@ -140,9 +140,14 @@ describe("Configurable HTTP retry schedule (issue #305)", () => {
 
             await saver.save();
 
-            const warning = statuses.map(s => s.warning).filter(w => w.length > 0);
-            expect(warning).toHaveLength(1);
-            expect(warning[0]).toContain("1 fact(s) could not be sent to the replicator");
+            // Each retry now carries the transient error that provoked it, so
+            // the stall warning is the last of several rather than the only
+            // non-empty one (issue #399). What this test is about is that the
+            // flush giving up still reaches `onSyncStatus`.
+            const stalled = statuses[statuses.length - 1];
+            expect(stalled.sending).toBe(false);
+            expect(stalled.retrying).toBe(false);
+            expect(stalled.warning).toContain("1 fact(s) could not be sent to the replicator");
             // The fact is still queued, so the next flush will try again.
             expect(queue.envelopes).toHaveLength(1);
         });
