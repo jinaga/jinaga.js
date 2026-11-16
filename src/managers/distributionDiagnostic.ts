@@ -67,6 +67,24 @@ function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
 }
 
 /**
+ * True when a decision reports a feed that is *pending authorization*: a rule's
+ * shape matches it, but the current user does not satisfy that rule right now.
+ * The feed stays open and delivers if an authorizing fact arrives, so none of
+ * its facts are in the local graph yet and nothing about the decision says they
+ * ever will be.
+ *
+ * This is the one rule for that state (issue #402). Two things read it, and
+ * they must agree: the `reactive` field of every diagnostic raised below, and
+ * the observer's decision to withhold the cache date. A feed whose decision is
+ * `reactive` but whose code is structural is *not* pending -- no arriving fact
+ * changes a shape mismatch -- so it sets `reactive: false` and withholds
+ * nothing.
+ */
+export function isPendingAuthorization(decision: FeedDecision): boolean {
+    return decision.decision === 'reactive' && !isStructuralCode(decision.code);
+}
+
+/**
  * Map the replicator's per-feed decisions (issue #207 W4) to developer-facing
  * diagnostics. Only `denied` and `reactive` feeds produce a diagnostic;
  * `authorized` feeds are silent. Old replicators report no decisions, so this
@@ -92,7 +110,7 @@ export function toDistributionDiagnostics(
             specification,
             decision: d.decision as 'reactive' | 'denied',
             code: d.code,
-            reactive: d.decision === 'reactive' && !isStructuralCode(d.code),
+            reactive: isPendingAuthorization(d),
             reason: d.reason,
             feed: d.feed
         }));

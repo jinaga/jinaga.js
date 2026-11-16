@@ -11,7 +11,7 @@ import { testSpecificationForCompliance } from "../purge/purgeCompliance";
 import { Specification } from "../specification/specification";
 import { FactEnvelope, FactRecord, FactReference, ProjectedResult, Storage, saveAndNotify } from "../storage";
 import { Trace } from "../util/trace";
-import { CachedFeeds, Network, NetworkManager } from "./NetworkManager";
+import { CachedFeeds, FeedDataListener, Network, NetworkManager } from "./NetworkManager";
 import { PurgeManager } from "./PurgeManager";
 
 export class FactManager {
@@ -163,7 +163,7 @@ export class FactManager {
      * so the observer can clear a `reactive` diagnostic once the race resolves.
      * Returns an unregister function.
      */
-    onFeedData(feed: string, listener: () => void): () => void {
+    onFeedData(feed: string, listener: FeedDataListener): () => void {
         return this.networkManager.onFeedData(feed, listener);
     }
 

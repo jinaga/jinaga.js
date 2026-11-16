@@ -1,6 +1,6 @@
 import { computeObjectHash } from "../fact/hash";
 import { FeedDecision } from "../http/messages";
-import { DistributionDiagnostic, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
+import { DistributionDiagnostic, isPendingAuthorization, toClearingDiagnostic, toDistributionDiagnostics } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
 import { InverseListener, InverseReadNumbering } from "../observable/observable";
 import { describeDeclaration, describeSpecification } from "../specification/description";
@@ -441,6 +441,35 @@ export class ObserverImpl<T> implements Observer<T> {
      * race resolves. Torn down in `stop()`.
      */
     private readonly clearingUnsubscribes: (() => void)[] = [];
+    /**
+     * The feeds of this load that answered pending authorization (issue #402).
+     *
+     * `cached()` true means a load of this specification and given completed
+     * with every feed answered. A pending feed sent none of its facts, so the
+     * local graph does not hold this specification's answer and a load that
+     * ends with one pending has not completed in that sense. While this holds
+     * anything, the cache date is withheld, and the next start fetches before
+     * it reads instead of rendering a pending empty result as confirmed.
+     *
+     * A decision that arrives without a feed hash is recorded under its falsy
+     * key, which nothing retires: no clearing listener is registered for it
+     * either, so the date stays withheld for the life of the observer. That is
+     * the conservative direction -- a date never written costs a fetch, and a
+     * date written early renders an empty result as final.
+     */
+    private readonly pendingFeeds = new Set<string>();
+    /**
+     * Whether the load has run to completion, so a pending feed clearing after
+     * it may write the cache date. Before it, the load's own end-of-load check
+     * owns the decision, and a load that rejects never sets this -- a rejected
+     * load writes no date, whatever its feeds answered.
+     */
+    private loadCompleted: boolean = false;
+    /**
+     * Whether this observer has written the cache date, so the end-of-load
+     * check and a clearing feed do not each write one.
+     */
+    private cacheDateWritten: boolean = false;
 
     constructor(
         private factManager: FactManager,
@@ -546,7 +575,8 @@ export class ObserverImpl<T> implements Observer<T> {
                         if (this.stopped) return;
                         settleLoad();
                     }
-                    await this.factManager.setMruDate(this.specificationHash, new Date());
+                    this.loadCompleted = true;
+                    await this.writeCacheDateIfComplete();
                     Trace.info(`[Observer] COMPLETE - Spec hash: ${this.specificationHash.substring(0, 8)}...`);
                     this.loadResolve = undefined;
                 }
@@ -816,6 +846,10 @@ export class ObserverImpl<T> implements Observer<T> {
             }
             branch.feeds = feeds;
             decisions.push(...branchDecisions);
+            // Before the listeners, because `onFeedData` fires immediately for
+            // a feed that has already delivered, and that firing retires what
+            // this records.
+            this.recordPendingFeeds(branchDecisions);
             this.registerClearingListeners(feeds, branchDecisions);
         }));
         this.captureDiagnostics('subscribe', decisions);
@@ -833,6 +867,7 @@ export class ObserverImpl<T> implements Observer<T> {
         await Promise.all(this.branches.map(async branch => {
             const branchDecisions = await this.factManager.fetch(this.given, branch.specification);
             decisions.push(...branchDecisions);
+            this.recordPendingFeeds(branchDecisions);
         }));
         this.captureDiagnostics(this.keepAlive ? 'subscribe' : 'watch', decisions);
     }
@@ -892,10 +927,76 @@ export class ObserverImpl<T> implements Observer<T> {
         const keptAlive = new Set(feeds);
         for (const decision of decisions) {
             if (decision.decision === 'reactive' && decision.feed && keptAlive.has(decision.feed)) {
-                const unsubscribe = this.factManager.onFeedData(decision.feed, () => this.emitFeedCleared(decision));
+                const unsubscribe = this.factManager.onFeedData(decision.feed, () => this.onFeedCleared(decision));
                 this.clearingUnsubscribes.push(unsubscribe);
             }
         }
+    }
+
+    /**
+     * Record the feeds of this load that answered pending authorization, so the
+     * cache date is withheld until each of them has delivered (issue #402).
+     * `isPendingAuthorization` is the one rule, shared with the `reactive`
+     * field of the diagnostics these same decisions raise.
+     */
+    private recordPendingFeeds(decisions: FeedDecision[]) {
+        for (const decision of decisions) {
+            if (isPendingAuthorization(decision)) {
+                this.pendingFeeds.add(decision.feed);
+            }
+        }
+    }
+
+    /**
+     * A pending feed has begun delivering data, so the subscription race has
+     * resolved for it. Emit the clearing diagnostic, retire the feed, and --
+     * if it was the last one this load was waiting on -- write the cache date
+     * now (issue #402). This is the point at which the load has completed in
+     * the sense `cached()` reports: every feed answered, and its facts in the
+     * local graph.
+     *
+     * `handleFeedData` awaits this, so the date has landed in the store before
+     * the delivery that triggered it completes. Without that, a caller that
+     * starts another observer the moment this feed delivers -- from the
+     * clearing diagnostic, which is raised synchronously -- could read the date
+     * back before an IndexedDB transaction had committed, and see `cached()`
+     * false on a feed that has cleared.
+     *
+     * The write is still isolated, because a cache date is an optimization and
+     * losing one costs a fetch. A store that refuses it must not fail the save
+     * path that delivered these facts, so a rejection is logged here rather
+     * than propagated to the awaiting caller.
+     */
+    private async onFeedCleared(decision: FeedDecision) {
+        this.emitFeedCleared(decision);
+        if (this.stopped) {
+            return;
+        }
+        this.pendingFeeds.delete(decision.feed);
+        try {
+            await this.writeCacheDateIfComplete();
+        }
+        catch (e) {
+            Trace.error(`[Observer] CACHE DATE ERROR - Spec hash: ${this.specificationHash.substring(0, 8)}..., Error: ${e}`);
+        }
+    }
+
+    /**
+     * Write the cache date, if this load has completed with every feed
+     * answered (issue #402). Called once at the end of the load and again each
+     * time a pending feed clears; the first call that finds nothing pending
+     * writes, and the rest return.
+     */
+    private async writeCacheDateIfComplete() {
+        if (!this.loadCompleted || this.cacheDateWritten) {
+            return;
+        }
+        if (this.pendingFeeds.size > 0) {
+            Trace.info(`[Observer] Date withheld, ${this.pendingFeeds.size} feed(s) pending authorization - Spec hash: ${this.specificationHash.substring(0, 8)}...`);
+            return;
+        }
+        this.cacheDateWritten = true;
+        await this.factManager.setMruDate(this.specificationHash, new Date());
     }
 
     /**
