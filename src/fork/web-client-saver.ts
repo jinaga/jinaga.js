@@ -1,7 +1,8 @@
+import { CurrentUserSource } from "../authentication/current-user";
 import { isRefusal } from "../http/errors";
 import { WebClient } from "../http/web-client";
 import { Saver, SaveOutcome, SaveRequest } from "../managers/QueueProcessor";
-import { FactEnvelope, FactRecord, FactReference, Queue } from "../storage";
+import { FactEnvelope, FactRecord, FactReference, Queue, QueuedEnvelope } from "../storage";
 import { Trace } from "../util/trace";
 
 /**
@@ -66,7 +67,10 @@ function utf8ByteLength(text: string): number {
  * budget is a bound with headroom, not an accounting.
  */
 function estimateSize(envelope: FactEnvelope): number {
-    return utf8ByteLength(JSON.stringify(envelope));
+    // Only the fact and its signatures are serialized, so only those are
+    // measured. A queued envelope also carries the user who wrote it
+    // (issue #412), which the request never includes.
+    return utf8ByteLength(JSON.stringify({ fact: envelope.fact, signatures: envelope.signatures }));
 }
 
 /**
@@ -187,7 +191,14 @@ export class WebClientSaver implements Saver {
          * reading the queue's length is asynchronous and a report that races the
          * next batch would arrive out of order.
          */
-        private readonly onQueueChanged: () => Promise<void> = () => Promise.resolve()
+        private readonly onQueueChanged: () => Promise<void> = () => Promise.resolve(),
+        /**
+         * Reads the user who is current now, so a flush sends only the facts
+         * this client may send under the token it holds (issue #412). Absent
+         * where there is no notion of a logged-in user, in which case every
+         * queued fact is sendable, as it was before.
+         */
+        private readonly currentUser?: CurrentUserSource
     ) {
         this.maxBatchBytes = positiveOr(options.maxBatchBytes, DEFAULT_MAX_SAVE_BATCH_BYTES);
         this.maxBatchCount = positiveOr(options.maxBatchCount, DEFAULT_MAX_SAVE_BATCH_COUNT);
@@ -259,13 +270,30 @@ export class WebClientSaver implements Saver {
      * Nothing is dropped. A parked fact stays queued and in the local store,
      * the stall warning still counts it, and the set is held in memory only, so
      * a new saver offers every queued fact again.
+     *
+     * Before any of that, a flush sends only the facts it may send as the user
+     * it is (issue #412). The replicator attributes a saved fact to the user on
+     * the request's token, so a fact queued while someone else was logged in
+     * would be judged, and signed where a rule requires it, as this user's
+     * write. Such a fact is left out of the flush entirely, with the queued
+     * facts that descend from it, and nothing about it is reported as a
+     * failure: it has not been refused, it is waiting for its own user. It goes
+     * out at the first flush after that user is current again.
      */
     async save(request: SaveRequest = {}): Promise<SaveOutcome> {
-        const envelopes = await this.queue.peek();
+        const queued = await this.queue.peek();
         // The parked set describes what is queued, so a fact that has left the
         // queue leaves it too. Nothing else dequeues today, but a stale key
-        // would hold back a descendant of a fact that is no longer there.
-        this.prune(envelopes);
+        // would hold back a descendant of a fact that is no longer there. It
+        // reads the whole queue rather than what this flush may send, so a fact
+        // waiting for its own user keeps the refusal that parked it.
+        this.prune(queued);
+
+        // A fact is judged and signed as the user on the request's token, so
+        // only the facts this client may send under the token it holds now go
+        // out (issue #412). The rest stay queued for the user who wrote them,
+        // and a flush that has nothing else to send makes no request.
+        const envelopes = this.sendableNow(queued);
         if (envelopes.length === 0) {
             return { stalledOnConnection: false };
         }
@@ -468,6 +496,56 @@ export class WebClientSaver implements Saver {
         }
 
         return { accepted, remaining: remaining(), stopped: false, lastError };
+    }
+
+    /**
+     * The queued facts this client may send under the token it holds now
+     * (issue #412), in queue order.
+     * The queued facts this client may send under the token it holds now
+     * (issue #412), in queue order.
+     *
+     * A fact that recorded no user is sent as it always has been. A fact that
+     * recorded one is sent only while that user is the current user: the
+     * replicator attributes a saved fact to the user on the request's token, so
+     * sending it under anyone else's has it refused, or accepted and signed as
+     * that person's write, and neither user can see that it happened.
+     *
+     * A fact held back holds back the queued facts that descend from it, for
+     * the same reason a refused fact does: a successor cannot be sent while its
+     * predecessor is still queued.
+     *
+     * Nothing is dropped. A held fact stays queued, and goes out at the first
+     * flush once its own user is current again.
+     */
+    private sendableNow(queued: QueuedEnvelope[]): QueuedEnvelope[] {
+        const current = this.currentUser ? this.currentUser.currentUser() : null;
+        const held = new Set<string>();
+        const sendable: QueuedEnvelope[] = [];
+        // Queue order is topological, so every queued predecessor of a fact has
+        // been decided by the time the fact is reached.
+        for (const envelope of queued) {
+            if (!this.maySendAs(envelope, current) || this.isHeld(envelope, held)) {
+                held.add(factKey(envelope.fact));
+            }
+            else {
+                sendable.push(envelope);
+            }
+        }
+        return sendable;
+    }
+
+    /**
+     * May this fact be sent while `current` is the current user? A fact that
+     * recorded no user may; one that recorded a user may only while that user
+     * is current, and never while there is no current user at all, which is
+     * where a client starts before a login resolves.
+     */
+    private maySendAs(envelope: QueuedEnvelope, current: FactReference | null): boolean {
+        const user = envelope.user;
+        if (!user) {
+            return true;
+        }
+        return current !== null && current.type === user.type && current.hash === user.hash;
     }
 
     /**
