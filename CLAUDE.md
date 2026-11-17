@@ -98,4 +98,4 @@ Read it before picking up a `ready` issue, whether you are a scheduled agent or 
 - Never skip, disable, or quarantine a test to get a green build.
 - Never push an empty commit to re-trigger CI.
 - End every comment you post on GitHub with the Claude Code attribution footer.
-- Do not put model identifiers in commit messages, pull request text, or code comments.
+- Do not put model identifiers in pull request text or code comments.
