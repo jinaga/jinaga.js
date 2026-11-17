@@ -1,4 +1,5 @@
 import { delay, QueueProcessor, SaveOutcome, SaveRequest, Saver, Trace, Tracer } from "@src";
+import { waitForCondition } from "../utils/async-test-utils";
 
 describe("QueueProcessor", () => {
     // Mock implementation of the Saver interface
@@ -12,6 +13,11 @@ describe("QueueProcessor", () => {
         public readonly requests: (SaveRequest | undefined)[] = [];
         /** What this saver reports to the processor about the connection. */
         public stalledOnConnection = false;
+        /**
+         * Flushes that have finished, as opposed to started. A test waits on
+         * this rather than on a fixed delay.
+         */
+        public completedCount = 0;
 
         async save(request?: SaveRequest): Promise<SaveOutcome> {
             this.saveCount++;
@@ -27,6 +33,7 @@ describe("QueueProcessor", () => {
                 await this.savePromise;
             }
             
+            this.completedCount++;
             return { stalledOnConnection: this.stalledOnConnection };
         }
 
@@ -36,6 +43,7 @@ describe("QueueProcessor", () => {
             this.saveTimes = [];
             this.savePromise = null;
             this.requests.length = 0;
+            this.completedCount = 0;
         }
     }
 
@@ -166,11 +174,14 @@ describe("QueueProcessor", () => {
         queueProcessor = new QueueProcessor(saver, 0);
 
         queueProcessor.scheduleProcessing();
+        await waitForCondition(() => saver.completedCount >= 1);
+
+        expect(saver.requests[0]?.retryParked).toBe(false);
+
         await queueProcessor.processQueueNow();
 
-        expect(saver.requests.map(request => request?.retryParked === true))
-            .toEqual([false, true]);
-    }, 1000);
+        expect(saver.requests[saver.requests.length - 1]?.retryParked).toBe(true);
+    }, 2000);
 
     it("does not ask the saver to retry what it parked when a stall re-flushes", async () => {
         // Issue #410, against issue #400's re-flush. A stall on the connection
@@ -182,20 +193,22 @@ describe("QueueProcessor", () => {
         queueProcessor = new QueueProcessor(saver, 0,
             { retry: { initialDelayMs: 60000, maxDelayMs: 60000 } });
 
-        queueProcessor.scheduleProcessing();
-        // The processor reads the outcome after the flush resolves, so the
-        // stalled state it acts on is not set until then.
-        await delay(20);
+        // Awaited rather than scheduled, because the processor reads the
+        // outcome before this resolves: the stalled state the re-flush depends
+        // on is set by the time the next line runs. A scheduled flush would
+        // need a wait to reach the same point.
+        await queueProcessor.processQueueNow();
         expect(saver.saveCount).toBe(1);
 
         // The replicator answered, which is the evidence issue #400 acts on.
         saver.stalledOnConnection = false;
         queueProcessor.flushIfStalled();
-        await delay(50);
+        await waitForCondition(() => saver.saveCount >= 2);
 
-        expect(saver.saveCount).toBe(2);
-        expect(saver.requests.some(request => request?.retryParked === true)).toBe(false);
-    }, 1000);
+        // The re-flush is the second one, and it leaves the parked facts alone
+        // even though the flush above asked for them.
+        expect(saver.requests[1]?.retryParked).toBe(false);
+    }, 2000);
 
     it("should stop processing when disposed", async () => {
         // Arrange

@@ -1126,4 +1126,52 @@ describe("Batching around a parked fact (issue #410)", () => {
         // One request for the pair, not one each.
         expect(client.requests[1]).toEqual(["a", "b"]);
     });
+
+    it("spends no batch bytes on a parked fact's queued descendant", async () => {
+        // A descendant of a parked fact is held back just as the parked fact
+        // is, so it costs the same if it is left in the batch. Its size is
+        // under the budget but large enough that charging it would leave room
+        // for only one of the two facts written after it. Measured against
+        // `estimateSize`: the descendant is 1141 bytes and each of the pair is
+        // 298, so 1500 admits the descendant and one of them but not both.
+        const maxBatchBytes = 1500;
+        const queue = new FakeQueue([plain("X")]);
+        const client = new RecordingClient(notifier, refusing("X", forbidden));
+        const saver = new WebClientSaver(client.asWebClient(), queue, { maxBatchBytes });
+
+        await saver.save();
+        expect(client.requests).toEqual([["X"]]);
+
+        const big = descendant("big", ["X"]);
+        big.fact.fields = { payload: "x".repeat(1000) };
+        await queue.enqueue([big, envelope("a", 200), envelope("b", 200)]);
+        await saver.save();
+
+        // One request carrying both, not one each behind the descendant's
+        // bytes.
+        expect(client.requests[1]).toEqual(["a", "b"]);
+    });
+
+    it("spends no batch slot on a parked fact's queued descendant", async () => {
+        // The count bound is the other half of the budget, and a held
+        // descendant consumes a slot in it just as it consumes bytes.
+        const queue = new FakeQueue([plain("X")]);
+        const client = new RecordingClient(notifier, refusing("X", forbidden));
+        const saver = new WebClientSaver(client.asWebClient(), queue, { maxBatchCount: 3 });
+
+        await saver.save();
+
+        await queue.enqueue([
+            descendant("c1", ["X"]),
+            descendant("c2", ["X"]),
+            plain("a"),
+            plain("b"),
+            plain("d")
+        ]);
+        await saver.save();
+
+        // Three sendable facts fit one batch of three. Counting X, c1 and c2
+        // against the bound would split them.
+        expect(client.requests[1]).toEqual(["a", "b", "d"]);
+    });
 });

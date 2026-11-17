@@ -374,15 +374,25 @@ export class WebClientSaver implements Saver {
         // Queue order is topological, so by the time a fact is reached every
         // queued predecessor of it has been decided.
         const held = offerParked ? new Set<string>() : new Set<string>(this.parked.keys());
-        // A fact already held when the pass starts is not going to be sent, so
-        // it takes up no room in a batch. Leaving it in would spend its bytes
-        // against the budget, and a parked fact at the budget would push the
-        // facts written after it into requests of their own -- the dependency
-        // on the parked facts that issue #410 is about. The facts that descend
-        // from one are found during the walk below, not here.
-        const offered = held.size === 0
-            ? pending
-            : pending.filter(envelope => !held.has(factKey(envelope.fact)));
+        // What this pass will actually offer. A fact already held when the pass
+        // starts is not going to be sent, so it takes up no room in a batch:
+        // leaving it in would spend its bytes and its slot against the budget,
+        // and a parked fact at the budget would push the facts written after it
+        // into requests of their own -- the dependency on the parked facts that
+        // issue #410 is about. The queued facts that descend from a parked one
+        // cost exactly as much, so they are excluded here too rather than
+        // during the send walk, which reaches them only after they have taken
+        // up room. Queue order is topological, so one pass in that order sees
+        // every predecessor before the fact that names it.
+        const offered: FactEnvelope[] = [];
+        for (const envelope of pending) {
+            if (held.size > 0 && this.isHeld(envelope, held)) {
+                held.add(factKey(envelope.fact));
+            }
+            else {
+                offered.push(envelope);
+            }
+        }
         const batches = batched
             ? batchEnvelopes(offered, this.maxBatchBytes, this.maxBatchCount)
             : offered.map(envelope => [envelope]);

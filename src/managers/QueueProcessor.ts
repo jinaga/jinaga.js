@@ -104,8 +104,11 @@ class Batch {
         }
         if (!this.notifyPromise) {
             // Recorded before the flush begins, because that is the flush this
-            // call starts. A request that arrives once one is in flight joins
-            // it as it always has.
+            // call starts. A direct request that arrives while a flush is in
+            // flight reaches the batch that flush already replaced itself with,
+            // so it starts a flush of its own rather than joining that one.
+            // That predates this field and is unchanged by it; what this field
+            // does not do is make such a flush any safer.
             this.retryParked = retryParked;
             this.notifyPromise = new Promise<void>((resolve, reject) => {
                 this.notifyResolver = resolve;
