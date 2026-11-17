@@ -203,8 +203,15 @@ export class FactManager {
     /**
      * Register a listener for the save path reporting that it is retrying
      * (issue #394). Returns an unregister function.
+     *
+     * A fork that does not report retries has no flush for one to bound, so the
+     * channel is inert for it rather than absent: a caller reads one contract
+     * whichever fork it has.
      */
     onRetrying(listener: () => void): () => void {
+        if (!this.fork.onRetrying) {
+            return () => { };
+        }
         return this.fork.onRetrying(listener);
     }
 

@@ -17,10 +17,17 @@ export interface Fork {
      * It is what bounds a wait on `processQueueNow`. A flush that is retrying is
      * one the replicator is not answering, and its schedule can be unbounded,
      * so a caller that waits for the flush to end would wait for the whole
-     * retry budget. A fork that holds no queue reports nothing here: its save
-     * is awaited by the caller, so there is no flush for a retry to bound.
+     * retry budget.
+     *
+     * Optional, and absence is the statement that this fork never retries: its
+     * save is awaited by the caller, or it sends nothing at all, so there is no
+     * flush for a retry to bound. `FactManager.onRetrying` supplies the no-op
+     * for a fork that leaves it out, which also keeps this interface
+     * implementable by code written before it existed -- `Fork` is exported
+     * from `src/index.ts`, so a required member here would break every
+     * implementation outside this repository.
      */
-    onRetrying(listener: () => void): () => void;
+    onRetrying?(listener: () => void): () => void;
     load(references: FactReference[]): Promise<FactEnvelope[]>;
     processQueueNow(): Promise<void>;
     close(): Promise<void>;

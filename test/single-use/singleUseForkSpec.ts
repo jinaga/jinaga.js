@@ -14,10 +14,6 @@ class FakeFork implements Fork {
         return () => { };
     }
 
-    onRetrying(listener: () => void): () => void {
-        // Nor does it send anything, so no save ever retries.
-        return () => { };
-    }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
         return Promise.resolve([]);

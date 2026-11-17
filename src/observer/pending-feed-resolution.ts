@@ -103,6 +103,12 @@ export class PendingFeedResolution {
     private generation = 0;
     /** Whether an "ask again" is in flight, so two never overlap. */
     private asking = false;
+    /**
+     * Whether a batch left while a question was in flight, so one more is owed
+     * when it finishes. At most one: every such notification asks the same
+     * question, and the answer to the last question is the answer to all of them.
+     */
+    private askAgainWhenDone = false;
 
     constructor(
         private readonly factManager: FactManager,
@@ -135,21 +141,24 @@ export class PendingFeedResolution {
         if (this.stopped || generation !== this.generation) {
             return;
         }
+        // Armed before the question rather than after it, so a batch that
+        // leaves while the question is in flight -- or in the turns between its
+        // answer and this line -- is heard rather than lost.
+        this.listenForProgress();
         if (outcome === 'retrying') {
             // The replicator is not answering this client's save, so asking it
             // about the feed would answer about a graph that has not received
             // the authorizing fact. The load resolves here and step 3 takes
             // over: the retry may yet succeed, and the batch leaving is what
             // reports that it did.
-            this.listenForProgress();
             return;
         }
         await this.askAgain(generation);
         if (this.stopped || generation !== this.generation) {
             return;
         }
-        if (this.pending.size > 0) {
-            this.listenForProgress();
+        if (this.pending.size === 0) {
+            this.releaseProgress();
         }
     }
 
@@ -227,14 +236,31 @@ export class PendingFeedResolution {
      */
     private async askAgain(generation: number): Promise<void> {
         if (this.asking) {
+            // A batch left while a request was in flight. That request may have
+            // reached the replicator before this batch did, so its answer
+            // cannot stand for this one, and dropping the notification would
+            // lose the only report this batch gets: with no later batch the
+            // feed would stay pending for good, which is the bug this rule
+            // exists to fix. So one more question is queued behind the one in
+            // flight. At most one, however many notifications arrive: they all
+            // ask the same question, and the answer to the last is the answer
+            // to all of them.
+            this.askAgainWhenDone = true;
             return;
         }
         this.asking = true;
         try {
-            await this.actOnFreshDecisions(generation);
+            do {
+                this.askAgainWhenDone = false;
+                await this.actOnFreshDecisions(generation);
+            } while (this.askAgainWhenDone
+                && !this.stopped
+                && generation === this.generation
+                && this.pending.size > 0);
         }
         finally {
             this.asking = false;
+            this.askAgainWhenDone = false;
         }
     }
 
@@ -250,23 +276,45 @@ export class PendingFeedResolution {
         if (this.stopped || generation !== this.generation) {
             return;
         }
-        const nowPending = new Map<string, FeedDecision>(
-            decisions.filter(isPendingAuthorization).map(d => [d.feed, d] as const));
+        const fresh = new Map<string, FeedDecision>(decisions.map(d => [d.feed, d] as const));
         const resolvedFeeds: string[] = [];
-        for (const [feed, decision] of [...this.pending]) {
-            if (!nowPending.has(feed)) {
-                this.pending.delete(feed);
+        for (const [feed, pendingDecision] of [...this.pending]) {
+            const answer = fresh.get(feed);
+            if (answer !== undefined && isPendingAuthorization(answer)) {
+                // Still pending, and still worth another batch: the replicator
+                // withheld it although it had everything this client had sent,
+                // so it settles, once, and stays in `pending` because a later
+                // batch can still clear it.
+                this.pending.set(feed, answer);
+                this.settle(feed, answer, resolvedFeeds);
+                continue;
+            }
+            // Whatever it is now, this watch is no longer waiting on it: either
+            // it is delivering, or nothing this client sends will change it.
+            this.pending.delete(feed);
+            if (answer === undefined || answer.decision === 'authorized') {
+                // No longer withheld -- authorized, or replaced by the
+                // specification's own feeds, which this very fetch has read. Its
+                // rows are in the local graph.
                 this.settled.delete(feed);
-                this.host.emit(toClearingDiagnostic('watch', this.host.specification, decision));
+                this.host.emit(toClearingDiagnostic('watch', this.host.specification, pendingDecision));
                 resolvedFeeds.push(feed);
             }
+            else {
+                // Still withheld, and by something no fact of this client's
+                // changes: a denial, or a shape no rule matches. Not a clearing
+                // -- no rows arrived -- so it settles, which is the same verdict
+                // for the same reason, reached for good rather than as of this
+                // fetch.
+                this.settle(feed, answer, resolvedFeeds);
+            }
         }
-        for (const [feed, decision] of nowPending) {
-            this.pending.set(feed, decision);
-            if (!this.settled.has(feed)) {
-                this.settled.add(feed);
-                this.host.emit(toSettledDiagnostic('watch', this.host.specification, decision));
-                resolvedFeeds.push(feed);
+        for (const [feed, answer] of fresh) {
+            // A feed the new answer names and this watch was not waiting on.
+            // Pending is the only state that makes it this rule's business.
+            if (!this.pending.has(feed) && isPendingAuthorization(answer)) {
+                this.pending.set(feed, answer);
+                this.settle(feed, answer, resolvedFeeds);
             }
         }
         // A cleared feed's facts are in the local graph, and a settled feed is
@@ -283,6 +331,20 @@ export class PendingFeedResolution {
     }
 
     /**
+     * Report a feed the replicator withheld after receiving everything this
+     * client had sent. At most one such diagnostic per feed until it clears, so
+     * a watch that asks several times does not report the same verdict again.
+     */
+    private settle(feed: string, decision: FeedDecision, resolvedFeeds: string[]): void {
+        if (this.settled.has(feed)) {
+            return;
+        }
+        this.settled.add(feed);
+        this.host.emit(toSettledDiagnostic('watch', this.host.specification, decision));
+        resolvedFeeds.push(feed);
+    }
+
+    /**
      * Step 3. Listen to the fork's progress reports while anything is pending.
      *
      * A notification reporting a lower count than the one before it, or
@@ -292,6 +354,19 @@ export class PendingFeedResolution {
      * (issue #400). Each one is another chance for the replicator's answer to
      * have changed, so the watch asks again -- without flushing, because the
      * batch has already gone.
+     *
+     * The first notification after this listener is installed has no count
+     * before it to be lower than, and it is read as a batch having left. That
+     * is deliberate. A fork reports the facts still queued after each batch
+     * leaves, so a flush that sent one batch of two reports `1` -- a decrease
+     * from a count this listener never saw. Reading it as nothing would lose
+     * the only report that batch gets, and if the rest of the queue is then
+     * refused there is no later notification, so the feed would stay pending
+     * for good although the fact that authorizes it has reached the
+     * replicator: the bug this rule exists to fix, reintroduced at its own
+     * edge. Reading it as a batch costs one extra question where the
+     * notification was a save adding to the queue instead, and only the first
+     * one, because the count is known from then on.
      */
     private listenForProgress(): void {
         if (this.stopped || this.stopListening) {
@@ -303,7 +378,7 @@ export class PendingFeedResolution {
             if (this.stopped) {
                 return;
             }
-            if (count === 0 || (previous !== undefined && count < previous)) {
+            if (previous === undefined || count === 0 || count < previous) {
                 this.onBatchLeft();
             }
         });

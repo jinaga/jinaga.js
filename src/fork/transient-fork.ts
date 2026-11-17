@@ -31,12 +31,6 @@ export class TransientFork implements Fork {
         return this.progress.onProgress(listener);
     }
 
-    onRetrying(_listener: () => void): () => void {
-        // This fork holds no queue: `save` posts and the caller awaits it, and
-        // `processQueueNow` has nothing to flush. So there is no flush for a
-        // retry to bound (issue #394).
-        return () => { };
-    }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
         const known = await this.storage.load(references);

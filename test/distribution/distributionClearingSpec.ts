@@ -43,6 +43,12 @@ class ControllableNetwork implements Network {
   /** When set, `feeds()` rejects with it, as a lost connection does. */
   public feedsError: unknown = null;
   /**
+   * When set, the next `feeds()` captures the current response and withholds it
+   * until this resolves, so a test can make something happen while a question
+   * is in flight. It holds one question; the ones after it answer at once.
+   */
+  public feedsGate: Promise<void> | null = null;
+  /**
    * References a feed delivers on its next fetch, consumed when it does, so a
    * feed delivers its rows once and the fetch loop then terminates.
    */
@@ -56,7 +62,15 @@ class ControllableNetwork implements Network {
     if (this.feedsError !== null) {
       return Promise.reject(this.feedsError);
     }
-    return Promise.resolve(this.response);
+    // Captured now, so a held question answers what the replicator held when
+    // it was asked rather than what a later line of the test set.
+    const response = this.response;
+    const gate = this.feedsGate;
+    this.feedsGate = null;
+    if (gate) {
+      return gate.then(() => response);
+    }
+    return Promise.resolve(response);
   }
   fetchFeed(feed: string, bookmark: string): Promise<FeedResponse> {
     const references = this.feedResults.get(feed) ?? [];
@@ -742,9 +756,14 @@ describe("a watch resolves a feed pending authorization (issue #394)", () => {
   });
 
   // Criterion 7, from criterion 6, and for a fact first written after the load
-  // resolved. A save puts facts *into* the queue, which is not a batch leaving,
-  // so the count going up fetches nothing; the batch leaving does.
-  it("asks again only when a notification reports a batch leaving", async () => {
+  // resolved.
+  //
+  // The first notification has no count before it to be lower than, and is read
+  // as a batch having left: a fork reports what is still queued *after* a batch
+  // leaves, so a flush that sent one batch of two reports `1`, and reading that
+  // as nothing would lose the only report that batch gets. From then on the
+  // count is known, so a rise is a save adding to the queue and asks nothing.
+  it("reads the first notification as a batch leaving, then compares counts", async () => {
     fork.onFlush = () => { network.feedsError = new Error("the connection failed"); };
 
     const observer = j.watch(blogPosts, blog, () => { });
@@ -752,17 +771,74 @@ describe("a watch resolves a feed pending authorization (issue #394)", () => {
     expect(network.feedsRequests).toBe(2);
 
     network.feedsError = null;
-    authorize();
 
-    // Two facts queued: the count rises, and nothing has reached the
-    // replicator.
     fork.reportProgress(2);
-    expect(network.feedsRequests).toBe(2);
+    await waitForCondition(() => network.feedsRequests === 3);
 
-    // A batch leaves.
-    fork.reportProgress(1);
+    // A rise: facts went into the queue, and nothing reached the replicator.
+    fork.reportProgress(4);
+    await drain();
+    expect(network.feedsRequests).toBe(3);
+
+    // A fall: a batch left.
+    authorize();
+    fork.reportProgress(3);
+    await waitForCondition(() => diagnostics.some(d => d.cleared));
+    expect(network.feedsRequests).toBe(4);
+
+    observer.stop();
+  });
+
+  // A notification that arrives while a question is unanswered must not be
+  // dropped. The answer in flight may have been computed before that batch
+  // reached the replicator, so it cannot stand for it, and with no later batch
+  // the feed would stay pending for good.
+  it("asks once more when a batch leaves while a question is in flight", async () => {
+    fork.flushOutcome = 'retrying';
+
+    const observer = j.watch(blogPosts, blog, () => { });
+    await observer.loaded();
+    expect(network.feedsRequests).toBe(1);
+
+    let release: () => void = () => { };
+    network.feedsGate = new Promise<void>(resolve => { release = resolve; });
+
+    // A batch leaves, and its question is held open.
+    fork.reportProgress(0);
+    await waitForCondition(() => network.feedsRequests === 2);
+
+    // Another leaves while that question is unanswered, and this time it
+    // carries the authorizing fact.
+    fork.reportProgress(0);
+    authorize();
+    release();
+
     await waitForCondition(() => diagnostics.some(d => d.cleared));
     expect(network.feedsRequests).toBe(3);
+
+    observer.stop();
+  });
+
+  // The second answer can withhold the feed in a way no fact of this client's
+  // changes. No rows arrived, so that is not a clearing, however the pending
+  // state ended.
+  it("does not clear a feed the second answer denies", async () => {
+    fork.onFlush = () => {
+      network.response = {
+        feeds: [FEED],
+        decisions: [{ feed: FEED, decision: "denied", code: "principal-excluded", reason: "the rule excludes this principal" }],
+      };
+    };
+
+    const observer = j.watch(blogPosts, blog, () => { });
+    await observer.loaded();
+
+    expect(diagnostics.filter(d => d.cleared)).toHaveLength(0);
+    const settled = diagnostics.filter(d => d.settled);
+    expect(settled).toHaveLength(1);
+    expect(settled[0].feed).toBe(FEED);
+    // Nothing this client sends will change it, so the watch stops waiting.
+    expect(fork.progressListenerCount).toBe(0);
 
     observer.stop();
   });
