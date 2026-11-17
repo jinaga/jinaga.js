@@ -152,7 +152,7 @@ function predecessorKeys(fact: FactRecord): string[] {
  */
 interface FlushPass {
     accepted: number;
-    remaining: FactEnvelope[];
+    remaining: QueuedEnvelope[];
     /** A connection failure ended the flush; no further request was made. */
     stopped: boolean;
     lastError: unknown;
@@ -347,14 +347,20 @@ export class WebClientSaver implements Saver {
             offerParked = true;
         }
 
+        // A fact waiting for its own user has not failed: it was not refused,
+        // and no request for it was made, so it is left out of what this flush
+        // reports (issue #412). The same rule reads it as the filter did, so a
+        // fact whose predecessor is waiting is left out with it.
+        const failed = this.sendableNow(pending);
+
         if (lastError === undefined) {
             // Every fact still queued was parked by an earlier flush and this
             // one made no request for it, so the refusal that parked it is what
             // there is to report.
-            lastError = this.parkedReason(pending);
+            lastError = this.parkedReason(failed);
         }
 
-        if (pending.length === 0) {
+        if (failed.length === 0) {
             this.client.notifySyncStatus({
                 sending: false,
                 retrying: false,
@@ -373,7 +379,7 @@ export class WebClientSaver implements Saver {
                 sending: false,
                 retrying: false,
                 retryInSeconds: 0,
-                warning: `${pending.length} fact(s) could not be sent to the replicator: ${reason}`
+                warning: `${failed.length} fact(s) could not be sent to the replicator: ${reason}`
             });
         }
 
@@ -394,7 +400,7 @@ export class WebClientSaver implements Saver {
      * the replicator has already refused on its own out of a batch of facts it
      * would otherwise accept.
      */
-    private async flushPass(pending: FactEnvelope[], batched: boolean, offerParked: boolean): Promise<FlushPass> {
+    private async flushPass(pending: QueuedEnvelope[], batched: boolean, offerParked: boolean): Promise<FlushPass> {
         const sent = new Set<string>();
         // Facts this pass will not send, and the queued facts that descend from
         // them: the ones the replicator refused in this pass, and -- unless
@@ -430,9 +436,9 @@ export class WebClientSaver implements Saver {
         const remaining = () => pending.filter(envelope => !sent.has(factKey(envelope.fact)));
 
         for (const batch of batches) {
-            const sendable: FactEnvelope[] = [];
+            const sendable: QueuedEnvelope[] = [];
             for (const envelope of batch) {
-                if (this.isHeld(envelope, held)) {
+                if (this.isHeld(envelope, held) || !this.maySendNow(envelope)) {
                     held.add(factKey(envelope.fact));
                 }
                 else {
@@ -475,7 +481,7 @@ export class WebClientSaver implements Saver {
             // Narrow the refused batch. A fact refused only because it
             // travelled with others is accepted once they are committed.
             for (const envelope of sendable) {
-                if (this.isHeld(envelope, held)) {
+                if (this.isHeld(envelope, held) || !this.maySendNow(envelope)) {
                     held.add(factKey(envelope.fact));
                     continue;
                 }
@@ -499,8 +505,6 @@ export class WebClientSaver implements Saver {
     }
 
     /**
-     * The queued facts this client may send under the token it holds now
-     * (issue #412), in queue order.
      * The queued facts this client may send under the token it holds now
      * (issue #412), in queue order.
      *
@@ -532,6 +536,28 @@ export class WebClientSaver implements Saver {
             }
         }
         return sendable;
+    }
+
+    /**
+     * May this fact be sent as the user who is current at this moment?
+     *
+     * A flush is a sequence of requests, and the token each one carries is read
+     * when that request starts, from the application's own authentication
+     * provider. So the user can change in the middle of a flush, and the choice
+     * `sendableNow` made when the flush began can be stale by the time a later
+     * request is composed. This is read again immediately before each one, so a
+     * user who changes mid-flush costs at most the request already in flight
+     * rather than everything the flush had left to send.
+     *
+     * The window cannot be closed from here. The token is the application's,
+     * resolved inside `post`, and a request that met an authentication
+     * challenge resolves it a second time; binding an identity to a request
+     * would take the protocol change this issue puts out of scope. Narrowing it
+     * to one request is what this layer can do.
+     */
+    private maySendNow(envelope: QueuedEnvelope): boolean {
+        return this.maySendAs(envelope,
+            this.currentUser ? this.currentUser.currentUser() : null);
     }
 
     /**

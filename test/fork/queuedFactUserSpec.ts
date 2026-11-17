@@ -6,6 +6,7 @@ import {
     FactReference,
     MemoryStore,
     PersistentFork,
+    PersistentForkOptions,
     Queue,
     QueuedEnvelope,
     SyncStatusNotifier,
@@ -58,6 +59,11 @@ interface SaveRequest {
  */
 class RecordingConnection implements HttpConnection {
     public readonly saves: SaveRequest[] = [];
+    /**
+     * Run after a `POST /save` is recorded, so a test can have something happen
+     * between two of a flush's requests.
+     */
+    public onSave: (() => Promise<void>) | undefined = undefined;
 
     constructor(
         private readonly session: Session
@@ -78,6 +84,9 @@ class RecordingConnection implements HttpConnection {
                 token: this.session.token,
                 hashes: message.facts.map(fact => fact.hash)
             });
+            if (this.onSave) {
+                await this.onSave();
+            }
         }
         return { result: "success", response: {} };
     }
@@ -244,16 +253,20 @@ describe("Attributing a queued fact to the user who wrote it (issue #412)", () =
     let inner: FakeAuthentication;
     let authentication: AuthenticationCurrentUser;
     let fork: PersistentFork;
+    let warnings: string[];
 
-    function createFork(queue: Queue): void {
+    function createFork(queue: Queue, options: PersistentForkOptions = {}): void {
         session = new Session();
         connection = new RecordingConnection(session);
-        const client = new WebClient(connection, new SyncStatusNotifier(), {
+        const syncStatusNotifier = new SyncStatusNotifier();
+        warnings = [];
+        syncStatusNotifier.onSyncStatus(status => warnings.push(status.warning));
+        const client = new WebClient(connection, syncStatusNotifier, {
             timeoutSeconds: 30
         });
         inner = new FakeAuthentication(session);
         authentication = new AuthenticationCurrentUser(inner);
-        fork = new PersistentFork(new MemoryStore(), queue, client, noAutomaticFlush, {},
+        fork = new PersistentFork(new MemoryStore(), queue, client, noAutomaticFlush, options,
             authentication);
     }
 
@@ -417,6 +430,34 @@ describe("Attributing a queued fact to the user who wrote it (issue #412)", () =
             { token: tokenOf(bob), hashes: ["queued-in-the-old-shape"] }
         ]);
         expect(queue.hashes).toEqual([]);
+    });
+
+    it("stops sending a user's facts when the user changes during the flush", async () => {
+        // A flush is a sequence of requests, and the token each one carries is
+        // read when that request starts, from the application's own
+        // authentication provider. So the choice of what to send can be stale
+        // by the time a later request is composed, and the rest of Alice's
+        // facts would go out under Bob's token.
+        const queue = new FakeQueue();
+        createFork(queue, { maxBatchCount: 1 });
+        await loginAs(alice);
+        await fork.save([envelopeFor("first-by-alice")]);
+        await fork.save([envelopeFor("second-by-alice")]);
+
+        connection.onSave = async () => {
+            // Once, between the two requests this flush makes.
+            connection.onSave = undefined;
+            await loginAs(bob);
+        };
+        await fork.processQueueNow();
+
+        expect(connection.saves).toEqual([
+            { token: tokenOf(alice), hashes: ["first-by-alice"] }
+        ]);
+        expect(queue.hashes).toEqual(["second-by-alice"]);
+        // It is waiting for Alice, not failing, so the flush reports no
+        // warning about it.
+        expect(warnings.filter(warning => warning !== "")).toEqual([]);
     });
 
     it("flushes a queue that ignores the user exactly as before", async () => {
