@@ -173,7 +173,9 @@ function createFork(
             const queueProcessingDelay = config.queueProcessingDelayMs || 100;
             const fork = new PersistentFork(store, queue, webClient, queueProcessingDelay, {
                 maxBatchBytes: config.saveBatchBytes,
-                maxBatchCount: config.saveBatchCount
+                maxBatchCount: config.saveBatchCount,
+                retry: config.retry,
+                feedRefreshIntervalSeconds: config.feedRefreshIntervalSeconds
             });
             fork.initialize();
             return fork;

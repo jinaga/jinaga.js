@@ -15,7 +15,7 @@ export { dehydrateFact, dehydrateReference, Dehydration, HashMap, hydrate, hydra
 export { TopologicalSorter } from './fact/sorter';
 export { Fork } from "./fork/fork";
 export { PassThroughFork } from "./fork/pass-through-fork";
-export { PersistentFork } from "./fork/persistent-fork";
+export { PersistentFork, PersistentForkOptions } from "./fork/persistent-fork";
 export { TransientFork } from './fork/transient-fork';
 export { AuthenticationProvider, HttpHeaders } from "./http/authenticationProvider";
 export { GraphDeserializer, GraphSource } from "./http/deserializer";
@@ -44,15 +44,15 @@ export {
   RetrySchedule,
   resolveRetrySchedule
 } from "./http/retry";
-export { HttpConnection, HttpResponse, SyncStatus, SyncStatusNotifier, WebClient, WebClientConfig } from "./http/web-client";
+export { HttpConnection, HttpResponse, ResponseListener, SyncStatus, SyncStatusNotifier, WebClient, WebClientConfig } from "./http/web-client";
 export * as driver from './indexeddb/driver';
 export { IndexedDBQueue } from './indexeddb/indexeddb-queue';
 export { DistributionDeniedError, DistributionDiagnostic, Fact, isStructuralDenial, Jinaga, MakeObservable, Profile } from './jinaga';
 export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { FactManager } from "./managers/factManager";
-export { Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
-export { QueueProcessor, Saver } from './managers/QueueProcessor';
+export { DEFAULT_FEED_REFRESH_INTERVAL_SECONDS, Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
+export { QueueBackoffOptions, QueueProcessor, SaveOutcome, Saver } from './managers/QueueProcessor';
 export { MemoryStore } from './memory/memory-store';
 export { Device, User, UserName } from "./model/user";
 export { DEFAULT_LISTENER_TIMEOUT_MS, InverseListener, InverseReadNumbering, ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';

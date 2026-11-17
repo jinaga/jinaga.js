@@ -1,6 +1,6 @@
 import { isRefusal } from "../http/errors";
 import { WebClient } from "../http/web-client";
-import { Saver } from "../managers/QueueProcessor";
+import { Saver, SaveOutcome } from "../managers/QueueProcessor";
 import { FactEnvelope, FactRecord, FactReference, Queue } from "../storage";
 import { Trace } from "../util/trace";
 
@@ -215,11 +215,17 @@ export class WebClientSaver implements Saver {
      * evaluated against the replicator's graph, which may later gain the fact
      * that authorizes it -- so a fact still refused at the end of the flush
      * stays queued and is tried again on the next one.
+     *
+     * The outcome tells the caller which of those two endings it got
+     * (issue #400). A flush the connection stopped is worth making again as
+     * soon as the replicator is answering; a flush whose remaining facts were
+     * all refused is not, because nothing has changed for them until a later
+     * save grows the replicator's graph.
      */
-    async save(): Promise<void> {
+    async save(): Promise<SaveOutcome> {
         const envelopes = await this.queue.peek();
         if (envelopes.length === 0) {
-            return;
+            return { stalledOnConnection: false };
         }
 
         this.client.notifySyncStatus({
@@ -231,6 +237,7 @@ export class WebClientSaver implements Saver {
 
         let pending = envelopes;
         let lastError: unknown = undefined;
+        let stoppedOnConnection = false;
         // The first pass batches as it always has, so a flush in which every
         // request succeeds sends exactly the requests it sent before.
         let batched = true;
@@ -243,7 +250,11 @@ export class WebClientSaver implements Saver {
             if (pass.lastError !== undefined) {
                 lastError = pass.lastError;
             }
-            if (pass.stopped || pass.accepted === 0) {
+            if (pass.stopped) {
+                stoppedOnConnection = true;
+                break;
+            }
+            if (pass.accepted === 0) {
                 break;
             }
             // Something was accepted, so the replicator's graph has grown and a
@@ -275,6 +286,8 @@ export class WebClientSaver implements Saver {
                 warning: `${pending.length} fact(s) could not be sent to the replicator: ${reason}`
             });
         }
+
+        return { stalledOnConnection: pending.length > 0 && stoppedOnConnection };
     }
 
     /**

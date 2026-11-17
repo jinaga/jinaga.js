@@ -2,7 +2,7 @@ import { serializeSave } from "../fork/serialize";
 import { FactEnvelope } from "../storage";
 import { Trace } from "../util/trace";
 import { ContentTypeGraph, ContentTypeJson, ContentTypeText, PostAccept, PostContentType } from "./ContentType";
-import { HttpError } from "./errors";
+import { HttpError, isRefusal } from "./errors";
 import { parseFeedsResponse } from "./messageParsers";
 import { FeedResponse, FeedsResponse, LoadMessage, LoadResponse, LoginResponse } from "./messages";
 import { RetryOptions, RetrySchedule, RetryWaits, resolveRetrySchedule } from "./retry";
@@ -26,6 +26,13 @@ export type SyncStatus = {
  * branching on the path it was handed.
  */
 export type RetryReporter = (waitMs: number, error: string) => void;
+
+/**
+ * Notified when a request came back with a response the replicator gave
+ * (issue #400). It carries nothing: what it reports is that the replicator
+ * answered, which is the only evidence a client has that it is reachable.
+ */
+export type ResponseListener = () => void;
 
 export class SyncStatusNotifier {
     private syncStatusHandlers: ((status: SyncStatus) => void)[] = [];
@@ -104,6 +111,7 @@ export interface WebClientConfig {
 export class WebClient {
     private saveContentTypes: string[] | null = null;
     private readonly retrySchedule: RetrySchedule;
+    private readonly responseListeners = new Set<ResponseListener>();
 
     constructor(
         private httpConnection: HttpConnection,
@@ -112,8 +120,94 @@ export class WebClient {
         this.retrySchedule = resolveRetrySchedule(config.retry);
     }
 
+    /**
+     * Register a listener for every response the replicator gave (issue #400).
+     * Returns a function that unregisters it.
+     *
+     * A client cannot tell whether it is offline. The one thing it can observe
+     * is that a request it made came back with an answer the replicator
+     * produced, which is what this reports: a success, or a refusal as
+     * {@link isRefusal} classifies it. A connection failure, a transient status
+     * and an authentication challenge are all excluded, because none of them
+     * shows the request reached a replicator at all.
+     *
+     * The outgoing queue subscribes to it, so facts that stalled on a lost
+     * connection are sent once the replicator starts answering again rather
+     * than waiting for the application to write.
+     */
+    onResponse(listener: ResponseListener): () => void {
+        this.responseListeners.add(listener);
+        return () => {
+            this.responseListeners.delete(listener);
+        };
+    }
+
+    /**
+     * Report that the replicator answered. A listener's failure is logged and
+     * swallowed: the request it is reporting has already succeeded, and letting
+     * a listener turn that into a rejection would make the report change what
+     * the request returns.
+     */
+    private notifyResponse() {
+        this.responseListeners.forEach(listener => {
+            try {
+                listener();
+            }
+            catch (error) {
+                Trace.error(error);
+            }
+        });
+    }
+
+    /**
+     * Report a failure that is the replicator's own answer, and hand the error
+     * back so the caller can throw it. Derived from {@link isRefusal} rather
+     * than from a second list of statuses here.
+     */
+    private reported<T>(error: T): T {
+        if (isRefusal(error)) {
+            this.notifyResponse();
+        }
+        return error;
+    }
+
+    /**
+     * `POST` through the connection, reporting a refusal it raised by throwing.
+     *
+     * An `HttpConnection` reports a failure in either of two shapes, and
+     * `FetchConnection` uses both: most error statuses come back as an
+     * `HttpFailure`, while a 403 is thrown as a `ForbiddenError` so the
+     * replicator's forbidden reason survives. A refusal classified only on the
+     * returned shape would therefore miss the one status most likely to carry
+     * it, so the thrown shape is classified here and the returned one at each
+     * caller's own exit.
+     */
+    private async postReporting(path: string, contentType: PostContentType, accept: PostAccept, body: string): Promise<HttpResponse> {
+        try {
+            return await this.httpConnection.post(path, contentType, accept, body, this.config.timeoutSeconds);
+        }
+        catch (error) {
+            throw this.reported(error);
+        }
+    }
+
+    /**
+     * `GET` a path, reporting the response the replicator gave. The connection
+     * reports a failure by throwing, so both outcomes are classified here.
+     */
+    private async getReporting(path: string): Promise<{}> {
+        try {
+            const response = await this.httpConnection.get(path);
+            this.notifyResponse();
+            return response;
+        }
+        catch (error) {
+            throw this.reported(error);
+        }
+    }
+
     async login() {
-        return <LoginResponse> await this.httpConnection.get('/login');
+        return <LoginResponse> await this.getReporting('/login');
     }
 
     /**
@@ -164,20 +258,26 @@ export class WebClient {
     }
 
     async feed(feed: string, bookmark: string): Promise<FeedResponse> {
-        return <FeedResponse> await this.httpConnection.get(`/feeds/${feed}?b=${bookmark}`);
+        return <FeedResponse> await this.getReporting(`/feeds/${feed}?b=${bookmark}`);
     }
 
     streamFeed(feed: string, bookmark: string, onResponse: (response: FeedResponse) => Promise<void>, onError: (err: Error) => void, feedRefreshIntervalSeconds: number): () => void {
-        return this.httpConnection.getStream(`/feeds/${feed}?b=${bookmark}`, r => onResponse(r as FeedResponse), onError, feedRefreshIntervalSeconds);
+        return this.httpConnection.getStream(`/feeds/${feed}?b=${bookmark}`, r => {
+            // Data on the stream is the replicator answering, so it counts the
+            // same way a request's response does (issue #400).
+            this.notifyResponse();
+            return onResponse(r as FeedResponse);
+        }, onError, feedRefreshIntervalSeconds);
     }
 
     private async post(path: string, contentType: PostContentType, accept: PostAccept, body: string) {
-        const response = await this.httpConnection.post(path, contentType, accept, body, this.config.timeoutSeconds);
+        const response = await this.postReporting(path, contentType, accept, body);
         if (response.result === 'success') {
+            this.notifyResponse();
             return response.response;
         }
         else {
-            throw httpError(response);
+            throw this.reported(httpError(response));
         }
     }
 
@@ -216,16 +316,20 @@ export class WebClient {
         const waits = new RetryWaits(this.retrySchedule);
 
         while (true) {
-            const response = await this.httpConnection.post(path, contentType, accept, body, this.config.timeoutSeconds);
+            const response = await this.postReporting(path, contentType, accept, body);
             if (response.result === 'success') {
+                this.notifyResponse();
                 return response.response;
             }
             else if (response.result === 'failure') {
-                throw httpError(response);
+                throw this.reported(httpError(response));
             }
             else {
                 const waitMs = waits.next();
                 if (waitMs === null) {
+                    // A transient result that outlived the schedule never
+                    // showed that the replicator received the request, so it is
+                    // not a response to report (issue #400).
                     throw httpError(response);
                 }
                 Trace.warn(`Retrying in ${waitMs / 1000} seconds: ${response.error}`);

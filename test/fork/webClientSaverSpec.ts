@@ -727,6 +727,7 @@ describe("A save that is retrying (issue #399)", () => {
 
     afterEach(() => {
         jest.restoreAllMocks();
+        jest.useRealTimers();
         global.fetch = realFetch;
     });
 
@@ -756,25 +757,14 @@ describe("A save that is retrying (issue #399)", () => {
 
     it("reports the retry before the wait elapses, not after it", async () => {
         // Criterion 2. A report that arrives once the wait is over names a
-        // delay the consumer can no longer act on. Holding the wait open is
-        // what makes the difference observable without timing anything: the
-        // loop's own `setTimeout` is captured here rather than scheduled, so
-        // nothing read below can have happened after the wait, and the attempt
-        // the wait precedes has not been made.
-        //
-        // Jest's fake timers would say the same thing, and cannot be used:
-        // under Node's read-only `performance` the modern implementation
-        // throws from `useFakeTimers` with the clock half installed, which
-        // strands every test after it.
+        // delay the consumer can no longer act on. Jest's fake timers hold the
+        // loop's wait open, so nothing read below can have happened after the
+        // wait, and the attempt the wait precedes has not been made.
+        jest.useFakeTimers();
         const connection = new ScriptedConnection([
             transient("Service Unavailable", 503),
             succeeded
         ]);
-        const waiting: (() => void)[] = [];
-        jest.spyOn(global, "setTimeout").mockImplementation(((callback: () => void) => {
-            waiting.push(callback);
-            return 0;
-        }) as unknown as typeof setTimeout);
 
         const flush = saverOver(connection, { initialDelayMs: 20, maxDelayMs: 20 }).save();
 
@@ -783,13 +773,14 @@ describe("A save that is retrying (issue #399)", () => {
         await settle();
         const reportedBeforeTheWait = statuses.filter(status => status.retrying);
         const attemptedBeforeTheWait = [...connection.paths];
+        const waitsPending = jest.getTimerCount();
 
         // Release the wait and let the flush finish before asserting, so the
         // test leaves nothing outstanding whichever way it goes.
-        expect(waiting).toHaveLength(1);
-        waiting[0]();
+        jest.advanceTimersByTime(20);
         await flush;
 
+        expect(waitsPending).toBe(1);
         expect(reportedBeforeTheWait).toEqual([
             { sending: true, retrying: true, retryInSeconds: 0.02, warning: "Service Unavailable" }
         ]);
