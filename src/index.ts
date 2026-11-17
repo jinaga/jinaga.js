@@ -52,7 +52,7 @@ export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { FactManager } from "./managers/factManager";
 export { DEFAULT_FEED_REFRESH_INTERVAL_SECONDS, Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
-export { QueueBackoffOptions, QueueProcessor, SaveOutcome, Saver } from './managers/QueueProcessor';
+export { QueueBackoffOptions, QueueProcessor, SaveOutcome, SaveRequest, Saver } from './managers/QueueProcessor';
 export { MemoryStore } from './memory/memory-store';
 export { Device, User, UserName } from "./model/user";
 export { DEFAULT_LISTENER_TIMEOUT_MS, InverseListener, InverseReadNumbering, ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';

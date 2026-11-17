@@ -409,9 +409,16 @@ describe("Save queue flush past a refused batch (issue #395)", () => {
         expect(queue.envelopes.map(e => e.fact.hash)).toEqual(["A", "B"]);
     });
 
-    it("sends a refused fact again on a later flush, and its descendants with it", async () => {
+    it("sends a refused fact again when the application asks, and its descendants behind it", async () => {
         // Criterion 6. A refusal is evaluated against the replicator's graph,
         // which may later gain the fact that authorizes it. Nothing is dropped.
+        //
+        // Which flush sends it again is what issue #410 changed. A fact the
+        // replicator refused on its own is parked, so an ordinary later flush
+        // leaves it out of its batch; what offers it again is a pass that
+        // accepted something, or the application asking through `push()`, as
+        // here. A pass that offers a parked fact offers one fact per request,
+        // so A and C arrive in that order rather than together.
         let refused = true;
         const queue = new FakeQueue([plain("A"), descendant("C", ["A"])]);
         const client = new RecordingClient(notifier,
@@ -422,10 +429,11 @@ describe("Save queue flush past a refused batch (issue #395)", () => {
         expect(queue.envelopes.map(e => e.fact.hash)).toEqual(["A", "C"]);
 
         refused = false;
-        await saver.save();
+        const before = client.requests.length;
+        await saver.save({ retryParked: true });
 
         expect(queue.envelopes).toHaveLength(0);
-        expect(client.requests[client.requests.length - 1]).toEqual(["A", "C"]);
+        expect(client.requests.slice(before)).toEqual([["A"], ["C"]]);
     });
 
     it("sends the batches it always sent when every request succeeds", async () => {
@@ -456,7 +464,10 @@ describe("Save queue flush past a refused batch (issue #395)", () => {
         expect(statuses[statuses.length - 1].sending).toBe(false);
 
         refused = false;
-        await saver.save();
+        // A and C are parked by the flush above, so the application asks for
+        // them rather than waiting for a write that would accept something
+        // (issue #410).
+        await saver.save({ retryParked: true });
 
         expect(queue.envelopes).toHaveLength(0);
         expect(statuses[statuses.length - 1].warning).toBe("");
@@ -910,5 +921,209 @@ describe("A save that is retrying (issue #399)", () => {
         expect(statuses.some(status => status.retrying)).toBe(false);
         expect(connection.paths).toEqual(["/save"]);
         expect(statuses[statuses.length - 1].warning).toContain("1 fact(s) could not be sent");
+    });
+});
+
+describe("Save queue flush past a fact that stays refused (issue #410)", () => {
+    let notifier: SyncStatusNotifier;
+    let statuses: SyncStatus[];
+
+    beforeEach(() => {
+        notifier = new SyncStatusNotifier();
+        statuses = [];
+        notifier.onSyncStatus(status => statuses.push(status));
+    });
+
+    /**
+     * A saver whose queue already holds one fact the replicator refuses, with
+     * that refusal recorded: the flush that parked `X` sent it on its own.
+     */
+    function parkedX(refuse: (hashes: string[]) => Error | undefined) {
+        const queue = new FakeQueue([plain("X")]);
+        const client = new RecordingClient(notifier, refuse);
+        const saver = new WebClientSaver(client.asWebClient(), queue);
+        return { queue, client, saver };
+    }
+
+    // Everything each criterion asserts is a request the double received, so
+    // the requests the parking flush made are dropped from the comparison.
+    function requestsAfterParking(client: RecordingClient) {
+        return client.requests.slice(1);
+    }
+
+    it("batches the facts written since a refusal without the refused fact", async () => {
+        // Criterion 1. On main the refused fact rides in the first batch, that
+        // batch is refused whole because `/save` authorizes a request as one
+        // unit, and recovering costs one request per fact in it.
+        const { queue, client, saver } = parkedX(refusing("X", forbidden));
+
+        await saver.save();
+        expect(client.requests).toEqual([["X"]]);
+
+        await queue.enqueue([plain("A"), plain("B")]);
+        await saver.save();
+
+        expect(requestsAfterParking(client)).toEqual([["A", "B"], ["X"]]);
+        expect(queue.envelopes.map(e => e.fact.hash)).toEqual(["X"]);
+    });
+
+    it("offers no parked fact in a flush that accepts nothing", async () => {
+        // Criteria 2 and 7. No request this flush could make would land, so it
+        // makes none for X -- and X is still queued afterwards.
+        const { queue, client, saver } = parkedX(
+            hashes => hashes.some(hash => hash === "X" || hash === "Y")
+                ? forbidden()
+                : undefined);
+
+        await saver.save();
+        await queue.enqueue([plain("Y")]);
+        await saver.save();
+
+        expect(requestsAfterParking(client)).toEqual([["Y"]]);
+        expect(queue.envelopes.map(e => e.fact.hash)).toEqual(["X", "Y"]);
+    });
+
+    it("offers a parked fact again once a pass accepts something, and drains it", async () => {
+        // Criterion 3. The fact that authorizes X is one this client wrote, so
+        // the acceptance of Z is what cures X -- in that same flush.
+        let zAccepted = false;
+        const { queue, client, saver } = parkedX(hashes => {
+            if (hashes.includes("Z")) {
+                zAccepted = true;
+                return undefined;
+            }
+            return hashes.includes("X") && !zAccepted ? forbidden() : undefined;
+        });
+
+        await saver.save();
+        await queue.enqueue([plain("Z")]);
+        await saver.save();
+
+        expect(requestsAfterParking(client)).toEqual([["Z"], ["X"]]);
+        expect(queue.envelopes).toHaveLength(0);
+    });
+
+    it("holds a parked fact's queued descendants back, and offers them right after it", async () => {
+        // Criterion 4. C names X as a predecessor, so sending it while X is
+        // refused would leave a dangling reference.
+        let refused = true;
+        const { queue, client, saver } = parkedX(
+            hashes => refused && hashes.includes("X") ? forbidden() : undefined);
+
+        await saver.save();
+        await queue.enqueue([descendant("C", ["X"]), plain("B")]);
+        await saver.save();
+
+        // B batches on its own, and the pass it accepted earns X a request. C
+        // is never offered while X is refused.
+        expect(requestsAfterParking(client)).toEqual([["B"], ["X"]]);
+        expect(queue.envelopes.map(e => e.fact.hash)).toEqual(["X", "C"]);
+
+        // Whenever X is offered, C is offered right behind it.
+        refused = false;
+        const before = client.requests.length;
+        await saver.save({ retryParked: true });
+
+        expect(client.requests.slice(before)).toEqual([["X"], ["C"]]);
+        expect(queue.envelopes).toHaveLength(0);
+    });
+
+    it("offers every parked fact when the caller asks, with nothing else queued", async () => {
+        // Criteria 5 and 7. This is what `push()` asks for: the application may
+        // know of a change the client cannot see.
+        const { queue, client, saver } = parkedX(refusing("X", forbidden));
+
+        await saver.save();
+        await saver.save();
+
+        // An ordinary flush over a queue of parked facts alone makes no request.
+        expect(requestsAfterParking(client)).toEqual([]);
+
+        await saver.save({ retryParked: true });
+
+        expect(requestsAfterParking(client)).toEqual([["X"]]);
+        expect(queue.envelopes.map(e => e.fact.hash)).toEqual(["X"]);
+    });
+
+    it("offers a parked fact once, not once per pass, when the caller asks", async () => {
+        // The asked-for pass is earned once. Without that bound a flush whose
+        // every pass accepts nothing would offer the parked facts forever.
+        const { queue, client, saver } = parkedX(refusing("X", forbidden));
+
+        await saver.save();
+        await queue.enqueue([plain("A")]);
+        await saver.save({ retryParked: true });
+
+        expect(requestsAfterParking(client)).toEqual([["A"], ["X"]]);
+    });
+
+    it("forgets what was parked when a new saver takes over the queue", async () => {
+        // Criterion 6. The set is derived from refusals one saver has seen and
+        // is never persisted, so a reload offers every queued fact again -- and
+        // a replicator whose rules or model changed is picked up at the next
+        // start.
+        const queue = new FakeQueue([plain("X")]);
+        const client = new RecordingClient(notifier, refusing("X", forbidden));
+
+        await new WebClientSaver(client.asWebClient(), queue).save();
+        await new WebClientSaver(client.asWebClient(), queue).save();
+
+        expect(client.requests).toEqual([["X"], ["X"]]);
+    });
+
+    it("still reports a queue of parked facts, with the refusal that parked them", async () => {
+        // The stall warning counts a parked fact, and the reason it carries is
+        // the refusal, not the absence of a request this flush never made.
+        const { saver } = parkedX(
+            refusing("X", () => new ForbiddenError("Rejected 1 fact of type Test.Fact.", null)));
+
+        await saver.save();
+        statuses.length = 0;
+        await saver.save();
+
+        const warning = statuses[statuses.length - 1];
+        expect(warning.sending).toBe(false);
+        expect(warning.warning).toContain("1 fact(s) could not be sent");
+        expect(warning.warning).toContain("Rejected 1 fact of type Test.Fact.");
+    });
+
+    it("batches as it always has when nothing is parked", async () => {
+        // The first pass is unchanged for a saver that has seen no refusal.
+        const queue = new FakeQueue(
+            Array.from({ length: 5 }, (_, i) => plain(`f${i}`)));
+        const client = new RecordingClient(notifier, () => undefined);
+
+        await new WebClientSaver(client.asWebClient(), queue, { maxBatchCount: 2 }).save();
+
+        expect(client.requests).toEqual([["f0", "f1"], ["f2", "f3"], ["f4"]]);
+        expect(queue.envelopes).toHaveLength(0);
+    });
+});
+
+describe("Batching around a parked fact (issue #410)", () => {
+    let notifier: SyncStatusNotifier;
+
+    beforeEach(() => {
+        notifier = new SyncStatusNotifier();
+        notifier.onSyncStatus(() => { });
+    });
+
+    it("spends no batch budget on a parked fact", async () => {
+        // A parked fact over the byte budget would take a whole batch with it,
+        // splitting the facts written after it across requests of their own.
+        // The cost of sending them must not depend on it at all.
+        const maxBatchBytes = 1500;
+        const queue = new FakeQueue([envelope("huge", maxBatchBytes * 2)]);
+        const client = new RecordingClient(notifier, refusing("huge", forbidden));
+        const saver = new WebClientSaver(client.asWebClient(), queue, { maxBatchBytes });
+
+        await saver.save();
+        expect(client.requests).toEqual([["huge"]]);
+
+        await queue.enqueue([envelope("a", 200), envelope("b", 200)]);
+        await saver.save();
+
+        // One request for the pair, not one each.
+        expect(client.requests[1]).toEqual(["a", "b"]);
     });
 });

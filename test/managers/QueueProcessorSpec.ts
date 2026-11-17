@@ -1,4 +1,4 @@
-import { delay, QueueProcessor, SaveOutcome, Saver, Trace, Tracer } from "@src";
+import { delay, QueueProcessor, SaveOutcome, SaveRequest, Saver, Trace, Tracer } from "@src";
 
 describe("QueueProcessor", () => {
     // Mock implementation of the Saver interface
@@ -8,9 +8,14 @@ describe("QueueProcessor", () => {
         public saveTimes: number[] = [];
         public savePromise: Promise<void> | null = null;
         public delayMs = 0;
+        /** What each flush was asked for (issue #410). */
+        public readonly requests: (SaveRequest | undefined)[] = [];
+        /** What this saver reports to the processor about the connection. */
+        public stalledOnConnection = false;
 
-        async save(): Promise<SaveOutcome> {
+        async save(request?: SaveRequest): Promise<SaveOutcome> {
             this.saveCount++;
+            this.requests.push(request);
             this.lastSaveTime = Date.now();
             this.saveTimes.push(this.lastSaveTime);
             
@@ -22,8 +27,7 @@ describe("QueueProcessor", () => {
                 await this.savePromise;
             }
             
-            // Nothing here stalls on a connection, so no backoff is armed.
-            return { stalledOnConnection: false };
+            return { stalledOnConnection: this.stalledOnConnection };
         }
 
         reset(): void {
@@ -31,6 +35,7 @@ describe("QueueProcessor", () => {
             this.lastSaveTime = 0;
             this.saveTimes = [];
             this.savePromise = null;
+            this.requests.length = 0;
         }
     }
 
@@ -151,6 +156,45 @@ describe("QueueProcessor", () => {
         } finally {
             Trace.configure(originalTracer);
         }
+    }, 1000);
+
+    it("asks the saver to retry what it parked only when the application pushes", async () => {
+        // Issue #410. A fact the replicator refused on its own is not worth a
+        // request until something could change the answer. A scheduled flush
+        // carries new facts and is not that; an application calling `push()` is
+        // saying it knows of a change the client cannot see.
+        queueProcessor = new QueueProcessor(saver, 0);
+
+        queueProcessor.scheduleProcessing();
+        await queueProcessor.processQueueNow();
+
+        expect(saver.requests.map(request => request?.retryParked === true))
+            .toEqual([false, true]);
+    }, 1000);
+
+    it("does not ask the saver to retry what it parked when a stall re-flushes", async () => {
+        // Issue #410, against issue #400's re-flush. A stall on the connection
+        // says nothing about the facts the replicator refused, so the flush it
+        // triggers leaves them parked.
+        saver.stalledOnConnection = true;
+        // A backoff far longer than this test, so the only thing that can make
+        // a second flush is the re-flush below.
+        queueProcessor = new QueueProcessor(saver, 0,
+            { retry: { initialDelayMs: 60000, maxDelayMs: 60000 } });
+
+        queueProcessor.scheduleProcessing();
+        // The processor reads the outcome after the flush resolves, so the
+        // stalled state it acts on is not set until then.
+        await delay(20);
+        expect(saver.saveCount).toBe(1);
+
+        // The replicator answered, which is the evidence issue #400 acts on.
+        saver.stalledOnConnection = false;
+        queueProcessor.flushIfStalled();
+        await delay(50);
+
+        expect(saver.saveCount).toBe(2);
+        expect(saver.requests.some(request => request?.retryParked === true)).toBe(false);
     }, 1000);
 
     it("should stop processing when disposed", async () => {
