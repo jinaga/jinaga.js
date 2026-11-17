@@ -15,6 +15,18 @@ export type SyncStatus = {
     warning: string;
 }
 
+/**
+ * Report that a request is about to wait before trying again, with the wait the
+ * schedule just produced and the transient error that provoked it (issue #399).
+ *
+ * The call site supplies it rather than the retry loop deciding for itself.
+ * `SyncStatus` describes outgoing facts, so a retried `POST /save` reports and a
+ * retried `POST /load` reports nothing, and that is a property of the caller
+ * rather than of the loop: passing the reporting in keeps the loop from
+ * branching on the path it was handed.
+ */
+export type RetryReporter = (waitMs: number, error: string) => void;
+
 export class SyncStatusNotifier {
     private syncStatusHandlers: ((status: SyncStatus) => void)[] = [];
 
@@ -132,9 +144,9 @@ export class WebClient {
         }
 
         if (this.saveContentTypes.includes(ContentTypeGraph)) {
-            await this.postWithLimitedRetry('/save', ContentTypeGraph, undefined, serializeGraph(envelopes));
+            await this.postWithLimitedRetry('/save', ContentTypeGraph, undefined, serializeGraph(envelopes), this.reportSaveRetry);
         } else {
-            await this.postWithLimitedRetry('/save', ContentTypeJson, ContentTypeJson, JSON.stringify(serializeSave(envelopes)));
+            await this.postWithLimitedRetry('/save', ContentTypeJson, ContentTypeJson, JSON.stringify(serializeSave(envelopes)), this.reportSaveRetry);
         }
     }
 
@@ -170,11 +182,37 @@ export class WebClient {
     }
 
     /**
+     * Publish each retry of a `POST /save` through the sync status, so a
+     * consumer learns that the save is stalled while it still is rather than
+     * once the schedule has run out (issue #399). An unreachable replicator
+     * reaches the retry loop too -- `FetchConnection` reports a network error
+     * and its own timeout as statuses the loop reads as transient -- so without
+     * this the first a consumer heard of one was the stall warning, minutes
+     * later, or never under an unbounded schedule.
+     *
+     * `retryInSeconds` is the wait the schedule just produced, carried here in
+     * the milliseconds the loop is about to wait, rather than a second
+     * calculation of the backoff beside the one that does the waiting
+     * (Article 2).
+     */
+    private readonly reportSaveRetry: RetryReporter = (waitMs, error) => {
+        this.notifySyncStatus({
+            sending: true,
+            retrying: true,
+            retryInSeconds: waitMs / 1000,
+            warning: error
+        });
+    };
+
+    /**
      * Post, retrying a response the connection reported as transient. The
      * waits, and the point at which the retrying gives up, come from the
      * configured schedule rather than from constants here (issue #305).
+     *
+     * `onRetry`, where the caller supplies one, hears about each wait before it
+     * is taken.
      */
-    private async postWithLimitedRetry(path: string, contentType: PostContentType, accept: PostAccept, body: string) {
+    private async postWithLimitedRetry(path: string, contentType: PostContentType, accept: PostAccept, body: string, onRetry?: RetryReporter) {
         const waits = new RetryWaits(this.retrySchedule);
 
         while (true) {
@@ -191,6 +229,13 @@ export class WebClient {
                     throw httpError(response);
                 }
                 Trace.warn(`Retrying in ${waitMs / 1000} seconds: ${response.error}`);
+                // Reported before the wait rather than after it. A report that
+                // arrives once the wait has elapsed tells a consumer about a
+                // delay it can no longer act on, and leaves `retryInSeconds`
+                // naming a wait that is already over.
+                if (onRetry) {
+                    onRetry(waitMs, response.error);
+                }
                 await delay(waitMs);
             }
         }
