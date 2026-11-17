@@ -75,7 +75,7 @@ describe("Specification parser", () => {
     });
 
     it("requires at least one given", () => {
-        expect(() => parseSpecification("() { }")).toThrowError(
+        expect(() => parseSpecification("() { }")).toThrow(
             /The specification must contain at least one given label/
         );
     });
@@ -84,7 +84,7 @@ describe("Specification parser", () => {
         expect(() => parseSpecification(`
             (parent: MyApp.Parent) {
                 child: MyApp.Child []
-            }`)).toThrowError(
+            }`)).toThrow(
             /The match for 'child' has no conditions/
         );
     });
@@ -95,7 +95,7 @@ describe("Specification parser", () => {
                 parent: MyApp.Parent [
                     parent->parent:MyApp.Parent = parent
                 ]
-            }`)).toThrowError(
+            }`)).toThrow(
             /The name 'parent' has already been used/
         );
     });
@@ -109,7 +109,7 @@ describe("Specification parser", () => {
                 child: MyApp.Child [
                     child->parent:MyApp.Parent = child
                 ]
-            }`)).toThrowError(
+            }`)).toThrow(
             /The name 'child' has already been used/
         );
     });
@@ -120,7 +120,7 @@ describe("Specification parser", () => {
                 child: MyApp.Child [
                     parent = child->parent:MyApp.Parent
                 ]
-            }`)).toThrowError(
+            }`)).toThrow(
             /The unknown 'child' must appear on the left side of the path/
         );
     });
@@ -131,7 +131,7 @@ describe("Specification parser", () => {
                 child: MyApp.Child [
                     child->parent:MyApp.Parent = sibling
                 ]
-            }`)).toThrowError(
+            }`)).toThrow(
             /The label 'sibling' has not been defined/
         );
     });
@@ -316,7 +316,7 @@ describe("Specification parser", () => {
                         ]
                     }
                 ]
-            }`)).toThrowError(
+            }`)).toThrow(
             /The existential condition must be based on the unknown 'assignment'/
         );
     });

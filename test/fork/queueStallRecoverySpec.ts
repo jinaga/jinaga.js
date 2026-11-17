@@ -13,7 +13,6 @@ import {
 import { ContentTypeJson, PostAccept, PostContentType } from "../../src/http/ContentType";
 import { HttpConnection, HttpResponse } from "../../src/http/web-client";
 import { FactEnvelope, Queue } from "../../src/storage";
-import { useFakeTimers } from "../utils/fake-timers";
 
 /**
  * What the replicator does with a request.
@@ -197,7 +196,7 @@ describe("Flushing a queue that stalled on the connection (issue #400)", () => {
     }
 
     beforeEach(() => {
-        useFakeTimers();
+        jest.useFakeTimers();
         // The schedule adds jitter so that clients which have all reached the
         // ceiling still spread their attempts. A test asserting on the delays
         // the schedule produced takes it out, rather than asserting on a range
