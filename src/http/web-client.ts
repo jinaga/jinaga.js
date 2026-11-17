@@ -34,6 +34,13 @@ export type RetryReporter = (waitMs: number, error: string) => void;
  */
 export type ResponseListener = () => void;
 
+/**
+ * Notified when a `POST /save` is about to wait before trying again (issue
+ * #394). It carries nothing: what it reports is that the replicator is not
+ * answering this save yet, which is all a caller bounding a flush needs.
+ */
+export type SaveRetryListener = () => void;
+
 export class SyncStatusNotifier {
     private syncStatusHandlers: ((status: SyncStatus) => void)[] = [];
 
@@ -112,6 +119,7 @@ export class WebClient {
     private saveContentTypes: string[] | null = null;
     private readonly retrySchedule: RetrySchedule;
     private readonly responseListeners = new Set<ResponseListener>();
+    private readonly saveRetryListeners = new Set<SaveRetryListener>();
 
     constructor(
         private httpConnection: HttpConnection,
@@ -139,6 +147,24 @@ export class WebClient {
         this.responseListeners.add(listener);
         return () => {
             this.responseListeners.delete(listener);
+        };
+    }
+
+    /**
+     * Register a listener for every retry of a `POST /save` (issue #394).
+     * Returns a function that unregisters it.
+     *
+     * The same event the sync status reports as `retrying: true` (issue #399),
+     * on a channel a caller can unregister from. A watch waiting for its own
+     * facts to reach the replicator ends that wait here: a save that is
+     * retrying is one the replicator is not answering, and waiting out its
+     * schedule would hold the watch's load for the whole retry budget, which is
+     * unbounded under `retry: { timeoutMs: 0 }`.
+     */
+    onSaveRetry(listener: SaveRetryListener): () => void {
+        this.saveRetryListeners.add(listener);
+        return () => {
+            this.saveRetryListeners.delete(listener);
         };
     }
 
@@ -301,6 +327,20 @@ export class WebClient {
             retrying: true,
             retryInSeconds: waitMs / 1000,
             warning: error
+        });
+        // The same event, on the channel `onSaveRetry` serves (issue #394).
+        // Derived from this one call site rather than from a second reading of
+        // the retry loop, so the two channels cannot disagree about whether a
+        // save is retrying. A listener's failure is logged and swallowed: it is
+        // reporting on a request that is still in flight, and must not change
+        // what that request does.
+        this.saveRetryListeners.forEach(listener => {
+            try {
+                listener();
+            }
+            catch (e) {
+                Trace.error(e);
+            }
         });
     };
 

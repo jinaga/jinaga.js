@@ -12,6 +12,11 @@ import { FeedDecision } from "../http/messages";
  * be treated as fatal. Nothing in the decision predicts that such a fact will
  * arrive. The subscription race, where this client has saved the authorizing
  * fact and the replicator has not yet received it, is the case it exists for.
+ *
+ * A watch does not simply wait for one: it sends what this client has unsent
+ * and asks the replicator again (issue #394), so a diagnostic it raised is
+ * followed by `cleared` once the feed delivers, or by `settled` once the
+ * replicator has had everything this client sent and still withholds it.
  * When `false`, the denial is structural (a missing or narrowed-past rule, or a
  * principal the rule excludes) and will not self-heal on its own.
  *
@@ -46,6 +51,25 @@ export interface DistributionDiagnostic {
      * The matching raised diagnostic (same `feed`) can be considered resolved.
      */
     cleared?: boolean;
+    /**
+     * True when a watch asked the replicator again, after everything this
+     * client had queued had left it, and the feed was still pending (issue
+     * #394).
+     *
+     * It is the watch's own verdict about one fetch, not a decision the
+     * replicator reported: the replicator withheld this feed although it had
+     * received every fact this client had to send, so waiting on this client's
+     * own writes cannot change it. That is why it carries `reactive: false` and
+     * `decision: 'denied'` rather than repeating the pending state, and why
+     * `settled` is a field of its own rather than a denial code -- a code would
+     * have to be one the replicator's wire format validates, and the replicator
+     * never said this.
+     *
+     * A settled feed is settled *as of that fetch*. Another client's fact, or a
+     * later batch from this one, can still authorize it, and the clearing
+     * diagnostic then follows the settled one for the same feed.
+     */
+    settled?: boolean;
 }
 
 /**
@@ -142,6 +166,36 @@ export function toClearingDiagnostic(
         reason: 'Distribution is now authorized for the current user; the feed is delivering data.',
         feed: decision.feed,
         cleared: true
+    };
+}
+
+/**
+ * Build the settled diagnostic (issue #394) a watch emits when it asked the
+ * replicator again -- after everything this client had queued had left it --
+ * and the feed was still pending.
+ *
+ * It carries the pending diagnostic's `feed` and `code`, so a consumer retires
+ * the earlier pending signal by the same correlation it uses for a clearing
+ * one. `reactive` is `false` and `decision` is `denied` because the state this
+ * reports is not the pending one: a consumer that reads only those two fields
+ * must not take it for another "the race may still resolve" event. What makes
+ * it distinct from a replicator's own denial is `settled`, which says whose
+ * verdict it is.
+ */
+export function toSettledDiagnostic(
+    operation: DistributionDiagnostic['operation'],
+    specification: string,
+    decision: FeedDecision
+): DistributionDiagnostic {
+    return {
+        operation,
+        specification,
+        decision: 'denied',
+        code: decision.code,
+        reactive: false,
+        reason: 'The replicator still withheld this feed after receiving every fact this client had sent, so no write of this client\'s can authorize it.',
+        feed: decision.feed,
+        settled: true
     };
 }
 

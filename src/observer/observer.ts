@@ -8,6 +8,7 @@ import { exactInverses } from "../specification/inverse-candidates";
 import { SpecificationRow } from "../specification/row";
 import { Match, Projection, Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
+import { PendingFeedResolution } from "./pending-feed-resolution";
 import { givenCandidateInverse } from "./recheck";
 import { computeStringHash } from "../util/encoding";
 import { Trace } from "../util/trace";
@@ -48,9 +49,15 @@ export interface Observer<T> {
      *
      * This is what a pull-to-refresh gesture, a window regaining focus, or a
      * push notification that says "something changed" calls. A `watch` fetches
-     * only at start, so without this the only way to pick facts up on demand
-     * is to `stop()` the observer and create another one, which re-delivers
-     * every current row to a handler that has already seen it.
+     * at start, and again for a feed the replicator answered pending
+     * authorization (issue #394), but it never holds a feed open, so without
+     * this the only way to pick up facts another client wrote is to `stop()`
+     * the observer and create another one, which re-delivers every current row
+     * to a handler that has already seen it.
+     *
+     * On a watch this makes a whole new pass: whatever became of the last one,
+     * a feed answered pending is flushed and asked about again. A wait already
+     * under way for the same watch is superseded rather than run twice.
      *
      * A refresh during the initial load *is* the initial load: it issues no
      * second fetch and resolves when `loaded()` does, rejecting with it if the
@@ -470,6 +477,16 @@ export class ObserverImpl<T> implements Observer<T> {
      * check and a clearing feed do not each write one.
      */
     private cacheDateWritten: boolean = false;
+    /**
+     * How this watch resolves a feed the replicator answered pending
+     * authorization (issue #394): flush what this client has unsent, ask once
+     * more, and keep listening while anything is pending.
+     *
+     * Built for every observer and used only by a watch. A subscription holds
+     * its feeds open and hears the race resolve through
+     * `registerClearingListeners`, so it never makes a pass through this.
+     */
+    private readonly pendingResolution: PendingFeedResolution;
 
     constructor(
         private factManager: FactManager,
@@ -523,6 +540,13 @@ export class ObserverImpl<T> implements Observer<T> {
         this.specificationHash = computeStringHash(request);
         // Retain the pre-intersection spec description for diagnostics.
         this.specificationString = specificationString;
+
+        this.pendingResolution = new PendingFeedResolution(factManager, {
+            specification: this.specificationString,
+            refetch: () => this.refetchBranches(),
+            emit: diagnostic => this.emitDiagnostic(diagnostic),
+            resolved: feed => this.onPendingFeedResolved(feed)
+        });
     }
 
     public start(keepAlive: boolean) {
@@ -775,6 +799,9 @@ export class ObserverImpl<T> implements Observer<T> {
             unsubscribe();
         }
         this.clearingUnsubscribes.length = 0;
+        // Drop the progress listener a pending feed left behind (issue #394),
+        // so a later batch fetches nothing and emits nothing.
+        this.pendingResolution.stop();
         for (const branch of this.branches) {
             for (const level of branch.levels) {
                 for (const listener of level.listeners) {
@@ -900,6 +927,12 @@ export class ObserverImpl<T> implements Observer<T> {
      * and so does every `refresh()` -- of a watch or of a subscription. Facts it
      * brings in are delivered by the inverse listeners, exactly as a local save
      * is, so a row already delivered is not delivered twice.
+     *
+     * On a watch, a pass that is answered pending authorization is not the end
+     * of it: `PendingFeedResolution` sends what this client has unsent and asks
+     * the replicator once more (issue #394). That is a watch's rule alone, so
+     * the pass a subscription's `refresh()` makes here still ends with the
+     * decisions it got.
      */
     private async fetchOnce() {
         const decisions: FeedDecision[] = [];
@@ -909,6 +942,47 @@ export class ObserverImpl<T> implements Observer<T> {
             this.recordPendingFeeds(branchDecisions);
         }));
         this.captureDiagnostics(this.keepAlive ? 'subscribe' : 'watch', decisions);
+        if (!this.keepAlive) {
+            // A watch holds nothing open, so a feed answered pending
+            // authorization would stay empty for the life of the watch. This
+            // sends what this client has unsent and asks once more (issue
+            // #394). Awaited, so the rows a second fetch brings are delivered
+            // before the load resolves. A subscription takes none of it: its
+            // feeds stay open and the race resolves through the clearing
+            // listeners.
+            await this.pendingResolution.pass(decisions);
+        }
+    }
+
+    /**
+     * Ask the replicator again about every branch, with the cached `POST /feeds`
+     * response dropped first so it actually decides (issue #394).
+     *
+     * The decisions are not recorded as pending here: `PendingFeedResolution`
+     * holds what this watch is waiting on, and it is reading this answer to
+     * decide which feeds cleared and which settled.
+     */
+    private async refetchBranches(): Promise<FeedDecision[]> {
+        const decisions: FeedDecision[] = [];
+        await Promise.all(this.branches.map(async branch => {
+            const branchDecisions = await this.factManager.refetch(this.given, branch.specification);
+            decisions.push(...branchDecisions);
+        }));
+        return decisions;
+    }
+
+    /**
+     * A feed this watch was waiting on is no longer withheld -- it cleared, or
+     * it settled -- so it no longer withholds the cache date (issue #394
+     * criterion 11, extending issue #402).
+     *
+     * A settled feed counts as answered because it is the replicator's answer
+     * to everything this client has sent: the local graph is as complete as
+     * this replica can make it, so an instant cached read of it is correct.
+     */
+    private async onPendingFeedResolved(feed: string): Promise<void> {
+        this.pendingFeeds.delete(feed);
+        await this.writeCacheDateIfComplete();
     }
 
     /**
@@ -1044,18 +1118,28 @@ export class ObserverImpl<T> implements Observer<T> {
      * so it never disturbs the observer.
      */
     private emitFeedCleared(decision: FeedDecision) {
+        this.emitDiagnostic(toClearingDiagnostic('subscribe', this.specificationString, decision));
+    }
+
+    /**
+     * Record one diagnostic and deliver it to the observer handlers (W6) and the
+     * instance sink (W5). The clearing diagnostic of a held feed goes through
+     * here, and so do the clearing and settled diagnostics a watch's pending
+     * resolution produces (issue #394). Guarded like `captureDiagnostics` so it
+     * never disturbs the observer.
+     */
+    private emitDiagnostic(diagnostic: DistributionDiagnostic) {
         if (this.stopped) {
             return;
         }
         try {
-            const cleared = toClearingDiagnostic('subscribe', this.specificationString, decision);
-            this._diagnostics.push(cleared);
+            this._diagnostics.push(diagnostic);
             for (const handler of this.diagnosticHandlers) {
-                this.safelyInvokeDiagnostic(handler, cleared);
+                this.safelyInvokeDiagnostic(handler, diagnostic);
             }
             if (this.onDiagnostics) {
                 try {
-                    this.onDiagnostics([cleared]);
+                    this.onDiagnostics([diagnostic]);
                 }
                 catch (e) {
                     Trace.error(e);

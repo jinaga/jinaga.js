@@ -142,6 +142,15 @@ export class FactManager {
     }
 
     /**
+     * Fetch, having dropped the cached `POST /feeds` response first, so the
+     * replicator decides again (issue #394).
+     */
+    async refetch(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
+        this.purgeManager.checkCompliance(specification);
+        return await this.networkManager.refetch(start, specification);
+    }
+
+    /**
      * Hold the specification's feeds open. `feedTimeoutMs`, when given, bounds
      * the wait for the replicator's first response (issue #280).
      */
@@ -189,6 +198,14 @@ export class FactManager {
      */
     onProgress(listener: (count: number) => void): () => void {
         return this.fork.onProgress(listener);
+    }
+
+    /**
+     * Register a listener for the save path reporting that it is retrying
+     * (issue #394). Returns an unregister function.
+     */
+    onRetrying(listener: () => void): () => void {
+        return this.fork.onRetrying(listener);
     }
 
     async load(references: FactReference[]): Promise<FactEnvelope[]> {

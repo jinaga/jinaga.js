@@ -24,6 +24,11 @@ export class PassThroughFork implements Fork {
         return this.progress.onProgress(listener);
     }
 
+    onRetrying(_listener: () => void): () => void {
+        // Nothing is sent anywhere, so no save ever retries (issue #394).
+        return () => { };
+    }
+
     load(references: FactReference[]): Promise<FactEnvelope[]> {
         return this.storage.load(references);
     }
