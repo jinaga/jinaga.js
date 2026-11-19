@@ -75,6 +75,11 @@ class Batch {
      * replicator again about the data it refused (issue #410).
      */
     private retryParked = false;
+    /**
+     * A caller is waiting on this batch, so it starts the moment it is
+     * activated rather than after the debounce delay.
+     */
+    private runOnActivate = false;
     private delay: NodeJS.Timeout | null = null;
     private nextBatch: Batch | null = null;
     private notifyResolver: (() => void) | null = null;
@@ -90,7 +95,11 @@ class Batch {
 
     activate() {
         this.isActive = true;
-        this.beginWaiting();
+        if (this.runOnActivate) {
+            this.beginWorking();
+        } else {
+            this.beginWaiting();
+        }
     }
 
     workArrived() {
@@ -98,23 +107,35 @@ class Batch {
         this.beginWaiting();
     }
 
+    /**
+     * Resolves once a flush that began after this call has finished.
+     *
+     * Only one flush is in flight at a time. A batch is inactive while the
+     * flush before it runs, so a direct request that reaches it then waits for
+     * that flush to finish and starts this one immediately after, just as
+     * scheduled work does after the debounce delay. It does not join the
+     * flush in flight: that flush read the queue before this call, so it may
+     * miss facts the caller saved since, and it may have left parked facts
+     * out.
+     */
     runNow(retryParked: boolean): Promise<void> {
         if (this.isTerminated) {
             return Promise.resolve();
         }
+        // Every caller waiting on this flush is owed what it asked for, so a
+        // request to retry parked facts is not lost to an earlier caller that
+        // did not make one (issue #410).
+        this.retryParked = this.retryParked || retryParked;
         if (!this.notifyPromise) {
-            // Recorded before the flush begins, because that is the flush this
-            // call starts. A direct request that arrives while a flush is in
-            // flight reaches the batch that flush already replaced itself with,
-            // so it starts a flush of its own rather than joining that one.
-            // That predates this field and is unchanged by it; what this field
-            // does not do is make such a flush any safer.
-            this.retryParked = retryParked;
             this.notifyPromise = new Promise<void>((resolve, reject) => {
                 this.notifyResolver = resolve;
                 this.notifyRejector = reject;
             });
-            this.beginWorking();
+            if (this.isActive) {
+                this.beginWorking();
+            } else {
+                this.runOnActivate = true;
+            }
         }
         return this.notifyPromise;
     }

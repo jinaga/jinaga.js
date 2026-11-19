@@ -210,6 +210,110 @@ describe("QueueProcessor", () => {
         expect(saver.requests[1]?.retryParked).toBe(false);
     }, 2000);
 
+    describe("a push while a flush is in flight", () => {
+        /**
+         * A saver whose flushes finish only when the test releases them, so
+         * the test controls exactly when a flush is in flight. It reads a
+         * stand-in queue as each flush starts, as WebClientSaver peeks the
+         * real one.
+         */
+        class GatedSaver implements Saver {
+            public readonly queue: string[] = [];
+            public readonly flushes: { sent: string[], request?: SaveRequest }[] = [];
+            public inFlight = 0;
+            public maxInFlight = 0;
+            private readonly releases: ((outcome: SaveOutcome | Error) => void)[] = [];
+
+            save(request?: SaveRequest): Promise<SaveOutcome> {
+                this.flushes.push({ sent: [...this.queue], request });
+                this.inFlight++;
+                this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+                return new Promise<SaveOutcome>((resolve, reject) => {
+                    this.releases.push(outcome => {
+                        this.inFlight--;
+                        if (outcome instanceof Error) {
+                            reject(outcome);
+                        } else {
+                            resolve(outcome);
+                        }
+                    });
+                });
+            }
+
+            release(outcome: SaveOutcome | Error = { stalledOnConnection: false }) {
+                const next = this.releases.shift();
+                if (!next) {
+                    throw new Error("No flush is in flight");
+                }
+                next(outcome);
+            }
+        }
+
+        let gated: GatedSaver;
+
+        beforeEach(() => {
+            gated = new GatedSaver();
+            queueProcessor = new QueueProcessor(gated, 0);
+        });
+
+        it("starts no second flush until the one in flight finishes", async () => {
+            gated.queue.push("A");
+            queueProcessor.scheduleProcessing();
+            expect(gated.flushes).toHaveLength(1);
+
+            const pushed = queueProcessor.processQueueNow();
+            expect(gated.flushes).toHaveLength(1);
+
+            gated.release();
+            await waitForCondition(() => gated.flushes.length === 2);
+            gated.release();
+            await pushed;
+
+            expect(gated.maxInFlight).toBe(1);
+        }, 2000);
+
+        it("resolves only after a flush that read the facts saved before the push", async () => {
+            gated.queue.push("A");
+            queueProcessor.scheduleProcessing();
+
+            // Saved while the first flush is in flight, so that flush read the
+            // queue before this fact was in it.
+            gated.queue.push("B");
+            let resolved = false;
+            const pushed = queueProcessor.processQueueNow().then(() => { resolved = true; });
+
+            gated.release();
+            await waitForCondition(() => gated.flushes.length === 2);
+            expect(resolved).toBe(false);
+
+            gated.release();
+            await pushed;
+
+            expect(gated.flushes[0].sent).toEqual(["A"]);
+            expect(gated.flushes[1].sent).toEqual(["A", "B"]);
+            expect(gated.flushes[1].request?.retryParked).toBe(true);
+        }, 2000);
+
+        it("still flushes when the flush in flight fails", async () => {
+            const originalTracer = Trace.getTracer();
+            Trace.off();
+            try {
+                queueProcessor.scheduleProcessing();
+                const pushed = queueProcessor.processQueueNow();
+
+                gated.release(new Error("connection reset"));
+                await waitForCondition(() => gated.flushes.length === 2);
+                gated.release();
+                await pushed;
+
+                expect(gated.maxInFlight).toBe(1);
+            }
+            finally {
+                Trace.configure(originalTracer);
+            }
+        }, 2000);
+    });
+
     it("should stop processing when disposed", async () => {
         // Arrange
         queueProcessor = new QueueProcessor(saver, 100);
