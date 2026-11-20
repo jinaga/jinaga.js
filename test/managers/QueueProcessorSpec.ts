@@ -314,6 +314,35 @@ describe("QueueProcessor", () => {
         }, 2000);
     });
 
+    describe("a saver written to the 6.15.0 interface", () => {
+        // Before issue #400, `Saver.save` resolved with nothing. `Saver` is
+        // exported, so a saver written then must still compile and run. This
+        // class is that saver: tsc refuses it if `save` must return a
+        // SaveOutcome.
+        class SaverReturningNothing implements Saver {
+            public saveCount = 0;
+
+            async save(): Promise<void> {
+                this.saveCount++;
+            }
+        }
+
+        it("flushes, and is not read as a flush that stalled", async () => {
+            const legacy = new SaverReturningNothing();
+            queueProcessor = new QueueProcessor(legacy, 0);
+
+            await queueProcessor.processQueueNow();
+            expect(legacy.saveCount).toBe(1);
+
+            // Issue #400's re-flush acts only on a flush that stalled. Read as
+            // stalled, this would start a flush and the push below would wait
+            // for it and then run its own, making three.
+            queueProcessor.flushIfStalled();
+            await queueProcessor.processQueueNow();
+            expect(legacy.saveCount).toBe(2);
+        }, 2000);
+    });
+
     it("should stop processing when disposed", async () => {
         // Arrange
         queueProcessor = new QueueProcessor(saver, 100);
