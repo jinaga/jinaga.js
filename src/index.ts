@@ -1,6 +1,8 @@
 export { Authentication } from './authentication/authentication';
+export { AuthenticationCurrentUser } from './authentication/authentication-current-user';
 export { AuthenticationNoOp } from './authentication/authentication-noop';
 export { AuthenticationTest } from './authentication/authentication-test';
+export { CurrentUserSource } from './authentication/current-user';
 export { Authorization } from './authorization/authorization';
 export { AuthorizationEngine, Forbidden } from './authorization/authorization-engine';
 export { AuthorizationNoOp } from "./authorization/authorization-noop";
@@ -52,7 +54,7 @@ export { JinagaBrowser, JinagaBrowserConfig } from "./jinaga-browser";
 export { JinagaTest, JinagaTestConfig } from "./jinaga-test";
 export { FactManager } from "./managers/factManager";
 export { DEFAULT_FEED_REFRESH_INTERVAL_SECONDS, Network, NetworkManager, NetworkNoOp } from "./managers/NetworkManager";
-export { QueueBackoffOptions, QueueProcessor, SaveOutcome, Saver } from './managers/QueueProcessor';
+export { QueueBackoffOptions, QueueProcessor, SaveOutcome, SaveRequest, Saver } from './managers/QueueProcessor';
 export { MemoryStore } from './memory/memory-store';
 export { Device, User, UserName } from "./model/user";
 export { DEFAULT_LISTENER_TIMEOUT_MS, InverseListener, InverseReadNumbering, ObservableSource, ObservableSource as ObservableSourceImpl, SpecificationListener } from './observable/observable';
@@ -75,7 +77,7 @@ export { ComponentProjection, CompositeProjection, Condition, emptySpecification
 export { Invalid, SpecificationParser } from './specification/specification-parser';
 export { assertWellFormed, validateSpecification, validateSpecificationOrThrow, wellFormedErrors } from './specification/specification-validation';
 export { detectDisconnectedSpecification, DisconnectedSpecificationError } from "./specification/UnionFind";
-export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, ReferencesByName, Storage, uniqueFactReferences, validateGiven } from './storage';
+export { computeTupleSubsetHash, FactEnvelope, factEnvelopeEquals, FactFeed, FactRecord, FactReference, factReferenceEquals, FactSignature, FactTuple, PredecessorCollection, ProjectedResult, Queue, QueuedEnvelope, ReferencesByName, Storage, uniqueFactReferences, validateGiven } from './storage';
 export { UserIdentity } from './user-identity';
 export { FeedTimeoutError, ValidationError } from './util/errors';
 export { delay } from './util/promise';

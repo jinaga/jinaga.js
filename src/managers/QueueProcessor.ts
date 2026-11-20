@@ -22,13 +22,31 @@ export interface SaveOutcome {
 }
 
 /**
+ * What a caller asks of one flush (issue #410).
+ */
+export interface SaveRequest {
+    /**
+     * Also offer the data the saver has stopped sending because the replicator
+     * refused it on its own, whether or not this flush accepts anything else.
+     *
+     * A refusal is not proof the data is bad, so it stays queued. But it is the
+     * replicator's judgment of that data, and nothing the client can see
+     * changes it, so an ordinary flush leaves it out rather than spending a
+     * request on it and taking the rest of the batch down with it. An
+     * application that knows something may have changed -- a rule deployed,
+     * another replica writing the fact that authorizes it -- asks for it here.
+     */
+    retryParked?: boolean;
+}
+
+/**
  * Interface for a component that can save data.
  */
 export interface Saver {
     /**
      * Saves data to the network.
      */
-    save(): Promise<SaveOutcome>;
+    save(request?: SaveRequest): Promise<SaveOutcome>;
 }
 
 /**
@@ -52,6 +70,16 @@ class Batch {
     private isActive = false;
     private hasWork = false;
     private isTerminated = false;
+    /**
+     * This flush was asked for directly rather than scheduled, so it asks the
+     * replicator again about the data it refused (issue #410).
+     */
+    private retryParked = false;
+    /**
+     * A caller is waiting on this batch, so it starts the moment it is
+     * activated rather than after the debounce delay.
+     */
+    private runOnActivate = false;
     private delay: NodeJS.Timeout | null = null;
     private nextBatch: Batch | null = null;
     private notifyResolver: (() => void) | null = null;
@@ -67,7 +95,11 @@ class Batch {
 
     activate() {
         this.isActive = true;
-        this.beginWaiting();
+        if (this.runOnActivate) {
+            this.beginWorking();
+        } else {
+            this.beginWaiting();
+        }
     }
 
     workArrived() {
@@ -75,16 +107,35 @@ class Batch {
         this.beginWaiting();
     }
 
-    runNow(): Promise<void> {
+    /**
+     * Resolves once a flush that began after this call has finished.
+     *
+     * Only one flush is in flight at a time. A batch is inactive while the
+     * flush before it runs, so a direct request that reaches it then waits for
+     * that flush to finish and starts this one immediately after, just as
+     * scheduled work does after the debounce delay. It does not join the
+     * flush in flight: that flush read the queue before this call, so it may
+     * miss facts the caller saved since, and it may have left parked facts
+     * out.
+     */
+    runNow(retryParked: boolean): Promise<void> {
         if (this.isTerminated) {
             return Promise.resolve();
         }
+        // Every caller waiting on this flush is owed what it asked for, so a
+        // request to retry parked facts is not lost to an earlier caller that
+        // did not make one (issue #410).
+        this.retryParked = this.retryParked || retryParked;
         if (!this.notifyPromise) {
             this.notifyPromise = new Promise<void>((resolve, reject) => {
                 this.notifyResolver = resolve;
                 this.notifyRejector = reject;
             });
-            this.beginWorking();
+            if (this.isActive) {
+                this.beginWorking();
+            } else {
+                this.runOnActivate = true;
+            }
         }
         return this.notifyPromise;
     }
@@ -119,7 +170,7 @@ class Batch {
         }
         this.nextBatch = new Batch(this.saver, this.delayMilliseconds, this.setBatch);
         this.setBatch(this.nextBatch);
-        this.saver.save()
+        this.saver.save({ retryParked: this.retryParked })
             .then(() => this.done(null))
             .catch((error) => this.done(error));
     }
@@ -190,7 +241,7 @@ export class QueueProcessor {
         // Every flush goes through this wrapper, so the processor reads the
         // outcome of each one rather than being told about it separately.
         const observed: Saver = {
-            save: () => this.runSave(saver)
+            save: (request) => this.runSave(saver, request)
         };
         this.currentBatch = new Batch(observed, delayMilliseconds, (batch) => {
             this.currentBatch = batch;
@@ -214,7 +265,11 @@ export class QueueProcessor {
      */
     public async processQueueNow(): Promise<void> {
         this.restartBackoffCycle();
-        await this.currentBatch.runNow();
+        // The application is asking for the queue now, which is the one moment
+        // it is worth asking the replicator again about the data it refused
+        // (issue #410): the application may know of a change the client cannot
+        // see.
+        await this.currentBatch.runNow(true);
     }
 
     /**
@@ -250,10 +305,10 @@ export class QueueProcessor {
      * neither arming nor cancelling the backoff would be derived from
      * anything.
      */
-    private async runSave(saver: Saver): Promise<SaveOutcome> {
+    private async runSave(saver: Saver, request?: SaveRequest): Promise<SaveOutcome> {
         this.flushing = true;
         try {
-            const outcome = await saver.save();
+            const outcome = await saver.save(request);
             this.stalled = outcome.stalledOnConnection;
             if (this.stalled) {
                 this.armBackoff();
@@ -270,9 +325,11 @@ export class QueueProcessor {
     }
 
     private flushNow(): void {
+        // A stall on the connection says nothing about the data the replicator
+        // refused, so this flush leaves it parked (issue #410).
         // Nothing awaits this flush, so its failure is reported here rather
         // than becoming an unhandled rejection.
-        this.currentBatch.runNow().catch(error => Trace.error(error));
+        this.currentBatch.runNow(false).catch(error => Trace.error(error));
     }
 
     private armBackoff(): void {

@@ -1,7 +1,9 @@
 import { Authentication } from "./authentication/authentication";
+import { AuthenticationCurrentUser } from "./authentication/authentication-current-user";
 import { AuthenticationNoOp } from "./authentication/authentication-noop";
 import { AuthenticationOffline } from "./authentication/authentication-offline";
 import { AuthenticationWebClient } from "./authentication/authentication-web-client";
+import { CurrentUserSource } from "./authentication/current-user";
 import { Fork } from "./fork/fork";
 import { PassThroughFork } from "./fork/pass-through-fork";
 import { PersistentFork } from "./fork/persistent-fork";
@@ -104,8 +106,11 @@ export class JinagaBrowser {
         });
         const syncStatusNotifier = new SyncStatusNotifier();
         const webClient = createWebClient(config, syncStatusNotifier);
-        const fork = createFork(config, store, webClient);
+        // The authentication is created first because it is what remembers
+        // which user is current, and the fork records that user with each fact
+        // it queues (issue #412).
         const authentication = createAuthentication(config, webClient);
+        const fork = createFork(config, store, webClient, authentication);
         const network = createNetwork(config, webClient, store);
         const purgeConditions = createPurgeConditions(config);
         const factManager = new FactManager(fork, observableSource, store, network, purgeConditions, config.feedRefreshIntervalSeconds);
@@ -165,7 +170,8 @@ function createWebClient(
 function createFork(
     config: JinagaBrowserConfig,
     store: Storage,
-    webClient: WebClient | null
+    webClient: WebClient | null,
+    currentUser: CurrentUserSource
 ): Fork {
     if (webClient) {
         if (config.indexedDb) {
@@ -176,7 +182,7 @@ function createFork(
                 maxBatchCount: config.saveBatchCount,
                 retry: config.retry,
                 feedRefreshIntervalSeconds: config.feedRefreshIntervalSeconds
-            });
+            }, currentUser);
             fork.initialize();
             return fork;
         }
@@ -191,7 +197,20 @@ function createFork(
     }
 }
 
+/**
+ * The authentication this client uses, wrapped so that the user each `login()`
+ * resolves with is the current user from then on (issue #412). The fork reads
+ * it, so a fact written offline is attributed to whoever wrote it rather than
+ * to whoever is logged in when the queue drains.
+ */
 function createAuthentication(
+    config: JinagaBrowserConfig,
+    webClient: WebClient | null
+): Authentication & CurrentUserSource {
+    return new AuthenticationCurrentUser(createInnerAuthentication(config, webClient));
+}
+
+function createInnerAuthentication(
     config: JinagaBrowserConfig,
     webClient: WebClient | null
 ): Authentication {

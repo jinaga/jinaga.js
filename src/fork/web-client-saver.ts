@@ -1,7 +1,8 @@
+import { CurrentUserSource } from "../authentication/current-user";
 import { isRefusal } from "../http/errors";
 import { WebClient } from "../http/web-client";
-import { Saver, SaveOutcome } from "../managers/QueueProcessor";
-import { FactEnvelope, FactRecord, FactReference, Queue } from "../storage";
+import { Saver, SaveOutcome, SaveRequest } from "../managers/QueueProcessor";
+import { FactEnvelope, FactRecord, FactReference, Queue, QueuedEnvelope } from "../storage";
 import { Trace } from "../util/trace";
 
 /**
@@ -66,7 +67,10 @@ function utf8ByteLength(text: string): number {
  * budget is a bound with headroom, not an accounting.
  */
 function estimateSize(envelope: FactEnvelope): number {
-    return utf8ByteLength(JSON.stringify(envelope));
+    // Only the fact and its signatures are serialized, so only those are
+    // measured. A queued envelope also carries the user who wrote it
+    // (issue #412), which the request never includes.
+    return utf8ByteLength(JSON.stringify({ fact: envelope.fact, signatures: envelope.signatures }));
 }
 
 /**
@@ -148,7 +152,7 @@ function predecessorKeys(fact: FactRecord): string[] {
  */
 interface FlushPass {
     accepted: number;
-    remaining: FactEnvelope[];
+    remaining: QueuedEnvelope[];
     /** A connection failure ended the flush; no further request was made. */
     stopped: boolean;
     lastError: unknown;
@@ -160,6 +164,22 @@ interface FlushPass {
 export class WebClientSaver implements Saver {
     private readonly maxBatchBytes: number;
     private readonly maxBatchCount: number;
+    /**
+     * The facts the replicator refused when they were sent on their own, keyed
+     * as `type:hash`, each against the error that refused it (issue #410).
+     *
+     * A refusal of a lone fact is the replicator's judgment of that fact, and
+     * `/save` authorizes a request as one unit, so carrying it in the next
+     * batch refuses that whole batch and costs a request per fact to recover
+     * from. These facts are therefore left out of a batch until something
+     * happens that could change the answer: a fact this client just had
+     * accepted, or an application asking again through `push()`.
+     *
+     * Derived, never persisted. A new saver starts with none, so it offers
+     * every queued fact on its first flush, and a replicator whose rules or
+     * model changed is picked up at the next start.
+     */
+    private readonly parked = new Map<string, unknown>();
 
     constructor(
         private readonly client: WebClient,
@@ -171,7 +191,14 @@ export class WebClientSaver implements Saver {
          * reading the queue's length is asynchronous and a report that races the
          * next batch would arrive out of order.
          */
-        private readonly onQueueChanged: () => Promise<void> = () => Promise.resolve()
+        private readonly onQueueChanged: () => Promise<void> = () => Promise.resolve(),
+        /**
+         * Reads the user who is current now, so a flush sends only the facts
+         * this client may send under the token it holds (issue #412). Absent
+         * where there is no notion of a logged-in user, in which case every
+         * queued fact is sendable, as it was before.
+         */
+        private readonly currentUser?: CurrentUserSource
     ) {
         this.maxBatchBytes = positiveOr(options.maxBatchBytes, DEFAULT_MAX_SAVE_BATCH_BYTES);
         this.maxBatchCount = positiveOr(options.maxBatchCount, DEFAULT_MAX_SAVE_BATCH_COUNT);
@@ -221,9 +248,52 @@ export class WebClientSaver implements Saver {
      * soon as the replicator is answering; a flush whose remaining facts were
      * all refused is not, because nothing has changed for them until a later
      * save grows the replicator's graph.
+     *
+     * A fact that stays refused used to make every later flush expensive
+     * (issue #410). It is still queued, so it rode in the next flush's first
+     * batch, that batch was refused whole because of it, and recovering cost
+     * one request per fact in it. So a fact the replicator refused on its own
+     * is **parked**: held out of the first batch, with the queued facts that
+     * descend from it, exactly as a fact refused within this flush is. The cost
+     * of sending new facts no longer depends on how many refused facts are
+     * queued.
+     *
+     * A parked fact is offered again only when something could have changed the
+     * answer. A pass that accepted anything grew the replicator's graph, and
+     * what it accepted may be the fact that authorizes a parked one, so the
+     * next pass offers them one request at a time. `retryParked` offers them
+     * whether or not anything was accepted, which is what `push()` asks for: an
+     * application may know of a change this client cannot see, such as another
+     * replica writing the authorizing fact. A flush that accepts nothing and
+     * was not asked offers none, because no request it could make would land.
+     *
+     * Nothing is dropped. A parked fact stays queued and in the local store,
+     * the stall warning still counts it, and the set is held in memory only, so
+     * a new saver offers every queued fact again.
+     *
+     * Before any of that, a flush sends only the facts it may send as the user
+     * it is (issue #412). The replicator attributes a saved fact to the user on
+     * the request's token, so a fact queued while someone else was logged in
+     * would be judged, and signed where a rule requires it, as this user's
+     * write. Such a fact is left out of the flush entirely, with the queued
+     * facts that descend from it, and nothing about it is reported as a
+     * failure: it has not been refused, it is waiting for its own user. It goes
+     * out at the first flush after that user is current again.
      */
-    async save(): Promise<SaveOutcome> {
-        const envelopes = await this.queue.peek();
+    async save(request: SaveRequest = {}): Promise<SaveOutcome> {
+        const queued = await this.queue.peek();
+        // The parked set describes what is queued, so a fact that has left the
+        // queue leaves it too. Nothing else dequeues today, but a stale key
+        // would hold back a descendant of a fact that is no longer there. It
+        // reads the whole queue rather than what this flush may send, so a fact
+        // waiting for its own user keeps the refusal that parked it.
+        this.prune(queued);
+
+        // A fact is judged and signed as the user on the request's token, so
+        // only the facts this client may send under the token it holds now go
+        // out (issue #412). The rest stay queued for the user who wrote them,
+        // and a flush that has nothing else to send makes no request.
+        const envelopes = this.sendableNow(queued);
         if (envelopes.length === 0) {
             return { stalledOnConnection: false };
         }
@@ -241,11 +311,16 @@ export class WebClientSaver implements Saver {
         // The first pass batches as it always has, so a flush in which every
         // request succeeds sends exactly the requests it sent before.
         let batched = true;
+        // ... and it holds the parked facts back, so the facts written since
+        // one of them was refused are not refused along with it (issue #410).
+        let offerParked = false;
+        let parkedOffered = false;
 
-        // A pass only earns another one by accepting something, so the queue is
-        // strictly shorter every time round and the loop terminates.
+        // A pass earns another one by accepting something, so the queue is
+        // strictly shorter every time round. The one pass that is not earned
+        // that way is the single `retryParked` pass, which can happen once.
         while (pending.length > 0) {
-            const pass = await this.flushPass(pending, batched);
+            const pass = await this.flushPass(pending, batched, offerParked);
             pending = pass.remaining;
             if (pass.lastError !== undefined) {
                 lastError = pass.lastError;
@@ -254,17 +329,38 @@ export class WebClientSaver implements Saver {
                 stoppedOnConnection = true;
                 break;
             }
-            if (pass.accepted === 0) {
-                break;
+            if (offerParked) {
+                parkedOffered = true;
             }
             // Something was accepted, so the replicator's graph has grown and a
-            // fact it refused may be authorized now. Try the rest one request
-            // at a time, so a refused fact never travels with a fact that
-            // descends from it.
+            // fact it refused may be authorized now. A caller that asked for
+            // the parked facts gets one pass that offers them regardless.
+            const anotherPass = pass.accepted > 0 ||
+                (request.retryParked === true && !parkedOffered);
+            if (!anotherPass) {
+                break;
+            }
+            // Try the rest one request at a time, so a refused fact never
+            // travels with a fact that descends from it, and offer the parked
+            // facts among them.
             batched = false;
+            offerParked = true;
         }
 
-        if (pending.length === 0) {
+        // A fact waiting for its own user has not failed: it was not refused,
+        // and no request for it was made, so it is left out of what this flush
+        // reports (issue #412). The same rule reads it as the filter did, so a
+        // fact whose predecessor is waiting is left out with it.
+        const failed = this.sendableNow(pending);
+
+        if (lastError === undefined) {
+            // Every fact still queued was parked by an earlier flush and this
+            // one made no request for it, so the refusal that parked it is what
+            // there is to report.
+            lastError = this.parkedReason(failed);
+        }
+
+        if (failed.length === 0) {
             this.client.notifySyncStatus({
                 sending: false,
                 retrying: false,
@@ -283,7 +379,7 @@ export class WebClientSaver implements Saver {
                 sending: false,
                 retrying: false,
                 retryInSeconds: 0,
-                warning: `${pending.length} fact(s) could not be sent to the replicator: ${reason}`
+                warning: `${failed.length} fact(s) could not be sent to the replicator: ${reason}`
             });
         }
 
@@ -298,26 +394,51 @@ export class WebClientSaver implements Saver {
      * what a pass after a refusal needs: a fact must never share a request with
      * a fact that descends from it, because the refusal of one would be read as
      * the refusal of both.
+     *
+     * `offerParked` sends the facts parked by an earlier flush as well
+     * (issue #410). Without it they start out held, which is what keeps a fact
+     * the replicator has already refused on its own out of a batch of facts it
+     * would otherwise accept.
      */
-    private async flushPass(pending: FactEnvelope[], batched: boolean): Promise<FlushPass> {
-        const batches = batched
-            ? batchEnvelopes(pending, this.maxBatchBytes, this.maxBatchCount)
-            : pending.map(envelope => [envelope]);
-
+    private async flushPass(pending: QueuedEnvelope[], batched: boolean, offerParked: boolean): Promise<FlushPass> {
         const sent = new Set<string>();
-        // Facts the replicator refused in this pass, and the queued facts that
-        // descend from them. Queue order is topological, so by the time a fact
-        // is reached every queued predecessor of it has been decided.
-        const held = new Set<string>();
+        // Facts this pass will not send, and the queued facts that descend from
+        // them: the ones the replicator refused in this pass, and -- unless
+        // this pass is offering them -- the ones it refused in an earlier one.
+        // Queue order is topological, so by the time a fact is reached every
+        // queued predecessor of it has been decided.
+        const held = offerParked ? new Set<string>() : new Set<string>(this.parked.keys());
+        // What this pass will actually offer. A fact already held when the pass
+        // starts is not going to be sent, so it takes up no room in a batch:
+        // leaving it in would spend its bytes and its slot against the budget,
+        // and a parked fact at the budget would push the facts written after it
+        // into requests of their own -- the dependency on the parked facts that
+        // issue #410 is about. The queued facts that descend from a parked one
+        // cost exactly as much, so they are excluded here too rather than
+        // during the send walk, which reaches them only after they have taken
+        // up room. Queue order is topological, so one pass in that order sees
+        // every predecessor before the fact that names it.
+        const offered: FactEnvelope[] = [];
+        for (const envelope of pending) {
+            if (held.size > 0 && this.isHeld(envelope, held)) {
+                held.add(factKey(envelope.fact));
+            }
+            else {
+                offered.push(envelope);
+            }
+        }
+        const batches = batched
+            ? batchEnvelopes(offered, this.maxBatchBytes, this.maxBatchCount)
+            : offered.map(envelope => [envelope]);
         let accepted = 0;
         let lastError: unknown = undefined;
 
         const remaining = () => pending.filter(envelope => !sent.has(factKey(envelope.fact)));
 
         for (const batch of batches) {
-            const sendable: FactEnvelope[] = [];
+            const sendable: QueuedEnvelope[] = [];
             for (const envelope of batch) {
-                if (this.isHeldBack(envelope, held)) {
+                if (this.isHeld(envelope, held) || !this.maySendNow(envelope)) {
                     held.add(factKey(envelope.fact));
                 }
                 else {
@@ -351,15 +472,16 @@ export class WebClientSaver implements Saver {
                 continue;
             }
             if (sendable.length === 1) {
-                // Already as narrow as a request gets.
-                held.add(factKey(sendable[0].fact));
+                // Already as narrow as a request gets, so this is the
+                // replicator's judgment of that one fact.
+                this.park(sendable[0].fact, lastError, held);
                 continue;
             }
 
             // Narrow the refused batch. A fact refused only because it
             // travelled with others is accepted once they are committed.
             for (const envelope of sendable) {
-                if (this.isHeldBack(envelope, held)) {
+                if (this.isHeld(envelope, held) || !this.maySendNow(envelope)) {
                     held.add(factKey(envelope.fact));
                     continue;
                 }
@@ -374,7 +496,7 @@ export class WebClientSaver implements Saver {
                         return { accepted, remaining: remaining(), stopped: true, lastError };
                     }
                     Trace.warn(`The replicator refused ${factKey(envelope.fact)}: ${error instanceof Error ? error.message : error}`);
-                    held.add(factKey(envelope.fact));
+                    this.park(envelope.fact, error, held);
                 }
             }
         }
@@ -383,17 +505,135 @@ export class WebClientSaver implements Saver {
     }
 
     /**
-     * Is one of this fact's queued predecessors still refused? Sending it would
-     * leave a dangling reference, so it stays queued with them.
+     * The queued facts this client may send under the token it holds now
+     * (issue #412), in queue order.
+     *
+     * A fact that recorded no user is sent as it always has been. A fact that
+     * recorded one is sent only while that user is the current user: the
+     * replicator attributes a saved fact to the user on the request's token, so
+     * sending it under anyone else's has it refused, or accepted and signed as
+     * that person's write, and neither user can see that it happened.
+     *
+     * A fact held back holds back the queued facts that descend from it, for
+     * the same reason a refused fact does: a successor cannot be sent while its
+     * predecessor is still queued.
+     *
+     * Nothing is dropped. A held fact stays queued, and goes out at the first
+     * flush once its own user is current again.
      */
-    private isHeldBack(envelope: FactEnvelope, held: Set<string>): boolean {
-        return predecessorKeys(envelope.fact).some(key => held.has(key));
+    private sendableNow(queued: QueuedEnvelope[]): QueuedEnvelope[] {
+        const current = this.currentUser ? this.currentUser.currentUser() : null;
+        const held = new Set<string>();
+        const sendable: QueuedEnvelope[] = [];
+        // Queue order is topological, so every queued predecessor of a fact has
+        // been decided by the time the fact is reached.
+        for (const envelope of queued) {
+            if (!this.maySendAs(envelope, current) || this.isHeld(envelope, held)) {
+                held.add(factKey(envelope.fact));
+            }
+            else {
+                sendable.push(envelope);
+            }
+        }
+        return sendable;
+    }
+
+    /**
+     * May this fact be sent as the user who is current at this moment?
+     *
+     * A flush is a sequence of requests, and the token each one carries is read
+     * when that request starts, from the application's own authentication
+     * provider. So the user can change in the middle of a flush, and the choice
+     * `sendableNow` made when the flush began can be stale by the time a later
+     * request is composed. This is read again immediately before each one, so a
+     * user who changes mid-flush costs at most the request already in flight
+     * rather than everything the flush had left to send.
+     *
+     * The window cannot be closed from here. The token is the application's,
+     * resolved inside `post`, and a request that met an authentication
+     * challenge resolves it a second time; binding an identity to a request
+     * would take the protocol change this issue puts out of scope. Narrowing it
+     * to one request is what this layer can do.
+     */
+    private maySendNow(envelope: QueuedEnvelope): boolean {
+        return this.maySendAs(envelope,
+            this.currentUser ? this.currentUser.currentUser() : null);
+    }
+
+    /**
+     * May this fact be sent while `current` is the current user? A fact that
+     * recorded no user may; one that recorded a user may only while that user
+     * is current, and never while there is no current user at all, which is
+     * where a client starts before a login resolves.
+     */
+    private maySendAs(envelope: QueuedEnvelope, current: FactReference | null): boolean {
+        const user = envelope.user;
+        if (!user) {
+            return true;
+        }
+        return current !== null && current.type === user.type && current.hash === user.hash;
+    }
+
+    /**
+     * Is this fact held out of this pass, or is one of its queued predecessors?
+     * Sending a fact whose predecessor is refused would leave a dangling
+     * reference, so it stays queued with it.
+     */
+    private isHeld(envelope: FactEnvelope, held: Set<string>): boolean {
+        return held.has(factKey(envelope.fact)) ||
+            predecessorKeys(envelope.fact).some(key => held.has(key));
+    }
+
+    /**
+     * Record that the replicator refused this fact on its own, so later flushes
+     * leave it out of their first batch (issue #410). It is held for the rest
+     * of this pass too, which is what keeps its queued descendants back.
+     */
+    private park(fact: FactRecord, reason: unknown, held: Set<string>): void {
+        const key = factKey(fact);
+        this.parked.set(key, reason);
+        held.add(key);
+    }
+
+    /**
+     * Forget the facts that are no longer queued, so the set stays a statement
+     * about the queue rather than a growing memory of it.
+     */
+    private prune(envelopes: FactEnvelope[]): void {
+        if (this.parked.size === 0) {
+            return;
+        }
+        const queued = new Set(envelopes.map(envelope => factKey(envelope.fact)));
+        for (const key of [...this.parked.keys()]) {
+            if (!queued.has(key)) {
+                this.parked.delete(key);
+            }
+        }
+    }
+
+    /**
+     * The refusal that parked the first of these facts, for a flush that made
+     * no request of its own and so has no error to report.
+     */
+    private parkedReason(pending: FactEnvelope[]): unknown {
+        for (const envelope of pending) {
+            const key = factKey(envelope.fact);
+            if (this.parked.has(key)) {
+                return this.parked.get(key);
+            }
+        }
+        return undefined;
     }
 
     private async send(envelopes: FactEnvelope[], sent: Set<string>): Promise<void> {
         await this.client.saveWithRetry(envelopes);
         await this.queue.dequeue(envelopes);
-        envelopes.forEach(envelope => sent.add(factKey(envelope.fact)));
+        envelopes.forEach(envelope => {
+            const key = factKey(envelope.fact);
+            sent.add(key);
+            // Accepted, so there is nothing left to park it for.
+            this.parked.delete(key);
+        });
         await this.onQueueChanged();
     }
 }
