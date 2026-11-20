@@ -90,9 +90,10 @@ function envelopesOf(facts: HashMap[]): FactEnvelope[] {
  * `initial` is a root that already holds one `A` and one `B`. `concurrent` adds
  * a second of each. `a` and `b` are independent collections under the root, so
  * a read's row count is the product of the two: one row on the graph in
- * `initial`, and four once `concurrent` has landed. Two rows is the count that
- * belongs to neither graph, which is what a read that saw `A1` before the save
- * and both `B`s after it returns.
+ * `initial`, and four once `concurrent` has landed. Either of those is a
+ * correct answer, because the read and the save are concurrent. Two rows is
+ * the count that belongs to neither graph, which is what a read that saw `A1`
+ * before the save and both `B`s after it returns.
  *
  * Each case gets its own root, named by `caseName`, so no case reads a graph an
  * earlier case has already written to.
@@ -136,6 +137,77 @@ const interleavingSpecification = `
         b = b
     }
 `;
+
+/**
+ * The interleaving case, on its own, so that it can be called with a store
+ * rather than only registered against one.
+ *
+ * The `it` inside `describeStorageConformance` is its ordinary caller. A test
+ * that needs to watch the kit *reject* a store calls it directly, because a
+ * store the kit must reject cannot be registered as a suite that is expected
+ * to pass. It is deliberately not re-exported from `./index`: the kit an
+ * implementation imports is `describeStorageConformance`.
+ *
+ * A read and a save that overlap are concurrent operations, and under
+ * linearizability either order is correct: the read may take effect before the
+ * save or after it. So the case accepts the graph as it stood at the call and
+ * the graph after the save, and rejects everything else. A store need not
+ * reserve its snapshot synchronously to pass; one that acquires a connection
+ * first, and so returns the later graph, is correct too (issue #423).
+ *
+ * @param store Holds whatever it likes; each iteration reads a root of its own.
+ */
+export async function runInterleavingCase(store: Storage): Promise<void> {
+    const parser = new SpecificationParser(interleavingSpecification);
+    parser.skipWhitespace();
+    const specification = parser.parseSpecification();
+
+    // The two graphs the call is concurrent with, as rows.
+    const initialRows = [ "A1 B1" ];
+    const finalRows = [ "A1 B1", "A1 B2", "A2 B1", "A2 B2" ];
+
+    // One delay is not evidence. A read interleaves with a save only at
+    // the awaits it has yet to reach when the save lands, so a single
+    // delay can miss every gap that fails. Walking the save across a
+    // range of delays puts it in each of them in turn.
+    //
+    // These are microtask yields rather than timeouts: the interleaving
+    // is the subject of the test, so where the save lands has to be
+    // exact, which a timeout cannot be.
+    for (let microtasks = 0; microtasks <= 40; microtasks++) {
+        const graph = buildInterleavingCase(`interleaving-${microtasks}`);
+        await store.save(graph.initial);
+        const given = [ dehydrateReference(graph.root) ];
+
+        const reading = store.read(given, specification);
+        for (let yielded = 0; yielded < microtasks; yielded++) {
+            await Promise.resolve();
+        }
+        const saving = store.save(graph.concurrent);
+
+        const results = await reading;
+        await saving;
+
+        const rows = results.map(r => `${r.result.a.identifier} ${r.result.b.identifier}`).sort();
+        // One graph: the one before the save or the one after it. A mixture of
+        // the two, which belongs to neither, is what issue #346 returned, and
+        // two rows is what a mixture looks like here.
+        //
+        // A graph holding part of the save is rejected as well. `A1 B1`,
+        // `A2 B1` is a read that saw `A2` but not `B2`. Every fact in it
+        // arrives after its predecessors, so it is a consistent graph, and the
+        // case still refuses it: the facts of one `save` call become visible
+        // together or not at all. That requirement is deliberate rather than
+        // incidental. `MemoryStore` meets it by publishing one array, and a
+        // store that writes a batch in one transaction meets it too.
+        expect([ initialRows, finalRows ]).toContainEqual(rows);
+
+        // The concurrent save did land, so the case was a real
+        // interleaving rather than a read that had already finished.
+        const afterwards = await store.read(given, specification);
+        expect(afterwards.length).toBe(4);
+    }
+}
 
 /**
  * Runs the storage conformance suite against an implementation of `Storage`.
@@ -403,45 +475,12 @@ export function describeStorageConformance(
             expect(results[0].result.identifier).toBe("AnotherClosedOffice");
         });
 
-        it("should return the graph as it stood when the read began, while a save lands during the read", async () => {
+        it("should return one graph, before or after a save that lands during the read", async () => {
             if (!store) {
                 throw new Error("No store under test: `createStore` did not return one.");
             }
 
-            const parser = new SpecificationParser(interleavingSpecification);
-            parser.skipWhitespace();
-            const specification = parser.parseSpecification();
-
-            // One delay is not evidence. A read interleaves with a save only at
-            // the awaits it has yet to reach when the save lands, so a single
-            // delay can miss every gap that fails. Walking the save across a
-            // range of delays puts it in each of them in turn.
-            //
-            // These are microtask yields rather than timeouts: the interleaving
-            // is the subject of the test, so where the save lands has to be
-            // exact, which a timeout cannot be.
-            for (let microtasks = 0; microtasks <= 40; microtasks++) {
-                const graph = buildInterleavingCase(`interleaving-${microtasks}`);
-                await store.save(graph.initial);
-                const given = [ dehydrateReference(graph.root) ];
-
-                const reading = store.read(given, specification);
-                for (let yielded = 0; yielded < microtasks; yielded++) {
-                    await Promise.resolve();
-                }
-                const saving = store.save(graph.concurrent);
-
-                const results = await reading;
-                await saving;
-
-                const rows = results.map(r => `${r.result.a.identifier} ${r.result.b.identifier}`);
-                expect(rows).toEqual([ "A1 B1" ]);
-
-                // The concurrent save did land, so the case was a real
-                // interleaving rather than a read that had already finished.
-                const afterwards = await store.read(given, specification);
-                expect(afterwards.length).toBe(4);
-            }
+            await runInterleavingCase(store);
         });
 
         // `readAsIfSaved` is optional, so a store that has not taken up the
