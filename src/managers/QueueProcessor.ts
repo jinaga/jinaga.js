@@ -45,8 +45,13 @@ export interface SaveRequest {
 export interface Saver {
     /**
      * Saves data to the network.
+     *
+     * Resolving with nothing is how a saver written before {@link SaveOutcome}
+     * existed reports a flush, and it reads as one that did not stall on the
+     * connection: such a flush is never retried on the backoff, exactly as no
+     * flush was before issue #400.
      */
-    save(request?: SaveRequest): Promise<SaveOutcome>;
+    save(request?: SaveRequest): Promise<SaveOutcome | void>;
 }
 
 /**
@@ -305,11 +310,11 @@ export class QueueProcessor {
      * neither arming nor cancelling the backoff would be derived from
      * anything.
      */
-    private async runSave(saver: Saver, request?: SaveRequest): Promise<SaveOutcome> {
+    private async runSave(saver: Saver, request?: SaveRequest): Promise<SaveOutcome | void> {
         this.flushing = true;
         try {
             const outcome = await saver.save(request);
-            this.stalled = outcome.stalledOnConnection;
+            this.stalled = outcome ? outcome.stalledOnConnection : false;
             if (this.stalled) {
                 this.armBackoff();
             }
