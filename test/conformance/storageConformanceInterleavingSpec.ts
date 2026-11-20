@@ -17,9 +17,32 @@ import { FactEnvelope, FactFeed, FactReference, ProjectedResult, Storage } from 
  * `DelegatingStore` is in `test/authorization/batchAuthorizationSpec.ts`.
  */
 class DelegatingStore implements Storage {
+    /**
+     * Optional on `Storage`, so it is assigned only when the inner store has
+     * it. A delegator that declared it unconditionally would advertise a seam
+     * the store beneath it may not have taken up; one that omitted it would
+     * hide a seam the store does have, and `describeStorageConformance` skips
+     * its `readAsIfSaved` cases when the method is absent, so those cases
+     * would report as passing without running.
+     */
+    readAsIfSaved?: (staged: FactEnvelope[], start: FactReference[], specification: Specification) => Promise<ProjectedResult[]>;
+
     constructor(
         protected readonly inner: Storage
-    ) { }
+    ) {
+        if (inner.readAsIfSaved) {
+            this.readAsIfSaved = (staged, start, specification) =>
+                this.readStaged(staged, start, specification);
+        }
+    }
+
+    /**
+     * Overridden by a store that bends `readAsIfSaved` as well as `read`.
+     * Reached only when the inner store implements the seam.
+     */
+    protected readStaged(staged: FactEnvelope[], start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        return this.inner.readAsIfSaved!(staged, start, specification);
+    }
 
     close(): Promise<void> {
         return this.inner.close();
@@ -105,6 +128,13 @@ class LateSnapshotStore extends DelegatingStore {
         await afterPendingMicrotasks();
         return super.read(start, specification);
     }
+
+    // The same await on the staged seam, so the store is late on every read it
+    // answers rather than only on the one the interleaving case drives.
+    protected async readStaged(staged: FactEnvelope[], start: FactReference[], specification: Specification): Promise<ProjectedResult[]> {
+        await afterPendingMicrotasks();
+        return super.readStaged(staged, start, specification);
+    }
 }
 
 /**
@@ -162,6 +192,19 @@ class MixingStore extends DelegatingStore {
 // iterations, with the four rows of the final graph against the one row of the
 // initial graph.
 describeStorageConformance("late-snapshot store", () => new LateSnapshotStore());
+
+describe("storage conformance: the late-snapshot store", () => {
+    it("exposes readAsIfSaved, so the kit runs those cases rather than skipping them", () => {
+        // `describeStorageConformance` guards its `readAsIfSaved` section on the
+        // method being present, and returns early when it is not. A delegator
+        // that hid the inner store's method would therefore report every case
+        // in that section as passing without running one of them.
+        const store = new LateSnapshotStore();
+
+        expect(typeof store.readAsIfSaved).toBe("function");
+        expect(typeof new MemoryStore().readAsIfSaved).toBe("function");
+    });
+});
 
 describe("storage conformance: the interleaving case", () => {
     it("rejects a read answered partly from one graph and partly from the next", async () => {
