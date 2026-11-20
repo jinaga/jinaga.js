@@ -24,6 +24,7 @@ export class PassThroughFork implements Fork {
         return this.progress.onProgress(listener);
     }
 
+
     load(references: FactReference[]): Promise<FactEnvelope[]> {
         return this.storage.load(references);
     }

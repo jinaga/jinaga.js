@@ -14,6 +14,7 @@ class FakeFork implements Fork {
         return () => { };
     }
 
+
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
         return Promise.resolve([]);
     }

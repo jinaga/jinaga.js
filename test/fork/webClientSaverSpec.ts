@@ -1,4 +1,4 @@
-import { AuthorizationEngine, AuthorizationRules, FactRecord, FetchConnection, Forbidden, ForbiddenError, HttpError, MemoryStore, SyncStatus, SyncStatusNotifier, User, WebClient, buildModel, dehydrateFact } from "@src";
+import { AuthorizationEngine, AuthorizationRules, FactRecord, FetchConnection, Forbidden, ForbiddenError, HttpError, MemoryStore, PersistentFork, SyncStatus, SyncStatusNotifier, User, WebClient, buildModel, dehydrateFact } from "@src";
 import { ContentTypeJson, PostAccept, PostContentType } from "../../src/http/ContentType";
 import { HttpConnection, HttpResponse } from "../../src/http/web-client";
 import { WebClientSaver } from "../../src/fork/web-client-saver";
@@ -921,6 +921,59 @@ describe("A save that is retrying (issue #399)", () => {
         expect(statuses.some(status => status.retrying)).toBe(false);
         expect(connection.paths).toEqual(["/save"]);
         expect(statuses[statuses.length - 1].warning).toContain("1 fact(s) could not be sent");
+    });
+});
+
+// Issue #394. A watch waiting for its own facts to reach the replicator ends
+// that wait on the first retry, because a flush that is retrying need never end
+// -- its schedule is unbounded under `retry: { timeoutMs: 0 }`. The watch reads
+// that signal through `Fork.onRetrying`, which is optional on the interface, so
+// this pins that the fork which does have a queue actually reports it rather
+// than silently falling back to the no-op.
+describe("A fork reporting that its save is retrying (issue #394)", () => {
+    function forkOver(connection: HttpConnection, queue: Queue) {
+        const client = new WebClient(connection, new SyncStatusNotifier(),
+            { timeoutSeconds: 30, retry: { initialDelayMs: 1, maxDelayMs: 1 } });
+        return new PersistentFork(new MemoryStore(), queue, client, 0);
+    }
+
+    it("reports each retry of a POST /save, and stops when unregistered", async () => {
+        const connection = new ScriptedConnection([
+            transient("Service Unavailable", 503),
+            succeeded
+        ]);
+        const fork = forkOver(connection, new FakeQueue([plain("A")]));
+        let retries = 0;
+        const unregister = fork.onRetrying(() => { retries++; });
+
+        await fork.processQueueNow();
+        expect(retries).toBe(1);
+
+        unregister();
+        const again = new ScriptedConnection([
+            transient("Service Unavailable", 503),
+            succeeded
+        ]);
+        const quiet = forkOver(again, new FakeQueue([plain("B")]));
+        let afterUnregister = 0;
+        const stopQuiet = quiet.onRetrying(() => { afterUnregister++; });
+        stopQuiet();
+        await quiet.processQueueNow();
+        expect(afterUnregister).toBe(0);
+
+        await fork.close();
+        await quiet.close();
+    });
+
+    it("reports nothing for a save the replicator answered", async () => {
+        const fork = forkOver(new ScriptedConnection([succeeded]), new FakeQueue([plain("A")]));
+        let retries = 0;
+        fork.onRetrying(() => { retries++; });
+
+        await fork.processQueueNow();
+        expect(retries).toBe(0);
+
+        await fork.close();
     });
 });
 

@@ -467,6 +467,27 @@ export class NetworkManager {
         return await this.trackLoad(() => this.fetchFeeds(start, specification));
     }
 
+    /**
+     * Ask the replicator again: drop the cached `POST /feeds` response for this
+     * start and specification, then fetch as `fetch` does (issue #394).
+     *
+     * The decision is the part that goes stale. The replicator recomputes it on
+     * every `POST /feeds`, so once the fact that authorizes a feed has reached
+     * it, the same request it answered `reactive` a moment ago is answered
+     * `authorized`, with the specification's own feeds. Fetching without
+     * dropping the entry returns the old decision and the old feeds, and never
+     * asks.
+     *
+     * Only a caller acting on a pending decision uses this. An ordinary fetch
+     * keeps the cache, which is what makes a repeated `watch` of the same
+     * specification cost one `POST /feeds` rather than one per start.
+     */
+    async refetch(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
+        const reducedSpecification = reduceSpecification(specification);
+        this.removeFeedsFromCache(start, reducedSpecification);
+        return await this.trackLoad(() => this.fetchFeeds(start, specification));
+    }
+
     private async fetchFeeds(start: FactReference[], specification: Specification): Promise<FeedDecision[]> {
         const reducedSpecification = reduceSpecification(specification);
         const { feeds, decisions } = await this.getFeedsFromCache(start, reducedSpecification);

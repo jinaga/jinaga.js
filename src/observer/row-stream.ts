@@ -1,4 +1,5 @@
 import { FeedDecision } from "../http/messages";
+import { DistributionDiagnostic } from "../managers/distributionDiagnostic";
 import { FactManager } from "../managers/factManager";
 import { InverseListener, InverseReadNumbering } from "../observable/observable";
 import { MembershipSpecification, exactInverses, membershipSpecification } from "../specification/inverse-candidates";
@@ -6,6 +7,8 @@ import { SpecificationRow, rowIdentityLabels, toRow, toRows } from "../specifica
 import { Specification } from "../specification/specification";
 import { FactReference, ProjectedResult, ReferencesByName, computeTupleSubsetHash } from "../storage";
 import { Trace } from "../util/trace";
+import { PendingFeedResolution } from "./pending-feed-resolution";
+import { describeSpecification } from "../specification/description";
 import { givenCandidateInverse, membershipStart } from "./recheck";
 
 /**
@@ -430,12 +433,24 @@ class RowObserver<U> {
      */
     private startupReports: RowReportBatch<U> | null = emptyBatch<U>();
 
+    /**
+     * How this stream resolves a feed the replicator answered pending
+     * authorization (issue #394). The same rule `ObserverImpl` uses for
+     * `watch`, because `watchRows` has the same gap and the same remedy.
+     *
+     * Built for every stream and used only by one that fetches: a
+     * `subscribeRows` holds its feeds open, and a `watchChanges` makes no fetch
+     * at all.
+     */
+    private readonly pendingResolution: PendingFeedResolution;
+
     constructor(
         private readonly factManager: FactManager,
         private readonly specification: Specification,
         private given: FactReference[],
         private readonly queue: RowQueue<U>,
-        private readonly onFeedDecisions: (decisions: FeedDecision[]) => void
+        private readonly onFeedDecisions: (decisions: FeedDecision[]) => void,
+        private readonly onDiagnostic: (diagnostic: DistributionDiagnostic) => void
     ) {
         // Row identity stays pre-intersection. An intersected branch keeps the
         // caller's given labels, match unknowns and projection, and adds only
@@ -454,6 +469,15 @@ class RowObserver<U> {
         this.branches = [this.toBranch(specification)];
 
         this.givenHash = this.computeGivenHash(specification);
+
+        this.pendingResolution = new PendingFeedResolution(factManager, {
+            specification: describeSpecification(specification, 0),
+            refetch: () => this.factManager.refetch(this.given, this.specification),
+            emit: diagnostic => this.onDiagnostic(diagnostic),
+            // A row stream records no cache date, so a feed that stops being
+            // withheld leaves nothing to write.
+            resolved: () => Promise.resolve()
+        });
     }
 
     /**
@@ -568,6 +592,8 @@ class RowObserver<U> {
             return;
         }
         this.stopped = true;
+        // Drop the progress listener a pending feed left behind (issue #394).
+        this.pendingResolution.stop();
         for (const branch of this.branches) {
             for (const listener of branch.listeners) {
                 this.factManager.removeInverseListener(listener);
@@ -678,6 +704,15 @@ class RowObserver<U> {
             // local graph, which is what it reports changes against.
             const decisions = await this.factManager.fetch(this.given, this.specification);
             this.onFeedDecisions(decisions);
+            // A feed answered pending authorization would leave this stream
+            // empty for good, exactly as it did a `watch`, so the same rule
+            // sends what this client has unsent and asks once more (issue
+            // #394). Awaited, so rows the second fetch brings are in the local
+            // graph before the read below.
+            await this.pendingResolution.pass(decisions);
+            if (this.stopped) {
+                return;
+            }
         }
         if (this.stopped) {
             return;
@@ -1214,10 +1249,11 @@ export async function startRowStream<U>(
     specification: Specification,
     given: FactReference[],
     options: StartOptions,
-    onFeedDecisions: (decisions: FeedDecision[]) => void
+    onFeedDecisions: (decisions: FeedDecision[]) => void,
+    onDiagnostic: (diagnostic: DistributionDiagnostic) => void
 ): Promise<RowStream<U>> {
     const queue = new RowQueue<U>(options.capacity ?? DEFAULT_ROW_STREAM_CAPACITY);
-    const observer = new RowObserver<U>(factManager, specification, given, queue, onFeedDecisions);
+    const observer = new RowObserver<U>(factManager, specification, given, queue, onFeedDecisions, onDiagnostic);
     try {
         await observer.start(options);
     }

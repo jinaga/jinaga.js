@@ -111,6 +111,14 @@ export class Jinaga {
      * devtools/telemetry. Branch on `diagnostic.reactive` — a `reactive`
      * diagnostic is the subscription race and must never be treated as fatal.
      *
+     * A watch retires a `reactive` diagnostic of its own accord (issue #394).
+     * It sends what this client has unsent and asks the replicator again, and
+     * reports the answer here: `cleared` where the feed is now delivering, or
+     * `settled` where the replicator still withheld it although it had received
+     * every fact this client had sent. A `settled` diagnostic is the watch's own
+     * verdict about that one fetch, not a decision the replicator reported, and
+     * a later batch from this client can still clear it.
+     *
      * @param handler A function to receive each distribution diagnostic
      */
     onDistributionDiagnostic(handler: (diagnostic: DistributionDiagnostic) => void) {
@@ -424,10 +432,19 @@ export class Jinaga {
      * Watch the rows of a specification: the ones that match now, and the ones
      * that enter or leave from here on.
      *
-     * Like `watch`, this fetches once and then observes locally. It does not
-     * hold the specification's feed open, so facts saved elsewhere after the
-     * fetch reach it only when something else pulls them. Use `subscribeRows`
-     * when the stream should keep receiving.
+     * Like `watch`, this fetches and then observes locally. It does not hold
+     * the specification's feed open, so facts saved elsewhere after the fetch
+     * reach it only when something else pulls them. Use `subscribeRows` when
+     * the stream should keep receiving.
+     *
+     * The one thing it does ask about again is a feed the replicator answered
+     * pending authorization, which is the race against this client's own save
+     * (issue #394): the stream flushes what this client has unsent, asks once
+     * more, and then asks again after each later batch leaves, while any feed
+     * of its own is still pending. Those rows arrive before the promise this
+     * method returns resolves, and a feed that is still withheld once the
+     * replicator has everything this client sent reports a `settled`
+     * diagnostic through `onDistributionDiagnostic`.
      *
      * The rows that already match are read AFTER the listeners are installed
      * and delivered through the same stream as every later change, so a row
@@ -552,7 +569,14 @@ export class Jinaga {
 
         return await startRowStream<U>(this.factManager, specification,
             given.map(g => this.prepareFactReference(g)), { ...mode, ...options },
-            decisions => this.reportStreamDecisions(specification, mode.feed, decisions));
+            decisions => this.reportStreamDecisions(specification, mode.feed, decisions),
+            // The clearing and settled diagnostics a `watchRows` produces for a
+            // pending feed (issue #394) go where its pending diagnostic already
+            // goes. They are the stream's own verdicts rather than the
+            // replicator's decisions, so they do not pass through
+            // `reportStreamDecisions`, which maps decisions and throws on a
+            // structural denial.
+            diagnostic => this.emitDistributionDiagnostics([diagnostic]));
     }
 
     private reportStreamDecisions(specification: Specification, feed: "held" | "none", decisions: FeedDecision[]) {

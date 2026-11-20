@@ -31,6 +31,7 @@ export class TransientFork implements Fork {
         return this.progress.onProgress(listener);
     }
 
+
     async load(references: FactReference[]): Promise<FactEnvelope[]> {
         const known = await this.storage.load(references);
         const remaining = references.filter(reference => !known.some(factEnvelopeEquals(reference)));

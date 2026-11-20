@@ -32,6 +32,14 @@ export class PersistentFork implements Fork {
     private queueProcessor: QueueProcessor;
     private readonly progress = new ProgressNotifier();
     private readonly stopListeningForResponses: () => void;
+    /**
+     * Listeners for the save path retrying (issue #394), and the registration
+     * that feeds them. Subscribed once in the constructor rather than per
+     * listener, so the fork holds one subscription to the client however many
+     * watches are waiting.
+     */
+    private readonly retryListeners = new Set<() => void>();
+    private readonly stopListeningForSaveRetries: () => void;
 
     constructor(
         private storage: Storage,
@@ -63,6 +71,11 @@ export class PersistentFork implements Fork {
         // processor decides whether that is worth a flush.
         this.stopListeningForResponses = client.onResponse(
             () => this.queueProcessor.flushIfStalled());
+        // A save that is retrying is the only bound a caller waiting on a flush
+        // has: the flush itself ends only when the schedule gives up, which it
+        // need never do (issue #394).
+        this.stopListeningForSaveRetries = client.onSaveRetry(
+            () => this.notifyRetrying());
     }
 
     initialize() {
@@ -74,6 +87,7 @@ export class PersistentFork implements Fork {
         // Stop listening first, so the closing flush's own responses cannot
         // schedule another one behind it.
         this.stopListeningForResponses();
+        this.stopListeningForSaveRetries();
         // Process any pending facts before closing
         try {
             await this.processQueueNow();
@@ -102,6 +116,23 @@ export class PersistentFork implements Fork {
 
     onProgress(listener: (count: number) => void): () => void {
         return this.progress.onProgress(listener);
+    }
+
+    onRetrying(listener: () => void): () => void {
+        this.retryListeners.add(listener);
+        return () => {
+            this.retryListeners.delete(listener);
+        };
+    }
+
+    /**
+     * Report that the save path is retrying. A throwing listener is logged and
+     * never reaches the request it is reporting on, which is still in flight.
+     */
+    private notifyRetrying(): void {
+        for (const listener of this.retryListeners) {
+            try { listener(); } catch (error) { Trace.error(error); }
+        }
     }
 
     /**
