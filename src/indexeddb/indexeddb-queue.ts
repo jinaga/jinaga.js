@@ -1,4 +1,4 @@
-import { FactEnvelope, FactRecord, FactReference, Queue } from '../storage';
+import { FactEnvelope, FactRecord, FactReference, Queue, QueuedEnvelope } from '../storage';
 import { execRequest, factKey, withDatabase, withTransaction } from './driver';
 import { distinct, flattenAsync } from '../util/fn';
 import { TopologicalSorter } from '../fact/sorter';
@@ -8,7 +8,7 @@ export class IndexedDBQueue implements Queue {
     private indexName: string
   ) { }
 
-  peek(): Promise<FactEnvelope[]> {
+  peek(): Promise<QueuedEnvelope[]> {
     return withDatabase(this.indexName, db =>
       withTransaction(db, ['queue', 'fact', 'ancestor'], 'readonly', async tx => {
         const queueObjectStore = tx.objectStore('queue');
@@ -16,7 +16,11 @@ export class IndexedDBQueue implements Queue {
         const ancestorObjectStore = tx.objectStore('ancestor');
         
         // Get all envelopes from the queue
-        const queuedEnvelopes = await execRequest<FactEnvelope[]>(queueObjectStore.getAll());
+        // Each queued value carries the user who was current when the fact was
+        // written, where there was one (issue #412). An entry written before
+        // this client recorded the user has none, and reads back as a plain
+        // envelope.
+        const queuedEnvelopes = await execRequest<QueuedEnvelope[]>(queueObjectStore.getAll());
         
         // If queue is empty, return empty array
         if (queuedEnvelopes.length === 0) {
@@ -40,7 +44,7 @@ export class IndexedDBQueue implements Queue {
           .filter(key => !queuedKeys.has(key));
         
         // Get fact records for all ancestors
-        const ancestorEnvelopes = await Promise.all(distinctAncestorKeys.map<Promise<FactEnvelope>>(async key => ({
+        const ancestorEnvelopes = await Promise.all(distinctAncestorKeys.map<Promise<QueuedEnvelope>>(async key => ({
           fact: await execRequest<FactRecord>(factObjectStore.get(key)),
           signatures: []
         })));
@@ -54,12 +58,12 @@ export class IndexedDBQueue implements Queue {
     );
   }
   
-  private sortAndValidateEnvelopes(envelopes: FactEnvelope[]): FactEnvelope[] {
+  private sortAndValidateEnvelopes(envelopes: QueuedEnvelope[]): QueuedEnvelope[] {
     // Extract facts from envelopes
     const facts = envelopes.map(envelope => envelope.fact);
     
     // Create a map from fact key to envelope for quick lookup
-    const envelopeMap = new Map<string, FactEnvelope>();
+    const envelopeMap = new Map<string, QueuedEnvelope>();
     envelopes.forEach(envelope => {
       envelopeMap.set(factKey(envelope.fact), envelope);
     });
@@ -136,13 +140,26 @@ export class IndexedDBQueue implements Queue {
     return predecessors;
   }
 
-  enqueue(envelopes: FactEnvelope[]): Promise<void> {
+  enqueue(envelopes: FactEnvelope[], user?: FactReference): Promise<void> {
     return withDatabase(this.indexName, db =>
       withTransaction(db, ['queue'], 'readwrite', async tx => {
         const queueObjectStore = tx.objectStore('queue');
-        await Promise.all(envelopes.map(envelope =>
-          execRequest(queueObjectStore.put(envelope, factKey(envelope.fact)))
-        ));
+        await Promise.all(envelopes.map(async envelope => {
+          const key = factKey(envelope.fact);
+          // The user recorded is the one who was current when the fact was
+          // written, so an entry already queued keeps the user it has
+          // (issue #412). A queued fact is enqueued again when a later write
+          // names it as a predecessor, and that later write is not when it was
+          // written: taking the newer user would attribute the earlier write to
+          // whoever is logged in now, which is the whole of what this records
+          // against.
+          const existing = await execRequest<QueuedEnvelope | undefined>(queueObjectStore.get(key));
+          const recordedUser = existing ? existing.user : user;
+          const queued: QueuedEnvelope = recordedUser
+            ? { ...envelope, user: recordedUser }
+            : envelope;
+          await execRequest(queueObjectStore.put(queued, key));
+        }));
       })
     );
   }

@@ -1,3 +1,4 @@
+import { CurrentUserSource } from '../authentication/current-user';
 import { TopologicalSorter } from '../fact/sorter';
 import { RetryOptions } from '../http/retry';
 import { WebClient } from '../http/web-client';
@@ -37,13 +38,20 @@ export class PersistentFork implements Fork {
         private queue: Queue,
         private client: WebClient,
         private delayMilliseconds: number,
-        options: PersistentForkOptions = {}
+        options: PersistentForkOptions = {},
+        /**
+         * Reads the user who is current in this client, recorded with each fact
+         * the queue takes and read again when it drains (issue #412). Absent
+         * where there is no notion of a logged-in user, in which case no queued
+         * fact records one and a flush sends them all, as it did before.
+         */
+        private readonly currentUser?: CurrentUserSource
     ) {
         // The saver reports after each batch leaves the queue, so the count an
         // application sees follows the queue down as it drains rather than only
         // at the end of a flush (issue #306).
         const saver = new WebClientSaver(client, queue, options,
-            () => this.reportQueueLength());
+            () => this.reportQueueLength(), currentUser);
         this.queueProcessor = new QueueProcessor(saver, delayMilliseconds, {
             retry: options.retry,
             feedRefreshIntervalSeconds: options.feedRefreshIntervalSeconds
@@ -75,8 +83,19 @@ export class PersistentFork implements Fork {
         this.queueProcessor.dispose();
         return Promise.resolve();
     }
+    /**
+     * Queue facts to be sent, with the user who is current now.
+     *
+     * The user who is current when a fact is written is the user it is meant to
+     * be attributed to, and the queue can outlive that user's session: a
+     * replicator judges and signs a saved fact as the user on the request's
+     * token, so a flush after someone else logs in would attribute this write
+     * to them. Recording the user here is what lets the flush tell whose write
+     * it is holding (issue #412).
+     */
     async save(envelopes: FactEnvelope[]): Promise<void> {
-        await this.queue.enqueue(envelopes);
+        const user = this.currentUser ? this.currentUser.currentUser() : null;
+        await this.queue.enqueue(envelopes, user ?? undefined);
         await this.reportQueueLength();
         this.queueProcessor.scheduleProcessing();
     }

@@ -103,9 +103,33 @@ export interface Storage {
     setMruDate(specificationHash: string, mruDate: Date): Promise<void>;
 }
 
+/**
+ * A fact waiting in the outgoing queue, with the user who was current when it
+ * was written (issue #412).
+ *
+ * The replicator attributes a saved fact to the user on the request's token, so
+ * a client that sends a queued fact under someone else's token has it judged,
+ * and signed where a rule requires a signature, as that person's write. The
+ * user recorded here is what lets a flush tell the difference.
+ *
+ * `user` is absent when there was no current user to record: a fact written
+ * before any login resolved, or an entry a client wrote before it recorded the
+ * user at all. Absent means "send as before", so a `Queue` that does not record
+ * the user returns plain envelopes and keeps the behavior it has.
+ */
+export interface QueuedEnvelope extends FactEnvelope {
+    user?: FactReference;
+}
+
 export interface Queue {
-    peek(): Promise<FactEnvelope[]>;
-    enqueue(envelopes: FactEnvelope[]): Promise<void>;
+    peek(): Promise<QueuedEnvelope[]>;
+    /**
+     * Add facts to the queue, recording the user who is current now.
+     *
+     * The user is optional, and a queue with no notion of a logged-in user --
+     * a replicator's own queue, for instance -- ignores it.
+     */
+    enqueue(envelopes: FactEnvelope[], user?: FactReference): Promise<void>;
     dequeue(envelopes: FactEnvelope[]): Promise<void>;
 }
 
