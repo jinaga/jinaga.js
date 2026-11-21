@@ -40,7 +40,8 @@ jobs:
   # Runs jinaga-spec's conformance vectors against this checkout: the split
   # (head, tail and the tailReadsGiven refusal), the well-formedness check, and
   # the inverse vectors, whose proven inverses this checkout's MemoryStore must
-  # read to exactly the expected candidates. jinaga-spec does not check out
+  # read to exactly the expected candidates, and the feed vectors, which a
+  # replica of this checkout's feeds must read. jinaga-spec does not check out
   # jinaga.js, so this job is the only automated check that the two agree. The
   # spec is pinned so that its changes reach this build only when the pin
   # moves; see "Conformance vectors" in CLAUDE.md.
@@ -71,3 +72,4 @@ jobs:
           npm ci
           JINAGA_JS="$GITHUB_WORKSPACE" npm run vectors
           JINAGA_JS="$GITHUB_WORKSPACE" npm run inverse
+          JINAGA_JS="$GITHUB_WORKSPACE" npm run feeds
