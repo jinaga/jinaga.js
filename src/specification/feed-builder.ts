@@ -145,6 +145,11 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
  */
 function addConditions(specification: Specification, unusedGivens: Label[], label: string, conditions: ExistentialCondition[], projectionComponents: ComponentProjection[], parity: number, rest: Continuation): { specifications: Specification[]; specification: Specification; unusedGivens: Label[]; } {
     const specifications: Specification[] = [];
+    // The feed with this match's positive conditions flattened in, but none of
+    // its negative conditions attached: where a branch that restores this
+    // match's own fact starts from.
+    let unfiltered = specification;
+    let unfilteredUnusedGivens = unusedGivens;
     for (let index = 0; index < conditions.length; index++) {
         const existentialCondition = conditions[index];
         if (existentialCondition.exists) {
@@ -173,26 +178,41 @@ function addConditions(specification: Specification, unusedGivens: Label[], labe
             specifications.push(...newSpecifications);
             specification = flattened;
             unusedGivens = newUnusedGivens;
+            unfiltered = flattened;
+            unfilteredUnusedGivens = newUnusedGivens;
         }
         else {
             // Branch from the current feed and follow the matches of the existential condition.
             // This will produce tuples that prove the condition false.
             //
-            // Hand the branch everything still unmatched: the conditions that
-            // follow this one on the same match, and then the matches still
-            // waiting at this level and at every enclosing level. If the branch
-            // lands on even parity it is a restoring feed, and it will match
-            // that remainder so that its tuples carry the facts the results are
-            // built from. An excluding feed (odd parity) discards the
-            // continuation and stops.
+            // Hand the branch everything still unmatched: the matches still
+            // waiting at this level and at every enclosing level, and, if this
+            // match is a result, the conditions that follow this one on it. If
+            // the branch lands on even parity it is a restoring feed, and it
+            // will match that remainder so that its tuples carry the facts the
+            // results are built from. An excluding feed (odd parity) discards
+            // the continuation and stops.
+            //
+            // At even inner parity this match is the excluded fact itself, and
+            // the branch restores it. An excluded fact is cancelled when any
+            // one of its negative conditions fails, so the branch starts from
+            // the feed before any of them was attached and is handed none of
+            // the ones that follow. Keeping them would leave a fact cancelled
+            // twice over in no restoring feed at all (#427). At odd inner
+            // parity the branch excludes this match, a result. It stops, but a
+            // restoring branch nested inside it restores this match, and has
+            // to go on to apply the conditions still waiting on it (#368).
             const innerParity = parity + 1;
+            const restoresThisMatch = innerParity % 2 === 0;
             const innerContinuation: Continuation = {
-                pending: { label, conditions: conditions.slice(index + 1) },
+                pending: restoresThisMatch ? null : { label, conditions: conditions.slice(index + 1) },
                 matches: rest.matches,
                 projectionComponents: rest.projectionComponents,
                 parent: rest.parent
             };
-            const { specifications: negatingSpecifications } = addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation, false);
+            const { specifications: negatingSpecifications } = restoresThisMatch
+                ? addMatches(unfiltered, unfilteredUnusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation, false)
+                : addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation, false);
             specifications.push(...negatingSpecifications);
 
             // Then apply the existential condition and continue with the tuple.
