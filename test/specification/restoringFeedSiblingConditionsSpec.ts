@@ -89,10 +89,8 @@ const cancelledBySecond = parse(`
 // restoring feeds start from the delete's level with that positive condition
 // joined, and nothing else.
 //
-// Only the shape of its restoring feeds is checked here. The filter this
-// specification puts on the event is a positive condition inside a negative
-// one, which `buildExistentialCondition` mis-builds (#425), so its feeds are
-// neither well formed nor readable until that is fixed.
+// The filter it puts on the event is a positive condition inside a negative
+// one, which needs the #425 fix to build.
 const cancelledAfterPositive = parse(`
     (t: Tenant) {
         e: Event [
@@ -162,6 +160,44 @@ const cancelledWithGiven = parse(`
     }
 `);
 
+// A delete counts only while it is flagged by a flag that has not been
+// cleared, unless it is undone. The flag's negative condition sits on a match a
+// positive condition joins to the delete, so it is as much a way to cancel the
+// delete as the undo is. Each restoring feed has to drop the other.
+const flaggedDelete = parse(`
+    (t: Tenant) {
+        e: Event [
+            e->tenant: Tenant = t
+            !E {
+                d: Delete [
+                    d->event: Event = e
+                    E {
+                        y: Flag [
+                            y->delete: Delete = d
+                            !E {
+                                z: Clear [
+                                    z->flag: Flag = y
+                                ]
+                            }
+                        ]
+                    }
+                    !E {
+                        u: Undo [
+                            u->delete: Delete = d
+                        ]
+                    }
+                ]
+            }
+        ]
+        n: Name [
+            n->event: Event = e
+        ]
+    } => {
+        event = e
+        name = n
+    }
+`);
+
 interface Graph {
     store: MemoryStore;
     tenant: FactReference;
@@ -169,8 +205,9 @@ interface Graph {
 
 /**
  * One tenant, one event with a name, and a delete of that event. Each entry in
- * `onDelete` names a fact to add: `undo`, `restore` or `revokedRestore` (a
- * restore with a revoke).
+ * `onDelete` names a fact to add: `undo`, `restore`, `revokedRestore` (a
+ * restore with a revoke), `flag`, `clearedFlag` (a flag with a clear) or
+ * `approval`.
  */
 async function buildGraph(onDelete: string[]): Promise<Graph> {
     const envelopes: FactEnvelope[] = [];
@@ -186,6 +223,9 @@ async function buildGraph(onDelete: string[]): Promise<Graph> {
         if (kind === "undo") add({ type: "Undo", delete: deletion });
         if (kind === "restore") add({ type: "Restore", delete: deletion });
         if (kind === "revokedRestore") add({ type: "Revoke", restore: { type: "Restore", delete: deletion } });
+        if (kind === "approval") add({ type: "Approval", delete: deletion });
+        if (kind === "flag") add({ type: "Flag", delete: deletion });
+        if (kind === "clearedFlag") add({ type: "Clear", flag: { type: "Flag", delete: deletion } });
     }
     const store = new MemoryStore();
     await store.save(envelopes);
@@ -218,15 +258,15 @@ async function readRows(store: MemoryStore, start: FactReference, specification:
         Object.entries(result.tuple).map(([label, fact]) => [label, fact.hash])))).sort();
 }
 
-async function expectReplicaReadsWhatFullStoreReads(onDelete: string[], specification: Specification) {
+async function expectReplicaReadsWhatFullStoreReads(onDelete: string[], specification: Specification, visible = true) {
     const graph = await buildGraph(onDelete);
     const full = await readRows(graph.store, graph.tenant, specification);
     const replica = await replicaOf(graph, specification);
     const reassembled = await readRows(replica, graph.tenant, specification);
 
-    // The graph is chosen so the event is visible: an empty answer from the
-    // full store would make this comparison vacuous.
-    expect(full.length).toBe(1);
+    // The full store's answer is pinned, so the comparison cannot pass by
+    // both stores being wrong the same way.
+    expect(full.length).toBe(visible ? 1 : 0);
     expect(reassembled).toEqual(full);
 }
 
@@ -244,6 +284,40 @@ describe("restoring feeds for a fact with several negative conditions", () => {
             await expectReplicaReadsWhatFullStoreReads(onDelete, cancelledTwice);
         }
         await expectReplicaReadsWhatFullStoreReads(["undo"], cancelledBySecond);
+    });
+
+    it("reassembles an approved delete that is both restored and undone", async () => {
+        await expectReplicaReadsWhatFullStoreReads(["approval", "restore", "undo"], cancelledAfterPositive);
+        await expectReplicaReadsWhatFullStoreReads(["approval", "restore"], cancelledAfterPositive);
+        await expectReplicaReadsWhatFullStoreReads(["approval"], cancelledAfterPositive, false);
+    });
+
+    it("reassembles an event whose delete is undone and whose flag is cleared", async () => {
+        // The canceller on the flag and the canceller on the delete both hold.
+        await expectReplicaReadsWhatFullStoreReads(["clearedFlag", "undo"], flaggedDelete);
+    });
+
+    it("reassembles every combination of flag, clear and undo", async () => {
+        await expectReplicaReadsWhatFullStoreReads([], flaggedDelete);
+        await expectReplicaReadsWhatFullStoreReads(["flag"], flaggedDelete, false);
+        await expectReplicaReadsWhatFullStoreReads(["clearedFlag"], flaggedDelete);
+        await expectReplicaReadsWhatFullStoreReads(["undo"], flaggedDelete);
+        await expectReplicaReadsWhatFullStoreReads(["flag", "undo"], flaggedDelete);
+        await expectReplicaReadsWhatFullStoreReads(["clearedFlag", "undo"], flaggedDelete);
+    });
+
+    it("restores through the clear and through the undo with no filter on the flagged level", () => {
+        const restoring = buildFeeds(flaggedDelete).filter(feed =>
+            feed.matches.some(m => m.unknown.name === "d") &&
+            feed.matches.some(m => m.unknown.name === "n"));
+
+        expect(restoring.map(feed => feed.matches.map(m => m.unknown.name)).sort())
+            .toEqual([["e", "d", "y", "u", "n"], ["e", "d", "y", "z", "n"]]);
+        for (const feed of restoring) {
+            for (const match of feed.matches) {
+                expect(match.conditions.filter(isExistentialCondition)).toEqual([]);
+            }
+        }
     });
 
     it("restores through the restore and through the undo with no filter on the delete", () => {
@@ -284,7 +358,7 @@ describe("restoring feeds for a fact with several negative conditions", () => {
     });
 
     it("builds only well-formed feeds", () => {
-        for (const specification of [cancelledTwice, cancelledBySecond, cancelledWithGiven]) {
+        for (const specification of [cancelledTwice, cancelledBySecond, cancelledWithGiven, flaggedDelete, cancelledAfterPositive]) {
             for (const feed of buildFeeds(specification)) {
                 expect(wellFormedErrors(feed)).toEqual([]);
             }
@@ -294,7 +368,7 @@ describe("restoring feeds for a fact with several negative conditions", () => {
     it("authorizes every feed against a rule that shares the specification", async () => {
         // Rule and target feeds both come from buildFeeds, so they move together.
         // Check it rather than assume it.
-        for (const specification of [cancelledTwice, cancelledBySecond]) {
+        for (const specification of [cancelledTwice, cancelledBySecond, flaggedDelete, cancelledAfterPositive]) {
             const rules = new DistributionRules([])
                 .share(new SpecificationOf<unknown, unknown>(specification))
                 .withEveryone();

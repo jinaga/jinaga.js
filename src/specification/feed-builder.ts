@@ -145,11 +145,6 @@ function addMatches(specification: Specification, unusedGivens: Label[], matches
  */
 function addConditions(specification: Specification, unusedGivens: Label[], label: string, conditions: ExistentialCondition[], projectionComponents: ComponentProjection[], parity: number, rest: Continuation): { specifications: Specification[]; specification: Specification; unusedGivens: Label[]; } {
     const specifications: Specification[] = [];
-    // The feed with this match's positive conditions flattened in, but none of
-    // its negative conditions attached: where a branch that restores this
-    // match's own fact starts from.
-    let unfiltered = specification;
-    let unfilteredUnusedGivens = unusedGivens;
     for (let index = 0; index < conditions.length; index++) {
         const existentialCondition = conditions[index];
         if (existentialCondition.exists) {
@@ -178,42 +173,17 @@ function addConditions(specification: Specification, unusedGivens: Label[], labe
             specifications.push(...newSpecifications);
             specification = flattened;
             unusedGivens = newUnusedGivens;
-            unfiltered = flattened;
-            unfilteredUnusedGivens = newUnusedGivens;
         }
         else {
-            // Branch from the current feed and follow the matches of the existential condition.
-            // This will produce tuples that prove the condition false.
-            //
-            // Hand the branch everything still unmatched: the matches still
-            // waiting at this level and at every enclosing level, and, if this
-            // match is a result, the conditions that follow this one on it. If
-            // the branch lands on even parity it is a restoring feed, and it
-            // will match that remainder so that its tuples carry the facts the
-            // results are built from. An excluding feed (odd parity) discards
-            // the continuation and stops.
-            //
-            // At even inner parity this match is the excluded fact itself, and
-            // the branch restores it. An excluded fact is cancelled when any
-            // one of its negative conditions fails, so the branch starts from
-            // the feed before any of them was attached and is handed none of
-            // the ones that follow. Keeping them would leave a fact cancelled
-            // twice over in no restoring feed at all (#427). At odd inner
-            // parity the branch excludes this match, a result. It stops, but a
-            // restoring branch nested inside it restores this match, and has
-            // to go on to apply the conditions still waiting on it (#368).
+            // A negative condition on a result branches an excluding feed,
+            // and a restoring feed for each way the excluded fact can be
+            // cancelled. A negative condition on an excluded fact is one of
+            // those ways, and the excluding level that holds it has already
+            // built its restoring feeds, so here it only filters.
             const innerParity = parity + 1;
-            const restoresThisMatch = innerParity % 2 === 0;
-            const innerContinuation: Continuation = {
-                pending: restoresThisMatch ? null : { label, conditions: conditions.slice(index + 1) },
-                matches: rest.matches,
-                projectionComponents: rest.projectionComponents,
-                parent: rest.parent
-            };
-            const { specifications: negatingSpecifications } = restoresThisMatch
-                ? addMatches(unfiltered, unfilteredUnusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation, false)
-                : addMatches(specification, unusedGivens, existentialCondition.matches, projectionComponents, innerParity, innerContinuation, false);
-            specifications.push(...negatingSpecifications);
+            if (innerParity % 2 !== 0) {
+                specifications.push(...addExclusion(specification, unusedGivens, label, conditions.slice(index + 1), existentialCondition.matches, projectionComponents, innerParity, rest));
+            }
 
             // Then apply the existential condition and continue with the tuple.
             const { existentialCondition: newExistentialCondition, givens: newGivens, unusedGivens: newUnusedGivens } = buildExistentialCondition({
@@ -230,6 +200,63 @@ function addConditions(specification: Specification, unusedGivens: Label[], labe
         }
     }
     return { specifications, specification, unusedGivens };
+}
+
+/**
+ * The feeds of a negative condition on a result: one excluding feed, and one
+ * restoring feed for each negative condition inside the excluded level.
+ *
+ * The excluding feed is the current feed followed by the condition's matches,
+ * emitted after the restoring feeds. It is evidence that results should be
+ * removed, so it stops there.
+ *
+ * An excluded fact is cancelled when any one of its negative conditions fails,
+ * wherever in its level that condition is written: on the fact itself, or on a
+ * match a positive condition joined to it. So each restoring feed starts from
+ * the whole excluded level with path conditions only, follows the matches of
+ * one canceller, and then goes on to the remainder. It carries none of the
+ * level's other negative conditions, the ones written before it or after it.
+ * Keeping them left a fact cancelled twice over in no restoring feed at all
+ * (#427). The remainder does carry the conditions still waiting on the result
+ * (`pending`), because they filter the result the feed restores (#368).
+ */
+function addExclusion(specification: Specification, unusedGivens: Label[], label: string, pending: ExistentialCondition[], matches: Match[], projectionComponents: ComponentProjection[], parity: number, rest: Continuation): Specification[] {
+    const specifications: Specification[] = [];
+    const level = flattenLevel(matches);
+    const { specification: levelFeed, unusedGivens: levelUnusedGivens } = addMatches(specification, unusedGivens,
+        level.map(match => ({ ...match, conditions: match.conditions.filter(isPathCondition) })),
+        projectionComponents, parity, null, true);
+    const continuation: Continuation = {
+        pending: { label, conditions: pending },
+        matches: rest.matches,
+        projectionComponents: rest.projectionComponents,
+        parent: rest.parent
+    };
+    const cancellers = level.flatMap(match => match.conditions
+        .filter(isExistentialCondition)
+        .filter(condition => !condition.exists));
+    for (const canceller of cancellers) {
+        const { specifications: restoring } = addMatches(levelFeed, levelUnusedGivens, canceller.matches, projectionComponents, parity + 1, continuation, false);
+        specifications.push(...restoring);
+    }
+    const { specifications: excluding } = addMatches(specification, unusedGivens, matches, projectionComponents, parity, null, false);
+    specifications.push(...excluding);
+    return specifications;
+}
+
+/**
+ * A level's matches with every positive condition's matches joined in, each
+ * right after the match that holds it. What remains on each match is its path
+ * conditions and its negative conditions.
+ */
+function flattenLevel(matches: Match[]): Match[] {
+    return matches.flatMap(match => [
+        { ...match, conditions: match.conditions.filter(condition => isPathCondition(condition) || !condition.exists) },
+        ...flattenLevel(match.conditions
+            .filter(isExistentialCondition)
+            .filter(condition => condition.exists)
+            .flatMap(condition => condition.matches))
+    ]);
 }
 
 /**
