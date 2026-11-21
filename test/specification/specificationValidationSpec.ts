@@ -334,6 +334,95 @@ describe("well-formedness", () => {
             .toThrow(/The specification of an authorization rule is not valid. The projection names the label 'nosuchlabel'/);
     });
 
+    // Issue #428: a child specification goes on from its parent. Its matches see
+    // the givens and every enclosing specification's matches, and its projection
+    // sees those and its own. jinaga-spec's vectors well-formed/child-* pin this;
+    // the parser rejects their text, so the objects are built here.
+    const childOf = (matches: Match[], projection: any, parentProjection: any[] = []): Specification => ({
+        given: [{ label: { name: "p1", type: "Root" }, conditions: [] }],
+        matches: [{
+            unknown: { name: "u1", type: "Item" },
+            conditions: [{ type: "path", rolesLeft: [{ name: "root", predecessorType: "Root" }], labelRight: "p1", rolesRight: [] }]
+        }],
+        projection: { type: "composite", components: [...parentProjection, { type: "specification", name: "notes", matches, projection }] }
+    });
+    const note = (name: string, joins: string): Match => ({
+        unknown: { name, type: "Note" },
+        conditions: [{ type: "path", rolesLeft: [{ name: "item", predecessorType: "Item" }], labelRight: joins, rolesRight: [] }]
+    });
+
+    it("reports a child specification that redeclares a given", () => {
+        const specification = childOf([note("p1", "u1")], { type: "fact", label: "p1" });
+        expect(wellFormedErrors(specification)).toEqual(["The name 'p1' has already been used."]);
+        expect(() => assertWellFormed(specification, "The specification")).toThrow(/The name 'p1' has already been used./);
+    });
+
+    it("reports a child specification that joins a label nothing declares", () => {
+        const specification = childOf([note("n", "nosuch")], { type: "fact", label: "n" },
+            [{ type: "fact", name: "item", label: "u1" }]);
+        expect(wellFormedErrors(specification)).toEqual(["The label 'nosuch' has not been defined."]);
+    });
+
+    it("reports a child specification that projects a label it does not declare", () => {
+        const specification = childOf([note("n", "u1")], { type: "fact", label: "nosuch" });
+        expect(wellFormedErrors(specification)).toEqual(["The projection names the label 'nosuch', which has not been defined."]);
+    });
+
+    it("does not let a child's labels leak into its parent's projection", () => {
+        const specification = childOf([note("n", "u1")], { type: "fact", label: "n" },
+            [{ type: "fact", name: "leak", label: "n" }]);
+        expect(wellFormedErrors(specification)).toEqual(["The projection names the label 'n', which has not been defined."]);
+    });
+
+    it("lets sibling child specifications reuse a label", () => {
+        const specification = parse(`(p1: Root) {
+    u1: Item [ u1->root: Root = p1 ]
+} => {
+    notes = { n: Note [ n->item: Item = u1 ] } => n
+    others = { n: Note [ n->item: Item = u1 ] } => n
+}`);
+        expect(wellFormedErrors(specification)).toEqual([]);
+    });
+
+    it("lets a grandchild join its grandparent's and parent's labels, and a child project its parent's", () => {
+        const specification = parse(`(p1: Root) {
+    u1: Item [ u1->root: Root = p1 ]
+} => {
+    notes = {
+        n: Note [ n->item: Item = u1 ]
+    } => {
+        item = u1
+        replies = {
+            r: Reply [ r->note: Note = n r->root: Root = p1 ]
+        } => {
+            reply = r
+            note = n
+            item = u1
+            root = p1
+        }
+    }
+}`);
+        expect(wellFormedErrors(specification)).toEqual([]);
+    });
+
+    it("reports a grandchild that redeclares its parent's label", () => {
+        const specification = parse(`(p1: Root) {
+    u1: Item [ u1->root: Root = p1 ]
+} => {
+    notes = {
+        n: Note [ n->item: Item = u1 ]
+    } => {
+        replies = {
+            r: Reply [ r->note: Note = n ]
+        } => r
+    }
+}`);
+        const child = (specification.projection as any).components[0];
+        child.projection.components[0].matches[0].unknown.name = "n";
+        child.projection.components[0].projection.label = "n";
+        expect(wellFormedErrors(specification)).toEqual(["The name 'n' has already been used."]);
+    });
+
     it("cannot split a specification that has not been checked", () => {
         const specification = parse(post("u1"));
         // @ts-expect-error A specification must be checked before it is split.
