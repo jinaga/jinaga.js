@@ -259,7 +259,10 @@ function buildExistentialCondition(existentialCondition: ExistentialCondition, m
         for (const innerExistentialCondition of match.conditions.filter(isExistentialCondition)) {
             if (innerExistentialCondition.exists) {
                 // Include the matches of the existential condition into the current condition.
-                const { existentialCondition: newExistentialCondition, givens: newGivens, unusedGivens: newUnusedGivens } = buildExistentialCondition(innerExistentialCondition, innerExistentialCondition.matches, givens, unusedGivens);
+                // They join this condition's level, so they accumulate onto it:
+                // the inner condition is not the accumulator, or its matches
+                // would be added twice and its polarity would replace this one's.
+                const { existentialCondition: newExistentialCondition, givens: newGivens, unusedGivens: newUnusedGivens } = buildExistentialCondition(existentialCondition, innerExistentialCondition.matches, givens, unusedGivens);
                 existentialCondition = newExistentialCondition;
                 givens = newGivens;
                 unusedGivens = newUnusedGivens;
