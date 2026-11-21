@@ -67,22 +67,25 @@ Every bug fix needs a regression test that fails before the change and passes af
 
 ## Conformance vectors
 
-[jinaga-spec](https://github.com/jinaga/jinaga-spec) states the well-formedness check, `splitBeforeFirstSuccessor` and the inverses of a specification in Lean, proves them, and generates conformance vectors from the definitions. The `conformance` job in `main.yml` runs that repository's two runners against this checkout at the jinaga-spec commit named in `conformance/jinaga-spec.ref`.
+[jinaga-spec](https://github.com/jinaga/jinaga-spec) states the well-formedness check, `splitBeforeFirstSuccessor` and the inverses of a specification in Lean, proves them, and generates conformance vectors from the definitions. The `conformance` job in `main.yml` runs that repository's three runners against this checkout at the jinaga-spec commit named in `conformance/jinaga-spec.ref`.
 
 `ports/typescript/run-vectors.ts` compares the split's head and tail, checks that `AuthorizationRules` refuses a rule exactly when its tail reads the given, and compares `wellFormedErrors` against each well-formedness vector.
 
 `ports/typescript/run-inverse-vectors.ts` runs the inverse vectors. Each carries a specification, a graph, the givens, the facts that arrive, the rows gained and lost, and the proven inverses. It requires that `MemoryStore` read those inverses to exactly the vector's candidate rows, so it gates this library's evaluation of a specification rather than its inversion of one. It also checks `src/specification/inverse-candidates.ts` against the proven inverses, skipping that while the file is absent, and reports — without failing — the vectors on which today's `invertSpecification` misses a change.
 
-To run it locally, check out jinaga-spec at the pinned commit (`git checkout $(cat /path/to/jinaga.js/conformance/jinaga-spec.ref)`), with `npm ci` done in this repository:
+`ports/typescript/run-feed-vectors.ts` runs the feed vectors. It requires that a replica holding what this library's `buildFeeds` delivers, with predecessors, read each vector's results, its child specifications' included, except on the vectors it names in `jinagaMisses`. It reports, without failing, where this library's feeds differ from the vector's or send a fact the vector's feeds withhold.
+
+To run them locally, check out jinaga-spec at the pinned commit (`git checkout $(cat /path/to/jinaga.js/conformance/jinaga-spec.ref)`), with `npm ci` done in this repository:
 
 ```
 cd ports/typescript
 npm ci
 JINAGA_JS=/path/to/jinaga.js npm run vectors
 JINAGA_JS=/path/to/jinaga.js npm run inverse
+JINAGA_JS=/path/to/jinaga.js npm run feeds
 ```
 
-To move the pin, write the new jinaga-spec commit to `conformance/jinaga-spec.ref` as a full 40-character SHA, and run both runners locally at it. The workflow reads the pin from that file and refuses anything but a full SHA, so moving it needs no edit to `main.yml`. A failing vector means this library and the specification disagree: change the library, or report the disagreement against jinaga-spec. Never edit a vector to match.
+To move the pin, write the new jinaga-spec commit to `conformance/jinaga-spec.ref` as a full 40-character SHA, and run all three runners locally at it. The workflow reads the pin from that file and refuses anything but a full SHA, so moving it needs no edit to `main.yml`. A failing vector means this library and the specification disagree: change the library, or report the disagreement against jinaga-spec. Never edit a vector to match.
 
 ## Working from issues
 
