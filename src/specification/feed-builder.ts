@@ -1,3 +1,4 @@
+import { withDistinctLabels } from "./distinct-labels";
 import { ComponentProjection, ExistentialCondition, Label, Match, Specification, SpecificationGiven, emptySpecification, isExistentialCondition, isPathCondition } from "./specification";
 
 /**
@@ -37,6 +38,9 @@ interface PendingConditions {
 }
 
 export function buildFeeds(specification: Specification): Specification[] {
+    // A feed joins the matches of one descendant, so each must declare a label
+    // only once.
+    specification = withDistinctLabels(specification);
     const projectionComponents = specification.projection.type === "composite"
         ? specification.projection.components
         : [];
