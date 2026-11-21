@@ -78,8 +78,10 @@ export function validateSpecificationOrThrow(specification: Specification, descr
  * label it does not declare.
  *
  * A match sees the givens, the matches before it, and, inside its own
- * existential conditions, its own unknown. Scope is lexical, so sibling
- * existential conditions may reuse a name. `SpecificationParser` enforces every
+ * existential conditions, its own unknown. A child specification in the
+ * projection sees all of that and the matches of every specification that
+ * encloses it. Scope is lexical, so sibling existential conditions, and sibling
+ * child specifications, may reuse a name. `SpecificationParser` enforces every
  * one of these but the reserved prefix while it reads text. This checks
  * specifications from any source, including ones no parser produced.
  *
@@ -90,14 +92,30 @@ export function wellFormedErrors(specification: Specification): string[] {
     const errors: string[] = [];
     const givens = specification.given.map(g => g.label.name);
     givens.forEach(name => checkNotReserved(name, errors));
-    checkScope(givens, specification.matches, errors);
-    const declared = givens.concat(specification.matches.map(m => m.unknown.name));
-    for (const label of projectedLabels(specification.projection)) {
+    checkSpecification(givens, specification.matches, specification.projection, errors);
+    return errors;
+}
+
+/**
+ * Check matches and the projection that follows them. A child specification in
+ * the projection goes on from its parent: its matches see `scope` and the
+ * parent's matches, and its projection sees those and its own.
+ */
+function checkSpecification(scope: string[], matches: Match[], projection: Projection, errors: string[]) {
+    checkScope(scope, matches, errors);
+    const declared = scope.concat(matches.map(m => m.unknown.name));
+    for (const label of projectedLabels(projection)) {
         if (!declared.includes(label)) {
             errors.push(`The projection names the label '${label}', which has not been defined.`);
         }
     }
-    return errors;
+    if (projection.type === "composite") {
+        for (const component of projection.components) {
+            if (component.type === "specification") {
+                checkSpecification(declared, component.matches, component.projection, errors);
+            }
+        }
+    }
 }
 
 /**
