@@ -1,4 +1,4 @@
-import { Condition, DisconnectedSpecificationError, Invalid, Match, Specification, SpecificationParser, buildFeeds, detectDisconnectedSpecification, wellFormedErrors } from "@src";
+import { Condition, DisconnectedSpecificationError, ExistentialCondition, Invalid, Match, Specification, SpecificationParser, buildFeeds, detectDisconnectedSpecification, wellFormedErrors } from "@src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
@@ -16,7 +16,7 @@ const predecessor = (role: string, predecessorType: string, labelRight: string):
 const match = (name: string, type: string, ...conditions: Condition[]): Match => ({
     unknown: { name, type }, conditions
 });
-const not = (...matches: Match[]): Condition => ({ type: "existential", exists: false, matches });
+const not = (...matches: Match[]): ExistentialCondition => ({ type: "existential", exists: false, matches });
 const exists = (...matches: Match[]): Condition => ({ type: "existential", exists: true, matches });
 
 /**
@@ -152,6 +152,37 @@ describe("a specification whose feeds would be a product", () => {
     it("refuses a filter joined only through its own negative condition", () => {
         const error = refusal(negativeConditionJoinedOnlyInsideItsOwn);
         expectSidesNamed(error.message, ["u:U", "p:P", "x:X"], ["e:E"]);
+    });
+
+    it("refuses two chains that only a condition on a given names together", () => {
+        // A condition on a given filters the one row that given contributes;
+        // it joins nothing, so a feed takes its givens without their
+        // conditions. Counting the labels such a condition names as joins
+        // accepted this specification, and its matches walk only predecessors,
+        // so it has no feed for clause 3 to read either.
+        const error = refusal({
+            given: [
+                {
+                    label: { name: "p1", type: "Post" },
+                    conditions: [not(match("x", "Flag",
+                        successor("post", "Post", "p1"),
+                        successor("other", "Post", "p2")))]
+                },
+                given("p2", "Post")
+            ],
+            matches: [
+                match("a", "Author", predecessor("author", "Author", "p1")),
+                match("b", "Author", predecessor("author", "Author", "p2"))
+            ],
+            projection: {
+                type: "composite",
+                components: [
+                    { type: "fact", name: "a", label: "a" },
+                    { type: "fact", name: "b", label: "b" }
+                ]
+            }
+        });
+        expectSidesNamed(error.message, ["a:Author", "p1:Post"], ["b:Author", "p2:Post"]);
     });
 
     it("refuses P where feeds are built, rather than returning feeds", () => {

@@ -213,15 +213,17 @@ export class SpecificationParser {
         );
 
         if (!hasValidPath) {
-            // A negative condition filters a match; it never joins two. One
-            // that names only another given would leave the feed carrying it a
-            // product of two chains, which no replica can answer
-            // (jinaga/jinaga-spec#55).
+            // An existential condition filters the match it is written on; it
+            // never joins two. One that names only another given would leave
+            // the feed carrying it a product of two chains, which no replica
+            // can answer (jinaga/jinaga-spec#55). That holds of `E` and `!E`
+            // alike, so this guard and its message cover both.
             throw new Invalid(`The existential condition must be based on the unknown '${unknown.name}'. ` +
+                `Whether it is E or !E, an existential condition filters the match it is written on; it never joins two. ` +
                 `If the condition is about each '${unknown.name}', join its matches to '${unknown.name}' with a path condition. ` +
                 `If it is about a given as a whole, it is a gate on the whole result, which one specification cannot express: ` +
                 `read it as two child specifications of a root with no matches, as in ` +
-                `(p1, p2) { } => { blockers = { ... }, users = { ... } }, and decide in the application. ` +
+                `(p1, p2) { } => { a = { ... }, b = { ... } }, and decide in the application. ` +
                 `A child placed under '${unknown.name}' inherits its matches, so it is not independent of it.`);
         }
 

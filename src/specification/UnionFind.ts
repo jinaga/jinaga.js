@@ -163,10 +163,12 @@ function connections(matches: Match[]): Connections {
  * labels an existential condition names. More than one is the break, and each
  * refusal below names the labels on either side of it.
  *
- * A condition on a given joins that given to every label the condition names.
- * The inverter promotes a given's conditions to conditions on a match, so they
- * carry the same joins, and a specification built by intersecting distribution
- * rules is connected only through them.
+ * A condition on a given joins nothing. It filters the one row its given
+ * contributes, so it adds no column to take a product over, and a feed takes
+ * its givens without their conditions (`asFeed`). Counting the labels such a
+ * condition names as joins would accept a specification whose two chains
+ * nothing else joins, and whose feeds, walking only predecessors, leave clause
+ * 3 nothing to read.
  */
 function componentsOf(specification: Specification): { components: string[][]; types: Map<string, string> } {
     const unionFind = new UnionFind();
@@ -186,13 +188,6 @@ function componentsOf(specification: Specification): { components: string[][]; t
     for (const given of specification.given) {
         labels.add(given.label.name);
         types.set(given.label.name, given.label.type);
-        for (const condition of given.conditions) {
-            add(connections(condition.matches));
-            for (const label of referenced(condition.matches)) {
-                labels.add(label);
-                unionFind.union(given.label.name, label);
-            }
-        }
     }
     add(connections(specification.matches));
     for (const label of labels) {
@@ -251,7 +246,7 @@ function usedGivens(given: SpecificationGiven[], matches: Match[]): Specificatio
  */
 function asFeed(given: SpecificationGiven[], matches: Match[]): Specification {
     return {
-        given: usedGivens(given, matches),
+        given: usedGivens(given, matches).map(g => ({ label: g.label, conditions: [] })),
         matches,
         projection: { type: "composite", components: [] }
     };
