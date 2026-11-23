@@ -218,6 +218,59 @@ describe("distribution diagnostic clearing on transition (issue #207 W9)", () =>
     expect(received.filter(d => d.cleared)).toHaveLength(0);
   });
 
+  // A clearing diagnostic retires a pending one. A feed that never raised a
+  // pending diagnostic and never withheld the cache date has nothing to
+  // retire, so emitting one for it leaves a consumer retiring a signal it
+  // never received. `isPendingAuthorization` is the one rule for that state,
+  // and `registerClearingListeners` read the decision field directly instead
+  // (issue #439).
+  describe("a reactive decision this client cannot act on does not clear", () => {
+    it.each([
+      ["a code this client does not know", "some-future-code"],
+      ["a structural code (jinaga-replicator 3.7.7, issue #242)", "spec-more-restrictive-than-rule"],
+    ])("raises no pending diagnostic and no clearing for %s", async (_label, code) => {
+      network.response = {
+        feeds: [FEED],
+        decisions: [{ feed: FEED, decision: "reactive", code, reason: "pending authorization" }],
+      };
+      const diagnostics: DistributionDiagnostic[] = [];
+
+      const observer = j.subscribe(blogPosts, blog, () => {});
+      observer.onDiagnostic(d => diagnostics.push(d));
+      await observer.loaded();
+
+      // Raised, but not as a pending state.
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].reactive).toBe(false);
+
+      await network.deliver(FEED, [postRef]);
+
+      expect(diagnostics.filter(d => d.cleared)).toHaveLength(0);
+
+      observer.stop();
+    });
+
+    it("still clears for a reactive decision with a known non-structural code", async () => {
+      network.response = {
+        feeds: [FEED],
+        decisions: [{ feed: FEED, decision: "reactive", code: "principal-excluded", reason: "pending authorization" }],
+      };
+      const diagnostics: DistributionDiagnostic[] = [];
+
+      const observer = j.subscribe(blogPosts, blog, () => {});
+      observer.onDiagnostic(d => diagnostics.push(d));
+      await observer.loaded();
+
+      expect(diagnostics[0].reactive).toBe(true);
+
+      await network.deliver(FEED, [postRef]);
+
+      expect(diagnostics.filter(d => d.cleared)).toHaveLength(1);
+
+      observer.stop();
+    });
+  });
+
   describe("NetworkManager.onFeedData", () => {
     it("fires a late-registered listener immediately once the feed has delivered facts", async () => {
       const manager = new NetworkManager(network, store, async () => {});

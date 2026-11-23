@@ -1027,11 +1027,21 @@ export class ObserverImpl<T> implements Observer<T> {
     }
 
     /**
-     * For each kept-alive `reactive` feed, register a one-shot listener that
-     * emits a clearing diagnostic once the feed begins delivering data (issue
-     * #207 W9). A structural denial never delivers, so it never clears; only
-     * reactive feeds — the subscription race — resolve this way. Fires once per
-     * feed (NetworkManager dedupes the transition).
+     * For each kept-alive feed that answered pending authorization, register a
+     * one-shot listener that emits a clearing diagnostic once the feed begins
+     * delivering data (issue #207 W9). A structural denial never delivers, so
+     * it never clears; only a pending feed — the subscription race — resolves
+     * this way. Fires once per feed (NetworkManager dedupes the transition).
+     *
+     * The test is `isPendingAuthorization`, the same one `recordPendingFeeds`
+     * uses, rather than `decision === 'reactive'` on its own. The two must
+     * agree: a clearing diagnostic retires a pending one, so emitting one for a
+     * feed that never raised a pending diagnostic and never withheld the cache
+     * date leaves a consumer retiring a signal it never received. Reading the
+     * decision field directly let that happen for a `reactive` decision whose
+     * code this client cannot act on — a structural code, as jinaga-replicator
+     * 3.7.7 sent (issue #242), or a code this client does not know at all
+     * (issue #439).
      */
     private registerClearingListeners(feeds: string[], decisions: FeedDecision[]) {
         if (this.stopped) {
@@ -1039,7 +1049,7 @@ export class ObserverImpl<T> implements Observer<T> {
         }
         const keptAlive = new Set(feeds);
         for (const decision of decisions) {
-            if (decision.decision === 'reactive' && decision.feed && keptAlive.has(decision.feed)) {
+            if (isPendingAuthorization(decision) && decision.feed && keptAlive.has(decision.feed)) {
                 const unsubscribe = this.factManager.onFeedData(decision.feed, () => this.onFeedCleared(decision));
                 this.clearingUnsubscribes.push(unsubscribe);
             }

@@ -71,55 +71,61 @@ const feedDecisionKinds = ['authorized', 'reactive', 'denied'] as const;
 
 type FeedDecisionKind = FeedDecision['decision'];
 
-/**
- * Read the `decision` field, mapping a kind this client does not know to
- * `denied` (issue #439).
- *
- * Replicas are peers, and a newer peer may report a kind an older one has never
- * heard of. Rejecting the response for that would fail the `feeds` list along
- * with it, and every `query`, `watch` and `subscribe` of the specification with
- * it, over a field the caller may not even read. So every string has a meaning
- * here, and the one chosen for an unknown kind is the safe one: `denied` is the
- * only kind that neither hands out data nor promises that waiting will. The
- * client cannot act on a kind it cannot interpret, and the raw word is not
- * carried, because a consumer that could not read it could not act on it either
- * -- what the diagnostic carries instead is the `reason`, which the replicator
- * writes for a person.
- *
- * A non-string, or an absent `decision`, is not an unknown value but a
- * malformed shape, and still fails. That line is what keeps this from becoming
- * "accept whatever arrives": the tolerance is of values the wire format
- * permits, not of responses that do not meet it.
- */
-function parseFeedDecisionKind(decision: any): FeedDecisionKind {
-  if (typeof decision !== 'string') {
-    throw new ValidationError("Expected a string 'decision' property.");
-  }
-  if ((feedDecisionKinds as readonly string[]).includes(decision)) {
-    return decision as FeedDecisionKind;
-  }
-  return 'denied';
+function isFeedDecisionKind(decision: string): decision is FeedDecisionKind {
+  return (feedDecisionKinds as readonly string[]).includes(decision);
 }
 
+/**
+ * Read one `FeedDecision`, giving every value the wire format permits a defined
+ * meaning instead of rejecting the response (issue #439).
+ *
+ * Replicas are peers, and a newer peer may report a `decision` kind or a `code`
+ * an older one has never heard of. Rejecting the response for that failed the
+ * `feeds` list along with it, and every `query`, `watch` and `subscribe` of the
+ * specification with it, over a field the caller may not even read.
+ *
+ * **An unknown `decision` kind is read as `denied`, carrying no `code`.**
+ * `denied` is the only kind that neither hands out data nor promises that
+ * waiting will, so it is the safe reading, and it keeps
+ * `FeedDecision.decision` at exactly three inhabitants: nothing downstream has
+ * an unknown kind to handle, and no path can mistake one for authorization.
+ * The `code` is dropped rather than carried because the client cannot tell
+ * what a code was asserting *about* when it cannot interpret the kind that
+ * accompanied it, and an absent code already means exactly what is required
+ * here -- it claims nothing about the shapes, so the denial is not structural
+ * and never reaches `DistributionDeniedError`. That makes "non-structural"
+ * true of the representation rather than a rule applied to it later. What
+ * survives is the `reason`, which the replicator writes for a person.
+ *
+ * **An unknown `code` on a kind this client does know is carried through
+ * raw**, so a developer still sees what the replicator sent and can look it
+ * up. It is classified as neither structural nor pending where that
+ * classification is made, by `isDistributionDenialCode` in
+ * `distributionDiagnostic.ts`.
+ *
+ * A malformed *shape* still fails: a non-string or absent `decision`, a
+ * non-string `code` or `reason`, a non-string `feed`. That line is what keeps
+ * this from becoming "accept whatever arrives" -- the tolerance is of values
+ * the wire format permits, not of responses that do not meet it. A `code` whose
+ * value is discarded is still checked, so a malformed one is reported whatever
+ * kind accompanied it.
+ */
 function parseFeedDecision(decision: any): FeedDecision {
   if (!isObject(decision)) throw new ValidationError("Expected FeedDecision to be an object.");
   if (typeof decision.feed !== 'string') throw new ValidationError("Expected a string 'feed' property.");
-  const kind = parseFeedDecisionKind(decision.decision);
+  if (typeof decision.decision !== 'string') throw new ValidationError("Expected a string 'decision' property.");
+  const recognizedKind = isFeedDecisionKind(decision.decision);
   if (typeof decision.reason !== 'string') throw new ValidationError("Expected a string 'reason' property.");
   const result: FeedDecision = {
     feed: decision.feed,
-    decision: kind,
+    decision: recognizedKind ? decision.decision : 'denied',
     reason: decision.reason
   };
   if (decision.code !== undefined) {
     if (typeof decision.code !== 'string') throw new ValidationError("Expected a string 'code' property.");
-    // Carried through raw, known to this client or not. A code it does not
-    // know is classified as non-structural and non-pending where that
-    // classification is made -- `isDistributionDenialCode` in
-    // `distributionDiagnostic.ts` -- rather than rejected here, so a developer
-    // reading the diagnostic still sees the code the replicator sent and can
-    // look it up (issue #439).
-    result.code = decision.code as ReportedDenialCode;
+    if (recognizedKind) {
+      result.code = decision.code as ReportedDenialCode;
+    }
   }
   return result;
 }

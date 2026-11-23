@@ -54,6 +54,22 @@ describe("parseFeedsResponse (issue #207 W3)", () => {
     ]);
   });
 
+  // An unknown kind makes the code that accompanied it uninterpretable too:
+  // the client cannot tell what the code was asserting about. Dropping it is
+  // what makes the denial non-structural by representation rather than by a
+  // rule applied downstream, which is what the issue's decision asks for.
+  it("drops the code that accompanied an unknown decision kind, known or not (issue #439)", () => {
+    for (const code of ["no-matching-rule", "spec-more-restrictive-than-rule", "principal-excluded", "some-future-code"]) {
+      const response = parseFeedsResponse({
+        feeds: ["abc"],
+        decisions: [{ feed: "abc", decision: "some-future-kind", code, reason: "A future replicator said so." }]
+      });
+      expect(response.decisions).toEqual([
+        { feed: "abc", decision: "denied", reason: "A future replicator said so." }
+      ]);
+    }
+  });
+
   it("never reads an unknown decision kind as authorized, whatever it is called (issue #439)", () => {
     for (const kind of ["some-future-kind", "Authorized", "authorised", "authorized-ish", ""]) {
       const response = parseFeedsResponse({

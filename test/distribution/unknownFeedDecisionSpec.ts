@@ -141,6 +141,31 @@ describe("a feeds decision this client does not know (issue #439)", () => {
     expect(isStructuralDenial(received[0])).toBe(false);
   });
 
+  // Criterion 2, the case the issue's decision settles and a reviewer raised:
+  // an unknown kind is non-structural even when a known structural code rides
+  // along with it, because the client cannot tell what that code was asserting
+  // about. Throwing here would be the very breakage this issue is about.
+  it.each(["no-matching-rule", "spec-more-restrictive-than-rule"])(
+    "does not throw when an unknown decision kind carries the structural code %s",
+    async (code) => {
+      connection.feedsBody = {
+        feeds: [FEED],
+        decisions: [
+          { feed: FEED, decision: "some-future-kind", code, reason: "A future replicator said so." }
+        ]
+      };
+      const received: DistributionDiagnostic[] = [];
+      j.onDistributionDiagnostic(d => received.push(d));
+
+      await expect(j.query(blogPosts, blog)).resolves.toEqual([]);
+
+      expect(received).toHaveLength(1);
+      expect(received[0].decision).toBe("denied");
+      expect(received[0].code).toBeUndefined();
+      expect(isStructuralDenial(received[0])).toBe(false);
+    }
+  );
+
   // Criterion 3. The tolerance must not swallow the denial a known structural
   // code reports.
   it("still throws DistributionDeniedError for a known structural code", async () => {
