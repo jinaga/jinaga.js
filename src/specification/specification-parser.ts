@@ -213,7 +213,16 @@ export class SpecificationParser {
         );
 
         if (!hasValidPath) {
-            throw new Invalid(`The existential condition must be based on the unknown '${unknown.name}'`);
+            // A negative condition filters a match; it never joins two. One
+            // that names only another given would leave the feed carrying it a
+            // product of two chains, which no replica can answer
+            // (jinaga/jinaga-spec#55).
+            throw new Invalid(`The existential condition must be based on the unknown '${unknown.name}'. ` +
+                `If the condition is about each '${unknown.name}', join its matches to '${unknown.name}' with a path condition. ` +
+                `If it is about a given as a whole, it is a gate on the whole result, which one specification cannot express: ` +
+                `read it as two child specifications of a root with no matches, as in ` +
+                `(p1, p2) { } => { blockers = { ... }, users = { ... } }, and decide in the application. ` +
+                `A child placed under '${unknown.name}' inherits its matches, so it is not independent of it.`);
         }
 
         const result = {
