@@ -1,4 +1,4 @@
-import { DistributionDenialCode } from "../distribution/distribution-engine";
+import { DistributionDenialCode, ReportedDenialCode, isDistributionDenialCode } from "../distribution/distribution-engine";
 import { FeedDecision } from "../http/messages";
 
 /**
@@ -26,7 +26,11 @@ import { FeedDecision } from "../http/messages";
  *
  * `code` is optional because a `reactive` decision need not carry one (the
  * replicator may report the pending case without a denial code); a `denied`
- * decision always carries one.
+ * decision always carries one. Its type admits any string, because a newer
+ * replicator may report a code this client does not know and the raw code is
+ * carried through so a developer can look it up (issue #439). One this client
+ * does not know is never structural and never pending, so it reaches neither
+ * `DistributionDeniedError` nor the pending-feed wait.
  *
  * Defined here rather than in `jinaga.ts` so both the client (`Jinaga`) and the
  * `Observer` can build diagnostics without an import cycle (`jinaga.ts` already
@@ -36,7 +40,7 @@ export interface DistributionDiagnostic {
     operation: 'query' | 'watch' | 'subscribe';
     specification: string;            // describeSpecification(...)
     decision: 'reactive' | 'denied';
-    code?: DistributionDenialCode;
+    code?: ReportedDenialCode;
     reactive: boolean;                // true => can self-heal; NEVER treat as fatal
     reason: string;
     /**
@@ -86,8 +90,18 @@ const structuralDenialCodes: readonly DistributionDenialCode[] = ['no-matching-r
  * all — the replicator may report the pending case without one — and an absent
  * code claims nothing about the shapes, so it is not structural.
  */
-function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
-    return code !== undefined && structuralDenialCodes.includes(code);
+function isStructuralCode(code: ReportedDenialCode | undefined): boolean {
+    return code !== undefined && (structuralDenialCodes as readonly string[]).includes(code);
+}
+
+/**
+ * True when a code is absent, or is one this client knows. A code it does not
+ * know says nothing this client can act on, so it supports neither of the two
+ * positive claims a classification can make -- that the shapes never matched,
+ * or that an arriving fact can heal the feed (issue #439).
+ */
+function isRecognizedCode(code: ReportedDenialCode | undefined): boolean {
+    return code === undefined || isDistributionDenialCode(code);
 }
 
 /**
@@ -103,9 +117,19 @@ function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
  * `reactive` but whose code is structural is *not* pending -- no arriving fact
  * changes a shape mismatch -- so it sets `reactive: false` and withholds
  * nothing.
+ *
+ * Nor is a feed whose code this client does not know (issue #439). `reactive:
+ * true` is a positive claim, that waiting on a fact this or another replica
+ * sends can change the verdict, and a code the client cannot interpret gives no
+ * ground for it. The conservative reading costs a wait that might have
+ * succeeded; the permissive one would hold a feed open indefinitely on a code
+ * that meant the opposite. Both readers above therefore treat it as not
+ * pending.
  */
 export function isPendingAuthorization(decision: FeedDecision): boolean {
-    return decision.decision === 'reactive' && !isStructuralCode(decision.code);
+    return decision.decision === 'reactive'
+        && isRecognizedCode(decision.code)
+        && !isStructuralCode(decision.code);
 }
 
 /**

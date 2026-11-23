@@ -26,18 +26,74 @@ describe("parseFeedsResponse (issue #207 W3)", () => {
     expect(response.decisions![2].code).toBe("no-matching-rule");
   });
 
-  it("rejects an unknown denial code", () => {
-    expect(() => parseFeedsResponse({
-      feeds: [],
-      decisions: [{ feed: "abc", decision: "denied", code: "not-a-real-code", reason: "" }]
-    })).toThrow(/code/);
+  // Issue #439. Replicas are peers, and a newer peer may report a code or a
+  // decision kind an older one has never heard of. Rejecting the whole
+  // response for an unknown *value* would make every `query`, `watch` and
+  // `subscribe` of that specification fail over a field the client does not
+  // even need, so an unknown value gets a defined, safe meaning instead
+  // (Art. 3). Only a malformed *shape* is still rejected.
+  it("tolerates a code this client does not know, carrying it through raw (issue #439)", () => {
+    const response = parseFeedsResponse({
+      feeds: ["abc"],
+      decisions: [{ feed: "abc", decision: "denied", code: "some-future-code", reason: "A future replicator said so." }]
+    });
+    expect(response.feeds).toEqual(["abc"]);
+    expect(response.decisions).toEqual([
+      { feed: "abc", decision: "denied", code: "some-future-code", reason: "A future replicator said so." }
+    ]);
   });
 
-  it("rejects an unknown decision value", () => {
+  it("reads a decision kind this client does not know as denied (issue #439)", () => {
+    const response = parseFeedsResponse({
+      feeds: ["abc"],
+      decisions: [{ feed: "abc", decision: "some-future-kind", reason: "A future replicator said so." }]
+    });
+    expect(response.feeds).toEqual(["abc"]);
+    expect(response.decisions).toEqual([
+      { feed: "abc", decision: "denied", reason: "A future replicator said so." }
+    ]);
+  });
+
+  it("never reads an unknown decision kind as authorized, whatever it is called (issue #439)", () => {
+    for (const kind of ["some-future-kind", "Authorized", "authorised", "authorized-ish", ""]) {
+      const response = parseFeedsResponse({
+        feeds: [],
+        decisions: [{ feed: "abc", decision: kind, reason: "" }]
+      });
+      expect(response.decisions![0].decision).toBe("denied");
+    }
+  });
+
+  it("still rejects a malformed decision shape rather than a merely unknown value (issue #439)", () => {
+    // A non-string `decision` or `code` is not an unknown value, it is the
+    // wrong shape, and so is an absent `decision`.
     expect(() => parseFeedsResponse({
       feeds: [],
-      decisions: [{ feed: "abc", decision: "maybe", reason: "" }]
-    })).toThrow(/'decision'/);
+      decisions: [{ feed: "abc", decision: 42, reason: "" }]
+    })).toThrow(ValidationError);
+    expect(() => parseFeedsResponse({
+      feeds: [],
+      decisions: [{ feed: "abc", reason: "" }]
+    })).toThrow(ValidationError);
+    expect(() => parseFeedsResponse({
+      feeds: [],
+      decisions: [{ feed: "abc", decision: "denied", code: 7, reason: "" }]
+    })).toThrow(ValidationError);
+    expect(() => parseFeedsResponse({
+      feeds: [],
+      decisions: [{ feed: "abc", decision: "some-future-kind", code: 7, reason: "" }]
+    })).toThrow(ValidationError);
+    expect(() => parseFeedsResponse({
+      feeds: [],
+      decisions: [{ feed: "abc", decision: "denied", code: "some-future-code", reason: 7 }]
+    })).toThrow(ValidationError);
+    expect(() => parseFeedsResponse({
+      feeds: [],
+      decisions: [{ feed: 7, decision: "denied", reason: "" }]
+    })).toThrow(ValidationError);
+    expect(() => parseFeedsResponse({
+      decisions: [{ feed: "abc", decision: "denied", reason: "" }]
+    })).toThrow(ValidationError);
   });
 
   it("rejects a non-array feeds property", () => {
