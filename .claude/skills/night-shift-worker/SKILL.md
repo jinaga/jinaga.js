@@ -3,10 +3,10 @@ name: night-shift-worker
 description: Works one GitHub issue through to a stacked pull request, unattended. Reproduces the defect or verifies a fix that already merged, fixes with a regression test, resolves a base branch that may not exist yet, registers the chain as a GitHub stack, drives CI green through one review round, then stops. Use when a scheduled routine or a person hands over a single issue number to work, when a merged pull request already exists and the job is verification rather than repair, when a fix must stack on a lower layer's branch, or when a blocker should become a recorded question instead of a guessed patch.
 metadata:
     github-path: skills/night-shift-worker
-    github-pinned: b4f73c29cceae5740c06359e0788c8c40db91d59
-    github-ref: b4f73c29cceae5740c06359e0788c8c40db91d59
+    github-pinned: 6dc894b1956c1188e4ad48c34dd507f4d4829239
+    github-ref: 6dc894b1956c1188e4ad48c34dd507f4d4829239
     github-repo: https://github.com/factoryengineering/skills
-    github-tree-sha: 237eaa94c00d1412544e770cf0fdc1871eb8d68c
+    github-tree-sha: a91f2d41169e9064d02cdf3b3f0b694d9e0768fc
 ---
 
 # Night Shift Worker

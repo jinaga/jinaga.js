@@ -21,7 +21,7 @@ Idle waiting is the correct behavior here. A layer that gives up and branches fr
 
 Setting base branches is necessary but not sufficient. Until the chain is registered as a stack, the host treats the pull requests as ordinary ones with unusual bases.
 
-Registration buys two things always: the chain merges bottom-up as one operation, and reviewers get a stack map. Where branch protection is configured, it buys a third — the host evaluates a stacked pull request against the base of the stack rather than the branch it targets, so protections, required checks and code ownership all resolve against `main`.
+Registration buys three things always: the chain merges bottom-up as one operation, reviewers get a stack map, and when a lower layer merges the host retargets the layers above it and rebases them onto the default branch itself. Where branch protection is configured, it buys a fourth — the host evaluates a stacked pull request against the base of the stack rather than the branch it targets, so protections, required checks and code ownership all resolve against `main`.
 
 **Register the moment the upper layer's pull request exists.** The Stacks API takes pull request numbers, so the upper pull request opens first and joins a stack second.
 
