@@ -36,6 +36,30 @@ const inNameOrder = `(p1: Employee) {
     zebra = u1
 }`;
 
+// Issue #438. `describeProjection` ordered the components with
+// `localeCompare`, which follows the host's collation, so a projection whose
+// names differ in case printed in a different order from jinaga-spec and
+// jinaga.net, and one specification could print two ways on two hosts.
+
+/** Component names that an en-US collation and code unit order disagree on. */
+const caseDifferingNames = ["username", "userName", "Zone", "alpha"];
+
+/** A composite projection of those names, written in neither order. */
+const caseDifferingProjection = `(p1: Employee) {
+} => {
+${caseDifferingNames.map(name => `    ${name} = p1.name`).join("\n")}
+}`;
+
+/** The order in which a description prints the names it was given. */
+function printedOrder(description: string, names: string[]): string[] {
+    const positions = names.map(name => {
+        const position = description.indexOf(`${name} = `);
+        expect(position).toBeGreaterThan(-1);
+        return { name, position };
+    });
+    return positions.sort((a, b) => a.position - b.position).map(p => p.name);
+}
+
 function componentNames(specification: Specification): string[] {
     expect(specification.projection.type).toEqual("composite");
     return (specification.projection as CompositeProjection).components.map(c => c.name);
@@ -57,6 +81,17 @@ describe("describeSpecification", () => {
 
         expect(description.indexOf("apple")).toBeGreaterThan(-1);
         expect(description.indexOf("apple")).toBeLessThan(description.indexOf("zebra"));
+    });
+
+    it("orders components by code unit, not by the host's collation", () => {
+        // `Array.prototype.sort` with no comparator compares UTF-16 code units,
+        // so the expectation is derived from the language rather than restated
+        // from the printer's own comparison.
+        const byCodeUnit = [...caseDifferingNames].sort();
+
+        const description = describeSpecification(parseSpecification(caseDifferingProjection), 0);
+
+        expect(printedOrder(description, caseDifferingNames)).toEqual(byCodeUnit);
     });
 
     it("gives two specifications that differ only in component order one description", () => {

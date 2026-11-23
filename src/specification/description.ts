@@ -1,4 +1,4 @@
-import { ComponentProjection, Condition, ExistentialCondition, SpecificationGiven, Label, Match, Projection, Specification, SpecificationProjection } from "../../src/specification/specification";
+import { ComponentProjection, Condition, ExistentialCondition, SpecificationGiven, Label, Match, NamedComponentProjection, Projection, Specification, SpecificationProjection } from "../../src/specification/specification";
 import { FactReference } from "../storage";
 
 export function describeDeclaration(references: FactReference[], labels: Label[]) {
@@ -61,12 +61,25 @@ function describeCondition(condition: Condition, unknown: string, depth: number)
     }
 }
 
+/**
+ * Order two component names by UTF-16 code unit, the comparison
+ * `Array.prototype.sort` applies when it is given no comparator. Every replica
+ * must print one specification as one text, so the order cannot depend on the
+ * host's collation the way `localeCompare` does (#438). jinaga-spec's printer
+ * sorts by `String ≤` and jinaga.net's by `StringComparer.Ordinal`, and a
+ * component name matches `^[a-zA-Z_][a-zA-Z0-9_]*`, so code unit, code point
+ * and byte order agree with both on every name the parser accepts.
+ */
+function compareComponentNames(a: NamedComponentProjection, b: NamedComponentProjection): number {
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+}
+
 function describeProjection(projection: Projection, depth: number): string {
     if (projection.type === "composite") {
         const indent = "    ".repeat(depth);
         // Sort a copy: `Array.prototype.sort` is in place, and a printer must not
         // reorder the specification it was handed (#313).
-        const orderedProjections = [...projection.components].sort((a, b) => a.name.localeCompare(b.name));
+        const orderedProjections = [...projection.components].sort(compareComponentNames);
         const projectionDescriptions = orderedProjections.map(projection => `    ${indent}${projection.name} = ${describeComponentProjection(projection, depth + 1)}\n`).join("");
         return `{\n${projectionDescriptions}${indent}}`;
     }
