@@ -1,6 +1,7 @@
+import { Invalid } from "./invalid";
 import { Match, Projection, Specification } from "./specification";
 
-export class DisconnectedSpecificationError extends Error {
+export class DisconnectedSpecificationError extends Invalid {
     constructor(message: string) {
         super(message);
         this.name = "DisconnectedSpecificationError";
@@ -198,6 +199,25 @@ export function detectDisconnectedSpecification(specification: Specification): v
         return;
     }
 
+    if (!declaresUnknown(specification)) {
+        // A specification that declares no unknown yields exactly one row,
+        // whatever its givens are, so its labels are a tuple signature rather
+        // than a graph to walk, and connectedness does not apply. Conditions on
+        // the givens only filter that row; they add no column to take a product
+        // over.
+        //
+        // The `with` specification of a distribution rule is this shape by
+        // design. `DistributionEngine.canDistributeTo` reads the principal out
+        // of it through `specificationIsIdentity` and
+        // `executeDeterministicSpecification`, which take the given at the
+        // projected label's index and never consult a store. Its givens mirror
+        // the share rule's, so a share rule with two unrelated givens has a
+        // `with` whose labels necessarily fall into two components. Refusing
+        // that would leave a multi-given share rule with no expressible
+        // principal.
+        return;
+    }
+
     const connectedComponents = unionFind.getConnectedComponents();
 
     if (connectedComponents.length > 1) {
@@ -216,6 +236,32 @@ export function detectDisconnectedSpecification(specification: Specification): v
         );
     }
 }
+/**
+ * Report whether a specification declares an unknown: a label whose facts are
+ * found by walking the graph, and which therefore contributes rows that another
+ * component's unknown could be multiplied against.
+ *
+ * Unknowns inside a condition on a given do not count. An existential condition
+ * filters the row its given is part of; it yields no column of its own.
+ *
+ * @param specification The specification to inspect.
+ * @returns True if the specification declares at least one unknown.
+ */
+function declaresUnknown(specification: Specification): boolean {
+    return specification.matches.length > 0 ||
+        projectionDeclaresUnknown(specification.projection);
+}
+
+function projectionDeclaresUnknown(projection: Projection): boolean {
+    if (projection.type !== "composite") {
+        return false;
+    }
+    return projection.components.some(component =>
+        component.type === "specification" &&
+        (component.matches.length > 0 || projectionDeclaresUnknown(component.projection))
+    );
+}
+
 function getLabelsReferencedInMatch(match: Match): string[] {
     const referencedLabels = new Set<string>();
 

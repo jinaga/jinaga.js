@@ -4,20 +4,17 @@ import { computeHash } from "../fact/hash";
 import { PurgeConditions } from "../purge/purgeConditions";
 import { PredecessorCollection } from "../storage";
 import { Declaration, DeclaredFact } from "./declaration";
+import { Invalid } from "./invalid";
 import { Condition, ExistentialCondition, SpecificationGiven, Label, Match, NamedComponentProjection, PathCondition, Projection, Role, Specification } from "./specification";
 import { matchStructureError } from "./specification-validation";
+import { detectDisconnectedSpecification } from "./UnionFind";
+
+// `Invalid` moved to its own module so that `DisconnectedSpecificationError`
+// can extend it without a cycle through this one. Re-exported here, because
+// this is the path callers import it from.
+export { Invalid };
 
 type FieldValue = string | number | boolean;
-
-export class Invalid extends Error {
-    __proto__: Error;
-    constructor(message?: string) {
-        const trueProto = new.target.prototype;
-        super(message);
-
-        this.__proto__ = trueProto;
-    }
-}
 
 export class SpecificationParser {
     private offset: number = 0;
@@ -501,7 +498,15 @@ export class SpecificationParser {
         const given = this.parseGiven();
         const { matches, labels } = this.parseMatches(given.map(g => g.label));
         const projection = this.parseProjection(labels);
-        return { given, matches, projection };
+        const specification = { given, matches, projection };
+        // A specification whose labels fall into more than one connected
+        // component has no meaning: a store handed one builds the product of
+        // its components. Refuse it here, where the text enters, rather than
+        // leaving each store to invent an answer. Every caller of the parser
+        // is covered: client queries, and the specifications in authorization
+        // rules, distribution rules and purge conditions.
+        detectDisconnectedSpecification(specification);
+        return specification;
     }
 
     parseDeclaration(knownFacts: Declaration): Declaration {

@@ -1,4 +1,4 @@
-import { DisconnectedSpecificationError, Specification, SpecificationParser, buildModel, invertSpecification } from "@src";
+import { DisconnectedSpecificationError, DistributionRules, Invalid, Specification, SpecificationParser, buildModel, invertSpecification } from "@src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
@@ -251,5 +251,61 @@ describe("Disconnected specification detection", () => {
                 r.ofType(Join).join(j => j.player, player)
             );
         }).not.toThrow();
+    });
+});
+describe("Disconnected specification detection at parse time", () => {
+    const disconnectedProduct = `
+        (o1: Office, o2: Office) {
+            e1: Employee [
+                e1->office: Office = o1
+            ]
+            e2: Employee [
+                e2->office: Office = o2
+            ]
+        } => {
+            a = e1
+            b = e2
+        }`;
+
+    it("refuses a disconnected specification when it is parsed", () => {
+        expect(() => parseSpecification(disconnectedProduct))
+            .toThrow(DisconnectedSpecificationError);
+    });
+
+    it("names both subgraphs and their labels in the refusal", () => {
+        let thrown: any = undefined;
+        try {
+            parseSpecification(disconnectedProduct);
+        }
+        catch (error: any) {
+            thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(DisconnectedSpecificationError);
+
+        // Both components, and every label in each, are named. The two
+        // Employee labels carry the product that the store would otherwise
+        // build, so a message that omits one does not say what was refused.
+        const subgraphs = thrown.message.split("Subgraph ");
+        expect(subgraphs).toHaveLength(3);
+        expect(subgraphs[1]).toContain("'o1:Office'");
+        expect(subgraphs[1]).toContain("'e1:Employee'");
+        expect(subgraphs[2]).toContain("'o2:Office'");
+        expect(subgraphs[2]).toContain("'e2:Employee'");
+    });
+
+    it("refuses it as a client error, not a crash", () => {
+        expect(() => parseSpecification(disconnectedProduct))
+            .toThrow(Invalid);
+    });
+
+    it("refuses a distribution rule whose share specification is disconnected", () => {
+        // The rule set is refused where it is parsed, rather than later when a
+        // feed is built from it.
+        expect(() => DistributionRules.loadFromDescription(`
+            distribution {
+                share ${disconnectedProduct}
+                with (user: Jinaga.User) {
+                } => user
+            }`)).toThrow(DisconnectedSpecificationError);
     });
 });

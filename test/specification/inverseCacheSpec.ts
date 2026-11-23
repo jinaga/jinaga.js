@@ -195,20 +195,17 @@ describe("invertSpecification memoization", () => {
     });
 
     it("does not cache a rejected specification", () => {
-        // Two isolated clusters: u1 connects to p1, t1 connects to p2, and
-        // nothing joins them. Rejected before any inversion runs.
-        const disconnected = new SpecificationParser(`
-            (u1: Jinaga.User, p2: Cache.Project) {
-                p1: Cache.Project [
-                    p1->creator: Jinaga.User = u1
-                ]
-                t1: Cache.Task [
-                    t1->project: Cache.Project = p2
-                ]
-            }
-        `);
-        disconnected.skipWhitespace();
-        const specification = disconnected.parseSpecification();
+        // Two isolated clusters: the Task unknown joins the Project given, and
+        // the User given joins nothing. Rejected before any inversion runs.
+        //
+        // Built through the model API rather than parsed. Issue #436 moved the
+        // connectedness check into `parseSpecification`, so a parser can no
+        // longer hand `invertSpecification` a disconnected specification, and
+        // this test is about what the cache retains, not about where the
+        // refusal happens.
+        const specification = model.given(Project, User).match((project, user) =>
+            project.successors(Task, task => task.project)
+        ).specification;
 
         expect(() => invertSpecification(specification)).toThrow();
         expect(inverseCacheStatistics().size).toBe(0);
