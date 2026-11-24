@@ -195,17 +195,19 @@ describe("invertSpecification memoization", () => {
     });
 
     it("does not cache a rejected specification", () => {
-        // Two isolated clusters: the Task unknown joins the Project given, and
-        // the User given joins nothing. Rejected before any inversion runs.
+        // Two isolated clusters: the Task unknown joins the Project given, the
+        // Project unknown joins the User given, and nothing joins the two
+        // clusters. Rejected before any inversion runs.
         //
         // Built through the model API rather than parsed. Issue #436 moved the
         // connectedness check into `parseSpecification`, so a parser can no
         // longer hand `invertSpecification` a disconnected specification, and
         // this test is about what the cache retains, not about where the
         // refusal happens.
-        const specification = model.given(Project, User).match((project, user) =>
-            project.successors(Task, task => task.project)
-        ).specification;
+        const specification = model.given(Project, User).select((project, user) => ({
+            tasks: project.successors(Task, task => task.project),
+            projects: user.successors(Project, p => p.creator)
+        })).specification;
 
         expect(() => invertSpecification(specification)).toThrow();
         expect(inverseCacheStatistics().size).toBe(0);

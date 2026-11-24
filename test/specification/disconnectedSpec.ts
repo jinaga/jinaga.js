@@ -1,4 +1,4 @@
-import { DisconnectedSpecificationError, DistributionRules, Invalid, Specification, SpecificationParser, buildModel, invertSpecification } from "@src";
+import { DisconnectedSpecificationError, DistributionRules, Invalid, Specification, SpecificationParser, buildModel, detectDisconnectedSpecification, invertSpecification } from "@src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
@@ -22,6 +22,12 @@ class Join {
     static Type = "GameHub.Join";
     type = "GameHub.Join";
     player!: Player;
+}
+
+class Visit {
+    static Type = "GameHub.Visit";
+    type = "GameHub.Visit";
+    playground!: Playground;
 }
 
 describe("Disconnected specification detection", () => {
@@ -50,22 +56,23 @@ describe("Disconnected specification detection", () => {
             (player: GameHub.Player) { }`)).not.toThrow();
     });
 
-    it("detects disconnected specification with isolated given", () => {
-        // p2 is isolated and only referenced in projection
-        expect(() => {
-            const spec = parseSpecification(`
-                (p1: GameHub.Player, p2: GameHub.Playground) {
-                    u1: GameHub.Join [
-                        u1->player:GameHub.Player = p1
-                    ]
-                    u3: GameHub.Challenge [
-                        u3->opponentJoin:GameHub.Join = u1
-                    ]
-                } => {
-                    playgroundCode = p2.code
-                }`);
-            invertSpecification(spec);
-        }).toThrow(DisconnectedSpecificationError);
+    it("allows a given that only a projection names", () => {
+        // p2 is named by the projection and by no match. Projecting a given
+        // copies the one fact it binds into every row, so it joins nothing and
+        // multiplies nothing: it is not a component of its own, and this
+        // specification is connected (jinaga/jinaga-spec#60).
+        const spec = parseSpecification(`
+            (p1: GameHub.Player, p2: GameHub.Playground) {
+                u1: GameHub.Join [
+                    u1->player:GameHub.Player = p1
+                ]
+                u3: GameHub.Challenge [
+                    u3->opponentJoin:GameHub.Join = u1
+                ]
+            } => {
+                playgroundCode = p2.code
+            }`);
+        expect(() => detectDisconnectedSpecification(spec)).not.toThrow();
     });
 
     it("detects disconnected specification with multiple isolated clusters", () => {
@@ -86,13 +93,16 @@ describe("Disconnected specification detection", () => {
 
     it("provides clear error message for disconnected specifications", () => {
         try {
+            // Each given carries a match of its own and nothing joins the two,
+            // so the specification is a product of two sets of rows.
             const spec = parseSpecification(`
                 (p1: GameHub.Player, p2: GameHub.Playground) {
                     u1: GameHub.Join [
                         u1->player:GameHub.Player = p1
                     ]
-                } => {
-                    playgroundCode = p2.code
+                    u2: GameHub.Visit [
+                        u2->playground:GameHub.Playground = p2
+                    ]
                 }`);
             invertSpecification(spec);
             fail("Expected DisconnectedSpecificationError to be thrown");
@@ -121,6 +131,9 @@ describe("Disconnected specification detection", () => {
     });
 
     it("detects disconnected specifications with existential conditions", () => {
+        // An existential condition joins its own matches to the match it sits
+        // on, and no further: it does not reach u2's cluster, so the two
+        // clusters stay disconnected.
         expect(() => {
             const spec = parseSpecification(`
                 (p1: GameHub.Player, p2: GameHub.Playground) {
@@ -132,8 +145,9 @@ describe("Disconnected specification detection", () => {
                             ]
                         }
                     ]
-                } => {
-                    playgroundCode = p2.code
+                    u2: GameHub.Visit [
+                        u2->playground:GameHub.Playground = p2
+                    ]
                 }`);
             invertSpecification(spec);
         }).toThrow(DisconnectedSpecificationError);
@@ -225,15 +239,18 @@ describe("Disconnected specification detection", () => {
         // Test that Model API also detects disconnected specifications
         const model = buildModel(b => b
             .type(Player)
-            .type(Playground) 
+            .type(Playground)
             .type(Join, f => f.predecessor("player", Player))
+            .type(Visit, f => f.predecessor("playground", Playground))
         );
 
         expect(() => {
-            // Create a disconnected specification: p1 connects to join, but p2 is isolated
-            const spec = model.given(Player, Playground).match((player, playground, r) => 
-                r.ofType(Join).join(j => j.player, player)
-            );
+            // Each given carries a set of rows of its own, joined to nothing,
+            // so the specification is their product.
+            const spec = model.given(Player, Playground).select((player, playground) => ({
+                joins: player.successors(Join, join => join.player),
+                visits: playground.successors(Visit, visit => visit.playground)
+            }));
             invertSpecification(spec.specification);
         }).toThrow(DisconnectedSpecificationError);
     });
@@ -298,6 +315,27 @@ describe("Disconnected specification detection at parse time", () => {
             .toThrow(Invalid);
     });
 
+    it("refuses a disconnected specification whose given carries a condition", () => {
+        // p1 is named by no top-level match, only by the match inside its own
+        // condition. That match is still a match: the inverter promotes a
+        // given's conditions to match conditions, so p1 and `op` have to be
+        // joined to the rest. Counting p1 as unused here would let this
+        // specification through to `shakeTree`, which refuses it as a crash
+        // rather than as a client error.
+        expect(() => parseSpecification(`
+            (p1: Root [
+                !E {
+                    op: Opened [
+                        op->root: Root = p1
+                    ]
+                }
+            ], p2: Channel) {
+                t: Task [
+                    t->channel: Channel = p2
+                ]
+            }`)).toThrow(DisconnectedSpecificationError);
+    });
+
     it("refuses a distribution rule whose share specification is disconnected", () => {
         // The rule set is refused where it is parsed, rather than later when a
         // feed is built from it.
@@ -307,5 +345,58 @@ describe("Disconnected specification detection at parse time", () => {
                 with (user: Jinaga.User) {
                 } => user
             }`)).toThrow(DisconnectedSpecificationError);
+    });
+});
+
+describe("A given that no match uses", () => {
+    // The maintainer's decision of 2026-11-23 (jinaga/jinaga-spec#60): a given
+    // that no match uses is allowed. A given binds one fact rather than a set
+    // of rows, so it is a parameter of the query and never a factor of a
+    // product. jinaga-spec's `asFeed` takes only the givens the matches use as
+    // a feed's givens, and its `isConnected` counts only those.
+    //
+    // Each case is checked twice over: that the parser accepts the text, and
+    // that the check itself accepts the specification. A parse-time refusal and
+    // a refusal from the check are two different regressions, and either one
+    // keeps a replica from loading rules it must load.
+
+    it("allows a lone given no match uses", () => {
+        const spec = parseSpecification(`(p1: R) { } => p1`);
+        expect(() => detectDisconnectedSpecification(spec)).not.toThrow();
+    });
+
+    it("allows a second given no match uses, where there are no matches", () => {
+        // The shape of the `with` principal of a multi-given distribution
+        // share rule.
+        const spec = parseSpecification(`(p1: R, p2: A) { } => p2`);
+        expect(() => detectDisconnectedSpecification(spec)).not.toThrow();
+    });
+
+    it("allows a given no match uses beside a match that uses another", () => {
+        const spec = parseSpecification(`(p1: R, p2: A) { u: A [ u->r: R = p1 ] } => u`);
+        expect(() => detectDisconnectedSpecification(spec)).not.toThrow();
+    });
+
+    it("loads a multi-given share rule whose principal uses one of its givens", () => {
+        // `describeDistributionRules` to `loadFromDescription` is how a
+        // replicator receives its rules, so a `with` principal that this check
+        // refuses makes a shipped and legal rule unloadable. A multi-given
+        // share rule has no other principal available: projecting one of its
+        // givens is the shape, and joining through a fact would change the
+        // rule's meaning.
+        expect(() => DistributionRules.loadFromDescription(`
+            distribution {
+                share (blog: Blog, author: Jinaga.User) {
+                    post: Post [
+                        post->blog: Blog = blog
+                    ]
+                    comment: Comment [
+                        comment->post: Post = post
+                        comment->author: Jinaga.User = author
+                    ]
+                } => comment
+                with (blog: Blog, author: Jinaga.User) {
+                } => author
+            }`)).not.toThrow();
     });
 });
