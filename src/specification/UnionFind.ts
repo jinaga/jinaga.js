@@ -1,6 +1,6 @@
 import { feedsOf } from "./feeds";
 import { Invalid } from "./invalid";
-import { Match, Projection, Specification, SpecificationGiven, isPathCondition } from "./specification";
+import { Match, Specification, SpecificationGiven, isPathCondition } from "./specification";
 
 export class DisconnectedSpecificationError extends Invalid {
     constructor(message: string) {
@@ -163,12 +163,17 @@ function connections(matches: Match[]): Connections {
  * labels an existential condition names. More than one is the break, and each
  * refusal below names the labels on either side of it.
  *
+ * Only the givens the matches use are labels, as for a feed (`usedGivens`). A
+ * given no match uses contributes a single row to every answer, so it is no
+ * component of its own and no factor of a product, and the specification is
+ * not refused for it (jinaga/jinaga-spec#60).
+ *
  * A condition on a given joins nothing. It filters the one row its given
  * contributes, so it adds no column to take a product over, and a feed takes
  * its givens without their conditions (`asFeed`). Counting the labels such a
  * condition names as joins would accept a specification whose two chains
- * nothing else joins, and whose feeds, walking only predecessors, leave clause
- * 3 nothing to read.
+ * nothing else joins, and whose feeds, walking only predecessors, leave the
+ * feed clause nothing to read.
  */
 function componentsOf(specification: Specification): { components: string[][]; types: Map<string, string> } {
     const unionFind = new UnionFind();
@@ -185,7 +190,7 @@ function componentsOf(specification: Specification): { components: string[][]; t
             unionFind.union(left, right);
         }
     }
-    for (const given of specification.given) {
+    for (const given of usedGivens(specification.given, specification.matches)) {
         labels.add(given.label.name);
         types.set(given.label.name, given.label.type);
     }
@@ -194,32 +199,6 @@ function componentsOf(specification: Specification): { components: string[][]; t
         unionFind.ensureLabel(label);
     }
     return { components: unionFind.getConnectedComponents(), types };
-}
-
-/**
- * Report whether a specification declares an unknown: a label whose facts are
- * found by walking the graph, and which therefore contributes rows that another
- * component's unknown could be multiplied against.
- *
- * Unknowns inside a condition on a given do not count. An existential condition
- * filters the row its given is part of; it yields no column of its own.
- *
- * @param specification The specification to inspect.
- * @returns True if the specification declares at least one unknown.
- */
-function declaresUnknown(specification: Specification): boolean {
-    return specification.matches.length > 0 ||
-        projectionDeclaresUnknown(specification.projection);
-}
-
-function projectionDeclaresUnknown(projection: Projection): boolean {
-    if (projection.type !== "composite") {
-        return false;
-    }
-    return projection.components.some(component =>
-        component.type === "specification" &&
-        (component.matches.length > 0 || projectionDeclaresUnknown(component.projection))
-    );
 }
 
 /** Labels these matches name but do not bind. `bound` holds the labels bound around them. */
@@ -292,47 +271,27 @@ function describeSubgraphs(components: string[][], types: Map<string, string>): 
  * would be the product of two chains that nothing in that feed joins.
  *
  * This decides `ConnectedDescendants` (`JinagaSpec/Connected.lean`, proved in
- * jinaga/jinaga-spec#57), which `buildFeeds` needs of its input. It has three
- * clauses:
+ * jinaga/jinaga-spec#57 and amended by jinaga/jinaga-spec#60), which
+ * `buildFeeds` needs of its input. It has two clauses:
  *
  * 1. Each descendant, as a feed of the givens its matches use, is connected.
- * 2. Every given is used by some descendant.
- * 3. Every feed `buildFeeds` emits is joined: its path conditions alone, the
+ * 2. Every feed `buildFeeds` emits is joined: its path conditions alone, the
  *    filters of its negative conditions dropped, join its matches and the
  *    givens they use, and it passes `isConnected`, so each filter's matches
  *    are joined to the feed.
  *
- * Clause 3 is what says no feed is a product. A negative condition filters a
+ * The clause jinaga/jinaga-spec#60 dropped required every given to be used by
+ * some descendant. A given no match uses contributes one row to every answer,
+ * so it is no factor of a product, and nothing refuses a specification for it.
+ *
+ * Clause 2 is what says no feed is a product. A negative condition filters a
  * match, so `isConnected` counts every label a filter names as joined to that
  * match; dropping the filters is what reveals a feed that only a filter joins.
  */
 export function detectDisconnectedSpecification(specification: Specification): void {
-    if (!declaresUnknown(specification)) {
-        // A specification that declares no unknown yields exactly one row,
-        // whatever its givens are, so its labels are a tuple signature rather
-        // than a graph to walk, and connectedness does not apply. Conditions on
-        // the givens only filter that row; they add no column to take a product
-        // over. There is no match for a given to be used by, and no feed to be
-        // a product, so none of the three clauses has anything to read.
-        //
-        // The `with` specification of a distribution rule is this shape by
-        // design. `DistributionEngine.canDistributeTo` reads the principal out
-        // of it through `specificationIsIdentity` and
-        // `executeDeterministicSpecification`, which take the given at the
-        // projected label's index and never consult a store. Its givens mirror
-        // the share rule's, so a share rule with two unrelated givens has a
-        // `with` whose labels necessarily fall into two components. Refusing
-        // that would leave a multi-given share rule with no expressible
-        // principal.
-        //
-        // `model.given(X).select(x => x)`, and a projection of a given's own
-        // fields, hash or time, are this shape too. jinaga.js answers both.
-        return;
-    }
-
     const specifications = descendants(specification);
 
-    // Clause 1: each descendant, as a feed, is connected.
+    // Clause 1: each descendant, as a feed of the givens its matches use, is connected.
     for (let index = 0; index < specifications.length; index++) {
         const descendant = specifications[index];
         const { components, types } = componentsOf(asFeed(descendant.given, descendant.matches));
@@ -348,22 +307,7 @@ export function detectDisconnectedSpecification(specification: Specification): v
         }
     }
 
-    // Clause 2: every given is used by some descendant.
-    for (const given of specification.given) {
-        const used = specifications.some(descendant =>
-            usedGivens(descendant.given, descendant.matches).some(g => g.label.name === given.label.name));
-        if (!used) {
-            const { components, types } = componentsOf(specification);
-            throw new DisconnectedSpecificationError(
-                "Disconnected specification detected. " +
-                `The given '${given.label.name}:${given.label.type}' is used by no match, of the specification or of any of its child specifications. ` +
-                (components.length > 1 ? describeSubgraphs(components, types) : "") +
-                "Remove the given, or join a match to it with a path condition."
-            );
-        }
-    }
-
-    // Clause 3: every feed is joined, so no feed is the product of two chains.
+    // Clause 2: every feed is joined, so no feed is the product of two chains.
     for (const feed of feedsOf(specification)) {
         const dropped = componentsOf(asFeed(feed.given, feed.matches.map(paths)));
         if (dropped.components.length > 1) {

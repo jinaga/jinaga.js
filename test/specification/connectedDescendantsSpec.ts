@@ -501,11 +501,63 @@ describe("the rewrite of a specification whose feeds would be a product", () => 
             }`);
     });
 
-    it("accepts the unused given removed", () => {
+});
+
+// A given that no match uses contributes one row to every answer, so it is no
+// factor of a product and no component of its own. jinaga/jinaga-spec#60
+// dropped the clause that refused one, and `isConnected` counts only the
+// givens the matches use. The first two are transcribed from the vectors of
+// those names under `vectors/well-formed`.
+describe("a given no match uses", () => {
+    function accepts(text: string) {
+        const specification = parseSpecification(text);
+        expect(wellFormedErrors(specification)).toEqual([]);
+        expect(() => detectDisconnectedSpecification(specification)).not.toThrow();
+        expect(() => buildFeeds(specification)).not.toThrow();
+        return specification;
+    }
+
+    it("accepts unused-given, where a match uses one of the two givens", () => {
         accepts(`
-            (p1: R) {
+            (p1: R, p2: A) {
                 u: A [
                     u->r: R = p1
+                ]
+            } => u`);
+    });
+
+    it("accepts no-matches-two-givens, where neither given is used", () => {
+        accepts(`
+            (p1: R, p2: A) {
+            } => p2`);
+    });
+
+    it("accepts a given that no match of the specification or of a child uses", () => {
+        accepts(`
+            (p1: R, p2: A) {
+                u: A [
+                    u->r: R = p1
+                ]
+            } => {
+                children = {
+                    c: C [
+                        c->u: A = u
+                    ]
+                }
+            }`);
+    });
+
+    it("accepts a given that only the filter of a negative condition names", () => {
+        accepts(`
+            (p1: R, p2: A) {
+                u: A [
+                    u->r: R = p1
+                    !E {
+                        e: E [
+                            e->u: A = u
+                            e->a: A = p2
+                        ]
+                    }
                 ]
             } => u`);
     });

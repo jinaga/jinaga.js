@@ -255,12 +255,9 @@ describe("feeds of a positive condition inside a negative one", () => {
             type: "existential", exists, matches
         });
         const specification: Specification = {
-            // The vector declares a second given, `p2: A`, that none of its
-            // matches uses. A specification whose given no match uses is
-            // refused (jinaga-spec's `unused-given`), and it carries nothing
-            // this test is about, so it is left out.
             given: [
-                { label: { name: "p1", type: "R" }, conditions: [] }
+                { label: { name: "p1", type: "R" }, conditions: [] },
+                { label: { name: "p2", type: "A" }, conditions: [] }
             ],
             matches: [
                 match("u1", "B",
@@ -301,7 +298,7 @@ describe("feeds of a positive condition inside a negative one", () => {
             expect(wellFormedErrors(feed)).toEqual([]);
         }
 
-        const { full, replica } = await readFullAndReplica(specification, graph, { p1: 0 }, "u1");
+        const { full, replica } = await readFullAndReplica(specification, graph, { p1: 0, p2: 3 }, "u1");
 
         expect(full).toEqual([2, 5]);
         expect(replica).toEqual(full);
