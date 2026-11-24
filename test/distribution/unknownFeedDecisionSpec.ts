@@ -121,9 +121,10 @@ describe("a feeds decision this client does not know (issue #439)", () => {
     await expect(j.query(blogPosts, blog)).resolves.toEqual([]);
   });
 
-  // Criterion 2. An unknown decision kind is read as denied, so no path can
-  // mistake it for authorization.
-  it("reports an unknown decision kind as a non-structural denial", async () => {
+  // Criterion 2. An unknown decision kind is reported as a denial that is
+  // non-structural, and the kind reaches the diagnostic exactly as the
+  // replicator sent it. No path mistakes it for authorization.
+  it("reports an unknown decision kind as a non-structural denial, carrying the kind raw", async () => {
     connection.feedsBody = {
       feeds: [FEED],
       decisions: [
@@ -136,15 +137,17 @@ describe("a feeds decision this client does not know (issue #439)", () => {
     await expect(j.query(blogPosts, blog)).resolves.toEqual([]);
 
     expect(received).toHaveLength(1);
-    expect(received[0].decision).toBe("denied");
+    expect(received[0].decision).toBe("some-future-kind");
+    expect(received[0].reason).toBe("A future replicator said so.");
     expect(received[0].reactive).toBe(false);
     expect(isStructuralDenial(received[0])).toBe(false);
   });
 
-  // Criterion 2, the case the issue's decision settles and a reviewer raised:
-  // an unknown kind is non-structural even when a known structural code rides
-  // along with it, because the client cannot tell what that code was asserting
-  // about. Throwing here would be the very breakage this issue is about.
+  // Criterion 2, the case the issue's decision settles: an unknown kind is
+  // non-structural even when a known structural code rides along with it,
+  // because the code says why *that* verdict was reached and the client cannot
+  // read the verdict. Throwing here would be the very breakage this issue is
+  // about. The code is still carried, because it was already on the wire.
   it.each(["no-matching-rule", "spec-more-restrictive-than-rule"])(
     "does not throw when an unknown decision kind carries the structural code %s",
     async (code) => {
@@ -160,8 +163,9 @@ describe("a feeds decision this client does not know (issue #439)", () => {
       await expect(j.query(blogPosts, blog)).resolves.toEqual([]);
 
       expect(received).toHaveLength(1);
-      expect(received[0].decision).toBe("denied");
-      expect(received[0].code).toBeUndefined();
+      expect(received[0].decision).toBe("some-future-kind");
+      expect(received[0].code).toBe(code);
+      expect(received[0].reactive).toBe(false);
       expect(isStructuralDenial(received[0])).toBe(false);
     }
   );
@@ -205,6 +209,24 @@ describe("classifying a decision this client does not know (issue #439)", () => 
       expect(diagnostics[0].code).toBe("some-future-code");
       expect(diagnostics[0].reactive).toBe(false);
       expect(isStructuralDenial(diagnostics[0])).toBe(false);
+    }
+  );
+
+  // An unknown kind is never authorized: silence is reserved for a feed the
+  // replicator positively authorized, so one this client cannot read is
+  // reported like any other withheld feed. It is never pending and never
+  // structural, whatever code accompanies it.
+  it.each([undefined, "no-matching-rule", "spec-more-restrictive-than-rule", "principal-excluded", "some-future-code"])(
+    "reports an unknown decision kind carrying code %s as a non-structural, non-pending denial",
+    (code) => {
+      const d = decision({ decision: "some-future-kind", code });
+      const diagnostics = toDistributionDiagnostics("query", "spec", [d]);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].decision).toBe("some-future-kind");
+      expect(diagnostics[0].code).toBe(code);
+      expect(diagnostics[0].reactive).toBe(false);
+      expect(isStructuralDenial(diagnostics[0])).toBe(false);
+      expect(isPendingAuthorization(d)).toBe(false);
     }
   );
 

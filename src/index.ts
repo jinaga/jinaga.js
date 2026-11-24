@@ -10,7 +10,7 @@ export { AuthorizationRules, describeAuthorizationRules } from "./authorization/
 export { AuthorizationRuleError, PredecessorNotResolvedError } from "./authorization/errors";
 export { generateKeyPair, KeyPair, signFacts } from "./cryptography/key-pair";
 export { verifyEnvelopes } from "./cryptography/verify";
-export { DistributionEngine, DistributionDenialCode, distributionDenialCodes, DistributionFailure, DistributionPerFeedFailure, DistributionResult, DistributionSuccess, ReportedDenialCode, isDistributionDenialCode } from './distribution/distribution-engine';
+export { DistributionEngine, DistributionDenialCode, distributionDenialCodes, DistributionFailure, DistributionPerFeedFailure, DistributionResult, DistributionSuccess, FeedDecisionKind, feedDecisionKinds, ReportedDenialCode, ReportedFeedDecisionKind, isDistributionDenialCode, isFeedDecisionKind } from './distribution/distribution-engine';
 export { describeDistributionRules, DistributionRules } from './distribution/distribution-rules';
 export { canonicalizeFact, canonicalPredecessors, computeHash, computeObjectHash, verifyHash } from './fact/hash';
 export { dehydrateFact, dehydrateReference, Dehydration, HashMap, hydrate, hydrateFromTree, Hydration } from "./fact/hydrate";

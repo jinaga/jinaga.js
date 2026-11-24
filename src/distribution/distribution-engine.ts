@@ -64,7 +64,7 @@ export interface DistributionIntersectionResult {
  * the second is literally "more restrictive"; the first asks for more. Both
  * deny correctly. The code name is retained for wire compatibility. A client
  * that carries `isDistributionDenialCode` tolerates a code it does not
- * recognize (`messageParsers.ts`, issue #439), so a code added here reaches
+ * recognize (`distributionDiagnostic.ts`, issue #439), so a code added here reaches
  * such a client as a non-structural denial rather than failing its whole
  * `POST /feeds` response; a client released before that rejects the response,
  * which is the constraint on introducing one.
@@ -107,6 +107,53 @@ export type ReportedDenialCode = DistributionDenialCode | (string & {});
  */
 export function isDistributionDenialCode(code: string): code is DistributionDenialCode {
   return (distributionDenialCodes as readonly string[]).includes(code);
+}
+
+/**
+ * The kinds of verdict a `POST /feeds` decision can report: the feed is
+ * authorized, it is withheld but can still self-heal, or it is denied. This is
+ * the set a replica *produces*, and it is closed.
+ *
+ * `feedDecisionKinds` is the runtime source of truth and the type is derived
+ * from it, for the same reason as `distributionDenialCodes` above: a reader
+ * tells a kind this replica knows from one it does not against this one list,
+ * rather than restating it.
+ */
+export const feedDecisionKinds = [
+  'authorized',
+  'reactive',
+  'denied',
+] as const;
+
+export type FeedDecisionKind = typeof feedDecisionKinds[number];
+
+/**
+ * A decision kind as it arrives on the wire. Replicas are peers, and a newer
+ * peer may report a kind this one has never heard of, so the set of kinds a
+ * client can *receive* is every string -- not the set it can *produce*
+ * (issue #439).
+ *
+ * `string & {}` rather than a bare `string` for the same reason as
+ * `ReportedDenialCode`: a literal this replica knows still narrows and still
+ * autocompletes.
+ *
+ * Only values crossing the wire use it: `FeedDecision.decision` and
+ * `DistributionDiagnostic.decision`.
+ */
+export type ReportedFeedDecisionKind = FeedDecisionKind | (string & {});
+
+/**
+ * True when a received decision kind is one this replica knows. The meaning of
+ * a kind it does not know is defined, and it is the safe one: a denial that no
+ * path reads as authorization and that is never structural, whatever code
+ * accompanies it (see `toDistributionDiagnostics` and `isStructuralDenial`).
+ *
+ * A code is interpretable only under a kind this client knows, because the code
+ * says why *that* verdict was reached. So this predicate, and not only
+ * `isDistributionDenialCode`, gates the structural reading.
+ */
+export function isFeedDecisionKind(decision: string): decision is FeedDecisionKind {
+  return (feedDecisionKinds as readonly string[]).includes(decision);
 }
 
 export interface DistributionSuccess {

@@ -1,4 +1,5 @@
-import { DistributionDiagnostic } from "./distributionDiagnostic";
+import { isFeedDecisionKind } from "../distribution/distribution-engine";
+import { DistributionDiagnostic, isStructuralDenial } from "./distributionDiagnostic";
 
 /**
  * Upper bound on the dedupe set (issue #207 W7). A long-lived app in
@@ -22,6 +23,13 @@ const MAX_DEDUP_ENTRIES = 1000;
  *    or an unrecognized code) → `console.warn`,
  *  - any `reactive` decision → `console.info`
  *    (the pending-authorization race; will populate when the fact arrives).
+ *
+ * The error tier is `isStructuralDenial`, the same predicate `query` throws on,
+ * rather than a second copy of the structural code list. That is what keeps the
+ * two from disagreeing, and it is why a decision kind this client does not know
+ * is reported at warn level with the raw values rather than as a `share` rule a
+ * developer must go and write (issue #439): a code says why *that* verdict was
+ * reached, and this client cannot read the verdict.
  *
  * Writes straight to `console.*` rather than through `Trace` so the messages are
  * visible in development regardless of the configured tracer (the default
@@ -54,7 +62,7 @@ export function createDevelopmentDiagnosticHandler(): (diagnostic: DistributionD
         else if (diagnostic.reactive) {
             console.info(message);
         }
-        else if (diagnostic.code === 'no-matching-rule' || diagnostic.code === 'spec-more-restrictive-than-rule') {
+        else if (isStructuralDenial(diagnostic)) {
             console.error(message);
         }
         else {
@@ -72,6 +80,16 @@ function formatMessage(diagnostic: DistributionDiagnostic): string {
     if (diagnostic.reactive) {
         return `[jinaga] Specification is pending authorization for the current user; ` +
             `it will populate if an authorizing fact arrives.\n${spec}`;
+    }
+    if (!isFeedDecisionKind(diagnostic.decision)) {
+        // A kind this client cannot read makes the code beside it
+        // uninterpretable too, so neither gets a message that advises what to
+        // do about it. Both are named instead, so a developer can look up what
+        // the replicator actually said (issue #439).
+        const code = diagnostic.code === undefined ? 'no code' : `code '${diagnostic.code}'`;
+        return `[jinaga] The replicator reported a distribution decision this client does not ` +
+            `recognize ('${diagnostic.decision}', ${code}), so the specification is treated as denied. ` +
+            `Upgrade this client to interpret it.\n${spec}\n${diagnostic.reason}`;
     }
     switch (diagnostic.code) {
         case 'no-matching-rule':
