@@ -245,12 +245,17 @@ describe("Disconnected specification detection", () => {
         );
 
         expect(() => {
-            // Each given carries a set of rows of its own, joined to nothing,
-            // so the specification is their product.
-            const spec = model.given(Player, Playground).select((player, playground) => ({
-                joins: player.successors(Join, join => join.player),
-                visits: playground.successors(Visit, visit => visit.playground)
-            }));
+            // A child inherits its parent's matches, so `visits` placed under
+            // the join is read for each join, and nothing joins a playground's
+            // visits to a player's joins: that child is the product of the two
+            // chains. Two children of a root with no matches is the rewrite,
+            // and is accepted.
+            const spec = model.given(Player, Playground).match((player, playground, r) =>
+                r.ofType(Join).join(j => j.player, player)
+                    .select(join => ({
+                        visits: playground.successors(Visit, visit => visit.playground)
+                    }))
+            );
             invertSpecification(spec.specification);
         }).toThrow(DisconnectedSpecificationError);
     });
@@ -315,13 +320,26 @@ describe("Disconnected specification detection at parse time", () => {
             .toThrow(Invalid);
     });
 
-    it("refuses a disconnected specification whose given carries a condition", () => {
-        // p1 is named by no top-level match, only by the match inside its own
-        // condition. That match is still a match: the inverter promotes a
-        // given's conditions to match conditions, so p1 and `op` have to be
-        // joined to the rest. Counting p1 as unused here would let this
-        // specification through to `shakeTree`, which refuses it as a crash
-        // rather than as a client error.
+    it("allows a given whose only use is inside its own condition", () => {
+        // p1 is named by no match of the specification, only by the match
+        // inside its own condition. `usedGivens` reads the specification's
+        // matches, as the proved check does, and a condition on a given is not
+        // one: it filters the single row its given contributes and joins
+        // nothing. So p1 is an unused given, which is allowed
+        // (jinaga/jinaga-spec#60).
+        //
+        // Counting such a given instead, while a condition on a given
+        // contributes no edge, refuses the shape `givenConditionsSpec` and
+        // `src/conformance/storage-conformance.ts` both read, where one
+        // given's condition references a prior given.
+        //
+        // `invertSpecification` cannot invert an unused given: it promotes a
+        // given's conditions to a match's and reaches `shakeTree`, which
+        // refuses it as a plain error rather than as a client error. That is
+        // true of every unused given, not of this shape in particular, and
+        // jinaga-spec's inverse vectors record it on `unused-given` and
+        // `no-matches-two-givens` as a change today's `invertSpecification`
+        // misses.
         expect(() => parseSpecification(`
             (p1: Root [
                 !E {
@@ -333,7 +351,7 @@ describe("Disconnected specification detection at parse time", () => {
                 t: Task [
                     t->channel: Channel = p2
                 ]
-            }`)).toThrow(DisconnectedSpecificationError);
+            }`)).not.toThrow();
     });
 
     it("refuses a distribution rule whose share specification is disconnected", () => {

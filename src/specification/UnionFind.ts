@@ -163,10 +163,11 @@ function connections(matches: Match[]): Connections {
  * labels an existential condition names. More than one is the break, and each
  * refusal below names the labels on either side of it.
  *
- * Only the givens the matches use are labels, as for a feed (`usedGivens`). A
- * given no match uses contributes a single row to every answer, so it is no
- * component of its own and no factor of a product, and the specification is
- * not refused for it (jinaga/jinaga-spec#60).
+ * Every caller hands this a feed, whose givens `asFeed` has already narrowed
+ * to the ones its matches use. A given no match uses contributes a single row
+ * to every answer, so it is no component of its own and no factor of a
+ * product, and the specification is not refused for it
+ * (jinaga/jinaga-spec#60).
  *
  * A condition on a given joins nothing. It filters the one row its given
  * contributes, so it adds no column to take a product over, and a feed takes
@@ -190,7 +191,7 @@ function componentsOf(specification: Specification): { components: string[][]; t
             unionFind.union(left, right);
         }
     }
-    for (const given of usedGivens(specification.given, specification.matches)) {
+    for (const given of specification.given) {
         labels.add(given.label.name);
         types.set(given.label.name, given.label.type);
     }
@@ -211,6 +212,14 @@ function freeIn(bound: string[], matches: Match[]): string[] {
 /**
  * The givens these matches name, in their path conditions or in the filters of
  * their negative conditions (`usedGivens`).
+ *
+ * Only the specification's own matches are read, as `usedGivens` reads them.
+ * A condition on a given is not a match: it filters the one row its given
+ * contributes, and `asFeed` takes a feed's givens without their conditions, so
+ * a given named only inside its own condition is used by nothing and is left
+ * out. Counting it, while a condition on a given contributes no edge, would
+ * refuse `(office, company [E { o [o->company = company, o = office] }]) { }`,
+ * which this library parses and its storage conformance kit reads.
  */
 function usedGivens(given: SpecificationGiven[], matches: Match[]): SpecificationGiven[] {
     const free = freeIn([], matches);
@@ -324,7 +333,7 @@ export function detectDisconnectedSpecification(specification: Specification): v
                 independentParts
             );
         }
-        const whole = componentsOf(feed);
+        const whole = componentsOf(asFeed(feed.given, feed.matches));
         if (whole.components.length > 1) {
             throw new DisconnectedSpecificationError(
                 "Disconnected specification detected. " +
