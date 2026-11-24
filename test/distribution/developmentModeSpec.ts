@@ -168,6 +168,34 @@ describe("development-mode distribution diagnostics (issue #207 W7/W8)", () => {
       expect(warnSpy).not.toHaveBeenCalled();
     });
 
+    // Issue #439. The error tier means "a rule you must go and author", and a
+    // structural code under a decision kind this client cannot read does not
+    // support that claim: the code says why *that* verdict was reached. So the
+    // handler reports it at warn level and names both raw values rather than
+    // telling a developer to add a `share` rule that may not be the problem.
+    it.each(["no-matching-rule", "spec-more-restrictive-than-rule"])(
+      "logs an unknown decision kind carrying the structural code %s at warn level, naming both",
+      (code) => {
+        const handler = createDevelopmentDiagnosticHandler();
+        handler(diagnostic({ decision: "some-future-kind", code }));
+        expect(errorSpy).not.toHaveBeenCalled();
+        expect(infoSpy).not.toHaveBeenCalled();
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        const message = warnSpy.mock.calls[0][0];
+        expect(message).toContain("some-future-kind");
+        expect(message).toContain(code);
+        expect(message).not.toContain("share");
+      }
+    );
+
+    it("logs an unknown decision kind with no code at warn level", () => {
+      const handler = createDevelopmentDiagnosticHandler();
+      handler(diagnostic({ decision: "some-future-kind" }));
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain("some-future-kind");
+    });
+
     it("deduplicates identical diagnostics", () => {
       const handler = createDevelopmentDiagnosticHandler();
       const d = diagnostic({ code: "no-matching-rule" });

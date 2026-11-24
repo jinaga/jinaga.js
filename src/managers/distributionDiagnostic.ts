@@ -1,4 +1,4 @@
-import { DistributionDenialCode } from "../distribution/distribution-engine";
+import { DistributionDenialCode, ReportedDenialCode, ReportedFeedDecisionKind, isDistributionDenialCode, isFeedDecisionKind } from "../distribution/distribution-engine";
 import { FeedDecision } from "../http/messages";
 
 /**
@@ -28,6 +28,15 @@ import { FeedDecision } from "../http/messages";
  * replicator may report the pending case without a denial code); a `denied`
  * decision always carries one.
  *
+ * `decision` and `code` both admit any string, because a newer replicator may
+ * report a kind or a code this client does not know, and both are carried
+ * through exactly as received so a developer can look up what was actually
+ * said (issue #439). A value this client does not know is never structural and
+ * never pending, so it reaches neither `DistributionDeniedError` nor the
+ * pending-feed wait. An unrecognized `decision` is a denial on both counts
+ * whatever code accompanies it, because a code says why *that* verdict was
+ * reached and this client cannot read the verdict.
+ *
  * Defined here rather than in `jinaga.ts` so both the client (`Jinaga`) and the
  * `Observer` can build diagnostics without an import cycle (`jinaga.ts` already
  * imports from `observer.ts`).
@@ -35,8 +44,8 @@ import { FeedDecision } from "../http/messages";
 export interface DistributionDiagnostic {
     operation: 'query' | 'watch' | 'subscribe';
     specification: string;            // describeSpecification(...)
-    decision: 'reactive' | 'denied';
-    code?: DistributionDenialCode;
+    decision: ReportedFeedDecisionKind;
+    code?: ReportedDenialCode;
     reactive: boolean;                // true => can self-heal; NEVER treat as fatal
     reason: string;
     /**
@@ -86,8 +95,18 @@ const structuralDenialCodes: readonly DistributionDenialCode[] = ['no-matching-r
  * all — the replicator may report the pending case without one — and an absent
  * code claims nothing about the shapes, so it is not structural.
  */
-function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
-    return code !== undefined && structuralDenialCodes.includes(code);
+function isStructuralCode(code: ReportedDenialCode | undefined): boolean {
+    return code !== undefined && (structuralDenialCodes as readonly string[]).includes(code);
+}
+
+/**
+ * True when a code is absent, or is one this client knows. A code it does not
+ * know says nothing this client can act on, so it supports neither of the two
+ * positive claims a classification can make -- that the shapes never matched,
+ * or that an arriving fact can heal the feed (issue #439).
+ */
+function isRecognizedCode(code: ReportedDenialCode | undefined): boolean {
+    return code === undefined || isDistributionDenialCode(code);
 }
 
 /**
@@ -103,9 +122,21 @@ function isStructuralCode(code: DistributionDenialCode | undefined): boolean {
  * `reactive` but whose code is structural is *not* pending -- no arriving fact
  * changes a shape mismatch -- so it sets `reactive: false` and withholds
  * nothing.
+ *
+ * Nor is a feed whose code this client does not know, nor one whose decision
+ * kind it does not know (issue #439). `reactive: true` is a positive claim,
+ * that waiting on a fact this or another replica sends can change the verdict,
+ * and a value the client cannot interpret gives no ground for it. The
+ * conservative reading costs a wait that might have succeeded; the permissive
+ * one would hold a feed open indefinitely on a value that meant the opposite.
+ * Both readers above therefore treat it as not pending. The test for
+ * `reactive` is what excludes an unrecognized kind: every reader of `decision`
+ * tests positively for the kind it acts on, so an unknown one matches none.
  */
 export function isPendingAuthorization(decision: FeedDecision): boolean {
-    return decision.decision === 'reactive' && !isStructuralCode(decision.code);
+    return decision.decision === 'reactive'
+        && isRecognizedCode(decision.code)
+        && !isStructuralCode(decision.code);
 }
 
 /**
@@ -121,6 +152,12 @@ export function isPendingAuthorization(decision: FeedDecision): boolean {
  * never matched, which no arriving fact can change. The code is the narrower,
  * checkable claim, so it wins. `decision` still carries what the replicator
  * actually said, for a consumer that wants to see it.
+ *
+ * The filter tests for `authorized` rather than listing the two kinds that
+ * produce a diagnostic (issue #439). Silence is the one reading reserved for a
+ * feed the replicator positively authorized, so a kind this client does not
+ * know raises a diagnostic like any other withheld feed rather than passing
+ * unreported.
  */
 export function toDistributionDiagnostics(
     operation: DistributionDiagnostic['operation'],
@@ -128,11 +165,11 @@ export function toDistributionDiagnostics(
     decisions: FeedDecision[]
 ): DistributionDiagnostic[] {
     return decisions
-        .filter(d => d.decision === 'denied' || d.decision === 'reactive')
+        .filter(d => d.decision !== 'authorized')
         .map(d => ({
             operation,
             specification,
-            decision: d.decision as 'reactive' | 'denied',
+            decision: d.decision,
             code: d.code,
             reactive: isPendingAuthorization(d),
             reason: d.reason,
@@ -146,6 +183,10 @@ export function toDistributionDiagnostics(
  * carries the same feed/code/operation as the raised diagnostic, with
  * `cleared: true`, so a consumer can retire the earlier "pending authorization"
  * signal.
+ *
+ * `decision` is carried as received, with no normalization: only a pending feed
+ * clears, and `isPendingAuthorization` admits `reactive` alone, so the kind that
+ * reaches here is always one this client knows (issue #439).
  */
 export function toClearingDiagnostic(
     operation: DistributionDiagnostic['operation'],
@@ -155,7 +196,7 @@ export function toClearingDiagnostic(
     return {
         operation,
         specification,
-        decision: decision.decision === 'denied' ? 'denied' : 'reactive',
+        decision: decision.decision,
         code: decision.code,
         // The race has resolved, so this is no longer a pending state: a
         // consumer that only inspects `reactive`/`reason` (ignoring `cleared`)
@@ -217,9 +258,17 @@ export function toSettledDiagnostic(
  * `not-authenticated`: it is not structural, because a login can change it, yet
  * a UI must act on it, so it usually shows as an error rather than as pending.
  * Use this to inform an application's policy, not to replace it.
+ *
+ * A structural code is structural only under a decision kind this client knows
+ * (issue #439). The code says why *that* verdict was reached, so a client that
+ * cannot read the verdict cannot read the code as a claim about the shapes
+ * either -- and throwing on it would be the very breakage that issue is about,
+ * a newer replicator stopping an older client. An unrecognized kind is
+ * therefore a denial that is never structural, whatever code rides along.
  */
 export function isStructuralDenial(diagnostic: DistributionDiagnostic): boolean {
     return !diagnostic.reactive
+        && isFeedDecisionKind(diagnostic.decision)
         && isStructuralCode(diagnostic.code);
 }
 

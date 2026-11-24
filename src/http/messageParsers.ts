@@ -1,4 +1,4 @@
-import { DistributionDenialCode, distributionDenialCodes } from "../distribution/distribution-engine";
+import { ReportedDenialCode, ReportedFeedDecisionKind } from "../distribution/distribution-engine";
 import { FactRecord, FactReference, PredecessorCollection } from "../storage";
 import { ValidationError } from "../util/errors";
 import { FeedDecision, FeedsResponse, LoadMessage, SaveMessage } from "./messages";
@@ -67,26 +67,48 @@ export function parseLoadMessage(message: any): LoadMessage {
   };
 }
 
-const feedDecisionKinds = ['authorized', 'reactive', 'denied'];
-
+/**
+ * Read one `FeedDecision`, giving every value the wire format permits a defined
+ * meaning instead of rejecting the response (issue #439).
+ *
+ * Replicas are peers, and a newer peer may report a `decision` kind or a `code`
+ * an older one has never heard of. Rejecting the response for that failed the
+ * `feeds` list along with it, and every `query`, `watch` and `subscribe` of the
+ * specification with it, over a field the caller may not even read.
+ *
+ * **Both values are carried through exactly as received**, known or not. The
+ * parser checks the shape and assigns no meaning: what an unrecognized kind or
+ * code *means* is decided where the decision is classified, by
+ * `isFeedDecisionKind`, `isDistributionDenialCode` and the predicates in
+ * `distributionDiagnostic.ts`. Dropping a value here would protect nothing,
+ * because it was already on the wire, and would leave a developer with no way
+ * to look up what the replicator actually said.
+ *
+ * Reading an unrecognized kind safely is therefore the readers' job, and every
+ * one of them tests positively for the kind it acts on: `authorized` in
+ * `pending-feed-resolution.ts` and in `toDistributionDiagnostics`, `reactive`
+ * in `isPendingAuthorization`. An unknown kind matches none of them, so it is
+ * never authorized and never pending, and `isStructuralDenial` requires a kind
+ * this client knows before it reads a code as structural.
+ *
+ * A malformed *shape* still fails: a non-string or absent `decision`, a
+ * non-string `code` or `reason`, a non-string `feed`. That line is what keeps
+ * this from becoming "accept whatever arrives" -- the tolerance is of values
+ * the wire format permits, not of responses that do not meet it.
+ */
 function parseFeedDecision(decision: any): FeedDecision {
   if (!isObject(decision)) throw new ValidationError("Expected FeedDecision to be an object.");
   if (typeof decision.feed !== 'string') throw new ValidationError("Expected a string 'feed' property.");
-  if (!feedDecisionKinds.includes(decision.decision)) {
-    throw new ValidationError("Expected 'decision' to be 'authorized', 'reactive', or 'denied'.");
-  }
+  if (typeof decision.decision !== 'string') throw new ValidationError("Expected a string 'decision' property.");
   if (typeof decision.reason !== 'string') throw new ValidationError("Expected a string 'reason' property.");
   const result: FeedDecision = {
     feed: decision.feed,
-    decision: decision.decision,
+    decision: decision.decision as ReportedFeedDecisionKind,
     reason: decision.reason
   };
   if (decision.code !== undefined) {
     if (typeof decision.code !== 'string') throw new ValidationError("Expected a string 'code' property.");
-    if (!(distributionDenialCodes as readonly string[]).includes(decision.code)) {
-      throw new ValidationError(`Unknown denial 'code': ${decision.code}.`);
-    }
-    result.code = decision.code as DistributionDenialCode;
+    result.code = decision.code as ReportedDenialCode;
   }
   return result;
 }
