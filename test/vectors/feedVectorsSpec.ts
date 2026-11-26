@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { describeSpecification, SpecificationParser } from "@src";
 import { Specification } from "../../src/specification/specification";
-import { feedCases } from "./feed-cases";
+import { FeedCase, feedCases, simpleSuccessor } from "./feed-cases";
 import { feedVectors, serializeFeedVector, writeFeedVectors } from "./generate";
 
 // Issue #387: a port of `buildFeeds` and `skeletonOfSpecification`
@@ -69,8 +69,29 @@ describe("feed vectors", () => {
     });
 
     it("refuses two cases with the same name", () => {
-        const [first] = feedCases;
+        const twice: FeedCase = { name: "named-twice", specification: simpleSuccessor };
 
-        expect(() => feedVectors([first, first])).toThrow(first.name);
+        expect(() => feedVectors([twice, twice])).toThrow(twice.name);
+    });
+
+    it("removes the vector of a case that is gone from a reused directory", () => {
+        // A consumer that writes into a directory it already used would
+        // otherwise read a vector for a case this library no longer has.
+        const directory = mkdtempSync(join(tmpdir(), "jinaga-feed-vectors-"));
+        try {
+            const stays: FeedCase = { name: "stays", specification: simpleSuccessor };
+            const goes: FeedCase = { name: "goes", specification: simpleSuccessor };
+            writeFeedVectors(directory, [stays, goes]);
+            // Something the generator did not write is not its to delete.
+            writeFileSync(join(directory, "feeds", "pinned-commit.txt"), "abc123\n", "utf8");
+
+            writeFeedVectors(directory, [stays]);
+
+            expect(readdirSync(join(directory, "feeds")).sort())
+                .toEqual(["pinned-commit.txt", "stays.json"]);
+        }
+        finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
     });
 });

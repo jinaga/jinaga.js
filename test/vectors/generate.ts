@@ -1,5 +1,5 @@
-import { mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "fs";
+import { basename, join } from "path";
 import { describeSpecification } from "../../src/specification/description";
 import { buildFeeds } from "../../src/specification/feed-builder";
 import { Skeleton, skeletonOfSpecification } from "../../src/specification/skeleton";
@@ -68,13 +68,26 @@ export function serializeFeedVector(vector: FeedVector): string {
 /**
  * Write one file per case to `<outDirectory>/feeds/<name>.json`, and return the
  * paths written. Two runs at one commit write byte-identical files.
+ *
+ * `<outDirectory>/feeds` holds the vectors and nothing else, so a `.json` file
+ * in it that this run did not write belongs to a case that has since been
+ * renamed or removed. Delete it: a consumer that reuses a directory would
+ * otherwise read a vector for a case this library no longer has, and the
+ * directory would no longer be exactly the current set.
  */
 export function writeFeedVectors(outDirectory: string, cases: FeedCase[] = feedCases): string[] {
     const feedDirectory = join(outDirectory, "feeds");
     mkdirSync(feedDirectory, { recursive: true });
-    return feedVectors(cases).map(vector => {
+    const written = feedVectors(cases).map(vector => {
         const path = join(feedDirectory, `${vector.name}.json`);
         writeFileSync(path, serializeFeedVector(vector), "utf8");
         return path;
     });
+    const current = new Set(written.map(path => basename(path)));
+    for (const entry of readdirSync(feedDirectory)) {
+        if (entry.endsWith(".json") && !current.has(entry)) {
+            unlinkSync(join(feedDirectory, entry));
+        }
+    }
+    return written;
 }
