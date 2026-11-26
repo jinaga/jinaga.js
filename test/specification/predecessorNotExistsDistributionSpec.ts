@@ -1,9 +1,16 @@
-import { DistributionRules, Jinaga, JinagaTest, LabelOf, MemoryStore, Specification, SpecificationOf, User, buildFeeds, buildModel, dehydrateFact } from "@src";
+import { DistributionRules, Jinaga, JinagaTest, MemoryStore, Specification, SpecificationOf, User, buildFeeds, dehydrateFact } from "@src";
 import { DistributionEngine } from "../../src/distribution/distribution-engine";
 import { skeletonOfSpecification } from "../../src/specification/skeleton";
 import { isExistentialCondition } from "../../src/specification/specification";
 import { expectWellOrdered } from "./specificationTestHelpers";
+import * as minimal from "../vectors/models/predecessor-not-exists-minimal";
+import * as production from "../vectors/models/predecessor-not-exists-production";
 
+// The two models and their specifications are written in
+// `test/vectors/models/predecessor-not-exists-minimal.ts` and
+// `test/vectors/models/predecessor-not-exists-production.ts`, which is also
+// where `npm run vectors` reads them from (#387).
+//
 // Issue #241: a `notExists` predicate that resolves a *predecessor* chain before
 // it reaches a `successors` call was reported as denied by the distribution
 // engine, even against a rule built from the literally identical function, while
@@ -102,70 +109,11 @@ async function deliveredByFeeds(j: Jinaga, specification: Specification, factTyp
 
 describe("predecessor traversal inside a notExists predicate", () => {
     describe("the minimal reproduction from issue #241", () => {
-        class Tenant {
-            static Type = "Example.Tenant" as const;
-            type = Tenant.Type;
-            constructor(public creator: User) { }
-        }
-        class Parent {
-            static Type = "Example.Parent" as const;
-            type = Parent.Type;
-            constructor(public tenant: Tenant, public id: string) { }
-        }
-        class ParentDeleted {
-            static Type = "Example.Parent.Deleted" as const;
-            type = ParentDeleted.Type;
-            constructor(public parent: Parent, public deletedAt: string) { }
-        }
-        class ParentRestored {
-            static Type = "Example.Parent.Restored" as const;
-            type = ParentRestored.Type;
-            constructor(public deletion: ParentDeleted) { }
-        }
-        class Child {
-            static Type = "Example.Child" as const;
-            type = Child.Type;
-            constructor(public parent: Parent, public id: string) { }
-        }
-        class Grandchild {
-            static Type = "Example.Grandchild" as const;
-            type = Grandchild.Type;
-            constructor(public child: Child, public id: string) { }
-        }
-
-        const model = buildModel(b => b
-            .type(User)
-            .type(Tenant, x => x.predecessor("creator", User))
-            .type(Parent, x => x.predecessor("tenant", Tenant))
-            .type(ParentDeleted, x => x.predecessor("parent", Parent))
-            .type(ParentRestored, x => x.predecessor("deletion", ParentDeleted))
-            .type(Child, x => x.predecessor("parent", Parent))
-            .type(Grandchild, x => x.predecessor("child", Child))
-        );
-
-        // The issue's "works" variant: every notExists predicate calls only
-        // successors, and the predecessor walk happens outside any notExists.
-        const viaSuccessors = model.given(Tenant).match(tenant =>
-            tenant.successors(Parent, p => p.tenant)
-                .notExists(parent => parent.successors(ParentDeleted, d => d.parent)
-                    .notExists(d => d.successors(ParentRestored, r => r.deletion)))
-                .selectMany(parent => parent.successors(Child, c => c.parent))
-                .selectMany(child => child.successors(Grandchild, g => g.child)));
-
-        // The issue's "fails" variant: the notExists predicate itself walks two
-        // predecessor hops before reaching successors.
-        const viaPredecessorNotExists = model.given(Tenant).match(tenant =>
-            tenant.successors(Parent, p => p.tenant)
-                .selectMany(parent => parent.successors(Child, c => c.parent))
-                .selectMany(child => child.successors(Grandchild, g => g.child))
-                .notExists(grandchild => grandchild.child.predecessor()
-                    .selectMany(child => child.parent.predecessor()
-                        .selectMany(parent => parent.successors(ParentDeleted, d => d.parent)
-                            .notExists(d => d.successors(ParentRestored, r => r.deletion))))));
+        const { Child, Grandchild, Parent, ParentDeleted, ParentRestored, Tenant, model, viaPredecessorNotExists, viaSuccessors } = minimal;
 
         async function populate(j: Jinaga) {
             const tenant = await j.fact(new Tenant(new User("---CREATOR---")));
-            const state: { [name: string]: Grandchild } = {};
+            const state: { [name: string]: minimal.Grandchild } = {};
             for (const name of ["live", "deleted", "restored"]) {
                 const parent = await j.fact(new Parent(tenant, name));
                 if (name !== "live") {
@@ -239,90 +187,11 @@ describe("predecessor traversal inside a notExists predicate", () => {
         // up a predecessor edge the query never walked down. `Invitation` is
         // reached through `code`, so `invitation.accessPath` binds an `AccessPath`
         // and an `Event` that appear nowhere else in the specification.
-        class Tenant {
-            static Type = "Example.Tenant" as const;
-            type = Tenant.Type;
-            constructor(public creator: User) { }
-        }
-        class Event {
-            static Type = "Example.Event" as const;
-            type = Event.Type;
-            constructor(public tenant: Tenant, public id: string) { }
-
-            static in(tenant: LabelOf<Tenant>) {
-                return tenant.successors(Event, e => e.tenant)
-                    .notExists(e => e.successors(EventDelete, d => d.event)
-                        .notExists(d => d.successors(EventRestore, r => r.eventDelete)));
-            }
-        }
-        class EventDelete {
-            static Type = "Example.Event.Delete" as const;
-            type = EventDelete.Type;
-            constructor(public event: Event) { }
-        }
-        class EventRestore {
-            static Type = "Example.Event.Restore" as const;
-            type = EventRestore.Type;
-            constructor(public eventDelete: EventDelete) { }
-        }
-        class AccessPath {
-            static Type = "Example.AttendeeAccessPath" as const;
-            type = AccessPath.Type;
-            constructor(public event: Event, public id: string) { }
-        }
-        class InvitationCode {
-            static Type = "Example.AttendeeInvitationCode" as const;
-            type = InvitationCode.Type;
-            constructor(public tenant: Tenant, public id: string) { }
-        }
-        class Invitation {
-            static Type = "Example.AttendeeInvitation" as const;
-            type = Invitation.Type;
-            constructor(public code: InvitationCode, public accessPath: AccessPath) { }
-        }
-
-        const model = buildModel(b => b
-            .type(User)
-            .type(Tenant, x => x.predecessor("creator", User))
-            .type(Event, x => x.predecessor("tenant", Tenant))
-            .type(EventDelete, x => x.predecessor("event", Event))
-            .type(EventRestore, x => x.predecessor("eventDelete", EventDelete))
-            .type(AccessPath, x => x.predecessor("event", Event))
-            .type(InvitationCode, x => x.predecessor("tenant", Tenant))
-            .type(Invitation, x => x
-                .predecessor("code", InvitationCode)
-                .predecessor("accessPath", AccessPath))
-        );
-
-        // The reporter's original: two `.predecessor()` hops, each its own match.
-        const viaPredecessorNotExists = model.given(Tenant).match(tenant =>
-            tenant.successors(InvitationCode, c => c.tenant)
-                .selectMany(code => code.successors(Invitation, i => i.code))
-                .notExists(invitation => invitation.accessPath.predecessor()
-                    .selectMany(accessPath => accessPath.event.predecessor()
-                        .selectMany(event => event.successors(EventDelete, d => d.event)
-                            .notExists(d => d.successors(EventRestore, r => r.eventDelete))))));
-
-        // The same walk spelled compactly, as one path condition carrying two
-        // roles rather than two matches carrying one each. It reaches a different
-        // branch of `skeletonOfSpecification`, so it is pinned separately.
-        const viaCompactPredecessorNotExists = model.given(Tenant).match(tenant =>
-            tenant.successors(InvitationCode, c => c.tenant)
-                .selectMany(code => code.successors(Invitation, i => i.code))
-                .notExists(invitation => invitation.accessPath.event.predecessor()
-                    .selectMany(event => event.successors(EventDelete, d => d.event)
-                        .notExists(d => d.successors(EventRestore, r => r.eventDelete)))));
-
-        // The restructuring the reporter says fixed it: successors end to end,
-        // reusing the sibling specification that always distributed correctly.
-        const viaSuccessors = model.given(Tenant).match(tenant =>
-            Event.in(tenant)
-                .selectMany(event => event.successors(AccessPath, p => p.event))
-                .selectMany(accessPath => accessPath.successors(Invitation, i => i.accessPath)));
+        const { AccessPath, Event, EventDelete, EventRestore, Invitation, InvitationCode, Tenant, model, viaCompactPredecessorNotExists, viaPredecessorNotExists, viaSuccessors } = production;
 
         async function populate(j: Jinaga) {
             const tenant = await j.fact(new Tenant(new User("---CREATOR---")));
-            const state: { [name: string]: Invitation } = {};
+            const state: { [name: string]: production.Invitation } = {};
             for (const name of ["live", "deleted", "restored"]) {
                 const event = await j.fact(new Event(tenant, name));
                 if (name !== "live") {
