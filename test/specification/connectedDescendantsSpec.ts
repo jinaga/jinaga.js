@@ -254,10 +254,11 @@ describe("a specification whose feeds would be a product, in text", () => {
             } => x`)).toThrow(DisconnectedSpecificationError);
     });
 
-    // N's condition names no label of the match it is written on, which the
-    // parser refuses by its own rule, before connectedness is read. That
-    // message carries N's rewrite.
-    it("refuses N when it is parsed, naming the unknown its condition must be based on", () => {
+    // N's condition names no label of the match it is written on. The parser
+    // no longer holds a rule of its own for that, so connectedness is what
+    // refuses N, and its message names the labels on either side of the break
+    // and carries N's rewrite.
+    it("refuses N when it is parsed, naming the labels on either side of the break", () => {
         let thrown: any = undefined;
         try {
             parseSpecification(`
@@ -275,8 +276,9 @@ describe("a specification whose feeds would be a product, in text", () => {
         catch (error: any) {
             thrown = error;
         }
-        expect(thrown).toBeInstanceOf(Invalid);
-        expect(thrown.message).toContain("'u'");
+        expect(thrown).toBeInstanceOf(DisconnectedSpecificationError);
+        expect(thrown.message).toContain("'u:A'");
+        expect(thrown.message).toContain("'e:E'");
     });
 
     // The match for `e` has no path condition, which the parser refuses by its

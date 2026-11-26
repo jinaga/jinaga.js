@@ -144,7 +144,6 @@ For a bound-label set `Γ` and match list `M = [m₁ … m_k]`, let
 | **W3** | Pre-binding | for every path condition `c ∈ mᵢ`: `c.labelRight ∈ Γᵢ` — note **not** `Γᵢ ∪ {uᵢ}` |
 | **W4** | Post-binding | for every existential `⟨ε, M'⟩ ∈ mᵢ`: `Γᵢ ∪ {uᵢ} ⊢ M' ok` |
 | **W5a** | Connectivity | in the undirected graph on `Γ ∪ {u₁…u_k}` with an edge `uᵢ — c.labelRight` per path condition, every `uᵢ` is connected to some label of `Γ` |
-| **W5b** | Anchoring | for every existential `⟨ε, M'⟩ ∈ mᵢ`: some `m' ∈ M'` has a path condition with `labelRight = uᵢ` |
 | **W6** | Type coherence | for every path condition on `uᵢ : T` with `labelRight : T'`: `typeAfter(T, L) = typeAfter(T', R)`, where `typeAfter` folds the declared `predecessorType`s |
 
 W4 recurses with a **copy** of the bound set: inner labels do not escape the
@@ -170,7 +169,6 @@ existential.
 | W3 | runner `:109` | parser `:176-178`; `expectWellOrdered` (test helper) |
 | W4 | runner `:138` | parser `:189`; `expectWellOrdered` |
 | W5a | `shakeTree` termination (`inverse.ts:187-191`), `detectDisconnectedSpecification` | `UnionFind.ts` at inversion time |
-| W5b | inversion of existentials, feed anchoring | parser `:191-200` |
 | W6 | `skeletonOfSpecification` (`skeleton.ts:266`); **not** checked by the runner, which silently yields `∅` | skeleton build only |
 | W7 | runner `:181,:190,:200,:209` | parser (scoped `labels`) |
 
@@ -499,13 +497,13 @@ successor walk or existential.
 | # | Obligation | Target | Status |
 |---|---|---|---|
 | O1 | `parse` establishes W1, W3–W7 | `specification-parser.ts` | Believed; W2 known **not** established (verified by probe) |
-| O2 | L1 round trip on all W-specs | `description.ts` + parser | Untested for inverse-produced specs; see O8 |
+| O2 | L1 round trip on all W-specs | `description.ts` + parser | Open in general. Exercised for inverse-produced specs on one shape: `existentialOnGivenSpec.ts` round-trips every inverse of a specification whose existential condition joins only a given |
 | O3 | `shakeTree` terminates on all W5a inputs and preserves the conjunction | `inverse.ts:152` | Termination guarded by an explicit loop check; preservation unproven |
 | O4 | `relocateConditions` restores W2, W3, W4 for every `shakeTree` output | `inverse.ts:252` | M4 gives semantic preservation; **W-restoration is not yet proven for nested existentials** |
 | O5 | L4a and L4b (soundness *and* completeness of inversion) | `inverse.ts` | Open in general. **L4b measured and holding** for the two-predecessor correlated `!E` of #242/#238, including across revisions and repeated completion facts (§10.1) — so it is no longer the leading explanation for the write-amplification loop |
 | O6 | L6a–L6e for `buildFeeds` | `feed-builder.ts` | **L6c violation found and fixed** — the restoring feed did not continue (§9.3). L6a is now stated and holds structurally; L6d is still unproven in general |
 | O7 | L7a — isomorphic feeds produce equal skeletons | `skeleton.ts`, `distribution-engine.ts` | **Discharged for the #242 shape** — see §9. Not the cause. The positional-index limitation is real but unreachable when both sides go through `buildFeeds` |
-| O8 | W5b is *not* preserved by `relocateConditions` | `inverse.ts:252` | **Conjectured.** If an existential's free labels have their latest binder at `j`, but its top-level nested matches path-reference an *earlier* label, the relocated condition sits on `m_j` while anchored to `uᵢ`, and `parseExistentialCondition:191-200` would reject the described form. Not yet reproduced: all four inverses of the #238 spec round-trip cleanly, because there the latest binder happens to be the anchor |
+| O8 | — | — | **Moot.** The clause it was about, W5b (Anchoring), is gone: the parser was its only enforcer, and jinaga.js/#434 deleted that guard, so there is no clause left for `relocateConditions` to preserve. The round trip it was a threat to is O2, which `existentialOnGivenSpec.ts` now exercises on every inverse of a specification whose existential joins only a given |
 | O9 | A3 holds on the real save/load path | `storage`, `jinaga-server` | **Unverified assumption.** M5 and therefore every `simplifyMatches` pruning depends on it |
 | O10 | `W` is decidable in linear time and is checked at every boundary | new | Not implemented. `expectWellOrdered` covers W3/W4 only, and only in tests |
 

@@ -1,4 +1,4 @@
-import { Specification, SpecificationParser } from "@src";
+import { isExistentialCondition, Specification, SpecificationParser } from "@src";
 
 function parseSpecification(input: string): Specification {
     const parser = new SpecificationParser(input);
@@ -304,8 +304,12 @@ describe("Specification parser", () => {
         expect(specification).toEqual(expected);
     });
 
-    it("requires that the existential condition be based on the unknown", () => {
-        expect(() => parseSpecification(`
+    it("parses an existential condition based on a given rather than on the unknown", () => {
+        // This text used to be refused, because the condition's one match
+        // joins `user` and not `assignment`. Nothing else in the library held
+        // that rule: `wellFormedErrors` accepts the specification, and so does
+        // `detectDisconnectedSpecification`, which `parseSpecification` runs.
+        const specification = parseSpecification(`
             (user: Jinaga.User, company: MyApp.Company) {
                 assignment: MyApp.Assignment [
                     assignment->user:Jinaga.User = user
@@ -316,9 +320,39 @@ describe("Specification parser", () => {
                         ]
                     }
                 ]
-            }`)).toThrow(
-            /The existential condition must be based on the unknown 'assignment'/
-        );
+            }`);
+
+        const condition = specification.matches[0].conditions
+            .find(isExistentialCondition);
+        expect(condition).toEqual({
+            type: "existential",
+            exists: false,
+            matches: [
+                {
+                    unknown: {
+                        name: "revoked",
+                        type: "MyApp.Assignment.Revoked"
+                    },
+                    conditions: [
+                        {
+                            type: "path",
+                            rolesLeft: [
+                                {
+                                    name: "assignment",
+                                    predecessorType: "MyApp.Assignment"
+                                },
+                                {
+                                    name: "user",
+                                    predecessorType: "Jinaga.User"
+                                }
+                            ],
+                            labelRight: "user",
+                            rolesRight: []
+                        }
+                    ]
+                }
+            ]
+        });
     });
 
     it("accepts projections", () => {
