@@ -3,10 +3,10 @@ name: night-shift-worker
 description: Works one GitHub issue through to a stacked pull request, unattended. Reproduces the defect or verifies a fix that already merged, fixes with a regression test, resolves a base branch that may not exist yet, registers the chain as a GitHub stack, drives CI green through one review round, then stops. Use when a scheduled routine or a person hands over a single issue number to work, when a merged pull request already exists and the job is verification rather than repair, when a fix must stack on a lower layer's branch, or when a blocker should become a recorded question instead of a guessed patch.
 metadata:
     github-path: skills/night-shift-worker
-    github-pinned: 60fd8ea503a74688edeecf986ac892217ce91ae1
-    github-ref: 60fd8ea503a74688edeecf986ac892217ce91ae1
+    github-pinned: 35cc8b355861f53e4e7bbaf4e5d62a63532d80d2
+    github-ref: 35cc8b355861f53e4e7bbaf4e5d62a63532d80d2
     github-repo: https://github.com/factoryengineering/skills
-    github-tree-sha: 84029948b89d4ecb58be2f51146a91a75d0cd9b5
+    github-tree-sha: 901bfcd76efe25bd1e179cd2d92d9b0ab551d24c
 ---
 
 # Night Shift Worker
@@ -86,7 +86,7 @@ Task Progress:
 - [ ] Claim the issue, re-read, and stand down if another live claim is older
 - [ ] Open the Night Shift Log and resolve this repository
 - [ ] Establish the work is warranted, per the config's `## Before you fix`
-- [ ] Fix with a regression test that fails before, passes after, and can fail for a reason other than itself
+- [ ] Fix; where behavior changes, with a regression test that fails on the old behavior, passes on the new, and can fail for a reason other than itself
 - [ ] Run every command under `## Verification commands` green
 - [ ] Resolve the base branch, push, open the pull request
 - [ ] Register the stack, or record that registration is unavailable
@@ -109,15 +109,17 @@ The container may hand you a working tree whose `origin/*` refs are older than t
 
 Where the config does ask for a repro and it fails, that is a finding rather than a failure. An issue's repro may have been reconstructed rather than verified by its reporter. Report it and open no pull request.
 
-Then fix, with a regression test that fails before and passes after. Keep the change minimal. Record anything you notice beyond the issue's scope as a note in the pull request rather than widening the diff.
+Then fix. Where the fix changes behavior, add a regression test that fails before and passes after. Keep the change minimal. Record anything you notice beyond the issue's scope as a note in the pull request rather than widening the diff.
 
-**A test earns its place by being able to fail for a reason other than someone editing the very thing it quotes.** Where the fix changes behavior, the regression test is that proof, it fails before and passes after, and it is not optional.
+**A test earns its place by being able to fail for a reason other than someone editing the very thing it quotes.** Where the fix changes behavior, the regression test is that proof, it fails before and passes after, and it is not optional. Its failure before the change has to be the old behavior, reached through code that already existed. A test whose only failure before the change is a missing name or a compile error shows that the new code is new, not that anything behaved differently.
+
+Where the change alters no behavior, as with an export, a type, a rename or a refactor, there is no before to show. The tests that already drive that behavior show it held. Name them in the pull request, and add none.
 
 Where the fix changes only prose — a doc comment, a page, a README — a test that matches a sentence against itself proves nothing. The assertion is a second copy of its own subject, so the only edit that turns it red is a deliberate edit to that sentence. It makes the wording harder to improve and establishes nothing about whether the code is right. The same holds for an assertion that a default equals the literal the source assigns it, or that a config file contains a line it contains.
 
 Derive one side instead, so both sides can move and the check still has bite: compile a documented example against the shipped build, resolve a documented path against the filesystem, read a default back out of the object the factory built. Each of those fails when the *code* changes, which is the failure a document cannot produce on its own. Where no derivation is available, say so in the pull request and let the change stand on review. A missing test you named is a finding the maintainer needs; a copy you wrote to fill the checkbox is a maintenance cost they did not ask for.
 
-**Where the issue's own acceptance asks for the copy, that is a question, not an instruction to follow.** Record it per `## When to stop and ask instead`, because writing the test the issue asked for is what puts it in the suite.
+**Where the issue's own acceptance asks for the copy, or for a test of a change that alters no behavior, that is a question, not an instruction to follow.** Record it per `## When to stop and ask instead`, because writing the test the issue asked for is what puts it in the suite.
 
 Run every command under `## Verification commands` green before every push, in the order the config lists them.
 
