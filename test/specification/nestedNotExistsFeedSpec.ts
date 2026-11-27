@@ -1,9 +1,14 @@
-import { DistributionRules, JinagaTest, LabelOf, MemoryStore, SpecificationOf, User, buildFeeds, buildModel, dehydrateFact } from "@src";
+import { DistributionRules, JinagaTest, MemoryStore, SpecificationOf, User, buildFeeds, dehydrateFact } from "@src";
 import { DistributionEngine } from "../../src/distribution/distribution-engine";
 import { skeletonOfSpecification } from "../../src/specification/skeleton";
 import { isExistentialCondition } from "../../src/specification/specification";
 import { expectWellOrdered } from "./specificationTestHelpers";
+import { AttendeeAccessPath, Event, EventDelete, EventRestore, ServicePrincipal, Tenant, accessPathsToConfigure, accessPathsWithConfiguration, model, servicePrincipals } from "../vectors/models/nested-not-exists";
 
+// The model and the specifications these tests pass to `buildFeeds` are
+// written in `test/vectors/models/nested-not-exists.ts`, which is also where
+// `npm run vectors` reads them from (#387).
+//
 // Issue #242: a specification that combines two fact types in one top-level match
 // block, each carrying its own `notExists`, and whose first `notExists` is itself
 // nested one level deep (delete/restore).
@@ -18,113 +23,6 @@ import { expectWellOrdered } from "./specificationTestHelpers";
 //       reference, producing a feed whose path condition names an unbound label.
 //       `skeletonOfSpecification` then threw "Label u4 not found", surfacing as
 //       HTTP 500 on /feeds.
-
-class Tenant {
-    static Type = "Tenant" as const;
-    type = Tenant.Type;
-    constructor(public identifier: string) { }
-}
-
-class Event {
-    static Type = "Event" as const;
-    type = Event.Type;
-    constructor(public tenant: Tenant, public id: string) { }
-
-    static in(tenant: LabelOf<Tenant>) {
-        return tenant.successors(Event, event => event.tenant)
-            .notExists(event => event.successors(EventDelete, d => d.event)
-                .notExists(d => d.successors(EventRestore, r => r.eventDelete)));
-    }
-}
-
-class EventDelete {
-    static Type = "Event.Delete" as const;
-    type = EventDelete.Type;
-    constructor(public event: Event) { }
-}
-
-class EventRestore {
-    static Type = "Event.Restore" as const;
-    type = EventRestore.Type;
-    constructor(public eventDelete: EventDelete) { }
-}
-
-class AttendeeAccessPath {
-    static Type = "AttendeeAccessPath" as const;
-    type = AttendeeAccessPath.Type;
-    constructor(public event: Event, public code: string) { }
-
-    static for(event: LabelOf<Event>) {
-        return event.successors(AttendeeAccessPath, path => path.event);
-    }
-
-    static in(tenant: LabelOf<Tenant>) {
-        return Event.in(tenant).selectMany(event => AttendeeAccessPath.for(event));
-    }
-}
-
-class AccessPathConfigured {
-    static Type = "AttendeeAccessPath.Configured" as const;
-    type = AccessPathConfigured.Type;
-    constructor(public accessPath: AttendeeAccessPath) { }
-
-    static for(accessPath: LabelOf<AttendeeAccessPath>) {
-        return accessPath.successors(AccessPathConfigured, c => c.accessPath);
-    }
-}
-
-class ServicePrincipal {
-    static Type = "ServicePrincipal" as const;
-    type = ServicePrincipal.Type;
-    constructor(public tenant: Tenant, public user: User) { }
-
-    static usersOf(tenant: LabelOf<Tenant>) {
-        return tenant.successors(ServicePrincipal, sp => sp.tenant)
-            .selectMany(sp => sp.user.predecessor());
-    }
-}
-
-const model = buildModel(b => b
-    .type(User)
-    .type(Tenant)
-    .type(Event, x => x
-        .predecessor("tenant", Tenant)
-    )
-    .type(EventDelete, x => x
-        .predecessor("event", Event)
-    )
-    .type(EventRestore, x => x
-        .predecessor("eventDelete", EventDelete)
-    )
-    .type(AttendeeAccessPath, x => x
-        .predecessor("event", Event)
-    )
-    .type(AccessPathConfigured, x => x
-        .predecessor("accessPath", AttendeeAccessPath)
-    )
-    .type(ServicePrincipal, x => x
-        .predecessor("tenant", Tenant)
-        .predecessor("user", User)
-    )
-);
-
-const accessPathsToConfigure = model.given(Tenant).match(tenant =>
-    AttendeeAccessPath.in(tenant)
-        .notExists(accessPath => AccessPathConfigured.for(accessPath))
-);
-
-const servicePrincipals = model.given(Tenant).match(tenant => ServicePrincipal.usersOf(tenant));
-
-// The shape from issue #242 comment 1: a composite `select()` inside a
-// `selectMany` chain, three hops deep.
-const accessPathsWithConfiguration = model.given(Tenant).match(tenant =>
-    Event.in(tenant).selectMany(event =>
-        AttendeeAccessPath.for(event).select(accessPath => ({
-            accessPath,
-            configured: AccessPathConfigured.for(accessPath)
-        }))
-    )
-);
 
 describe("feeds for nested notExists across two fact types", () => {
     it("keeps every feed well ordered", () => {

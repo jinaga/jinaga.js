@@ -1,4 +1,9 @@
-import { DistributionEngine, DistributionRules, FactEnvelope, FactRecord, HashMap, JinagaTest, MemoryStore, Trace, User, buildFeeds, buildModel, dehydrateFact } from "@src";
+import { DistributionEngine, DistributionRules, FactEnvelope, FactRecord, HashMap, JinagaTest, MemoryStore, Trace, User, buildFeeds, dehydrateFact } from "@src";
+import { Administrator, Competitor, Event, Finalist, Tenant, distribution, finalistsOfEvent, model } from "../vectors/models/intermediate-projection";
+
+// The model, the share rule and its target are written in
+// `test/vectors/models/intermediate-projection.ts`, which is also where
+// `npm run vectors` reads them from (#387).
 
 // Regression for issue #204: a distribution rule whose `.select()` projection
 // traverses *through* an intermediate fact (without exposing it as its own
@@ -7,85 +12,6 @@ import { DistributionEngine, DistributionRules, FactEnvelope, FactRecord, HashMa
 // intermediate facts into the client's local store as a side effect of the
 // projection feed, so direct queries there succeed; JinagaTest must mirror it
 // without forcing the app to declare redundant flat rules.
-
-class Tenant {
-  static Type = "Tenant" as const;
-  type = Tenant.Type;
-  constructor(public creator: User) { }
-}
-
-class Administrator {
-  static Type = "Administrator" as const;
-  type = Administrator.Type;
-  constructor(public tenant: Tenant, public user: User) { }
-}
-
-class Event {
-  static Type = "Event" as const;
-  type = Event.Type;
-  constructor(public tenant: Tenant, public id: string) { }
-}
-
-class Competitor {
-  static Type = "Competitor" as const;
-  type = Competitor.Type;
-  constructor(public tenant: Tenant) { }
-}
-
-// Finalist is the intermediate fact: the projection joins from Event to
-// Finalist only to reach the Competitor predecessor; Finalist is never a
-// named component of the projection.
-class Finalist {
-  static Type = "Finalist" as const;
-  type = Finalist.Type;
-  constructor(public competitor: Competitor, public event: Event) { }
-}
-
-class CompetitorName {
-  static Type = "CompetitorName" as const;
-  type = CompetitorName.Type;
-  constructor(public competitor: Competitor, public value: string, public prior: CompetitorName[]) { }
-}
-
-const model = buildModel(b => b
-  .type(User)
-  .type(Tenant, x => x.predecessor("creator", User))
-  .type(Administrator, x => x
-    .predecessor("tenant", Tenant)
-    .predecessor("user", User)
-  )
-  .type(Event, x => x.predecessor("tenant", Tenant))
-  .type(Competitor, x => x.predecessor("tenant", Tenant))
-  .type(Finalist, x => x
-    .predecessor("competitor", Competitor)
-    .predecessor("event", Event)
-  )
-  .type(CompetitorName, x => x
-    .predecessor("competitor", Competitor)
-    .predecessor("prior", CompetitorName)
-  )
-);
-
-const distribution = (r: DistributionRules) => r
-  .share(model.given(Event).select((event, facts) => ({
-    // Finalist is only a traversal step toward the competitor projection.
-    finalists: facts.ofType(Finalist)
-      .join(finalist => finalist.event, event)
-      .selectMany(finalist => finalist.competitor.predecessor()
-        .select(competitor => ({
-          competitorNames: facts.ofType(CompetitorName)
-            .join(name => name.competitor, competitor)
-            .notExists(name => facts.ofType(CompetitorName)
-              .join(next => next.prior, name)
-            )
-        }))
-      )
-  })))
-  .with(model.given(Event).match((event, facts) =>
-    facts.ofType(Administrator)
-      .join(a => a.tenant, event.tenant)
-      .selectMany(a => facts.ofType(User).join(u => u, a.user))
-  ));
 
 describe("distribution rules with intermediate projection facts (issue #204)", () => {
   Trace.off();
@@ -106,10 +32,6 @@ describe("distribution rules with intermediate projection facts (issue #204)", (
   function loggedIn(user: User | undefined) {
     return JinagaTest.create({ model, user, initialState, distribution });
   }
-
-  const finalistsOfEvent = model.given(Event).match((event, facts) =>
-    facts.ofType(Finalist).join(finalist => finalist.event, event)
-  );
 
   it("authorizes a direct query for an intermediate fact of a projection rule", async () => {
     const j = loggedIn(adminUser);

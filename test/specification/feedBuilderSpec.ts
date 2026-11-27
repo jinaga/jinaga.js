@@ -1,9 +1,14 @@
 import { SpecificationParser, buildFeeds, describeSpecification, invertSpecification } from "@src";
+import { Specification } from "../../src/specification/specification";
+import * as cases from "../vectors/feed-cases";
+
+// The specifications these tests pass to `buildFeeds` are written once, in
+// `test/vectors/feed-cases.ts`, so that `npm run vectors` emits the feeds of
+// the same inputs these assertions describe (#387).
 
 describe("feed generator", () => {
     it("should produce no feeds for an identity specification", () => {
-        const feeds = getFeeds(`
-            (root: Root) { }`);
+        const feeds = getFeeds(cases.identity);
 
         const expectedFeeds: string[] = [ ];
 
@@ -11,12 +16,7 @@ describe("feed generator", () => {
     });
 
     it("should produce a single feed for a simple specification", () => {
-        const feeds = getFeeds(`
-            (root: Root) {
-                child: Child [
-                    child->root:Root = root
-                ]
-            }`);
+        const feeds = getFeeds(cases.simpleSuccessor);
 
         const expectedFeeds: string[] = [
             `(root: Root) {
@@ -30,14 +30,7 @@ describe("feed generator", () => {
     });
 
     it("should produce a single feed for projection of identity", () => {
-        const feeds = getFeeds(`
-            (root: Root) {} => {
-                children = {
-                    child: Child [
-                        child->root:Root = root
-                    ]
-                }
-            }`);
+        const feeds = getFeeds(cases.projectionOfIdentity);
 
         const expectedFeeds: string[] = [
             `(root: Root) {
@@ -51,20 +44,7 @@ describe("feed generator", () => {
     });
 
     it("should produce two feeds for a projection with two properties", () => {
-        const feeds = getFeeds(`
-            (root: Root) {
-            } => {
-                children1 = {
-                    c1: Child1 [
-                        c1->root: Root = root
-                    ]
-                }
-                children2 = {
-                    c2: Child2 [
-                        c2->root: Root = root
-                    ]
-                }
-            }`);
+        const feeds = getFeeds(cases.projectionWithTwoProperties);
 
         const expectedFeeds: string[] = [
             `(root: Root) {
@@ -83,14 +63,7 @@ describe("feed generator", () => {
     });
 
     it("should accept multiple givens", () => {
-        const feeds = getFeeds(`
-            (user: Jinaga.User, root: Root) {
-                assignment: MyApp.Assignment [
-                    assignment->user:Jinaga.User = user
-                    assignment->project:MyApp.Project->root:Root = root
-                ]
-            }
-        `);
+        const feeds = getFeeds(cases.twoGivens);
 
         const expectedFeeds: string[] = [
             `(user: Jinaga.User, root: Root) {
@@ -105,18 +78,7 @@ describe("feed generator", () => {
     });
 
     it("should accept existential conditions", () => {
-        const feeds = getFeeds(`
-            (user: Jinaga.User, root: Root) {
-                assignment: MyApp.Assignment [
-                    assignment->user:Jinaga.User = user
-                    assignment->project:MyApp.Project->root: Root = root
-                    !E {
-                        revoked: MyApp.Assignment.Revoked [
-                            revoked->assignment:MyApp.Assignment = assignment
-                        ]
-                    }
-                ]
-            }`);
+        const feeds = getFeeds(cases.negativeExistentialCondition);
 
         const expectedFeeds: string[] = [
             `(user: Jinaga.User, root: Root) {
@@ -152,17 +114,7 @@ describe("feed generator", () => {
         // `buildFeeds` against being widened to "the graph cannot run this",
         // which would emit a feed here and cost the whole specification its
         // distribution.
-        const feeds = getFeeds(`
-            (child: Child) {
-                root: Root [
-                    root = child->root: Root
-                    !E {
-                        project: MyApp.Project [
-                            project = root->project: MyApp.Project
-                        ]
-                    }
-                ]
-            }`);
+        const feeds = getFeeds(cases.predecessorWalkWithExistentialCondition);
 
         const expectedFeeds: string[] = [ ];
 
@@ -174,22 +126,7 @@ describe("feed generator", () => {
         // positive existential (which is flattened into top-level matches)
         // followed by a negative existential must keep the negative attached
         // to the original match, not to the flattened positive match.
-        const feeds = getFeeds(`
-            (root: Root) {
-                item: Item [
-                    item->root: Root = root
-                    E {
-                        tag: Tag [
-                            tag->item: Item = item
-                        ]
-                    }
-                    !E {
-                        del: Deleted [
-                            del->item: Item = item
-                        ]
-                    }
-                ]
-            }`);
+        const feeds = getFeeds(cases.siblingNegativeAfterPositive);
 
         const expectedFeeds: string[] = [
             // Negating detector feed: tag (from the positive existential) and del.
@@ -230,33 +167,7 @@ describe("feed generator", () => {
         // replicator serializes feeds and inverts them at NOTIFY time. A
         // mis-attached existential previously produced a feed that threw
         // "Label u2 not found" during inversion.
-        const specification = getSpecification(`
-            (user: Jinaga.User) {
-                provisioner: Provisioner [
-                    provisioner->user: Jinaga.User = user
-                ]
-                request: Request [
-                    request->domain: Domain = provisioner->domain: Domain
-                    E {
-                        redemption: Redemption [
-                            redemption->request: Request = request
-                        ]
-                    }
-                    !E {
-                        workspace: Workspace [
-                            workspace->request: Request = request
-                        ]
-                        owner: Owner [
-                            owner->workspace: Workspace = workspace
-                        ]
-                    }
-                    !E {
-                        denied: Denied [
-                            denied->request: Request = request
-                        ]
-                    }
-                ]
-            } => request`);
+        const specification = cases.mixedPositiveAndNegativeExistentials;
 
         const feeds = buildFeeds(specification);
         expect(feeds.length).toBeGreaterThan(0);
@@ -271,24 +182,7 @@ describe("feed generator", () => {
     });
 
     it("should parse deeply nested projection", () => {
-        const feeds = getFeeds(`
-            (root: Root) {
-                parent: Parent [
-                    parent->root: Root = root
-                ]
-            } => {
-                children = {
-                    child: Child [
-                        child->parent: Parent = parent
-                    ]
-                } => {
-                    grandchildren = {
-                        grandchild: Grandchild [
-                            grandchild->child: Child = child
-                        ]
-                    }
-                }
-            }`);
+        const feeds = getFeeds(cases.deeplyNestedProjection);
 
         const expectedFeeds: string[] = [
             `(root: Root) {
@@ -321,18 +215,7 @@ describe("feed generator", () => {
     });
 
     it("should accept a projection", () => {
-        const feeds = getFeeds(`
-            (root: Root) {
-                project: MyApplication.Project [
-                    project->root: Root = root
-                ]
-            } => {
-                names = {
-                    name: MyApplication.Project.Name [
-                        name->project: MyApplication.Project = project
-                    ]
-                }
-            }`);
+        const feeds = getFeeds(cases.projectionOfSuccessor);
 
         const expectedFeeds: string[] = [
             `(root: Root) {
@@ -356,28 +239,7 @@ describe("feed generator", () => {
     it("should deliver projection facts for a restored entity (basic delete/restore)", () => {
         // An entity deleted once and restored once should have its projection facts
         // delivered via feeds. The feed set must include a tuple (tenant, event, d, r, name).
-        const feeds = getFeeds(`
-            (tenant: Tenant) {
-                event: Event [
-                    event->tenant: Tenant = tenant
-                    !E {
-                        d: EventDelete [
-                            d->event: Event = event
-                            !E {
-                                r: EventRestore [
-                                    r->eventDelete: EventDelete = d
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            } => {
-                names = {
-                    name: EventName [
-                        name->event: Event = event
-                    ]
-                }
-            }`);
+        const feeds = getFeeds(cases.deleteAndRestoreWithProjection);
 
         const expectedFeeds: string[] = [
             // Restore detector — bare join (parity 2, even: restoring feed)
@@ -453,33 +315,7 @@ describe("feed generator", () => {
 
     it("should deliver multiple projection components for a restored entity", () => {
         // Both EventName and EventDate must appear in restoring feeds.
-        const feeds = getFeeds(`
-            (tenant: Tenant) {
-                event: Event [
-                    event->tenant: Tenant = tenant
-                    !E {
-                        d: EventDelete [
-                            d->event: Event = event
-                            !E {
-                                r: EventRestore [
-                                    r->eventDelete: EventDelete = d
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            } => {
-                dates = {
-                    date: EventDate [
-                        date->event: Event = event
-                    ]
-                }
-                names = {
-                    name: EventName [
-                        name->event: Event = event
-                    ]
-                }
-            }`);
+        const feeds = getFeeds(cases.deleteAndRestoreWithTwoProjectionComponents);
 
         // Both date and name must appear in restoring feeds
         const restoringFeeds = feeds.filter(f =>
@@ -492,23 +328,7 @@ describe("feed generator", () => {
 
     it("should not regress projection delivery for a never-deleted entity", () => {
         // An entity with no deletes should still receive projection facts via feeds.
-        const feeds = getFeeds(`
-            (root: Root) {
-                project: MyApplication.Project [
-                    project->root: Root = root
-                    !E {
-                        deleted: MyApplication.Project.Deleted [
-                            deleted->project: MyApplication.Project = project
-                        ]
-                    }
-                ]
-            } => {
-                names = {
-                    name: MyApplication.Project.Name [
-                        name->project: MyApplication.Project = project
-                    ]
-                }
-            }`);
+        const feeds = getFeeds(cases.neverDeletedWithProjection);
 
         const expectedFeeds: string[] = [
             // Delete detector — bare join
@@ -555,33 +375,7 @@ describe("feed generator", () => {
         // Parity 1 (Delete) = odd  → hiding  → no projection extension
         // Parity 2 (Restore) = even → restoring → projection extended here
         // Parity 3 (UnRestore) = odd → hiding again → no projection extension
-        const feeds = getFeeds(`
-            (tenant: Tenant) {
-                event: Event [
-                    event->tenant: Tenant = tenant
-                    !E {
-                        del: EventDelete [
-                            del->event: Event = event
-                            !E {
-                                rest: EventRestore [
-                                    rest->eventDelete: EventDelete = del
-                                    !E {
-                                        unrest: EventUnRestore [
-                                            unrest->eventRestore: EventRestore = rest
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            } => {
-                names = {
-                    name: EventName [
-                        name->event: Event = event
-                    ]
-                }
-            }`);
+        const feeds = getFeeds(cases.threeLevelRestoreWithProjection);
 
         // FeedZ must exist: the parity-2 restoring delivery feed contains del, rest, and name.
         // (rest carries a simplified !E{unrest} condition, so "unrest" still appears in its
@@ -608,30 +402,7 @@ describe("feed generator", () => {
         // Without the fix, the outer unusedGivens (which still contains approver) would be
         // passed to addProjections, causing approver to be added again to the already-complete
         // lastNegating specification and producing a duplicate given.
-        const feeds = getFeeds(`
-            (tenant: Tenant, approver: Approver) {
-                event: Event [
-                    event->tenant: Tenant = tenant
-                    !E {
-                        del: EventDelete [
-                            del->event: Event = event
-                            !E {
-                                rest: EventRestore [
-                                    rest->eventDelete: EventDelete = del
-                                    rest->approver: Approver = approver
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            } => {
-                names = {
-                    name: EventName [
-                        name->event: Event = event
-                        name->approver: Approver = approver
-                    ]
-                }
-            }`);
+        const feeds = getFeeds(cases.givenConsumedInRestoreBranch);
 
         // The restoring projection feed (contains rest and name at top level) must exist.
         const restoringProjectionFeed = feeds.find(f =>
@@ -647,16 +418,7 @@ describe("feed generator", () => {
     });
 });
 
-function getSpecification(input: string) {
-    const parser = new SpecificationParser(input);
-    parser.skipWhitespace();
-    const specification = parser.parseSpecification();
-    return specification;
-}
-
-function getFeeds(input: string): string[] {
-    const specification = getSpecification(input);
-
+function getFeeds(specification: Specification): string[] {
     const feeds = buildFeeds(specification);
     const descriptions = feeds.map(feed => describeSpecification(feed, 3).trim());
     return descriptions;

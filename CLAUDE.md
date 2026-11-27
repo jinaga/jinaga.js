@@ -87,6 +87,12 @@ JINAGA_JS=/path/to/jinaga.js npm run feeds
 
 To move the pin, write the new jinaga-spec commit to `conformance/jinaga-spec.ref` as a full 40-character SHA, and run all three runners locally at it. The workflow reads the pin from that file and refuses anything but a full SHA, so moving it needs no edit to `main.yml`. A failing vector means this library and the specification disagree: change the library, or report the disagreement against jinaga-spec. Never edit a vector to match.
 
+## Feed vectors this library emits
+
+`npm run vectors -- <outdir>` writes what *this* implementation's `buildFeeds` and `skeletonOfSpecification` produce, one JSON file per case under `<outdir>/feeds/`. jinaga-spec states and proves `buildFeeds`, but the replicator compares the skeletons of the feeds this library builds, so for exact feed text and skeletons this implementation is still the reference. A port reads these rather than copying string literals out of the spec files.
+
+The cases live in `test/vectors/feed-cases.ts`, and the spec files that exercise feeds take their inputs from there, so each input is written once. `test/vectors/generate.ts` emits them. The output is not committed here: a consumer runs the script at the jinaga.js commit it pins, and records that commit beside its copy.
+
 ## Working from issues
 
 Issues labelled `ready` are queued for automated work. `.claude/skills/night-shift-worker/SKILL.md` documents that protocol: how to tell whether an issue is already claimed or already fixed, how ordering is decided, when to stop and ask a question instead of guessing, how stacked pull requests are opened and registered, and how each run is recorded so the reasoning survives the container.

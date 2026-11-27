@@ -1,6 +1,11 @@
 import { DistributionRules, MemoryStore, Specification, SpecificationOf, SpecificationParser, buildFeeds, describeSpecification, wellFormedErrors } from "@src";
 import { FactEnvelope, FactReference } from "../../src/storage";
+import { eventsWithoutApprovedDelete, eventsWithoutRevokedApprovedDelete, eventsWithoutUnrevokedApprovedDelete, randomTwo } from "../vectors/feed-cases";
 
+// The specifications these tests pass to `buildFeeds` are written in
+// `test/vectors/feed-cases.ts`, which is also where `npm run vectors` reads
+// them from (#387).
+//
 // Issue #425: `buildExistentialCondition` builds the filter a negative
 // existential condition puts on the main feed. When one of that condition's
 // matches held a positive existential condition, the recursive call was handed
@@ -18,24 +23,6 @@ function parse(text: string): Specification {
     parser.skipWhitespace();
     return parser.parseSpecification();
 }
-
-// An event with no approved delete.
-const eventsWithoutApprovedDelete = parse(`
-    (t: Tenant) {
-        e: Event [
-            e->tenant: Tenant = t
-            !E {
-                d: Delete [
-                    d->event: Event = e
-                    E {
-                        a: Approval [
-                            a->delete: Delete = d
-                        ]
-                    }
-                ]
-            }
-        ]
-    } => e`);
 
 // A graph: facts by id, each with its type and predecessors by role.
 interface GraphFact {
@@ -196,33 +183,12 @@ describe("feeds of a positive condition inside a negative one", () => {
         { id: 10, type: "Revocation", predecessors: [{ role: "approval", id: 9 }] }
     ];
 
-    const withRevocationCondition = (quantifier: "E" | "!E") => parse(`
-        (t: Tenant) {
-            e: Event [
-                e->tenant: Tenant = t
-                !E {
-                    d: Delete [
-                        d->event: Event = e
-                        E {
-                            a: Approval [
-                                a->delete: Delete = d
-                                ${quantifier} {
-                                    r: Revocation [
-                                        r->approval: Approval = a
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
-        } => e`);
+    const revocationCases: [string, Specification, string[], number[]][] = [
+        ["positive", eventsWithoutRevokedApprovedDelete, ["d", "a", "r"], [1, 2, 4]],
+        ["negative", eventsWithoutUnrevokedApprovedDelete, ["d", "a"], [1, 2, 7]]
+    ];
 
-    it.each([
-        ["positive", "E" as const, ["d", "a", "r"], [1, 2, 4]],
-        ["negative", "!E" as const, ["d", "a"], [1, 2, 7]]
-    ])("handles a %s condition inside the positive one", async (_name, quantifier, filterLabels, expectedRows) => {
-        const specification = withRevocationCondition(quantifier);
+    it.each(revocationCases)("handles a %s condition inside the positive one", async (_name, specification, filterLabels, expectedRows) => {
         const feeds = buildFeeds(specification);
         for (const feed of feeds) {
             expect(wellFormedErrors(feed)).toEqual([]);
@@ -245,37 +211,6 @@ describe("feeds of a positive condition inside a negative one", () => {
         // positive condition, `!E { e1718 [ E { e1719 } ] }`. `!E { e1717 }`
         // joins only the given, not e1716, so until the parser's anchoring
         // rule was removed this had to be built as an object.
-        const specification = parse(`
-            (p1: R, p2: A) {
-                u1: B [
-                    u1->r: R = p1
-                    !E {
-                        e1715: A [
-                            e1715->b: B = u1
-                            E {
-                                e1716: A [
-                                    e1716->b: B = u1
-                                    !E {
-                                        e1717: A [
-                                            e1717->r: R = p1
-                                        ]
-                                    }
-                                ]
-                            }
-                            !E {
-                                e1718: A [
-                                    e1718->b: B = u1
-                                    E {
-                                        e1719: A [
-                                            e1719->r: R = p1
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            } => u1`);
         const graph: GraphFact[] = [
             { id: 0, type: "R", predecessors: [] },
             { id: 1, type: "A", predecessors: [{ role: "r", id: 0 }] },
@@ -287,11 +222,11 @@ describe("feeds of a positive condition inside a negative one", () => {
             { id: 7, type: "C", predecessors: [{ role: "a", id: 1 }] }
         ];
 
-        for (const feed of buildFeeds(specification)) {
+        for (const feed of buildFeeds(randomTwo)) {
             expect(wellFormedErrors(feed)).toEqual([]);
         }
 
-        const { full, replica } = await readFullAndReplica(specification, graph, { p1: 0, p2: 3 }, "u1");
+        const { full, replica } = await readFullAndReplica(randomTwo, graph, { p1: 0, p2: 3 }, "u1");
 
         expect(full).toEqual([2, 5]);
         expect(replica).toEqual(full);

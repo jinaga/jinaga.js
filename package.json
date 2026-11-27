@@ -24,10 +24,11 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "clean": "rimraf dist/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
+    "clean": "rimraf dist/ && rimraf dist-vectors/ && rimraf integration-test/jinaga-test/jinaga/ && rimraf integration-test/jinaga-test/node_modules/",
     "prepack": "npm run clean && npm run build && npm run test",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "test": "npx tsc --noEmit --project tsconfig.test.json && jest",
+    "vectors": "tsc --project tsconfig.vectors.json && node dist-vectors/test/vectors/cli.js",
     "test:watch": "jest --watch"
   },
   "dependencies": {
