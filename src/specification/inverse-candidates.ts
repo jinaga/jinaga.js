@@ -52,9 +52,12 @@ import {
  * direction needs `ProjectsUnknowns` — the row identity names every top-level
  * unknown, so a row determines its solution.
  *
- * These inverses are internal. `pinLabel` starts with the prefix the parser
- * reserves, on purpose, so it can never collide with a declared label — so do
- * not pass an inverse through `validateSpecification` or the parser.
+ * `exactInverses` and `pinLabel` are exported so that a package can read
+ * which fact types change a result, from the inverter the row stream uses
+ * (#459). An inverse is not a specification to run on its own: `pinLabel`
+ * starts with the prefix the parser reserves, on purpose, so it can never
+ * collide with a declared label — so do not pass an inverse through
+ * `validateSpecification` or the parser.
  */
 
 /** The label an inverse gives the new fact. Reserved, so no specification declares it. */
