@@ -3,10 +3,10 @@ name: night-shift-worker
 description: Works one GitHub issue through to a stacked pull request, unattended. Reproduces the defect or verifies a fix that already merged, fixes with a regression test, resolves a base branch that may not exist yet, registers the chain as a GitHub stack, drives CI green through one review round, then stops. Use when a scheduled routine or a person hands over a single issue number to work, when a merged pull request already exists and the job is verification rather than repair, when a fix must stack on a lower layer's branch, or when a blocker should become a recorded question instead of a guessed patch.
 metadata:
     github-path: skills/night-shift-worker
-    github-pinned: 6dc894b1956c1188e4ad48c34dd507f4d4829239
-    github-ref: 6dc894b1956c1188e4ad48c34dd507f4d4829239
+    github-pinned: 00514cc8ee8baddbdd2e2f19af0f2839e100c23e
+    github-ref: 00514cc8ee8baddbdd2e2f19af0f2839e100c23e
     github-repo: https://github.com/factoryengineering/skills
-    github-tree-sha: a91f2d41169e9064d02cdf3b3f0b694d9e0768fc
+    github-tree-sha: 4faaea50c0cfe6fd74d15a17c2b5e00758cfdb00
 ---
 
 # Night Shift Worker
@@ -50,10 +50,12 @@ The cost the check exists to prevent is **two sessions pushing different fixes f
 
 | What the issue and pull request show | What it means | What to do |
 |---|---|---|
-| Another run's live claim on the issue, a check run in progress, or a push, comment or review inside the last six hours | A session is live | **Stop.** If a pull request exists, comment `Duplicate dispatch, no-op.` on it. If none does, leave no comment: the claim already shows the issue is held. |
+| Another run's live claim on the issue, a check run in progress, or a push, comment or review inside the last six hours | A session is live | **Stop.** If a pull request exists, comment `Duplicate dispatch, no-op.` on it. If none does, leave no comment: the claim already shows the issue is held. Then **record `findNoChange`**, its summary saying a live session holds the issue and naming the evidence: the claim's comment id, the check run in progress, or the kind and time of the recent push, comment or review. |
 | No pull request and no live claim | Nobody is working the issue | **Claim it**, below, then work it. |
 | A pull request with none of those for six hours, and some of the issue's acceptance unmet | A session stopped before the issue was done | **Claim it**, then **resume**, below. |
-| A pull request with none of those for six hours, which covers the acceptance | The work is done and a human has yet to merge | **Stop.** Leave no comment. |
+| A pull request with none of those for six hours, which covers the acceptance | The work is done and a human has yet to merge | **Stop.** Leave no comment. Then **record `findNoChange`**, its summary naming the pull request and the head SHA whose diff covers the acceptance. |
+
+**A stop row still ends in the log.** It is reached before the checklist opens the log, so open it now: resolve your dispatch as *Finding your dispatch* in [night-shift-log.md](night-shift-log.md) says, record the `findNoChange` the row names, and close the console, as *Close the console, on every exit path* there requires. A dispatch that stops here without recording stays in `dispatchesAwaitingOutcome` for good, because the pull request it would point to predates it and the morning review cannot tie it to this dispatch. The two rows that claim the issue end in a log outcome later, under *Record the run*.
 
 Six hours is several times the longest wait this protocol asks a worker to hold, the 90 minutes in `stacking.md`. It is still a guess about a session you cannot see, so err long: too short puts two sessions on one branch, and too long costs one sweep.
 
@@ -80,6 +82,7 @@ Then copy this checklist and work it:
 Task Progress:
 - [ ] Read .night-shift/config.md and the files its `## Read first` names
 - [ ] Read the issue's claims and any pull request on it, and stop, no-op, work or resume
+- [ ] On a duplicate-check stop row: open the Night Shift Log, record the `findNoChange` the row names, close the console, and stop
 - [ ] Claim the issue, re-read, and stand down if another live claim is older
 - [ ] Open the Night Shift Log and resolve this repository
 - [ ] Establish the work is warranted, per the config's `## Before you fix`
@@ -205,8 +208,6 @@ Only then run the config's `## After the pull request`. A value of `none` means 
 - Never base on any branch but the named lower issue's, or the default branch when the dispatch names none. A branch that holds work your issue needs is not a substitute for the one the dispatch named.
 - Never dispatch another issue's worker. You are one layer.
 - Never put a mutating call in a retry or fallback position. A shell `cmd-a || cmd-b` runs `cmd-b` when `cmd-a` merely prints something unexpected, and a "test" invocation of a create endpoint is a real write.
-- End every comment you leave on an issue or a pull request with your agent attribution footer.
-- Do not put model identifiers in commit messages, pull request text, or code comments.
 
 ## Resources
 

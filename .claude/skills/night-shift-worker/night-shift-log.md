@@ -72,3 +72,5 @@ let { $pullRequest as $pr } = call openPullRequest($dispatch, 123, "Bounded the 
 ## Nothing to fix is a result
 
 `findNoChange` exists because a dispatch that concludes there is nothing to fix has produced a real finding. Record it rather than leaving the dispatch open, and never manufacture a change to avoid using it.
+
+**A duplicate dispatch that stops is a finding too.** When the duplicate check in `SKILL.md` stops you, because a live session holds the issue or because the work is done and waits on a merge, record `findNoChange` saying which, and name the evidence the row asks for. That is the only trace this dispatch leaves: it pushed nothing and opened nothing, so no later read can tie it to an artifact.

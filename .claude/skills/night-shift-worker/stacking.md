@@ -4,18 +4,30 @@ A dispatch names the **issue** you stack on, never the branch, because the branc
 
 ## Resolving a base branch that is not ready yet
 
-The lower branch can fail to serve in two ways: it is absent, or it is present but lacks work your issue needs. Both mean the same thing, that the lower worker is not finished, and both get the same wait. **Re-check every 5 minutes for up to 90 minutes from your first look, re-arming a check-in rather than blocking.** That one window covers both states. The one exception is work that merged after the lower branch was cut: no worker is coming to add it, so step 3 sends it straight to the question.
+The lower branch can fail to serve in two ways: it is absent, or it is present but lacks work your issue needs. Both mean the same thing, that the lower worker is not finished, and both get the same wait. **Re-check every 5 minutes for up to 90 minutes from your first look, re-arming a check-in rather than blocking.** That one window covers both states. There are two exceptions, and both are cases where no worker is coming. A branch that is absent while its issue shows no live claim cuts the window short, per *Reading the claim of an absent branch* below. Work that merged after the lower branch was cut sends you straight to the question, per step 3.
 
 1. `git fetch origin`, then match `origin/claude/issue-<M>-*`. Confirm against the hosting API rather than a cached ref.
-2. **No match means the lower worker has not pushed yet.** Its session is running concurrently with yours. Re-check inside the window.
+2. **No match means the lower worker has not pushed yet, or that no worker is coming.** Tell them apart by #M's claims, per *Reading the claim of an absent branch* below. While #M holds a live claim, its session is running concurrently with yours, so re-check inside the window.
 3. **Once it matches, check that it carries what your issue depends on**, for every other issue on your issue's **Depends on** line.
-   - **One that has not merged:** match its branch the same way and confirm it is an ancestor of #M's branch: `git merge-base --is-ancestor origin/<dependency-branch> origin/<M-branch>`. One that is not means #M's worker based its layer wrongly. It often corrects itself within minutes, so re-check inside the window. **A dependency that has not merged and has no branch is missing work too**: its worker has not pushed yet, or nobody is working it. Re-check it inside the same window.
+   - **One that has not merged:** match its branch the same way and confirm it is an ancestor of #M's branch: `git merge-base --is-ancestor origin/<dependency-branch> origin/<M-branch>`. One that is not means #M's worker based its layer wrongly. It often corrects itself within minutes, so re-check inside the window. **A dependency that has not merged and has no branch is missing work too**: its worker has not pushed yet, or nobody is working it. Read its claims the same way, per *Reading the claim of an absent branch* below, and while it holds a live claim, re-check it inside the same window.
    - **One that has merged:** merging puts the work on the default branch, not on a branch cut before the merge. Read the dependency's merged pull request from the hosting API (by `merged_at`, not `merged`), and confirm that its `merge_commit_sha` **or** its `head.sha` is an ancestor of #M's branch. Accept either: a squash or rebase merge writes a new commit, so a branch cut from the dependency's own branch holds the work but never the merge commit. A commit git cannot find after the fetch is not an ancestor. If neither is an ancestor, #M's branch lacks the work, and waiting will not add it, because nothing tells #M's worker that a merge happened below it. Go to step 6 now, without waiting out the window.
 4. Once the branch matches and every check passes, branch from it and set it as your pull request base.
-5. If the window closes with no branch, report that issue #M produced no branch, and **open no pull request**.
+5. If the window closes with no branch, or #M's claims show no worker is coming, record a question per *When to stop and ask instead* in `SKILL.md`, naming #M, that it produced no branch, and the claim you read: the comment id of the claim that is not live and its state (released, stood down, or posted more than six hours ago), or that none was posted, and **open no pull request**. Record it with `raiseQuestion`, not `findNoChange`: your issue is blocked, not finished, and it needs #M's work before anyone can work it.
 6. If the window closes with the branch still missing a dependency, or step 3 finds it lacks a merged one, record a question per *When to stop and ask instead* in `SKILL.md`, naming #M and the issue whose work its branch lacks, and **open no pull request**.
 
 Idle waiting is the correct behavior here. A layer that gives up and branches from `main` produces a diff that deletes the layer below it. A layer that bases on the dependency's branch instead of #M's makes itself a sibling of #M, and the chain forks the moment #M's worker corrects its own base.
+
+### Reading the claim of an absent branch
+
+A missing branch looks the same whether its worker has not pushed yet or no worker is coming, and only the second ends early. The lower issue's claims tell them apart: a worker claims its issue in its first minutes, and releases the claim when it stops without a pull request (*Claim the issue before any other work*, in `SKILL.md`, which also defines a **live** claim). Read the claims of the issue whose branch is absent, #M or the dependency, at each re-check:
+
+| What the issue shows | What it means | What to do |
+|---|---|---|
+| A live claim | Its worker is running and has not pushed yet | Re-check inside the window, as above. |
+| A claim edited to `released` since your first look, or since its dispatch | Its worker stopped without a pull request, and no branch is coming | Stop now: step 5 for #M, step 6 for a dependency. Name the released claim. |
+| No live claim 15 minutes after your first look, whether none was posted or every one is stood down or more than six hours old | No worker started | Stop now, the same way. Name each claim you read and its state, or say that none was posted. |
+
+**At your first look, no claim is normal.** The lower and upper workers are fired seconds apart, and a session takes minutes to start and claim. That is what the 15 minutes is for. Too short strands a lower worker that started slowly, and too long only costs the wait this check exists to cut, so err long. The 90-minute window is unchanged: a live claim gets all of it.
 
 ## Registering the stack
 
