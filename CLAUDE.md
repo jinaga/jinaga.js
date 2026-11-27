@@ -61,7 +61,7 @@ Full guidance is in `contributing.md`. The rule that matters most:
 
 Timeouts are acceptable only when testing a race condition deliberately, polling an external system with no event notification, or simulating a user delay for a buffering test. Document why in a comment when you do.
 
-Every bug fix needs a regression test that fails before the change and passes after. State both results in the pull request body.
+A change in behavior needs a regression test that fails before the change and passes after. State both results in the pull request body. The failure before has to be the old behavior, reached through code that already existed: a missing export or a compile error shows only that the new code is new. A change that alters no behavior, such as an export, a type, a rename or a refactor, adds no test. The tests that already drive that behavior show it held, and the pull request names them.
 
 **A test earns its place when it can fail for a reason other than an edit to the text it asserts on.** An assertion that the README, a doc comment, or a `docs/` page holds a given phrase restates that text in a second file, so it fails when an author rewords it and passes when it is wrong. Test documentation by compiling its examples or by deriving the expectation from the code it documents. Where nothing derives, the documentation stands on review, and no test is added.
 
