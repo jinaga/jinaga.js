@@ -3,10 +3,10 @@ name: refining-issues
 description: Turns a backlog issue in a night-shift repository into one that an unattended agent can implement, and turns a coupled set into a chain that stacks. Use when drafting a new issue from a goal, when auditing whether an issue is ready for the queue label, when an issue comes back from the night shift with a question answered or a pull request returned, when grouping issues for planning, when an issue's acceptance ends in an unmade decision, when two issues must land together, when an issue asks for a test that guards a redundancy rather than removing it or manufactures one by quoting a document, or when a change to an authority document has just changed how a set of issues is partitioned. Encodes eight checks — five that decide readiness and three that decide independence — plus the five moves that fix a failed check.
 metadata:
     github-path: skills/refining-issues
-    github-pinned: b4f73c29cceae5740c06359e0788c8c40db91d59
-    github-ref: b4f73c29cceae5740c06359e0788c8c40db91d59
+    github-pinned: 35cc8b355861f53e4e7bbaf4e5d62a63532d80d2
+    github-ref: 35cc8b355861f53e4e7bbaf4e5d62a63532d80d2
     github-repo: https://github.com/factoryengineering/skills
-    github-tree-sha: abff8f9f0a94dde478694ca3ce237efc043e1afa
+    github-tree-sha: e14a1a9eef7d9571858461bdd18f4b37cae117e8
 ---
 
 # Refining issues
@@ -48,7 +48,15 @@ validation to the importer" is a task.
 What shows a criterion false depends on what the issue delivers.
 
 - **Behavior in code.** A test that drives the behavior, and can fail when
-  the behavior is wrong.
+  the behavior is wrong. It is red on the code before the change because the
+  old behavior was wrong, not because the new code was absent. A name that
+  does not exist yet, a compile error or a missing file is not a before.
+- **Code that changes no behavior.** An export, a type, a rename, a refactor.
+  Nothing behaves differently, so there is no before and after for a test to
+  show. The tests that already drive the behavior show that it held. The
+  criterion is a property a reviewer sees in the diff, such as "`exactInverses`
+  is importable from the package entry point". Name the tests that already
+  cover the behavior, and say that no test is to be added.
 - **A document or a declaration.** A check that does not restate the text,
   and can fail when the document is wrong. The check derives its expectation from the code the document
   describes, runs the document's examples through the parser or compiler, or
@@ -317,12 +325,16 @@ criterion answers to; **Depends on**. Drop **Conformance** where `## Authority`
 says `none` — a heading with nothing to cite is a heading that gets filled in
 with something invented.
 
-A documentation slice may carry no **Tests** entry at all: its criteria are
-properties a reviewer checks, which R1 accepts. Every entry that is there has to
-be able to fail for a reason other than an edit to its own subject. This is the
-sentence R5 most often catches too late: a documentation slice feels like it
-needs a test, a quotation is the only one available, and writing it here is what
-puts it in the suite. The night shift implements the acceptance it is given.
+A **Tests** entry shows the behavior the issue changes: what the code does
+before, and what it does after. A slice that changes no behavior, whether
+documentation, an export or a refactor, may carry no **Tests** entry at all: its
+criteria are properties a reviewer checks, which R1 accepts. Every entry that is
+there has to be able to fail for a reason other than an edit to its own subject,
+and has to be red before the change for a reason other than the change's absence.
+This is the sentence R5 most often catches too late. A slice like that feels
+like it needs a test. The only ones available quote the text or import the new
+name, and writing one here is what puts it in the suite. The night shift
+implements the acceptance it is given.
 
 Name the interaction with any issue that shares an invariant, and say which one
 must not reopen the gap.
