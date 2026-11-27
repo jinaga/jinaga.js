@@ -1,4 +1,4 @@
-import { Condition, DistributionRules, Match, MemoryStore, Specification, SpecificationOf, SpecificationParser, buildFeeds, describeSpecification, wellFormedErrors } from "@src";
+import { DistributionRules, MemoryStore, Specification, SpecificationOf, SpecificationParser, buildFeeds, describeSpecification, wellFormedErrors } from "@src";
 import { FactEnvelope, FactReference } from "../../src/storage";
 
 // Issue #425: `buildExistentialCondition` builds the filter a negative
@@ -242,47 +242,40 @@ describe("feeds of a positive condition inside a negative one", () => {
     it("lets a replica read a negative condition nested in the excluded fact's own match", async () => {
         // The shape of jinaga-spec's vector feeds/random-2: the excluded fact
         // e1715 carries its own negative condition, and that one holds a
-        // positive condition, `!E { e1718 [ E { e1719 } ] }`.
-        // The vector's specification object, as it stands: the parser refuses
-        // its text, because `!E { e1717 }` joins only the given, not e1716.
-        const path = (role: string, predecessorType: string, labelRight: string): Condition => ({
-            type: "path", rolesLeft: [{ name: role, predecessorType }], labelRight, rolesRight: []
-        });
-        const match = (name: string, type: string, ...conditions: Condition[]): Match => ({
-            unknown: { name, type }, conditions
-        });
-        const condition = (exists: boolean, ...matches: Match[]): Condition => ({
-            type: "existential", exists, matches
-        });
-        const specification: Specification = {
-            given: [
-                { label: { name: "p1", type: "R" }, conditions: [] },
-                { label: { name: "p2", type: "A" }, conditions: [] }
-            ],
-            matches: [
-                match("u1", "B",
-                    path("r", "R", "p1"),
-                    condition(false,
-                        match("e1715", "A",
-                            path("b", "B", "u1"),
-                            condition(true,
-                                match("e1716", "A",
-                                    path("b", "B", "u1"),
-                                    condition(false, match("e1717", "A", path("r", "R", "p1")))
-                                )
-                            ),
-                            condition(false,
-                                match("e1718", "A",
-                                    path("b", "B", "u1"),
-                                    condition(true, match("e1719", "A", path("r", "R", "p1")))
-                                )
-                            )
-                        )
-                    )
-                )
-            ],
-            projection: { type: "fact", label: "u1" }
-        };
+        // positive condition, `!E { e1718 [ E { e1719 } ] }`. `!E { e1717 }`
+        // joins only the given, not e1716, so until the parser's anchoring
+        // rule was removed this had to be built as an object.
+        const specification = parse(`
+            (p1: R, p2: A) {
+                u1: B [
+                    u1->r: R = p1
+                    !E {
+                        e1715: A [
+                            e1715->b: B = u1
+                            E {
+                                e1716: A [
+                                    e1716->b: B = u1
+                                    !E {
+                                        e1717: A [
+                                            e1717->r: R = p1
+                                        ]
+                                    }
+                                ]
+                            }
+                            !E {
+                                e1718: A [
+                                    e1718->b: B = u1
+                                    E {
+                                        e1719: A [
+                                            e1719->r: R = p1
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            } => u1`);
         const graph: GraphFact[] = [
             { id: 0, type: "R", predecessors: [] },
             { id: 1, type: "A", predecessors: [{ role: "r", id: 0 }] },

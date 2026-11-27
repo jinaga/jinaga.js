@@ -205,28 +205,14 @@ export class SpecificationParser {
     private parseExistentialCondition(labels: Label[], unknown: Label, exists: boolean): ExistentialCondition {
         const { matches } = this.parseMatches([...labels, unknown]);
 
-        const hasValidPath = matches.some(match =>
-            match.conditions.some(condition =>
-                condition.type === "path" &&
-                condition.labelRight === unknown.name
-            )
-        );
-
-        if (!hasValidPath) {
-            // An existential condition filters the match it is written on; it
-            // never joins two. One that names only another given would leave
-            // the feed carrying it a product of two chains, which no replica
-            // can answer (jinaga/jinaga-spec#55). That holds of `E` and `!E`
-            // alike, so this guard and its message cover both.
-            throw new Invalid(`The existential condition must be based on the unknown '${unknown.name}'. ` +
-                `Whether it is E or !E, an existential condition filters the match it is written on; it never joins two. ` +
-                `If the condition is about each '${unknown.name}', join its matches to '${unknown.name}' with a path condition. ` +
-                `If it is about a given as a whole, it is a gate on the whole result, which one specification cannot express: ` +
-                `read it as two child specifications of a root with no matches, as in ` +
-                `(p1, p2) { } => { a = { ... }, b = { ... } }, and decide in the application. ` +
-                `A child placed under '${unknown.name}' inherits its matches, so it is not independent of it.`);
-        }
-
+        // No clause of well-formedness anchors the condition's matches to
+        // this unknown. A specification whose feeds would be a product is
+        // refused by `detectDisconnectedSpecification`, which
+        // `parseSpecification` runs and which ports the proved
+        // `isConnectedDeep`: it refuses a condition that names only a given
+        // this match does not join, for `E` and `!E` alike, and accepts one
+        // that names a given this match does join. The scope checks made
+        // while reading, labels defined and names fresh, still apply.
         const result = {
             type: "existential" as const,
             exists,
